@@ -99,7 +99,8 @@ dotnet run --project src/Api
 ---
 
 ## Author
-Chang Wonhong (Jerry)
+Chang Wonhong  
+LinkedIn: https://www.linkedin.com/in/wonhong-chang-6660a0177
 
 ---
 
