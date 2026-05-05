@@ -1,0 +1,117 @@
+{
+  "date": "2025-12-29",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 6,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2025-12-29T00:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2025-12-29T00:00:00+09:00",
+      "endAt": "2025-12-29T01:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 92.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 30640.0,
+      "reason": "Usage 92.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2025-12-29T13:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2025-12-29T13:00:00+09:00",
+      "endAt": "2025-12-29T14:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 28830.0,
+      "expectedMw": 34806.7,
+      "interval": {
+        "p95Lower": 28956.6,
+        "p95Upper": 40656.7,
+        "p99Lower": 27118.0,
+        "p99Upper": 42495.3
+      },
+      "reason": "Actual 28830 MW fell below p95 lower 28957 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2025-12-29T14:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2025-12-29T14:00:00+09:00",
+      "endAt": "2025-12-29T15:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 28700.0,
+      "expectedMw": 34956.1,
+      "interval": {
+        "p95Lower": 29254.4,
+        "p95Upper": 40657.8,
+        "p99Lower": 27462.4,
+        "p99Upper": 42449.8
+      },
+      "reason": "Actual 28700 MW fell below p95 lower 29254 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2025-12-29T15:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2025-12-29T15:00:00+09:00",
+      "endAt": "2025-12-29T16:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 29340.0,
+      "expectedMw": 35282.8,
+      "interval": {
+        "p95Lower": 29498.8,
+        "p95Upper": 41066.7,
+        "p99Lower": 27681.0,
+        "p99Upper": 42884.5
+      },
+      "reason": "Actual 29340 MW fell below p95 lower 29499 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2025-12-29T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2025-12-29T00:00:00+09:00",
+      "endAt": "2025-12-29T05:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 1399.9,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 6 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    },
+    {
+      "id": "2025-12-29T09:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2025-12-29T09:00:00+09:00",
+      "endAt": "2025-12-29T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -3628.4,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 15 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

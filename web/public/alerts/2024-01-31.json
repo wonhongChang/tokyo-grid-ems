@@ -1,0 +1,42 @@
+{
+  "date": "2024-01-31",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 2,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2024-01-31T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2024-01-31T00:00:00+09:00",
+      "endAt": "2024-01-31T12:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 1397.3,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 13 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    },
+    {
+      "id": "2024-01-31T19:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2024-01-31T19:00:00+09:00",
+      "endAt": "2024-01-31T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -1272.6,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 5 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

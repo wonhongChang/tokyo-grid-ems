@@ -1,0 +1,78 @@
+name: ETL + Deploy
+
+on:
+  schedule:
+    # 01:30 JST daily (16:30 UTC prev day) — after TEPCO publishes yesterday's CSV
+    - cron: '30 16 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commit updated cache / JSON back to main
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  etl-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python setup ──────────────────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── Fetch TEPCO data ──────────────────────────────────────────────────
+      - name: Fetch TEPCO CSVs
+        run: python python/etl/fetch_tepco.py
+
+      # ── ETL ───────────────────────────────────────────────────────────────
+      - name: Run ETL
+        run: python python/etl/run_batch.py
+
+      # ── Commit updated public assets back to main ─────────────────────────
+      - name: Commit ETL outputs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add web/public/
+          git diff --staged --quiet && echo "Nothing to commit" || \
+            git commit -m "chore: ETL $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
+
+      # ── Build Vite app ────────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build
+        run: npm run build
+        working-directory: web
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+
+      # ── Deploy to GitHub Pages ────────────────────────────────────────────
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+      - uses: actions/deploy-pages@v4
+        id: deploy

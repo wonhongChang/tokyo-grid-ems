@@ -1,0 +1,57 @@
+{
+  "date": "2026-01-08",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 3,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2026-01-08T00:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-01-08T00:00:00+09:00",
+      "endAt": "2026-01-08T01:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 90.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 37550.0,
+      "reason": "Usage 90.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2026-01-08T05:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-01-08T05:00:00+09:00",
+      "endAt": "2026-01-08T06:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 90.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 38730.0,
+      "reason": "Usage 90.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2026-01-08T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-01-08T00:00:00+09:00",
+      "endAt": "2026-01-08T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 5585.6,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 24 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

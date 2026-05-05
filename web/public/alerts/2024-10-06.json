@@ -1,0 +1,57 @@
+{
+  "date": "2024-10-06",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 3,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2024-10-06T11:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2024-10-06T11:00:00+09:00",
+      "endAt": "2024-10-06T12:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 90.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 29910.0,
+      "reason": "Usage 90.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2024-10-06T12:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2024-10-06T12:00:00+09:00",
+      "endAt": "2024-10-06T13:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 92.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 30010.0,
+      "reason": "Usage 92.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2024-10-06T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2024-10-06T00:00:00+09:00",
+      "endAt": "2024-10-06T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -4963.3,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 24 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

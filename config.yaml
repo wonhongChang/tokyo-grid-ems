@@ -1,0 +1,12 @@
+forecast:
+  n_weeks: 12          # same-weekday lookback window
+  min_samples_per_slot: 4  # minimum data points per (dow, hour) slot to generate forecast
+
+anomaly:
+  reserve_risk:
+    warning_pct: 90.0
+    critical_pct: 95.0
+  drift:
+    ewma_alpha: 0.3
+    threshold_mw: 800.0
+    sustained_hours: 3

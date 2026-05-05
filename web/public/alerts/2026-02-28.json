@@ -1,0 +1,47 @@
+{
+  "date": "2026-02-28",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 2,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2026-02-28T10:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2026-02-28T10:00:00+09:00",
+      "endAt": "2026-02-28T11:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 27750.0,
+      "expectedMw": 33923.1,
+      "interval": {
+        "p95Lower": 27766.5,
+        "p95Upper": 40079.7,
+        "p99Lower": 25831.6,
+        "p99Upper": 42014.7
+      },
+      "reason": "Actual 27750 MW fell below p95 lower 27766 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-02-28T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-02-28T00:00:00+09:00",
+      "endAt": "2026-02-28T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -5273.2,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 24 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

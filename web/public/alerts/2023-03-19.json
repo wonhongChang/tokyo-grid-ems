@@ -1,0 +1,47 @@
+{
+  "date": "2023-03-19",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 2,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2023-03-19T15:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-03-19T15:00:00+09:00",
+      "endAt": "2023-03-19T16:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 24850.0,
+      "expectedMw": 29764.0,
+      "interval": {
+        "p95Lower": 25015.7,
+        "p95Upper": 34512.3,
+        "p99Lower": 23523.4,
+        "p99Upper": 36004.6
+      },
+      "reason": "Actual 24850 MW fell below p95 lower 25016 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-03-19T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2023-03-19T00:00:00+09:00",
+      "endAt": "2023-03-19T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -4080.6,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 24 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+{
+  "date": "2023-05-01",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 6,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2023-05-01T09:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-05-01T09:00:00+09:00",
+      "endAt": "2023-05-01T10:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 26310.0,
+      "expectedMw": 35246.7,
+      "interval": {
+        "p95Lower": 26996.2,
+        "p95Upper": 43497.1,
+        "p99Lower": 24403.2,
+        "p99Upper": 46090.1
+      },
+      "reason": "Actual 26310 MW fell below p95 lower 26996 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-05-01T10:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-05-01T10:00:00+09:00",
+      "endAt": "2023-05-01T11:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 26920.0,
+      "expectedMw": 35295.8,
+      "interval": {
+        "p95Lower": 27915.0,
+        "p95Upper": 42676.7,
+        "p99Lower": 25595.3,
+        "p99Upper": 44996.4
+      },
+      "reason": "Actual 26920 MW fell below p95 lower 27915 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-05-01T11:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-05-01T11:00:00+09:00",
+      "endAt": "2023-05-01T12:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 27750.0,
+      "expectedMw": 35109.2,
+      "interval": {
+        "p95Lower": 28417.3,
+        "p95Upper": 41801.0,
+        "p99Lower": 26314.2,
+        "p99Upper": 43904.1
+      },
+      "reason": "Actual 27750 MW fell below p95 lower 28417 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-05-01T22:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-05-01T22:00:00+09:00",
+      "endAt": "2023-05-01T23:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 23590.0,
+      "expectedMw": 29909.2,
+      "interval": {
+        "p95Lower": 23934.9,
+        "p95Upper": 35883.4,
+        "p99Lower": 22057.3,
+        "p99Upper": 37761.0
+      },
+      "reason": "Actual 23590 MW fell below p95 lower 23935 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-05-01T23:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-05-01T23:00:00+09:00",
+      "endAt": "2023-05-02T00:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 22390.0,
+      "expectedMw": 28078.3,
+      "interval": {
+        "p95Lower": 22733.0,
+        "p95Upper": 33423.7,
+        "p99Lower": 21053.0,
+        "p99Upper": 35103.7
+      },
+      "reason": "Actual 22390 MW fell below p95 lower 22733 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-05-01T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2023-05-01T00:00:00+09:00",
+      "endAt": "2023-05-01T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -6055.8,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 24 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}
