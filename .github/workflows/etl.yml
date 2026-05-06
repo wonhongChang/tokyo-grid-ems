@@ -52,7 +52,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add web/public/
           git diff --staged --quiet && echo "Nothing to commit" || \
-            git commit -m "chore: ETL $(date -u +%Y-%m-%dT%H:%MZ)"
+            git commit -m "chore: ETL $(TZ=Asia/Tokyo date +%Y-%m-%dT%H:%M JST)"
           git push
 
       # ── Build Vite app ────────────────────────────────────────────────────
