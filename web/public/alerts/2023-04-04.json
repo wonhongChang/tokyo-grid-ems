@@ -1,0 +1,87 @@
+{
+  "date": "2023-04-04",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 4,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2023-04-04T06:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-04-04T06:00:00+09:00",
+      "endAt": "2023-04-04T07:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 25940.0,
+      "expectedMw": 33656.4,
+      "interval": {
+        "p95Lower": 26562.6,
+        "p95Upper": 40750.2,
+        "p99Lower": 24333.1,
+        "p99Upper": 42979.6
+      },
+      "reason": "Actual 25940 MW fell below p95 lower 26563 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-04-04T07:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-04-04T07:00:00+09:00",
+      "endAt": "2023-04-04T08:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 27180.0,
+      "expectedMw": 36745.5,
+      "interval": {
+        "p95Lower": 28162.8,
+        "p95Upper": 45328.1,
+        "p99Lower": 25465.4,
+        "p99Upper": 48025.5
+      },
+      "reason": "Actual 27180 MW fell below p95 lower 28163 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-04-04T08:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2023-04-04T08:00:00+09:00",
+      "endAt": "2023-04-04T09:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 29930.0,
+      "expectedMw": 39602.7,
+      "interval": {
+        "p95Lower": 30633.7,
+        "p95Upper": 48571.8,
+        "p99Lower": 27814.8,
+        "p99Upper": 51390.6
+      },
+      "reason": "Actual 29930 MW fell below p95 lower 30634 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-04-04T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2023-04-04T00:00:00+09:00",
+      "endAt": "2023-04-04T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -6985.7,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 24 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

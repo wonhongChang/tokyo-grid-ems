@@ -1,0 +1,47 @@
+{
+  "date": "2023-12-14",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 2,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2023-12-14T06:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2023-12-14T06:00:00+09:00",
+      "endAt": "2023-12-14T07:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 32040.0,
+      "expectedMw": 26752.7,
+      "interval": {
+        "p95Lower": 21502.3,
+        "p95Upper": 32003.2,
+        "p99Lower": 19852.2,
+        "p99Upper": 33653.3
+      },
+      "reason": "Actual 32040 MW exceeded p95 upper 32003 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2023-12-14T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2023-12-14T00:00:00+09:00",
+      "endAt": "2023-12-14T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 2596.9,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 24 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

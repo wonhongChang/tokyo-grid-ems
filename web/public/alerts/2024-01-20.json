@@ -1,0 +1,102 @@
+{
+  "date": "2024-01-20",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 5,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2024-01-20T12:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2024-01-20T12:00:00+09:00",
+      "endAt": "2024-01-20T13:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 37550.0,
+      "expectedMw": 30997.1,
+      "interval": {
+        "p95Lower": 24679.7,
+        "p95Upper": 37314.4,
+        "p99Lower": 22694.3,
+        "p99Upper": 39299.9
+      },
+      "reason": "Actual 37550 MW exceeded p95 upper 37314 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2024-01-20T13:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2024-01-20T13:00:00+09:00",
+      "endAt": "2024-01-20T14:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 37310.0,
+      "expectedMw": 30725.3,
+      "interval": {
+        "p95Lower": 24747.4,
+        "p95Upper": 36703.2,
+        "p99Lower": 22868.7,
+        "p99Upper": 38581.9
+      },
+      "reason": "Actual 37310 MW exceeded p95 upper 36703 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2024-01-20T14:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2024-01-20T14:00:00+09:00",
+      "endAt": "2024-01-20T15:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 36760.0,
+      "expectedMw": 30424.1,
+      "interval": {
+        "p95Lower": 24636.3,
+        "p95Upper": 36211.9,
+        "p99Lower": 22817.3,
+        "p99Upper": 38031.0
+      },
+      "reason": "Actual 36760 MW exceeded p95 upper 36212 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2024-01-20T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2024-01-20T00:00:00+09:00",
+      "endAt": "2024-01-20T03:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 801.6,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 4 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    },
+    {
+      "id": "2024-01-20T07:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2024-01-20T07:00:00+09:00",
+      "endAt": "2024-01-20T23:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 4754.6,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 17 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

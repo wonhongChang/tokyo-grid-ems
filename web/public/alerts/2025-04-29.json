@@ -1,0 +1,47 @@
+{
+  "date": "2025-04-29",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 2,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2025-04-29T05:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2025-04-29T05:00:00+09:00",
+      "endAt": "2025-04-29T06:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 20730.0,
+      "expectedMw": 19540.0,
+      "interval": {
+        "p95Lower": 18408.3,
+        "p95Upper": 20671.7,
+        "p99Lower": 18052.6,
+        "p99Upper": 21027.4
+      },
+      "reason": "Actual 20730 MW exceeded p95 upper 20672 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2025-04-29T00:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2025-04-29T00:00:00+09:00",
+      "endAt": "2025-04-29T07:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 983.1,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 8 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}

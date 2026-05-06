@@ -1,0 +1,42 @@
+{
+  "date": "2023-06-06",
+  "timezone": "Asia/Tokyo",
+  "availability": "ok",
+  "summary": {
+    "critical": 0,
+    "warning": 2,
+    "info": 0
+  },
+  "events": [
+    {
+      "id": "2023-06-06T06:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2023-06-06T06:00:00+09:00",
+      "endAt": "2023-06-06T08:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -1052.1,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 3 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    },
+    {
+      "id": "2023-06-06T15:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2023-06-06T15:00:00+09:00",
+      "endAt": "2023-06-06T18:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 1106.4,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 4 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
+}
