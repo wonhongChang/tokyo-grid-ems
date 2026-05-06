@@ -3,8 +3,8 @@
   "timezone": "Asia/Tokyo",
   "availability": "ok",
   "summary": {
-    "critical": 2,
-    "warning": 5,
+    "critical": 4,
+    "warning": 7,
     "info": 0
   },
   "events": [
@@ -111,6 +111,81 @@
       "reason": "Usage 92.0% exceeded warning threshold 90.0%",
       "tags": [
         "kpi"
+      ]
+    },
+    {
+      "id": "2026-05-03T10:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2026-05-03T10:00:00+09:00",
+      "endAt": "2026-05-03T11:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 21520.0,
+      "expectedMw": 24385.7,
+      "interval": {
+        "p95Lower": 21785.5,
+        "p95Upper": 26985.9,
+        "p99Lower": 20968.3,
+        "p99Upper": 27803.1
+      },
+      "reason": "Actual 21520 MW fell below p95 lower 21786 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-03T11:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "critical",
+      "startAt": "2026-05-03T11:00:00+09:00",
+      "endAt": "2026-05-03T12:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 21370.0,
+      "expectedMw": 24809.3,
+      "interval": {
+        "p95Lower": 22592.8,
+        "p95Upper": 27025.8,
+        "p99Lower": 21896.2,
+        "p99Upper": 27722.4
+      },
+      "reason": "Actual 21370 MW fell below p99 lower 21896 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-03T12:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "critical",
+      "startAt": "2026-05-03T12:00:00+09:00",
+      "endAt": "2026-05-03T13:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 21430.0,
+      "expectedMw": 24522.1,
+      "interval": {
+        "p95Lower": 22279.6,
+        "p95Upper": 26764.7,
+        "p99Lower": 21574.8,
+        "p99Upper": 27469.5
+      },
+      "reason": "Actual 21430 MW fell below p99 lower 21575 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-03T08:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-05-03T08:00:00+09:00",
+      "endAt": "2026-05-03T22:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -1518.0,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 15 consecutive hours",
+      "tags": [
+        "residual"
       ]
     }
   ]
