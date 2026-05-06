@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # commit updated cache / JSON back to main
+  contents: write
   pages: write
   id-token: write
 
@@ -37,6 +37,19 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      # ── Restore web/public from data branch ───────────────────────────────
+      - name: Restore web/public from data branch
+        run: |
+          git fetch origin data 2>/dev/null || true
+          if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
+            git worktree add --detach /tmp/data-wt origin/data
+            mkdir -p web/public
+            rsync -a --exclude='.git' /tmp/data-wt/ web/public/
+            git worktree remove /tmp/data-wt --force
+          else
+            echo "[INFO] No data branch yet — starting fresh"
+          fi
+
       # ── Fetch TEPCO data ──────────────────────────────────────────────────
       - name: Fetch TEPCO CSVs
         run: python python/etl/fetch_tepco.py
@@ -45,15 +58,25 @@ jobs:
       - name: Run ETL
         run: python python/etl/run_batch.py
 
-      # ── Commit updated public assets back to main ─────────────────────────
-      - name: Commit ETL outputs
+      # ── Push web/public to data branch ────────────────────────────────────
+      - name: Push web/public to data branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add web/public/
-          git diff --staged --quiet && echo "Nothing to commit" || \
+          git fetch origin data 2>/dev/null || true
+          if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
+            git worktree add --detach /tmp/data-wt origin/data
+          else
+            git worktree add --orphan -b data /tmp/data-wt
+          fi
+          rsync -a --delete --exclude='.git' web/public/ /tmp/data-wt/
+          cd /tmp/data-wt
+          git add -A
+          git diff --staged --quiet && echo "No changes" || \
             git commit -m "chore: ETL $(TZ=Asia/Tokyo date +%Y-%m-%dT%H:%M JST)"
-          git push
+          git push origin HEAD:data
+          cd -
+          git worktree remove /tmp/data-wt --force
 
       # ── Build Vite app ────────────────────────────────────────────────────
       - uses: actions/setup-node@v4

@@ -36,20 +36,44 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      # ── Restore web/public from data branch ───────────────────────────────
+      - name: Restore web/public from data branch
+        run: |
+          git fetch origin data 2>/dev/null || true
+          if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
+            git worktree add --detach /tmp/data-wt origin/data
+            mkdir -p web/public
+            rsync -a --exclude='.git' /tmp/data-wt/ web/public/
+            git worktree remove /tmp/data-wt --force
+          else
+            echo "[INFO] No data branch yet"
+          fi
+
       - name: Fetch today's intraday actuals
         run: python python/etl/fetch_today.py
 
       - name: Update status.json (enable tomorrow tab once today ≥18h confirmed)
         run: python python/etl/run_batch.py --status-only
 
-      - name: Commit updated actual + status JSON
+      # ── Push web/public to data branch ────────────────────────────────────
+      - name: Push web/public to data branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add web/public/actual/ web/public/status.json
-          git diff --staged --quiet && echo "No new data" || \
+          git fetch origin data 2>/dev/null || true
+          if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
+            git worktree add --detach /tmp/data-wt origin/data
+          else
+            git worktree add --orphan -b data /tmp/data-wt
+          fi
+          rsync -a --delete --exclude='.git' web/public/ /tmp/data-wt/
+          cd /tmp/data-wt
+          git add -A
+          git diff --staged --quiet && echo "No changes" || \
             git commit -m "chore: intraday $(TZ=Asia/Tokyo date +%H:%M JST)"
-          git push
+          git push origin HEAD:data
+          cd -
+          git worktree remove /tmp/data-wt --force
 
       - uses: actions/setup-node@v4
         with:
