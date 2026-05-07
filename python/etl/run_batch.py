@@ -380,7 +380,13 @@ def _forecast_severity(fc_list: list, cache: pd.DataFrame, config: dict) -> str:
     if not fc_list:
         return "info"
     peak_fc_mw = max(f.forecast_mw for f in fc_list)
-    recent_supply = cache["supply_mw"].dropna().tail(24 * 7).mean() if "supply_mw" in cache.columns else None
+    recent_supply = None
+    if "supply_mw" in cache.columns:
+        supply_df = cache[["ts", "supply_mw"]].dropna(subset=["supply_mw"])
+        # Use weekday-only supply to avoid holiday-reduced capacity skewing the estimate
+        weekday_supply = supply_df[supply_df["ts"].dt.dayofweek < 5].tail(24 * 14)
+        if not weekday_supply.empty:
+            recent_supply = weekday_supply["supply_mw"].mean()
     if recent_supply and recent_supply > 0:
         est_pct = peak_fc_mw / recent_supply * 100
         rr = config.get("anomaly", {}).get("reserve_risk", {})
