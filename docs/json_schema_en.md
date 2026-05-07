@@ -67,6 +67,8 @@ Provides the **current system state (Last Updated / result summaries)** and KPIs
     "peakSupplyMw": 61000.0
   },
 
+  "yesterday": "2025-12-01",
+
   "today": {
     "date": "2025-12-02",
     "peakForecastMw": 57500.0,
@@ -89,6 +91,7 @@ Provides the **current system state (Last Updated / result summaries)** and KPIs
 - `availability`: overall dashboard state
 - `missingDays`, `failedDays`: lists of missing/failed dates (display use)
 - `latest`: most recently processed actuals summary (previous day)
+- `yesterday`: always `today − 1` as an ISO date string. Unlike `coverageTo`, this is purely calendar-based regardless of CSV processing status. Used as the "Yesterday" tab date in the dashboard
 - `today`, `tomorrow`: today/tomorrow forecast summaries
 
 ---

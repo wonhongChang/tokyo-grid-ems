@@ -23,11 +23,23 @@ FEATURE_COLS: list[str] = [
     # Rolling stats
     "roll_4w_mean", "roll_4w_std",
     # Holiday lag correction
-    "lag_last_biz_hour",       # same hour on the last non-holiday weekday
-    "lag_last_nonhol_hour",    # same hour on the last non-public-holiday day
-    "consec_holiday_len",      # consecutive holiday/weekend days immediately before this date
-    "days_since_holiday_end",  # calendar days since the holiday period ended (capped at 7)
-    "major_holiday_season",    # 0=normal 1=golden_week_zone 2=obon_zone 3=newyear_zone
+    "lag_last_biz_hour",
+    "lag_last_nonhol_hour",
+    "consec_holiday_len",
+    "days_since_holiday_end",
+    "major_holiday_season",
+    # Temperature
+    "temp_c", "cooling_degree", "heating_degree",
+    "temp_anomaly_7d",   # temp_c minus trailing 7-day mean (how abnormal vs recent week)
+    "temp_anomaly_doy",  # temp_c minus historical (month, hour) mean (how abnormal vs season)
+    # Interaction: holiday × heat surplus (captures post-holiday demand spike on hot days)
+    "holiday_x_heat",                    # consec_holiday_len × max(0, temp_anomaly_7d)
+    "post_holiday_x_heat",               # int(1 ≤ days_since_holiday_end ≤ 2) × max(0, temp_anomaly_7d)
+    "business_hour_x_post_holiday_heat", # int(9≤h≤18) × int(1≤dsh≤2) × max(0, temp_anomaly_7d)
+    # Lag contamination context (why is the lag low/high?)
+    "lag_24h_dsh",    # days_since_holiday_end(yesterday) — was yesterday post-holiday?
+    "lag_24h_consec", # consec_holiday_len(yesterday) — how many holidays preceded yesterday?
+    "lag_168h_dsh",   # days_since_holiday_end(7 days ago)
 ]
 
 # Golden Week / Obon / New Year day-of-year zones (wider than the holiday itself
@@ -116,12 +128,17 @@ def _date_features(dates: list[date]) -> dict[date, dict]:
     """Return a dict mapping each date to its holiday-lag correction values."""
     result: dict[date, dict] = {}
     for d in dates:
+        lag_1d = d - timedelta(days=1)
+        lag_7d = d - timedelta(days=7)
         result[d] = {
-            "last_biz_day":          _last_biz_day(d),
-            "last_nonhol_day":       _last_nonhol_day(d),
-            "consec_holiday_len":    _consec_holiday_len(d),
+            "last_biz_day":           _last_biz_day(d),
+            "last_nonhol_day":        _last_nonhol_day(d),
+            "consec_holiday_len":     _consec_holiday_len(d),
             "days_since_holiday_end": _days_since_holiday_end(d),
-            "major_holiday_season":  _major_holiday_season(d),
+            "major_holiday_season":   _major_holiday_season(d),
+            "lag_24h_dsh":            _days_since_holiday_end(lag_1d),
+            "lag_24h_consec":         _consec_holiday_len(lag_1d),
+            "lag_168h_dsh":           _days_since_holiday_end(lag_7d),
         }
     return result
 
@@ -170,6 +187,15 @@ def _add_holiday_lag_cols(
     df["major_holiday_season"] = df["ts"].dt.date.map(
         lambda d: dfeat.get(d, {}).get("major_holiday_season", 0)
     )
+    df["lag_24h_dsh"] = df["ts"].dt.date.map(
+        lambda d: dfeat.get(d, {}).get("lag_24h_dsh", 0)
+    )
+    df["lag_24h_consec"] = df["ts"].dt.date.map(
+        lambda d: dfeat.get(d, {}).get("lag_24h_consec", 0)
+    )
+    df["lag_168h_dsh"] = df["ts"].dt.date.map(
+        lambda d: dfeat.get(d, {}).get("lag_168h_dsh", 0)
+    )
     return df
 
 
@@ -180,10 +206,10 @@ def _add_holiday_lag_cols(
 def build_training_features(cache: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     """Return (X, y) from hourly cache for training.
 
-    Rows with missing actual_mw or any feature column are dropped.
-    Lag features use timestamp-shift merge so gaps in the cache are handled
-    correctly. Rolling stats are computed within each (hour, dayofweek) group
-    with shift(1) to prevent self-inclusion.
+    Rows with missing actual_mw or any non-temperature feature column are dropped.
+    Temperature features (temp_c, cooling_degree, heating_degree) are included when
+    the cache has a temp_c column with sufficient coverage; rows missing temp_c are
+    also dropped via dropna.
     """
     df = _ensure_tz(cache)
     df = df[df["actual_mw"].notna()].sort_values("ts").reset_index(drop=True)
@@ -223,12 +249,40 @@ def build_training_features(cache: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
     dfeat = _date_features(sorted(set(df["ts"].dt.date)))
     df = _add_holiday_lag_cols(df, ts_to_mw, dfeat)
 
+    # Temperature features
+    if "temp_c" in df.columns:
+        df["cooling_degree"]  = (df["temp_c"] - 22.0).clip(lower=0.0)
+        df["heating_degree"]  = (10.0 - df["temp_c"]).clip(lower=0.0)
+        # How abnormal vs recent 7 days (shift 1h to prevent self-inclusion)
+        _t7 = df["temp_c"].shift(1).rolling(168, min_periods=24).mean()
+        df["temp_anomaly_7d"] = df["temp_c"] - _t7
+        # How abnormal vs historical same (month, hour) average
+        _mh = df.groupby(["month", "hour"])["temp_c"].transform("mean")
+        df["temp_anomaly_doy"] = df["temp_c"] - _mh
+    else:
+        df["temp_c"]           = np.nan
+        df["cooling_degree"]   = np.nan
+        df["heating_degree"]   = np.nan
+        df["temp_anomaly_7d"]  = np.nan
+        df["temp_anomaly_doy"] = np.nan
+
+    # Interaction features: holiday × heat surplus
+    _heat7d = df["temp_anomaly_7d"].clip(lower=0.0)
+    _post_hol = df["days_since_holiday_end"].between(1, 2).astype(float)
+    df["holiday_x_heat"]                    = df["consec_holiday_len"] * _heat7d
+    df["post_holiday_x_heat"]               = _post_hol * _heat7d
+    df["business_hour_x_post_holiday_heat"] = df["hour"].between(9, 18).astype(float) * _post_hol * _heat7d
+
     df = df.dropna(subset=FEATURE_COLS).reset_index(drop=True)
     return df[FEATURE_COLS].copy(), df["actual_mw"].copy()
 
 
 def build_inference_features(cache: pd.DataFrame, target_date: date) -> pd.DataFrame:
-    """Return a 24-row DataFrame (one row per hour) for predicting target_date."""
+    """Return a 24-row DataFrame (one row per hour) for predicting target_date.
+
+    cache may contain virtual rows (NaN actual_mw, non-NaN temp_c) for target_date
+    added by run_batch._extend_cache_with_forecast_weather.
+    """
     cache = _ensure_tz(cache)
     notna = cache[cache["actual_mw"].notna()].copy()
 
@@ -238,6 +292,38 @@ def build_inference_features(cache: pd.DataFrame, target_date: date) -> pd.DataF
 
     is_hol  = int(_is_holiday(target_date))
     dfeat   = _date_features([target_date])
+
+    # Temperature lookup for target_date (includes virtual forecast rows)
+    if "temp_c" in cache.columns:
+        day_temp = cache[cache["ts"].dt.date == target_date][["ts", "temp_c"]].dropna(subset=["temp_c"])
+        hour_to_temp: dict[int, float] = {
+            int(r["ts"].hour): float(r["temp_c"]) for _, r in day_temp.iterrows()
+        }
+    else:
+        hour_to_temp = {}
+
+    # Trailing 7-day mean temperature (same for all 24 hours of target_date)
+    _cutoff = pd.Timestamp(
+        year=target_date.year, month=target_date.month, day=target_date.day, tz=JST
+    )
+    _past_168 = cache[
+        (cache["ts"] < _cutoff) &
+        (cache["ts"] >= _cutoff - pd.Timedelta(hours=168))
+    ]["temp_c"].dropna() if "temp_c" in cache.columns else pd.Series(dtype=float)
+    _past_7d_mean = float(_past_168.mean()) if len(_past_168) >= 24 else float("nan")
+
+    # Historical (month, hour) mean temperature from past data
+    if "temp_c" in cache.columns:
+        _hist = cache[cache["ts"].dt.date < target_date].copy()
+        _mh_dict: dict = (
+            _hist.assign(_m=_hist["ts"].dt.month, _h=_hist["ts"].dt.hour)
+                 .groupby(["_m", "_h"])["temp_c"]
+                 .mean()
+                 .to_dict()
+        )
+    else:
+        _mh_dict = {}
+    _target_month = target_date.month
 
     rows = []
     for hour in range(24):
@@ -259,6 +345,7 @@ def build_inference_features(cache: pd.DataFrame, target_date: date) -> pd.DataF
         ].tail(4)
 
         feat = dfeat[target_date]
+
         def _lag_day(day_key: str) -> float:
             d = feat.get(day_key)
             if d is None:
@@ -267,24 +354,52 @@ def build_inference_features(cache: pd.DataFrame, target_date: date) -> pd.DataF
                                   hour=hour, tz=JST)
             return ts_to_mw.get(key_ts, np.nan)
 
+        temp_val = hour_to_temp.get(hour, float("nan"))
+        _t_ok    = not np.isnan(temp_val)
+        cooling  = max(0.0, temp_val - 22.0) if _t_ok else np.nan
+        heating  = max(0.0, 10.0 - temp_val) if _t_ok else np.nan
+        _a7d_ref = _past_7d_mean
+        a7d      = (temp_val - _a7d_ref) if (_t_ok and not np.isnan(_a7d_ref)) else np.nan
+        _adoy_ref = _mh_dict.get((_target_month, hour), float("nan"))
+        adoy      = (temp_val - _adoy_ref) if (_t_ok and not np.isnan(_adoy_ref)) else np.nan
+
+        # Interaction features
+        dsh = feat["days_since_holiday_end"]
+        _heat7d    = max(0.0, a7d) if not np.isnan(a7d) else np.nan
+        _post_hol  = int(1 <= dsh <= 2)
+        hol_x_heat  = feat["consec_holiday_len"] * _heat7d  # nan if _heat7d is nan
+        post_x_heat = _post_hol * _heat7d                   # nan if _heat7d is nan
+        biz_x_heat  = int(9 <= hour <= 18) * _post_hol * _heat7d  # nan if _heat7d is nan
+
         rows.append({
-            "hour":                  hour,
-            "dayofweek":             dow,
-            "month":                 ts.month,
-            "is_holiday":            is_hol,
-            "is_weekend":            int(dow >= 5),
-            "is_non_business_day":   int(_is_nonworking(target_date)),
-            "lag_24h":               lag_24h,
-            "lag_48h":               lag_48h,
-            "lag_168h":              lag_168h,
-            "lag_336h":              lag_336h,
-            "roll_4w_mean":          float(same["actual_mw"].mean()) if len(same) > 0 else np.nan,
-            "roll_4w_std":           float(same["actual_mw"].std())  if len(same) > 1 else 0.0,
-            "lag_last_biz_hour":     _lag_day("last_biz_day"),
-            "lag_last_nonhol_hour":  _lag_day("last_nonhol_day"),
-            "consec_holiday_len":    feat["consec_holiday_len"],
+            "hour":                   hour,
+            "dayofweek":              dow,
+            "month":                  ts.month,
+            "is_holiday":             is_hol,
+            "is_weekend":             int(dow >= 5),
+            "is_non_business_day":    int(_is_nonworking(target_date)),
+            "lag_24h":                lag_24h,
+            "lag_48h":                lag_48h,
+            "lag_168h":               lag_168h,
+            "lag_336h":               lag_336h,
+            "roll_4w_mean":           float(same["actual_mw"].mean()) if len(same) > 0 else np.nan,
+            "roll_4w_std":            float(same["actual_mw"].std())  if len(same) > 1 else 0.0,
+            "lag_last_biz_hour":      _lag_day("last_biz_day"),
+            "lag_last_nonhol_hour":   _lag_day("last_nonhol_day"),
+            "consec_holiday_len":     feat["consec_holiday_len"],
             "days_since_holiday_end": feat["days_since_holiday_end"],
-            "major_holiday_season":  feat["major_holiday_season"],
+            "major_holiday_season":   feat["major_holiday_season"],
+            "temp_c":           temp_val,
+            "cooling_degree":   cooling,
+            "heating_degree":   heating,
+            "temp_anomaly_7d":  a7d,
+            "temp_anomaly_doy": adoy,
+            "holiday_x_heat":                    hol_x_heat,
+            "post_holiday_x_heat":               post_x_heat,
+            "business_hour_x_post_holiday_heat": biz_x_heat,
+            "lag_24h_dsh":    feat["lag_24h_dsh"],
+            "lag_24h_consec": feat["lag_24h_consec"],
+            "lag_168h_dsh":   feat["lag_168h_dsh"],
         })
 
     return pd.DataFrame(rows)[FEATURE_COLS]

@@ -17,7 +17,7 @@
 
 ---
 
-## Feature Design (17 features)
+## Feature Design (28 features)
 
 ```python
 # Calendar features
@@ -151,7 +151,7 @@ Results saved to `web/public/model_eval.json`.
 
 ## Implementation Status
 
-1. ✅ `feature_builder.py` with 17 features + unit tests
+1. ✅ `feature_builder.py` with 28 features + unit tests
 2. ✅ `lgbm_model.py` (fit / predict / save / load)
 3. ✅ Walk-forward CV script (`python/eval/compare_models.py`)
 4. ✅ `run_batch.py` integration (train/save; baseline display until Phase 5-B)

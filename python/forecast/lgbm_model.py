@@ -86,13 +86,16 @@ class LGBMForecaster:
             lo  = round(float(q10[hour]), 1)
             mid = round(float(q50[hour]), 1)
             hi  = round(float(q90[hour]), 1)
+            # p99 = 2× half-width beyond q10/q90, approximating 99th pct interval
+            half_lo = max(0.0, mid - lo)
+            half_hi = max(0.0, hi - mid)
             result.append(HourlyForecast(
                 ts=ts.isoformat(timespec="seconds"),
                 forecast_mw=mid,
                 p95_lower_mw=lo,
                 p95_upper_mw=hi,
-                p99_lower_mw=lo,
-                p99_upper_mw=hi,
+                p99_lower_mw=round(lo - half_lo, 1),
+                p99_upper_mw=round(hi + half_hi, 1),
             ))
         return result
 

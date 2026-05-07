@@ -83,7 +83,7 @@ def save_state(out_dir: Path, state: dict) -> None:
 # Hourly cache (parquet)
 # ---------------------------------------------------------------------------
 
-_CACHE_COLS = ["ts", "actual_mw", "forecast_mw", "usage_pct", "supply_mw"]
+_CACHE_COLS = ["ts", "actual_mw", "forecast_mw", "usage_pct", "supply_mw", "temp_c"]
 _CACHE_PATH_NAME = ".hourly_cache.parquet"
 
 
@@ -93,6 +93,8 @@ def load_hourly_cache(out_dir: Path) -> pd.DataFrame:
         df = pd.read_parquet(p)
         if "ts" in df.columns and df["ts"].dt.tz is None:
             df["ts"] = df["ts"].dt.tz_localize("Asia/Tokyo")
+        if "temp_c" not in df.columns:
+            df["temp_c"] = float("nan")
         return df
     return pd.DataFrame(columns=_CACHE_COLS)
 
@@ -101,7 +103,8 @@ def save_hourly_cache(out_dir: Path, cache: pd.DataFrame) -> None:
     if cache.empty:
         return
     (out_dir / _CACHE_PATH_NAME).parent.mkdir(parents=True, exist_ok=True)
-    cache[_CACHE_COLS].drop_duplicates(subset=["ts"]).sort_values("ts").to_parquet(
+    save_cols = [c for c in _CACHE_COLS if c in cache.columns]
+    cache[save_cols].drop_duplicates(subset=["ts"]).sort_values("ts").to_parquet(
         out_dir / _CACHE_PATH_NAME, index=False
     )
 
@@ -219,7 +222,100 @@ def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = 
     }
 
 
-def _build_today_alerts(out_dir: Path, today: date, config: dict) -> None:
+def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd.DataFrame:
+    """Inject actual_mw from actual/ JSONs for dates missing from cache.
+
+    Covers today (lag_24h for tomorrow) and any recent days not yet in the
+    hourly cache (e.g. yesterday when TEPCO CSV hasn't been published yet).
+    Looks back up to 7 days to pick up any actual/ files absent from cache.
+    """
+    cache_dates = set(cache[cache["actual_mw"].notna()]["ts"].dt.date)
+
+    # Collect all actual JSON dates that are not fully in cache
+    updates: dict = {}
+    actual_dir = out_dir / "actual"
+    lookback = [today - timedelta(days=i) for i in range(8)]
+    for d in lookback:
+        if d in cache_dates:
+            continue
+        actual_path = actual_dir / f"{d.isoformat()}.json"
+        if not actual_path.exists():
+            continue
+        try:
+            data = json.loads(actual_path.read_text(encoding="utf-8"))
+            is_today = (d == today)
+            for pt in data.get("series", []):
+                actual_mw = pt.get("actualMw")
+                # For today's missing hours, fall back to TEPCO's published forecast
+                if actual_mw is None:
+                    if is_today:
+                        actual_mw = pt.get("tepcoForecastMw")
+                    if actual_mw is None:
+                        continue
+                ts = pd.Timestamp(pt["ts"]).tz_convert("Asia/Tokyo")
+                updates[ts] = {
+                    "actual_mw":   actual_mw,
+                    "forecast_mw": pt.get("tepcoForecastMw"),
+                    "usage_pct":   pt.get("usagePct"),
+                    "supply_mw":   pt.get("supplyMw"),
+                }
+        except Exception as e:
+            print(f"[WARN] Failed to read actual/{d.isoformat()}.json: {e}", file=sys.stderr)
+
+    if not updates:
+        return cache
+
+    upd_df = pd.DataFrame(
+        [{"ts": ts, **vals} for ts, vals in updates.items()]
+    ).set_index("ts")
+
+    result = cache.copy().set_index("ts")
+    update_cols = [c for c in ("actual_mw", "forecast_mw", "usage_pct", "supply_mw")
+                   if c in upd_df.columns and c in result.columns]
+    result.update(upd_df[update_cols])
+    result = result.reset_index()
+
+    # Add rows for timestamps not yet in cache at all
+    new_ts = set(upd_df.index) - set(result["ts"])
+    if new_ts:
+        new_rows = []
+        for ts in new_ts:
+            row: dict = {"ts": ts, "temp_c": float("nan")}
+            for c in ("actual_mw", "forecast_mw", "usage_pct", "supply_mw"):
+                row[c] = float(upd_df.loc[ts, c]) if c in upd_df.columns else float("nan")
+            new_rows.append({c: row.get(c, float("nan")) for c in _CACHE_COLS})
+        result = pd.concat(
+            [result, pd.DataFrame(new_rows)], ignore_index=True
+        ).sort_values("ts").reset_index(drop=True)
+
+    injected_dates = sorted({ts.date() for ts in updates})
+    print(f"[STATUS] Injected actuals for {[d.isoformat() for d in injected_dates]} ({len(updates)} rows)")
+    return result
+
+
+def _make_day_context(inf_features: pd.DataFrame, config: dict) -> dict:
+    """Build day-level context dict for anomaly detector enrichment."""
+    adj_cfg   = config.get("adjustment", {}).get("post_holiday_timeband_guard", {})
+    min_consec = int(adj_cfg.get("min_consec_holiday_len", 3))
+    max_dsh    = int(adj_cfg.get("max_days_since_holiday_end", 1))
+    try:
+        row0 = inf_features.iloc[0]
+        post_holiday_early_morning = (
+            float(row0["consec_holiday_len"]) >= min_consec
+            and float(row0["days_since_holiday_end"]) <= max_dsh
+        )
+    except Exception:
+        post_holiday_early_morning = False
+    return {"post_holiday_early_morning": post_holiday_early_morning}
+
+
+def _build_today_alerts(
+    out_dir: Path,
+    today: date,
+    config: dict,
+    day_context: dict | None = None,
+) -> dict | None:
+    """Build and write today's alerts JSON.  Returns the alerts summary dict, or None on failure."""
     actual_path  = out_dir / "actual"   / f"{today.isoformat()}.json"
     forecast_path = out_dir / "forecast" / f"{today.isoformat()}.json"
     alerts_path  = out_dir / "alerts"   / f"{today.isoformat()}.json"
@@ -255,11 +351,14 @@ def _build_today_alerts(out_dir: Path, today: date, config: dict) -> None:
             for pt in fc_data.get("series", [])
         ]
 
-        events = detect_anomalies(hourly, fc_list, config.get("anomaly", {}))
-        write_json(alerts_path, build_alerts_json(today, events))
+        events = detect_anomalies(hourly, fc_list, config.get("anomaly", {}), day_context)
+        payload = build_alerts_json(today, events)
+        write_json(alerts_path, payload)
         print(f"[STATUS] Today alerts: {len(events)} events -> {alerts_path.name}")
+        return payload.get("summary")
     except Exception as e:
         print(f"[WARN] Failed to build today alerts: {e}", file=sys.stderr)
+    return None
 
 
 
@@ -303,23 +402,35 @@ def build_status_json(
     tomorrow_fc: list,
     cache: pd.DataFrame,
     config: dict,
+    today_severity: str | None = None,
 ) -> dict:
     coverage_to = max(ok_set) if ok_set else None
     latest = summaries.get(coverage_to.isoformat()) if coverage_to else None
     missing = compute_missing_days(csv_dates)
     availability = "ok" if ok_set else ("failed" if fail_set else "not_yet_available")
 
-    def _fc_summary(d: date, fc_list: list) -> dict | None:
+    def _fc_summary(d: date, fc_list: list, override_sev: str | None = None) -> dict | None:
         if not fc_list:
             return None
         peak = peak_of_forecasts(fc_list)
+        sev = override_sev if override_sev is not None else _forecast_severity(fc_list, cache, config)
         return {
             "date": d.isoformat(),
             "peakForecastMw": peak["forecastMw"] if peak else None,
             "peakForecastAt": peak["at"] if peak else None,
-            "severity": _forecast_severity(fc_list, cache, config),
+            "severity": sev,
         }
 
+    def _alerts_severity(summary: dict | None) -> str:
+        if not summary:
+            return "info"
+        if summary.get("critical", 0) > 0:
+            return "critical"
+        if summary.get("warning", 0) > 0:
+            return "warning"
+        return "info"
+
+    yesterday = today - timedelta(days=1)
     return {
         "project": "tokyo-grid-ems",
         "schemaVersion": "1.0.0",
@@ -330,13 +441,27 @@ def build_status_json(
         "missingDays": missing,
         "failedDays": [d.isoformat() for d in sorted(fail_set)],
         "latest": latest,
-        "today": _fc_summary(today, today_fc),
+        "yesterday": yesterday.isoformat(),
+        "today": _fc_summary(today, today_fc, today_severity),
         "tomorrow": _fc_summary(tomorrow, tomorrow_fc),
     }
 
 # ---------------------------------------------------------------------------
 # LightGBM helpers
 # ---------------------------------------------------------------------------
+
+def _try_load_lgbm(out_dir: Path):
+    """Load saved LGBMForecaster from disk. Returns forecaster or None."""
+    model_path = out_dir / _LGBM_MODEL_NAME
+    if not model_path.exists():
+        return None
+    try:
+        from python.forecast.lgbm_model import LGBMForecaster
+        return LGBMForecaster.load(model_path)
+    except Exception as e:
+        print(f"[WARN] LightGBM load failed: {e}", file=sys.stderr)
+        return None
+
 
 def _try_train_lgbm(cache: pd.DataFrame, out_dir: Path):
     """Train and save LGBMForecaster. Returns forecaster or None on any failure."""
@@ -357,13 +482,79 @@ def _try_train_lgbm(cache: pd.DataFrame, out_dir: Path):
 
 
 
+def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> pd.DataFrame:
+    """Append virtual rows (NaN actual_mw, non-NaN temp_c) for upcoming days.
+
+    build_inference_features looks up temp_c for the target_date from cache,
+    so these virtual rows make forecast temperatures available to the model.
+    """
+    try:
+        from python.etl.fetch_weather import fetch_forecast_temps
+        weather = fetch_forecast_temps(days=days)
+    except Exception as e:
+        print(f"[WARN] Forecast weather fetch failed: {e}", file=sys.stderr)
+        return cache
+
+    existing_ts = set(cache["ts"])
+    new_rows = weather[~weather["ts"].isin(existing_ts)].copy()
+    if new_rows.empty:
+        return cache
+
+    for col in _CACHE_COLS:
+        if col not in new_rows.columns:
+            new_rows[col] = float("nan")
+
+    result = pd.concat([cache, new_rows[_CACHE_COLS]], ignore_index=True)
+    return result.sort_values("ts").reset_index(drop=True)
+
+
+def _make_adjuster(config: dict):
+    """Instantiate AnalogousDayAdjuster from config. Returns None on import failure."""
+    try:
+        from python.forecast.adjustment import AnalogousDayAdjuster
+        return AnalogousDayAdjuster(config)
+    except Exception as e:
+        print(f"[WARN] AnalogousDayAdjuster init failed: {e}", file=sys.stderr)
+        return None
+
+
+def _make_guard(config: dict):
+    """Instantiate PostHolidayTimeBandGuard from config. Returns None on import failure."""
+    try:
+        from python.forecast.adjustment import PostHolidayTimeBandGuard
+        cfg = config.get("adjustment", {}).get("post_holiday_timeband_guard", {})
+        if not cfg.get("enabled", True):
+            return None
+        return PostHolidayTimeBandGuard(config)
+    except Exception as e:
+        print(f"[WARN] PostHolidayTimeBandGuard init failed: {e}", file=sys.stderr)
+        return None
+
+
 def _get_forecast(
+    forecaster,
     cache: pd.DataFrame,
     target_date: date,
     n_weeks: int,
     min_samples: int,
+    adjuster=None,
+    guard=None,
 ) -> tuple[list, str]:
-    """Return (fc_list, model_name)."""
+    """Return (fc_list, model_name).
+
+    Pipeline: LightGBM → AnalogousDayAdjuster → PostHolidayTimeBandGuard → output.
+    Falls back to baseline when LightGBM is unavailable or fails.
+    """
+    if forecaster is not None:
+        try:
+            from python.forecast.feature_builder import build_inference_features
+            inf_features = build_inference_features(cache, target_date)
+            raw = forecaster.predict(target_date, cache)
+            adjusted = adjuster.adjust(forecaster, raw, cache, target_date, inf_features) if adjuster else raw
+            guarded  = guard.apply(raw, adjusted, inf_features) if guard else adjusted
+            return guarded, "lgbm_quantile_q50"
+        except Exception as e:
+            print(f"[WARN] LightGBM predict failed for {target_date}: {e}", file=sys.stderr)
     return compute_forecast(cache, target_date, n_weeks, min_samples), "baseline_dow_hour_mean"
 
 
@@ -372,6 +563,20 @@ def _get_forecast(
 # ---------------------------------------------------------------------------
 
 def _run_status_only(out_dir: Path, config: dict) -> None:
+    from python.etl.fetch_weather import enrich_cache_with_weather
+    from python.etl.fetch_today import fetch_csv, parse_hourly, write_actual_json
+
+    # Fetch today's intraday actuals from TEPCO before building forecasts/alerts
+    try:
+        text = fetch_csv()
+        date_iso, series = parse_hourly(text)
+        if date_iso and series:
+            write_actual_json(date_iso, series, out_dir)
+    except SystemExit:
+        pass  # fetch_csv calls sys.exit on HTTP error — treat as soft failure
+    except Exception as e:
+        print(f"[WARN] Intraday fetch failed: {e}", file=sys.stderr)
+
     state = load_state(out_dir)
     ok_set   = {date.fromisoformat(d) for d in state.get("okDates",   [])}
     fail_set = {date.fromisoformat(d) for d in state.get("failedDates", [])}
@@ -385,19 +590,54 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
 
-    today_fc,    today_model    = _get_forecast(hourly_cache, today,    n_weeks, min_samples)
-    tomorrow_fc, tomorrow_model = _get_forecast(hourly_cache, tomorrow, n_weeks, min_samples)
+    # Fill any missing temp_c in recent cache rows, then extend with forecast weather
+    hourly_cache   = enrich_cache_with_weather(hourly_cache)
+    extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
+
+    forecaster = _try_load_lgbm(out_dir)
+    adjuster   = _make_adjuster(config)
+    guard      = _make_guard(config)
+
+    # Inject recent missing actuals (yesterday + today) for both forecasts
+    extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
+
+    # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
+    today_fc, today_model = _get_forecast(
+        forecaster, extended_with_actuals, today, n_weeks, min_samples, adjuster, guard
+    )
+
+    # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
+    tomorrow_fc, tomorrow_model = _get_forecast(
+        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, adjuster, guard
+    )
 
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
                build_forecast_json(today, today_fc, config, today_model))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
                build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
 
-    _build_today_alerts(out_dir, today, config)
+    day_context = None
+    try:
+        from python.forecast.feature_builder import build_inference_features
+        day_context = _make_day_context(build_inference_features(extended_cache, today), config)
+    except Exception:
+        pass
+    alerts_summary = _build_today_alerts(out_dir, today, config, day_context=day_context)
+
+    # Derive today's severity from actual alerts (not from forecast-based reserve risk estimate)
+    today_severity = None
+    if alerts_summary is not None:
+        if alerts_summary.get("critical", 0) > 0:
+            today_severity = "critical"
+        elif alerts_summary.get("warning", 0) > 0:
+            today_severity = "warning"
+        else:
+            today_severity = "info"
 
     write_json(out_dir / "status.json", build_status_json(
         ok_set, fail_set, summaries, ok_set | fail_set,
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
+        today_severity=today_severity,
     ))
     print(f"[STATUS] Updated: model={today_model} tomorrow={'enabled' if tomorrow_fc else 'disabled'}")
 
@@ -501,7 +741,9 @@ def main() -> None:
             fail_set.add(d)
             new_fail += 1
 
-    # Persist state and cache
+    # Enrich with weather, then persist state and cache
+    from python.etl.fetch_weather import enrich_cache_with_weather
+    hourly_cache = enrich_cache_with_weather(hourly_cache)
     save_state(out_dir, {
         "okDates": [d.isoformat() for d in sorted(ok_set)],
         "failedDates": [d.isoformat() for d in sorted(fail_set)],
@@ -509,15 +751,20 @@ def main() -> None:
     })
     save_hourly_cache(out_dir, hourly_cache)
 
-    # Train and save LightGBM on the full updated cache (predictions stay on baseline until Phase 5-B)
-    _try_train_lgbm(hourly_cache, out_dir)
+    # Train and save LightGBM on the weather-enriched cache
+    forecaster = _try_train_lgbm(hourly_cache, out_dir)
+    adjuster   = _make_adjuster(config)
+    guard      = _make_guard(config)
+
+    # Extend cache with forecast weather for today/tomorrow inference
+    extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
 
     # Today / tomorrow forecasts
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
 
-    today_fc,    today_model    = _get_forecast(hourly_cache, today,    n_weeks, min_samples)
-    tomorrow_fc, tomorrow_model = _get_forecast(hourly_cache, tomorrow, n_weeks, min_samples)
+    today_fc,    today_model    = _get_forecast(forecaster, extended_cache, today,    n_weeks, min_samples, adjuster, guard)
+    tomorrow_fc, tomorrow_model = _get_forecast(forecaster, extended_cache, tomorrow, n_weeks, min_samples, adjuster, guard)
 
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
                build_forecast_json(today, today_fc, config, today_model))

@@ -109,7 +109,8 @@ def test_spike_warning_above_p95():
 
 def test_spike_critical_above_p99():
     forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
-    actual = [33000.0] + [30000.0] * 23  # above p99 → critical
+    # p99_upper ≈ 32576; need breach >= 500 → actual >= 33076
+    actual = [33200.0] + [30000.0] * 23  # breach 624 MW → critical
     events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
     spikes = [e for e in events if e["type"] == "spike"]
     assert len(spikes) >= 1
@@ -128,11 +129,73 @@ def test_drop_warning_below_p95():
 
 def test_drop_critical_below_p99():
     forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
-    actual = [27000.0] + [30000.0] * 23  # below p99 → critical
+    # p99_lower ≈ 27424; need breach >= 500 → actual <= 26924
+    actual = [26000.0] + [30000.0] * 23  # breach 1424 MW → critical
     events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
     drops = [e for e in events if e["type"] == "drop"]
     assert len(drops) >= 1
     assert drops[0]["severity"] == "critical"
+
+
+def test_drop_p99_small_breach_is_warning():
+    forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
+    # p99_lower ≈ 27424; actual=27300 → breach=124 MW (0.45%) → warning
+    actual = [27300.0] + [30000.0] * 23
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
+    drops = [e for e in events if e["type"] == "drop"]
+    assert len(drops) >= 1
+    assert drops[0]["severity"] == "warning"
+
+
+def test_spike_p99_small_breach_is_warning():
+    forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
+    # p99_upper ≈ 32576; actual=32700 → breach=124 MW (0.38%) → warning
+    actual = [32700.0] + [30000.0] * 23
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
+    spikes = [e for e in events if e["type"] == "spike"]
+    assert len(spikes) >= 1
+    assert spikes[0]["severity"] == "warning"
+
+
+def test_drop_p99_breach_pct_triggers_critical():
+    # Low-demand scenario: small std → tight bands; 2% breach fires CRITICAL before 500 MW
+    forecasts = _make_forecasts(forecast_mw=10000.0, std=100.0)
+    # p99_lower ≈ 9742; actual=9500 → breach=242 MW, pct=2.55% → critical
+    actual = [9500.0] + [10000.0] * 23
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
+    drops = [e for e in events if e["type"] == "drop"]
+    assert drops[0]["severity"] == "critical"
+
+
+def test_reason_includes_breach_magnitude_for_p99():
+    forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
+    actual = [26000.0] + [30000.0] * 23
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
+    drops = [e for e in events if e["type"] == "drop"]
+    assert "by " in drops[0]["reason"] and "MW" in drops[0]["reason"]
+
+
+def test_day_context_adds_context_note_early_morning():
+    forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
+    # breach at hour 2 (early morning)
+    actual = [30000.0, 30000.0, 26000.0] + [30000.0] * 21
+    day_ctx = {"post_holiday_early_morning": True}
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {}, day_context=day_ctx)
+    drops = [e for e in events if e["type"] == "drop"]
+    assert len(drops) >= 1
+    assert "contextNote" in drops[0]
+    assert "Post-holiday" in drops[0]["contextNote"]
+
+
+def test_day_context_no_note_outside_early_morning():
+    forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
+    # breach at hour 14 (daytime)
+    actual = [30000.0] * 14 + [26000.0] + [30000.0] * 9
+    day_ctx = {"post_holiday_early_morning": True}
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {}, day_context=day_ctx)
+    drops = [e for e in events if e["type"] == "drop"]
+    assert len(drops) >= 1
+    assert "contextNote" not in drops[0]
 
 
 def test_no_spike_drop_within_bounds():

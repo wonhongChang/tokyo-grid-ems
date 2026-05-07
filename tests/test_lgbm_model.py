@@ -22,18 +22,26 @@ def _make_cache(n_days: int = 120, base: str = "2023-01-01") -> pd.DataFrame:
     rng = np.random.default_rng(42)
     start = pd.Timestamp(base, tz=JST)
     n = n_days * 24
+    hours = np.arange(n)
     timestamps = pd.date_range(start, periods=n, freq="h")
     actual_mw = (
         20_000
-        + 2_000 * np.sin(np.pi * np.arange(n) / 12)
+        + 2_000 * np.sin(np.pi * hours / 12)
         + rng.normal(0, 200, n)
     )
+    temp_c = (
+        18.0
+        + 10.0 * np.sin(2 * np.pi * (hours / 24 - 90) / 365)
+        + 3.0  * np.sin(np.pi * hours / 12)
+        + rng.normal(0, 1.0, n)
+    )
     return pd.DataFrame({
-        "ts": timestamps,
-        "actual_mw": actual_mw,
+        "ts":         timestamps,
+        "actual_mw":  actual_mw,
         "forecast_mw": actual_mw,
-        "usage_pct": actual_mw / 250,
-        "supply_mw": np.full(n, 25_000.0),
+        "usage_pct":  actual_mw / 250,
+        "supply_mw":  np.full(n, 25_000.0),
+        "temp_c":     temp_c,
     })
 
 
@@ -110,6 +118,20 @@ def test_q50_lte_q90(fitted_forecaster, big_cache):
 def test_forecast_mw_positive(fitted_forecaster, big_cache):
     for f in fitted_forecaster.predict(date(2023, 5, 1), big_cache):
         assert f.forecast_mw > 0
+
+
+def test_p99_wider_than_p95(fitted_forecaster, big_cache):
+    for f in fitted_forecaster.predict(date(2023, 5, 1), big_cache):
+        assert f.p99_lower_mw <= f.p95_lower_mw
+        assert f.p99_upper_mw >= f.p95_upper_mw
+
+
+def test_p99_expansion_doubles_half_width(fitted_forecaster, big_cache):
+    for f in fitted_forecaster.predict(date(2023, 5, 1), big_cache):
+        half_lo = max(0.0, f.forecast_mw - f.p95_lower_mw)
+        half_hi = max(0.0, f.p95_upper_mw - f.forecast_mw)
+        assert f.p99_lower_mw == pytest.approx(f.p95_lower_mw - half_lo, abs=0.2)
+        assert f.p99_upper_mw == pytest.approx(f.p95_upper_mw + half_hi, abs=0.2)
 
 
 # ---------------------------------------------------------------------------

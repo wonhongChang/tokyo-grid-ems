@@ -3,6 +3,9 @@ forecast:
   min_samples_per_slot: 4  # minimum data points per (dow, hour) slot to generate forecast
 
 anomaly:
+  spike_drop:
+    critical_breach_mw: 500      # p99 breach must exceed this MW to be CRITICAL
+    critical_breach_pct: 2.0     # OR this % of actual to be CRITICAL (whichever first)
   reserve_risk:
     warning_pct: 90.0
     critical_pct: 95.0
@@ -10,3 +13,35 @@ anomaly:
     ewma_alpha: 0.3
     threshold_mw: 800.0
     sustained_hours: 3
+
+adjustment:
+  enabled: true
+  analogous_day:
+    month_window: 1          # ±months for candidate search
+    temp_anomaly_tol: 4.0    # max |candidate_anomaly - target_anomaly| in °C
+    consec_holiday_tol: 2    # max |candidate_consec - target_consec| in days
+    min_candidates: 1        # minimum candidates required to apply any shift
+    max_candidates: 5        # cap on candidates used (most-recent first)
+    same_weekday_required: false
+    weekday_type_required: true  # weekday vs non-working-day must match
+    shift_shrinkage: 0.7         # shrinkage for ≥2 candidates
+    single_candidate_shrinkage: 0.5  # shrinkage when only 1 candidate
+    max_abs_shift_mw: 2500       # hard cap on per-hour shift (MW)
+
+  post_holiday_timeband_guard:
+    enabled: true
+    min_consec_holiday_len: 3    # only fires after extended holidays (GW/Obon/NY)
+    max_days_since_holiday_end: 1  # only first business day back
+
+    early_morning:
+      hours: [1, 2, 3, 4, 5, 6]
+      block_positive_shift: true   # prevent adjuster from over-raising overnight
+      downward_offset_mw: 0        # extra downward push (0 = block-only for now)
+      max_downward_offset_mw: 600
+
+    daytime:
+      hours: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+      min_temp_anomaly_7d: 2.0     # per-hour check: only when that hour is anomalously hot
+      block_negative_shift: true   # prevent adjuster from pushing midday forecast down
+      upward_offset_mw: 300        # conservative upward push on post-long-holiday hot days
+      max_upward_offset_mw: 900

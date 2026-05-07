@@ -10,14 +10,14 @@
 | 항목 | 현재 (baseline) | 목표 (LightGBM) |
 |---|---|---|
 | 모델 종류 | 동일 요일 평균/표준편차 | Gradient Boosting (LightGBM) |
-| 피처 수 | 암묵적 2개 (요일·시간) | 명시적 17개 |
+| 피처 수 | 암묵적 2개 (요일·시간) | 명시적 28개 |
 | 공휴일 처리 | 계절 윈도우 수동 선택 | `is_holiday` + 연휴 래그 보정 피처 |
 | 예측 불확실성 | 정규분포 가정 (1.96σ) | quantile regression (q10/q90) |
 | 평가 지표 | 없음 | RMSE, MAE, MAPE |
 
 ---
 
-## 피처 설계 (17개)
+## 피처 설계 (28개)
 
 ```python
 # 캘린더 피처
@@ -44,10 +44,30 @@
 'consec_holiday_len'      # 해당 날짜 직전 연속 비업무일 수
 'days_since_holiday_end'  # 연휴 종료 후 경과 일수 (최대 7, 업무일 중에만 유효)
 'major_holiday_season'    # 0=보통 1=골든위크권 2=오봉권 3=연말연시권
+
+# 기온 피처
+'temp_c'             # 해당 시간 기온 (°C)
+'cooling_degree'     # max(0, temp_c − 22)  냉방 수요 프록시
+'heating_degree'     # max(0, 10 − temp_c)  난방 수요 프록시
+'temp_anomaly_7d'    # temp_c − 직전 7일 이동평균 (최근 이상 고온·저온)
+'temp_anomaly_doy'   # temp_c − 같은 (월, 시간) 역사 평균 (계절 대비 이상)
+
+# 교호 피처 (연휴 × 열 수요)
+'holiday_x_heat'                     # consec_holiday_len × max(0, temp_anomaly_7d)
+'post_holiday_x_heat'                # int(1≤dsh≤2) × max(0, temp_anomaly_7d)
+'business_hour_x_post_holiday_heat'  # int(9≤h≤18) × int(1≤dsh≤2) × max(0, temp_anomaly_7d)
+
+# 래그 오염 컨텍스트 (lag가 낮은 이유를 모델에 알려줌)
+'lag_24h_dsh'    # days_since_holiday_end(어제) — 어제가 연휴 직후였는가
+'lag_24h_consec' # consec_holiday_len(어제)    — 어제 전에 연속 연휴가 몇 일이었는가
+'lag_168h_dsh'   # days_since_holiday_end(7일 전)
 ```
 
 > **연휴 래그 보정 배경**: 골든위크 직후처럼 lag_24h/lag_168h가 연휴(저수요)를 가리키는 경우,  
 > lag_last_biz_hour가 직전 평일 수요를 참조해 과소예측을 보정합니다.
+>
+> **래그 오염 컨텍스트 배경**: GW 2일차(예: 5/8)처럼 lag_24h가 "post-GW 1일차"의 낮은 값을 가리킬 때,  
+> lag_24h_consec=5 신호로 모델이 "래그가 낮은 건 GW 때문"임을 인식해 과소예측을 완화합니다.
 
 ---
 

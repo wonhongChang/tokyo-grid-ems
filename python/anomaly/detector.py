@@ -9,17 +9,20 @@ def detect_anomalies(
     hourly: pd.DataFrame,
     forecasts: list[HourlyForecast],
     config: dict,
+    day_context: dict | None = None,
 ) -> list[dict]:
     """
     Run all three detectors and return a merged, deduplicated event list.
 
-    hourly   : one day's hourly DataFrame (ts, actual_mw, usage_pct, supply_mw)
-    forecasts: baseline forecast for this day (may be empty)
-    config   : anomaly block from config.yaml
+    hourly      : one day's hourly DataFrame (ts, actual_mw, usage_pct, supply_mw)
+    forecasts   : baseline forecast for this day (may be empty)
+    config      : anomaly block from config.yaml
+    day_context : optional dict for contextual enrichment, e.g.
+                  {"post_holiday_early_morning": True}
     """
     events: list[dict] = []
     events.extend(_reserve_risk(hourly, config.get("reserve_risk", {})))
-    events.extend(_spike_drop(hourly, forecasts))
+    events.extend(_spike_drop(hourly, forecasts, config.get("spike_drop", {}), day_context))
     events.extend(_drift(hourly, forecasts, config.get("drift", {})))
     return events
 
@@ -71,9 +74,19 @@ def _reserve_risk(hourly: pd.DataFrame, cfg: dict) -> list[dict]:
 # 2. Spike / Drop
 # ---------------------------------------------------------------------------
 
-def _spike_drop(hourly: pd.DataFrame, forecasts: list[HourlyForecast]) -> list[dict]:
+def _spike_drop(
+    hourly: pd.DataFrame,
+    forecasts: list[HourlyForecast],
+    cfg: dict | None = None,
+    day_context: dict | None = None,
+) -> list[dict]:
     if not forecasts:
         return []
+    if cfg is None:
+        cfg = {}
+
+    critical_breach_mw  = float(cfg.get("critical_breach_mw",  500.0))
+    critical_breach_pct = float(cfg.get("critical_breach_pct",   2.0))
 
     # key: "2025-11-01T18" → HourlyForecast
     fc_map = {f.ts[:13]: f for f in forecasts}
@@ -93,6 +106,7 @@ def _spike_drop(hourly: pd.DataFrame, forecasts: list[HourlyForecast]) -> list[d
             continue
 
         actual = float(actual_mw)
+        hour   = ts.hour
         ts_str = ts.isoformat(timespec="seconds")
         end_str = (ts + pd.Timedelta("1h")).isoformat(timespec="seconds")
         interval = {
@@ -101,21 +115,33 @@ def _spike_drop(hourly: pd.DataFrame, forecasts: list[HourlyForecast]) -> list[d
         }
 
         if actual > fc.p99_upper_mw:
-            kind, severity = "spike", "critical"
-            reason = f"Actual {actual:.0f} MW exceeded p99 upper {fc.p99_upper_mw:.0f} MW"
+            breach_mw  = actual - fc.p99_upper_mw
+            breach_pct = breach_mw / actual * 100 if actual > 0 else 0.0
+            kind       = "spike"
+            severity   = "critical" if (breach_mw >= critical_breach_mw or breach_pct >= critical_breach_pct) else "warning"
+            reason     = (
+                f"Actual {actual:.0f} MW exceeded p99 upper {fc.p99_upper_mw:.0f} MW "
+                f"by {breach_mw:.0f} MW ({breach_pct:.2f}%)"
+            )
         elif actual > fc.p95_upper_mw:
             kind, severity = "spike", "warning"
             reason = f"Actual {actual:.0f} MW exceeded p95 upper {fc.p95_upper_mw:.0f} MW"
         elif actual < fc.p99_lower_mw:
-            kind, severity = "drop", "critical"
-            reason = f"Actual {actual:.0f} MW fell below p99 lower {fc.p99_lower_mw:.0f} MW"
+            breach_mw  = fc.p99_lower_mw - actual
+            breach_pct = breach_mw / actual * 100 if actual > 0 else 0.0
+            kind       = "drop"
+            severity   = "critical" if (breach_mw >= critical_breach_mw or breach_pct >= critical_breach_pct) else "warning"
+            reason     = (
+                f"Actual {actual:.0f} MW fell below p99 lower {fc.p99_lower_mw:.0f} MW "
+                f"by {breach_mw:.0f} MW ({breach_pct:.2f}%)"
+            )
         elif actual < fc.p95_lower_mw:
             kind, severity = "drop", "warning"
             reason = f"Actual {actual:.0f} MW fell below p95 lower {fc.p95_lower_mw:.0f} MW"
         else:
             continue
 
-        events.append({
+        event: dict = {
             "id": f"{ts_str}_{kind}",
             "type": kind,
             "severity": severity,
@@ -127,7 +153,15 @@ def _spike_drop(hourly: pd.DataFrame, forecasts: list[HourlyForecast]) -> list[d
             "interval": interval,
             "reason": reason,
             "tags": ["interval"],
-        })
+        }
+
+        if (day_context and day_context.get("post_holiday_early_morning")
+                and 1 <= hour <= 6):
+            event["contextNote"] = (
+                "Post-holiday early morning — model tends to overestimate overnight demand."
+            )
+
+        events.append(event)
     return events
 
 

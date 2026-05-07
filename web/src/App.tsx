@@ -236,7 +236,7 @@ export default function App({ locale, setLocale }: AppProps) {
   const [activeTab, setActiveTab] = useState<TabId>('today')
   const { t } = useT()
 
-  const yesterdayDate = status?.latest?.date ?? status?.coverageTo ?? null
+  const yesterdayDate = status?.yesterday ?? status?.latest?.date ?? status?.coverageTo ?? null
   const todayDate     = status?.today?.date ?? null
   const tomorrowDate  = status?.tomorrow?.date ?? null
 

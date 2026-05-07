@@ -10,14 +10,14 @@
 | 項目 | 現在 (baseline) | 目標 (LightGBM) |
 |---|---|---|
 | モデル種別 | 同曜日平均/標準偏差 | Gradient Boosting (LightGBM) |
-| 特徴量数 | 暗黙的2個 (曜日・時刻) | 明示的 17個 |
+| 特徴量数 | 暗黙的2個 (曜日・時刻) | 明示的 28個 |
 | 祝日処理 | 季節ウィンドウ手動選択 | `is_holiday` + 連休ラグ補正特徴量 |
 | 予測不確実性 | 正規分布仮定 (1.96σ) | quantile regression (q10/q90) |
 | 評価指標 | なし | RMSE, MAE, MAPE |
 
 ---
 
-## 特徴量設計（17個）
+## 特徴量設計（28個）
 
 ```python
 # カレンダー特徴量
@@ -150,7 +150,7 @@ MAPE = mean(abs((actual - forecast) / actual)) * 100
 
 ## 実装状況
 
-1. ✅ `feature_builder.py` 作成 + 単体テスト（17特徴量）
+1. ✅ `feature_builder.py` 作成 + 単体テスト（28特徴量）
 2. ✅ `lgbm_model.py` 作成 (fit / predict / save / load)
 3. ✅ walk-forward CVスクリプト作成 (`python/eval/compare_models.py`)
 4. ✅ `run_batch.py` 統合（訓練・保存、Phase 5-Bまでbaseline表示）

@@ -26,6 +26,7 @@ export interface StatusJSON {
   missingDays: string[]
   failedDays: string[]
   latest: LatestSummary | null
+  yesterday: string | null
   today: ForecastSummary | null
   tomorrow: ForecastSummary | null
 }
