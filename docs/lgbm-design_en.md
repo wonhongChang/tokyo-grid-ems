@@ -1,7 +1,7 @@
 # LightGBM Forecast Model Design
 
 > Phase 5-A: Replace statistical baseline with a LightGBM ML model  
-> No temperature data — calendar and lag features only
+> No temperature data — calendar, lag, and holiday-correction features only
 
 ---
 
@@ -10,22 +10,23 @@
 | Item | Current (baseline) | Target (LightGBM) |
 |---|---|---|
 | Model type | Same-weekday mean/std | Gradient Boosting (LightGBM) |
-| Feature count | Implicit 2 (weekday, hour) | Explicit ~12 |
-| Holiday handling | Manual seasonal window | Auto-learned via `is_holiday` feature |
+| Feature count | Implicit 2 (weekday, hour) | Explicit 17 |
+| Holiday handling | Manual seasonal window | `is_holiday` + holiday lag correction features |
 | Uncertainty | Normal distribution (1.96σ) | Quantile regression (q10/q90) |
 | Evaluation | None | RMSE, MAE, MAPE |
 
 ---
 
-## Feature Design
+## Feature Design (17 features)
 
 ```python
-# Time features (calendar)
-'hour'          # 0–23
-'dayofweek'     # 0(Mon)–6(Sun)
-'month'         # 1–12
-'is_holiday'    # 0/1  (jpholiday)
-'is_weekend'    # 0/1
+# Calendar features
+'hour'                   # 0–23
+'dayofweek'              # 0(Mon)–6(Sun)
+'month'                  # 1–12
+'is_holiday'             # 0/1  (jpholiday — public holidays)
+'is_weekend'             # 0/1  (Sat/Sun)
+'is_non_business_day'    # 0/1  (is_holiday OR is_weekend)
 
 # Lag features (historical actuals)
 'lag_24h'       # actual_mw at same hour yesterday
@@ -33,16 +34,21 @@
 'lag_168h'      # same hour 1 week ago (most important)
 'lag_336h'      # same hour 2 weeks ago
 
-# Rolling statistics (same hour + same weekday over recent N weeks)
+# Rolling statistics (same hour + same weekday over last 4 weeks)
 'roll_4w_mean'  # mean of same (hour, dayofweek) over last 4 weeks
 'roll_4w_std'   # std dev of same (hour, dayofweek) over last 4 weeks
 
-# Supply feature (when available)
-'supply_mw'     # most recently known supply capacity (available at prediction time)
+# Holiday lag correction (prevents underestimation on return-from-holiday days)
+'lag_last_biz_hour'       # actual_mw at same hour on last non-holiday weekday
+'lag_last_nonhol_hour'    # actual_mw at same hour on last non-public-holiday day
+'consec_holiday_len'      # consecutive non-business days immediately before this date
+'days_since_holiday_end'  # calendar days since last holiday period ended (capped at 7)
+'major_holiday_season'    # 0=normal 1=golden_week_zone 2=obon_zone 3=newyear_zone
 ```
 
-> **Lag feature caveat**: At tomorrow's prediction time, only part of today's actuals are confirmed.  
-> lag_24h etc. are exact during training, but during inference must be filled from the last confirmed hour.
+> **Holiday lag correction rationale**: After Golden Week, lag_24h/lag_168h point to low-demand  
+> holiday readings. lag_last_biz_hour references the last working day, correcting for systematic  
+> underestimation of the post-holiday demand surge.
 
 ---
 
@@ -51,11 +57,13 @@
 ```
 python/
   forecast/
-    baseline.py          # Existing statistical model (kept as fallback)
-    lgbm_model.py        # New: LightGBM training/inference
-    feature_builder.py   # New: shared feature engineering
+    baseline.py          # Existing statistical model (kept for display until Phase 5-B)
+    lgbm_model.py        # LightGBM train / infer / save / load
+    feature_builder.py   # Shared feature engineering (training + inference)
+  eval/
+    compare_models.py    # Walk-forward evaluation script
   etl/
-    run_batch.py         # Modified: LightGBM training + prediction integration
+    run_batch.py         # LightGBM training integrated (display stays on baseline until 5-B)
 ```
 
 ---
@@ -64,19 +72,18 @@ python/
 
 ```python
 class LGBMForecaster:
-    def __init__(self, n_estimators=500, learning_rate=0.05):
-        ...
+    MIN_TRAIN_ROWS = 90 * 24  # minimum 90 days
 
     def fit(self, cache: pd.DataFrame) -> None:
-        """Train on hourly_cache. Requires at least 90 days of data."""
-        X, y = build_features(cache)
-        # quantile regression: q10, q50, q90
-        self.model_q10 = lgb.train(params_q10, ...)
-        self.model_q50 = lgb.train(params_q50, ...)
-        self.model_q90 = lgb.train(params_q90, ...)
+        """Train q10/q50/q90 on hourly cache. Pass DataFrame to preserve feature names."""
+        X, y = build_training_features(cache)
+        self.model_q10 = LGBMRegressor(objective='quantile', alpha=0.10, ...).fit(X, y)
+        self.model_q50 = LGBMRegressor(objective='quantile', alpha=0.50, ...).fit(X, y)
+        self.model_q90 = LGBMRegressor(objective='quantile', alpha=0.90, ...).fit(X, y)
 
     def predict(self, target_date: date, cache: pd.DataFrame) -> list[HourlyForecast]:
-        """Return 24-hour forecast for target_date as a list of HourlyForecast."""
+        """Return 24-hour HourlyForecast list for target_date."""
+        X = build_inference_features(cache, target_date)
         ...
 
     def save(self, path: Path) -> None:
@@ -91,61 +98,44 @@ class LGBMForecaster:
 
 ## Uncertainty Estimation: Quantile Regression
 
-The current baseline assumes a normal distribution and constructs p95 intervals as `mean ± 1.96σ`.  
-LightGBM learns the intervals directly via quantile regression:
-
 ```python
-# Train three separate models
 params_q10 = {'objective': 'quantile', 'alpha': 0.10, ...}
 params_q50 = {'objective': 'quantile', 'alpha': 0.50, ...}  # median = point forecast
 params_q90 = {'objective': 'quantile', 'alpha': 0.90, ...}
 ```
 
-Outputs:
+Output mapping:
 - `forecastMw` = q50
 - `p95LowerMw` = q10 (technically 80% interval, reusing existing field)
 - `p95UpperMw` = q90
 
-> Adding temperature features later only requires model retraining; the output interface stays the same.
-
 ---
 
-## run_batch.py Integration Strategy
+## run_batch.py Integration Strategy (Phase 5-A)
+
+In Phase 5-A the model is **trained and saved only** — displayed predictions stay on baseline.  
+The switch to LightGBM predictions happens in Phase 5-B when temperature features are added.
 
 ```python
-from python.forecast.lgbm_model import LGBMForecaster
+# After cache build — train and save (not used for display yet)
+forecaster = _try_train_lgbm(hourly_cache, out_dir)  # writes .lgbm_model.pkl
 
-MODEL_PATH = out_dir / ".lgbm_model.pkl"
-MIN_TRAIN_DAYS = 90
-
-# After cache is built
-if len(hourly_cache) >= MIN_TRAIN_DAYS * 24:
-    forecaster = LGBMForecaster()
-    forecaster.fit(hourly_cache)
-    forecaster.save(MODEL_PATH)
-else:
-    forecaster = None
-
-def get_forecast(target_date):
-    if forecaster:
-        return forecaster.predict(target_date, hourly_cache)
-    return compute_forecast(hourly_cache, target_date, ...)  # baseline fallback
+# Forecast — always baseline until Phase 5-B
+def _get_forecast(forecaster, cache, target_date, n_weeks, min_samples):
+    return compute_forecast(cache, target_date, n_weeks, min_samples), "baseline_dow_hour_mean"
 ```
 
-**Model file management**: `.lgbm_model.pkl` is stored in `web/public/` and cached between Actions runs.  
-Do not add to `.gitignore` — commit it like a cache file.
+**Model file management**: `.lgbm_model.pkl` is stored under `web/public/` for caching between Actions runs.
 
 ---
 
-## Evaluation Method
+## Evaluation
 
 ### Walk-forward Validation
 
 ```
-Full dataset: 2023-01-01 ~ 2026-05-04 (~1220 days)
-
-Train: 2023-01-01 ~ 2025-12-31
-Test:  2026-01-01 ~ 2026-05-04 (most recent 4 months)
+Train:  2023-01-01 – 2025-12-31
+Test:   2026-01-01 – recent (last ~4 months)
 ```
 
 Metrics:
@@ -155,27 +145,27 @@ MAE  = mean(abs(actual - forecast))
 MAPE = mean(abs((actual - forecast) / actual)) * 100
 ```
 
-Results saved to `web/public/model_eval.json` after numeric comparison with baseline.  
-(Can be displayed later as a "Model Performance" card in the UI)
+Results saved to `web/public/model_eval.json`.
 
 ---
 
-## Implementation Steps
+## Implementation Status
 
-1. Write `feature_builder.py` + unit tests
-2. Write `lgbm_model.py` (fit / predict / save / load)
-3. Write walk-forward CV script (`python/eval/compare_models.py`)
-4. Integrate into `run_batch.py`
-5. Add `lightgbm`, `joblib` to `requirements.txt`
-6. Verify model file commit in `.github/workflows/etl.yml`
+1. ✅ `feature_builder.py` with 17 features + unit tests
+2. ✅ `lgbm_model.py` (fit / predict / save / load)
+3. ✅ Walk-forward CV script (`python/eval/compare_models.py`)
+4. ✅ `run_batch.py` integration (train/save; baseline display until Phase 5-B)
+5. ✅ `requirements.txt`: added `lightgbm`, `joblib`, `scikit-learn`
+6. Phase 5-B: add temperature feature, switch display to LightGBM
 
 ---
 
 ## Expected Impact
 
-With lag features alone (no temperature):
-- Reflects consecutive weekday trends (if yesterday was high, today likely is too)
-- Auto-learns day-before/day-after holiday patterns
-- Captures sharp demand swings at seasonal transitions
+Without temperature, lag features alone provide:
+- Continuous weekday trend carry-over (if yesterday was high, today likely is too)
+- Automatic post-holiday demand correction via holiday lag features
+- Capture of demand spikes at seasonal transitions
 
-Expected **10–20% RMSE improvement** over current baseline (limited by lack of temperature data).
+Estimated RMSE improvement over baseline: **10–20%** (limited by lack of temperature).  
+Additional 10–15% improvement expected when temperature is added in Phase 5-B.

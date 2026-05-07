@@ -45,6 +45,9 @@ from python.anomaly.detector import detect_anomalies
 
 JST = ZoneInfo("Asia/Tokyo")
 
+_LGBM_MODEL_NAME = ".lgbm_model.pkl"
+_LGBM_MIN_ROWS   = 90 * 24
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -192,7 +195,7 @@ def build_actual_json(d: date, hourly: pd.DataFrame) -> dict:
     }
 
 
-def build_forecast_json(d: date, fc_list: list, config: dict) -> dict:
+def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = "baseline_dow_hour_mean") -> dict:
     if not fc_list:
         return {
             "date": d.isoformat(),
@@ -207,7 +210,7 @@ def build_forecast_json(d: date, fc_list: list, config: dict) -> dict:
         "timezone": "Asia/Tokyo",
         "availability": "ok",
         "model": {
-            "name": "baseline_dow_hour_mean",
+            "name": model_name,
             "version": "mvp-1",
             "nWeeks": cfg_fc.get("n_weeks", 12),
         },
@@ -332,6 +335,39 @@ def build_status_json(
     }
 
 # ---------------------------------------------------------------------------
+# LightGBM helpers
+# ---------------------------------------------------------------------------
+
+def _try_train_lgbm(cache: pd.DataFrame, out_dir: Path):
+    """Train and save LGBMForecaster. Returns forecaster or None on any failure."""
+    if len(cache) < _LGBM_MIN_ROWS:
+        return None
+    try:
+        from python.forecast.lgbm_model import LGBMForecaster
+        forecaster = LGBMForecaster()
+        forecaster.fit(cache)
+        forecaster.save(out_dir / _LGBM_MODEL_NAME)
+        print(f"[LGBM] Trained and saved -> {_LGBM_MODEL_NAME}")
+        return forecaster
+    except ImportError:
+        return None
+    except Exception as e:
+        print(f"[WARN] LightGBM training failed: {e}", file=sys.stderr)
+        return None
+
+
+
+def _get_forecast(
+    cache: pd.DataFrame,
+    target_date: date,
+    n_weeks: int,
+    min_samples: int,
+) -> tuple[list, str]:
+    """Return (fc_list, model_name)."""
+    return compute_forecast(cache, target_date, n_weeks, min_samples), "baseline_dow_hour_mean"
+
+
+# ---------------------------------------------------------------------------
 # Status-only update (used by intraday workflow)
 # ---------------------------------------------------------------------------
 
@@ -342,15 +378,20 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     summaries: dict[str, dict] = state.get("summaries", {})
     hourly_cache = load_hourly_cache(out_dir)
 
-    cfg_fc     = config.get("forecast", {})
-    n_weeks    = cfg_fc.get("n_weeks", 12)
+    cfg_fc      = config.get("forecast", {})
+    n_weeks     = cfg_fc.get("n_weeks", 12)
     min_samples = cfg_fc.get("min_samples_per_slot", 4)
 
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
 
-    today_fc    = compute_forecast(hourly_cache, today,    n_weeks, min_samples)
-    tomorrow_fc = compute_forecast(hourly_cache, tomorrow, n_weeks, min_samples)
+    today_fc,    today_model    = _get_forecast(hourly_cache, today,    n_weeks, min_samples)
+    tomorrow_fc, tomorrow_model = _get_forecast(hourly_cache, tomorrow, n_weeks, min_samples)
+
+    write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
+               build_forecast_json(today, today_fc, config, today_model))
+    write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
+               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
 
     _build_today_alerts(out_dir, today, config)
 
@@ -358,7 +399,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
         ok_set, fail_set, summaries, ok_set | fail_set,
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
     ))
-    print(f"[STATUS] Updated: tomorrow={'enabled' if tomorrow_fc else 'disabled'}")
+    print(f"[STATUS] Updated: model={today_model} tomorrow={'enabled' if tomorrow_fc else 'disabled'}")
 
 
 # ---------------------------------------------------------------------------
@@ -468,17 +509,20 @@ def main() -> None:
     })
     save_hourly_cache(out_dir, hourly_cache)
 
+    # Train and save LightGBM on the full updated cache (predictions stay on baseline until Phase 5-B)
+    _try_train_lgbm(hourly_cache, out_dir)
+
     # Today / tomorrow forecasts
-    today = datetime.now(tz=JST).date()
+    today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
 
-    today_fc = compute_forecast(hourly_cache, today, n_weeks, min_samples)
-    write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
-               build_forecast_json(today, today_fc, config))
+    today_fc,    today_model    = _get_forecast(hourly_cache, today,    n_weeks, min_samples)
+    tomorrow_fc, tomorrow_model = _get_forecast(hourly_cache, tomorrow, n_weeks, min_samples)
 
-    tomorrow_fc = compute_forecast(hourly_cache, tomorrow, n_weeks, min_samples)
+    write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
+               build_forecast_json(today, today_fc, config, today_model))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
-               build_forecast_json(tomorrow, tomorrow_fc, config))
+               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
 
     # status.json
     write_json(out_dir / "status.json", build_status_json(
