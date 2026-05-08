@@ -61,6 +61,16 @@ function ActualPeakCard({ s }: { s: LatestSummary }) {
             </div>
           </div>
         )}
+        {s.peakTempC != null && (
+          <div className="peak-stat">
+            <div className="peak-stat-label">{t.peakTemp}</div>
+            <div>
+              <span className="peak-stat-value">{s.peakTempC}</span>
+              <span className="peak-stat-unit"> °C</span>
+            </div>
+            <div className="peak-stat-sub peak-stat-source">Open-Meteo</div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -82,12 +92,22 @@ function ForecastPeakCard({ s }: { s: ForecastSummary }) {
             {s.peakForecastAt && <div className="peak-stat-sub">@ {fmtTime(s.peakForecastAt)}</div>}
           </div>
         )}
+        {s.peakTempC != null && (
+          <div className="peak-stat">
+            <div className="peak-stat-label">{t.peakTemp}</div>
+            <div>
+              <span className="peak-stat-value">{s.peakTempC}</span>
+              <span className="peak-stat-unit"> °C</span>
+            </div>
+            <div className="peak-stat-sub peak-stat-source">Open-Meteo</div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function TodayPeakCard({ actual, severity }: { actual: ActualJSON; severity: Severity }) {
+function TodayPeakCard({ actual, severity, peakTempC }: { actual: ActualJSON; severity: Severity; peakTempC?: number }) {
   const { t } = useT()
   const tepcoPoints = actual.series.filter(p => p.tepcoForecastMw != null)
   const tPeak = tepcoPoints.length > 0
@@ -119,6 +139,16 @@ function TodayPeakCard({ actual, severity }: { actual: ActualJSON; severity: Sev
               <span className="peak-stat-unit"> 万kW</span>
             </div>
             <div className="peak-stat-sub">@ {fmtTime(aPeak.ts)}</div>
+          </div>
+        )}
+        {peakTempC != null && (
+          <div className="peak-stat">
+            <div className="peak-stat-label">{t.peakTemp}</div>
+            <div>
+              <span className="peak-stat-value">{peakTempC}</span>
+              <span className="peak-stat-unit"> °C</span>
+            </div>
+            <div className="peak-stat-sub peak-stat-source">Open-Meteo</div>
           </div>
         )}
       </div>
@@ -197,7 +227,7 @@ function ForecastTab({ date, summary, showBands = false }: { date: string | null
       {!loading && (
         <>
           {hasTepco && actual.data && summary
-            ? <TodayPeakCard actual={actual.data} severity={summary.severity} />
+            ? <TodayPeakCard actual={actual.data} severity={summary.severity} peakTempC={summary.peakTempC} />
             : summary && <ForecastPeakCard s={summary} />
           }
           {alerts.data && <AlertsList alerts={alerts.data} />}

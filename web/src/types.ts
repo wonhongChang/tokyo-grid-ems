@@ -7,6 +7,7 @@ export interface LatestSummary {
   peakActualAt: string | null
   peakUsagePct: number | null
   peakSupplyMw: number | null
+  peakTempC?: number
 }
 
 export interface ForecastSummary {
@@ -14,6 +15,7 @@ export interface ForecastSummary {
   peakForecastMw: number | null
   peakForecastAt: string | null
   severity: Severity
+  peakTempC?: number
 }
 
 export interface StatusJSON {

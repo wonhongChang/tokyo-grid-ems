@@ -19,6 +19,7 @@ interface Translations {
   peakTepcoForecast: string
   peakUsage: string
   supply: string
+  peakTemp: string
   alertEvents: string
   noEvents: string
   forecast: string
@@ -69,6 +70,7 @@ const KO: Translations = {
   peakTepcoForecast: 'TEPCO 최대 예측',
   peakUsage: '최대 사용률',
   supply: '공급력',
+  peakTemp: '피크 기온',
   alertEvents: '이상 감지 이벤트',
   noEvents: '이벤트 없음',
   forecast: '예측',
@@ -119,6 +121,7 @@ const EN: Translations = {
   peakTepcoForecast: 'TEPCO Peak Forecast',
   peakUsage: 'Peak Usage',
   supply: 'Supply',
+  peakTemp: 'Peak Temp',
   alertEvents: 'Alert Events',
   noEvents: 'No events',
   forecast: 'Forecast',
@@ -169,6 +172,7 @@ const JA: Translations = {
   peakTepcoForecast: 'TEPCOピーク予測',
   peakUsage: '最大使用率',
   supply: '供給力',
+  peakTemp: 'ピーク気温',
   alertEvents: '異常検知イベント',
   noEvents: 'イベントなし',
   forecast: '予測',

@@ -383,10 +383,10 @@ def _forecast_severity(fc_list: list, cache: pd.DataFrame, config: dict) -> str:
     recent_supply = None
     if "supply_mw" in cache.columns:
         supply_df = cache[["ts", "supply_mw"]].dropna(subset=["supply_mw"])
-        # Use weekday-only supply to avoid holiday-reduced capacity skewing the estimate
+        # p75 of recent weekday supply: robust against GW-low outliers and peak-day highs
         weekday_supply = supply_df[supply_df["ts"].dt.dayofweek < 5].tail(24 * 14)
         if not weekday_supply.empty:
-            recent_supply = weekday_supply["supply_mw"].mean()
+            recent_supply = weekday_supply["supply_mw"].quantile(0.75)
     if recent_supply and recent_supply > 0:
         est_pct = peak_fc_mw / recent_supply * 100
         rr = config.get("anomaly", {}).get("reserve_risk", {})
@@ -395,6 +395,19 @@ def _forecast_severity(fc_list: list, cache: pd.DataFrame, config: dict) -> str:
         if est_pct >= rr.get("warning_pct", 90.0):
             return "warning"
     return "info"
+
+
+def _enrich_latest_temp(latest: dict | None, cache: pd.DataFrame) -> dict | None:
+    if not latest or "peakActualAt" not in latest or "temp_c" not in cache.columns:
+        return latest
+    try:
+        peak_ts = pd.Timestamp(latest["peakActualAt"]).tz_convert("Asia/Tokyo")
+        temp_row = cache.loc[cache["ts"] == peak_ts, "temp_c"]
+        if not temp_row.empty and pd.notna(temp_row.iloc[0]):
+            return {**latest, "peakTempC": round(float(temp_row.iloc[0]), 1)}
+    except Exception:
+        pass
+    return latest
 
 
 def build_status_json(
@@ -409,6 +422,7 @@ def build_status_json(
     cache: pd.DataFrame,
     config: dict,
     today_severity: str | None = None,
+    extended_cache: pd.DataFrame | None = None,
 ) -> dict:
     coverage_to = max(ok_set) if ok_set else None
     latest = summaries.get(coverage_to.isoformat()) if coverage_to else None
@@ -420,12 +434,18 @@ def build_status_json(
             return None
         peak = peak_of_forecasts(fc_list)
         sev = override_sev if override_sev is not None else _forecast_severity(fc_list, cache, config)
-        return {
+        result = {
             "date": d.isoformat(),
             "peakForecastMw": peak["forecastMw"] if peak else None,
             "peakForecastAt": peak["at"] if peak else None,
             "severity": sev,
         }
+        if peak and extended_cache is not None and "temp_c" in extended_cache.columns:
+            peak_ts = pd.Timestamp(peak["at"]).tz_convert("Asia/Tokyo")
+            temp_row = extended_cache.loc[extended_cache["ts"] == peak_ts, "temp_c"]
+            if not temp_row.empty and pd.notna(temp_row.iloc[0]):
+                result["peakTempC"] = round(float(temp_row.iloc[0]), 1)
+        return result
 
     def _alerts_severity(summary: dict | None) -> str:
         if not summary:
@@ -446,7 +466,7 @@ def build_status_json(
         "availability": availability,
         "missingDays": missing,
         "failedDays": [d.isoformat() for d in sorted(fail_set)],
-        "latest": latest,
+        "latest": _enrich_latest_temp(latest, cache),
         "yesterday": yesterday.isoformat(),
         "today": _fc_summary(today, today_fc, today_severity),
         "tomorrow": _fc_summary(tomorrow, tomorrow_fc),
@@ -644,6 +664,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
         ok_set, fail_set, summaries, ok_set | fail_set,
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
         today_severity=today_severity,
+        extended_cache=extended_with_actuals,
     ))
     print(f"[STATUS] Updated: model={today_model} tomorrow={'enabled' if tomorrow_fc else 'disabled'}")
 
@@ -704,6 +725,7 @@ def main() -> None:
     min_samples = cfg_fc.get("min_samples_per_slot", 4)
 
     new_ok = new_fail = 0
+    new_ok_dates: list[date] = []
 
     for d, csv_path in csv_map.items():
         if d in ok_set or d in fail_set:
@@ -740,6 +762,7 @@ def main() -> None:
 
             summaries[d.isoformat()] = extract_day_summary(d, parsed)
             ok_set.add(d)
+            new_ok_dates.append(d)
             new_ok += 1
 
         except Exception as e:
@@ -762,6 +785,18 @@ def main() -> None:
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
 
+    # Re-generate forecast + alerts for newly processed dates using LightGBM
+    if forecaster is not None and new_ok_dates:
+        for d in new_ok_dates:
+            try:
+                fc_list, model_name = _get_forecast(forecaster, hourly_cache, d, n_weeks, min_samples, adjuster, guard)
+                write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
+                           build_forecast_json(d, fc_list, config, model_name))
+                _build_today_alerts(out_dir, d, config)
+                print(f"[LGBM] Re-forecast {d} -> {model_name}")
+            except Exception as e:
+                print(f"[WARN] LightGBM re-forecast {d}: {e}", file=sys.stderr)
+
     # Extend cache with forecast weather for today/tomorrow inference
     extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
 
@@ -769,8 +804,9 @@ def main() -> None:
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
 
-    today_fc,    today_model    = _get_forecast(forecaster, extended_cache, today,    n_weeks, min_samples, adjuster, guard)
-    tomorrow_fc, tomorrow_model = _get_forecast(forecaster, extended_cache, tomorrow, n_weeks, min_samples, adjuster, guard)
+    extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
+    today_fc,    today_model    = _get_forecast(forecaster, extended_with_actuals, today,    n_weeks, min_samples, adjuster, guard)
+    tomorrow_fc, tomorrow_model = _get_forecast(forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, adjuster, guard)
 
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
                build_forecast_json(today, today_fc, config, today_model))
@@ -781,6 +817,7 @@ def main() -> None:
     write_json(out_dir / "status.json", build_status_json(
         ok_set, fail_set, summaries, set(csv_map.keys()),
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
+        extended_cache=extended_with_actuals,
     ))
 
     coverage_to = max(ok_set) if ok_set else None
