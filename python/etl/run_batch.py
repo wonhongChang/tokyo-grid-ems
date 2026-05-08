@@ -375,7 +375,7 @@ def compute_missing_days(csv_dates: set[date]) -> list[str]:
     return result
 
 
-def _forecast_severity(fc_list: list, cache: pd.DataFrame, config: dict) -> str:
+def _forecast_severity(fc_list: list, cache: pd.DataFrame, config: dict, target_date: date | None = None) -> str:
     """Estimate severity for a future forecast using peak forecast vs recent supply."""
     if not fc_list:
         return "info"
@@ -383,10 +383,13 @@ def _forecast_severity(fc_list: list, cache: pd.DataFrame, config: dict) -> str:
     recent_supply = None
     if "supply_mw" in cache.columns:
         supply_df = cache[["ts", "supply_mw"]].dropna(subset=["supply_mw"])
-        # p75 of recent weekday supply: robust against GW-low outliers and peak-day highs
-        weekday_supply = supply_df[supply_df["ts"].dt.dayofweek < 5].tail(24 * 14)
-        if not weekday_supply.empty:
-            recent_supply = weekday_supply["supply_mw"].quantile(0.75)
+        is_weekend = target_date is not None and target_date.weekday() >= 5
+        if is_weekend:
+            day_supply = supply_df[supply_df["ts"].dt.dayofweek >= 5].tail(24 * 14)
+        else:
+            day_supply = supply_df[supply_df["ts"].dt.dayofweek < 5].tail(24 * 14)
+        if not day_supply.empty:
+            recent_supply = day_supply["supply_mw"].quantile(0.75)
     if recent_supply and recent_supply > 0:
         est_pct = peak_fc_mw / recent_supply * 100
         rr = config.get("anomaly", {}).get("reserve_risk", {})
@@ -433,7 +436,7 @@ def build_status_json(
         if not fc_list:
             return None
         peak = peak_of_forecasts(fc_list)
-        sev = override_sev if override_sev is not None else _forecast_severity(fc_list, cache, config)
+        sev = override_sev if override_sev is not None else _forecast_severity(fc_list, cache, config, d)
         result = {
             "date": d.isoformat(),
             "peakForecastMw": peak["forecastMw"] if peak else None,
