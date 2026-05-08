@@ -4,8 +4,29 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 0,
+    "warning": 1,
     "info": 0
   },
-  "events": []
+  "events": [
+    {
+      "id": "2026-05-08T08:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-08T08:00:00+09:00",
+      "endAt": "2026-05-08T09:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 27790.0,
+      "expectedMw": 26884.9,
+      "interval": {
+        "p95Lower": 26601.6,
+        "p95Upper": 27631.5,
+        "p99Lower": 26318.3,
+        "p99Upper": 28378.1
+      },
+      "reason": "Actual 27790 MW exceeded p95 upper 27632 MW",
+      "tags": [
+        "interval"
+      ]
+    }
+  ]
 }
