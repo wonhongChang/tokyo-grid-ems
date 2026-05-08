@@ -595,15 +595,20 @@ def _summary_from_actual_json(out_dir: Path, d: date) -> dict | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        series = [pt for pt in data.get("series", []) if pt.get("actualMw") is not None]
+        # Use actualMw where available, fall back to tepcoForecastMw for missing hours
+        series = []
+        for pt in data.get("series", []):
+            mw = pt.get("actualMw") if pt.get("actualMw") is not None else pt.get("tepcoForecastMw")
+            if mw is not None:
+                series.append({**pt, "_mw": mw})
         if not series:
             return None
-        peak = max(series, key=lambda pt: pt["actualMw"])
+        peak = max(series, key=lambda pt: pt["_mw"])
         usage_pcts = [pt["usagePct"] for pt in series if pt.get("usagePct") is not None]
         supply_mws = [pt["supplyMw"] for pt in series if pt.get("supplyMw") is not None]
         return {
             "date": d.isoformat(),
-            "peakActualMw": round(float(peak["actualMw"]), 1),
+            "peakActualMw": round(float(peak["_mw"]), 1),
             "peakActualAt": peak["ts"],
             "peakUsagePct": round(max(usage_pcts), 1) if usage_pcts else None,
             "peakSupplyMw": round(max(supply_mws), 1) if supply_mws else None,
