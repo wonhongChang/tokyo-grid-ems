@@ -588,6 +588,31 @@ def _get_forecast(
 # Status-only update (used by intraday workflow)
 # ---------------------------------------------------------------------------
 
+def _summary_from_actual_json(out_dir: Path, d: date) -> dict | None:
+    """Derive a LatestSummary-compatible dict from actual/{d}.json (CSV not yet available)."""
+    path = out_dir / "actual" / f"{d.isoformat()}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        series = [pt for pt in data.get("series", []) if pt.get("actualMw") is not None]
+        if not series:
+            return None
+        peak = max(series, key=lambda pt: pt["actualMw"])
+        usage_pcts = [pt["usagePct"] for pt in series if pt.get("usagePct") is not None]
+        supply_mws = [pt["supplyMw"] for pt in series if pt.get("supplyMw") is not None]
+        return {
+            "date": d.isoformat(),
+            "peakActualMw": round(float(peak["actualMw"]), 1),
+            "peakActualAt": peak["ts"],
+            "peakUsagePct": round(max(usage_pcts), 1) if usage_pcts else None,
+            "peakSupplyMw": round(max(supply_mws), 1) if supply_mws else None,
+        }
+    except Exception as e:
+        print(f"[WARN] _summary_from_actual_json({d}): {e}", file=sys.stderr)
+        return None
+
+
 def _run_status_only(out_dir: Path, config: dict) -> None:
     from python.etl.fetch_weather import enrich_cache_with_weather
     from python.etl.fetch_today import fetch_csv, parse_hourly, write_actual_json
@@ -615,6 +640,15 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
 
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
+    yesterday = today - timedelta(days=1)
+
+    # If yesterday's CSV hasn't been processed yet, derive latest from actual/{yesterday}.json
+    if yesterday not in ok_set:
+        json_summary = _summary_from_actual_json(out_dir, yesterday)
+        if json_summary:
+            summaries = {**summaries, yesterday.isoformat(): json_summary}
+            ok_set = ok_set | {yesterday}
+            print(f"[STATUS] Using actual/{yesterday.isoformat()}.json for latest (CSV pending)")
 
     # Fill any missing temp_c in recent cache rows, then extend with forecast weather
     hourly_cache   = enrich_cache_with_weather(hourly_cache)
