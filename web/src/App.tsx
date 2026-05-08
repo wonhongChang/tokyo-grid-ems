@@ -323,14 +323,14 @@ export default function App({ locale, setLocale }: AppProps) {
                       {yesterdaySev === 'critical' ? t.severityCritical : t.severityWarning}
                     </span></>
                   )}
-                  {tab === 'today' && status.today && (
+                  {tab === 'today' && status.today && status.today.severity !== 'info' && (
                     <>&nbsp;<span className={`badge ${status.today.severity}`} style={{ fontSize: 10, padding: '1px 5px' }}>
-                      {status.today.severity === 'critical' ? t.severityCritical : status.today.severity === 'warning' ? t.severityWarning : t.severityInfo}
+                      {status.today.severity === 'critical' ? t.severityCritical : t.severityWarning}
                     </span></>
                   )}
-                  {tab === 'tomorrow' && status.tomorrow && (
+                  {tab === 'tomorrow' && status.tomorrow && status.tomorrow.severity !== 'info' && (
                     <>&nbsp;<span className={`badge ${status.tomorrow.severity}`} style={{ fontSize: 10, padding: '1px 5px' }}>
-                      {status.tomorrow.severity === 'critical' ? t.severityCritical : status.tomorrow.severity === 'warning' ? t.severityWarning : t.severityInfo}
+                      {status.tomorrow.severity === 'critical' ? t.severityCritical : t.severityWarning}
                     </span></>
                   )}
                 </button>
