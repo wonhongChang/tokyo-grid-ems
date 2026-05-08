@@ -2,8 +2,8 @@ name: ETL + Deploy
 
 on:
   schedule:
-    # 01:30 JST daily (16:30 UTC prev day) — after TEPCO publishes yesterday's CSV
-    - cron: '30 16 * * *'
+    # 09:00 JST daily (00:00 UTC) — after TEPCO publishes yesterday's CSV
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 permissions:
