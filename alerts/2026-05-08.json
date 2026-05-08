@@ -4,10 +4,40 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 1,
+    "warning": 5,
     "info": 0
   },
   "events": [
+    {
+      "id": "2026-05-08T09:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-05-08T09:00:00+09:00",
+      "endAt": "2026-05-08T10:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 92.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 33690.0,
+      "reason": "Usage 92.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2026-05-08T10:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-05-08T10:00:00+09:00",
+      "endAt": "2026-05-08T11:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 90.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 34550.0,
+      "reason": "Usage 90.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
     {
       "id": "2026-05-08T08:00:00+09:00_spike",
       "type": "spike",
@@ -26,6 +56,41 @@
       "reason": "Actual 27790 MW exceeded p95 upper 27632 MW",
       "tags": [
         "interval"
+      ]
+    },
+    {
+      "id": "2026-05-08T09:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-08T09:00:00+09:00",
+      "endAt": "2026-05-08T10:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 31180.0,
+      "expectedMw": 28361.5,
+      "interval": {
+        "p95Lower": 28360.4,
+        "p95Upper": 29677.8,
+        "p99Lower": 28359.3,
+        "p99Upper": 30994.1
+      },
+      "reason": "Actual 31180 MW exceeded p99 upper 30994 MW by 186 MW (0.60%)",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-08T09:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-05-08T09:00:00+09:00",
+      "endAt": "2026-05-08T11:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 1475.5,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 3 consecutive hours",
+      "tags": [
+        "residual"
       ]
     }
   ]
