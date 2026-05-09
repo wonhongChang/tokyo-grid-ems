@@ -4,10 +4,25 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 1,
+    "warning": 4,
     "info": 0
   },
   "events": [
+    {
+      "id": "2026-05-09T16:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-05-09T16:00:00+09:00",
+      "endAt": "2026-05-09T17:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 92.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 27160.0,
+      "reason": "Usage 92.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
     {
       "id": "2026-05-09T00:00:00+09:00_spike",
       "type": "spike",
@@ -26,6 +41,41 @@
       "reason": "Actual 22470 MW exceeded p95 upper 22328 MW",
       "tags": [
         "interval"
+      ]
+    },
+    {
+      "id": "2026-05-09T16:00:00+09:00_drop",
+      "type": "drop",
+      "severity": "warning",
+      "startAt": "2026-05-09T16:00:00+09:00",
+      "endAt": "2026-05-09T17:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 25030.0,
+      "expectedMw": 26645.3,
+      "interval": {
+        "p95Lower": 25072.8,
+        "p95Upper": 27015.3,
+        "p99Lower": 23500.3,
+        "p99Upper": 27385.3
+      },
+      "reason": "Actual 25030 MW fell below p95 lower 25073 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-09T14:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-05-09T14:00:00+09:00",
+      "endAt": "2026-05-09T16:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": -1485.7,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual below ±800 MW for 3 consecutive hours",
+      "tags": [
+        "residual"
       ]
     }
   ]
