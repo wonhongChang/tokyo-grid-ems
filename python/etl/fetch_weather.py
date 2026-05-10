@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -18,12 +20,34 @@ TOKYO_LON = 139.6503
 _ARCHIVE_URL  = "https://archive-api.open-meteo.com/v1/archive"
 _FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 _TIMEOUT_SEC  = 30
+_MAX_RETRIES  = 3
+_RETRY_BACKOFF_SEC = 2.0
 
 
 def _fetch_json(url: str, params: dict) -> dict:
     full_url = f"{url}?{urllib.parse.urlencode(params)}"
-    with urllib.request.urlopen(full_url, timeout=_TIMEOUT_SEC) as resp:
-        return json.loads(resp.read())
+    last_error: Exception | None = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(full_url, timeout=_TIMEOUT_SEC) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            last_error = e
+            if 400 <= e.code < 500 and e.code != 429:
+                raise
+        except (OSError, TimeoutError, json.JSONDecodeError) as e:
+            last_error = e
+
+        if attempt < _MAX_RETRIES:
+            wait = _RETRY_BACKOFF_SEC * attempt
+            print(
+                f"[WARN] Weather fetch failed (attempt {attempt}/{_MAX_RETRIES}): {last_error}; retrying in {wait:.0f}s",
+                file=sys.stderr,
+            )
+            time.sleep(wait)
+
+    assert last_error is not None
+    raise last_error
 
 
 def _parse_response(data: dict) -> pd.DataFrame:

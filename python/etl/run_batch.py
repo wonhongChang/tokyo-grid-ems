@@ -104,9 +104,17 @@ def save_hourly_cache(out_dir: Path, cache: pd.DataFrame) -> None:
         return
     (out_dir / _CACHE_PATH_NAME).parent.mkdir(parents=True, exist_ok=True)
     save_cols = [c for c in _CACHE_COLS if c in cache.columns]
-    cache[save_cols].drop_duplicates(subset=["ts"]).sort_values("ts").to_parquet(
-        out_dir / _CACHE_PATH_NAME, index=False
-    )
+    to_save = cache[save_cols].copy()
+    if "actual_mw" in to_save.columns:
+        to_save["_actual_rank"] = to_save["actual_mw"].notna().astype(int)
+        to_save = (
+            to_save.sort_values(["ts", "_actual_rank"], ascending=[True, False])
+                   .drop_duplicates(subset=["ts"], keep="first")
+                   .drop(columns=["_actual_rank"])
+        )
+    else:
+        to_save = to_save.drop_duplicates(subset=["ts"], keep="first")
+    to_save.sort_values("ts").to_parquet(out_dir / _CACHE_PATH_NAME, index=False)
 
 
 def _extract_cache_rows(hourly: pd.DataFrame) -> pd.DataFrame:
@@ -658,6 +666,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     # Fill any missing temp_c in recent cache rows, then extend with forecast weather
     hourly_cache   = enrich_cache_with_weather(hourly_cache)
     extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
+    save_hourly_cache(out_dir, extended_cache)
 
     forecaster = _try_load_lgbm(out_dir)
     adjuster   = _make_adjuster(config)
@@ -838,6 +847,7 @@ def main() -> None:
 
     # Extend cache with forecast weather for today/tomorrow inference
     extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
+    save_hourly_cache(out_dir, extended_cache)
 
     # Today / tomorrow forecasts
     today    = datetime.now(tz=JST).date()

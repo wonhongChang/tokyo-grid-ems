@@ -15,6 +15,8 @@ from python.etl.run_batch import (
     compute_missing_days,
     discover_csv_files,
     extract_day_summary,
+    load_hourly_cache,
+    save_hourly_cache,
 )
 from python.tepc_parser import TepcoDailyParsed
 
@@ -84,6 +86,38 @@ def test_build_actual_json_skips_nat_rows():
     df.loc[0, "ts"] = pd.NaT
     result = build_actual_json(date(2024, 1, 1), df)
     assert len(result["series"]) == 23
+
+
+# ── hourly cache ─────────────────────────────────────────────────────────────
+
+def test_save_hourly_cache_prefers_actual_rows_over_virtual_rows(tmp_path):
+    ts = pd.Timestamp("2024-01-01T00:00:00+09:00")
+    cache = pd.DataFrame([
+        {
+            "ts": ts,
+            "actual_mw": float("nan"),
+            "forecast_mw": float("nan"),
+            "usage_pct": float("nan"),
+            "supply_mw": float("nan"),
+            "temp_c": 9.0,
+        },
+        {
+            "ts": ts,
+            "actual_mw": 20_000.0,
+            "forecast_mw": 19_800.0,
+            "usage_pct": 80.0,
+            "supply_mw": 25_000.0,
+            "temp_c": 8.5,
+        },
+    ])
+
+    save_hourly_cache(tmp_path, cache)
+    result = load_hourly_cache(tmp_path)
+
+    assert len(result) == 1
+    assert result["actual_mw"].iloc[0] == pytest.approx(20_000.0)
+    assert result["forecast_mw"].iloc[0] == pytest.approx(19_800.0)
+    assert result["temp_c"].iloc[0] == pytest.approx(8.5)
 
 
 # ── build_alerts_json ────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 from datetime import date
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
@@ -10,6 +11,7 @@ import pandas as pd
 import pytest
 
 from python.etl.fetch_weather import (
+    _fetch_json,
     _parse_response,
     enrich_cache_with_weather,
     fetch_forecast_temps,
@@ -34,6 +36,20 @@ _SAMPLE_WITH_NULL = {
         "temperature_2m": [5.2, None],
     }
 }
+
+
+class _MockHTTPResponse:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
 
 
 def _make_mock_fetch(data: dict):
@@ -66,6 +82,41 @@ def test_parse_response_null_becomes_nan():
     import math
     df = _parse_response(_SAMPLE_WITH_NULL)
     assert math.isnan(df["temp_c"].iloc[1])
+
+
+# ---------------------------------------------------------------------------
+# _fetch_json
+# ---------------------------------------------------------------------------
+
+def test_fetch_json_retries_transient_failure():
+    with (
+        patch("python.etl.fetch_weather.time.sleep") as sleep,
+        patch(
+            "python.etl.fetch_weather.urllib.request.urlopen",
+            side_effect=[OSError("temporary network error"), _MockHTTPResponse(_SAMPLE_RESPONSE)],
+        ) as urlopen,
+    ):
+        result = _fetch_json("https://example.test/weather", {"forecast_days": 1})
+
+    assert result == _SAMPLE_RESPONSE
+    assert urlopen.call_count == 2
+    sleep.assert_called_once()
+
+
+def test_fetch_json_does_not_retry_non_rate_limited_4xx():
+    err = urllib.error.HTTPError(
+        "https://example.test/weather", 404, "not found", hdrs=None, fp=None
+    )
+
+    with (
+        patch("python.etl.fetch_weather.time.sleep") as sleep,
+        patch("python.etl.fetch_weather.urllib.request.urlopen", side_effect=err) as urlopen,
+        pytest.raises(urllib.error.HTTPError),
+    ):
+        _fetch_json("https://example.test/weather", {"forecast_days": 1})
+
+    assert urlopen.call_count == 1
+    sleep.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
