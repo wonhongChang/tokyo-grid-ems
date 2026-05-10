@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 9,
+    "warning": 6,
     "info": 0
   },
   "events": [
@@ -30,10 +30,10 @@
       "startAt": "2026-05-09T17:00:00+09:00",
       "endAt": "2026-05-09T18:00:00+09:00",
       "metric": "usage_pct",
-      "usagePct": 92.0,
+      "usagePct": 93.0,
       "thresholdPct": 90.0,
       "supplyMw": 27610.0,
-      "reason": "Usage 92.0% exceeded warning threshold 90.0%",
+      "reason": "Usage 93.0% exceeded warning threshold 90.0%",
       "tags": [
         "kpi"
       ]
@@ -75,90 +75,30 @@
       "startAt": "2026-05-09T00:00:00+09:00",
       "endAt": "2026-05-09T01:00:00+09:00",
       "metric": "actual_mw",
-      "actualMw": 22470.0,
-      "expectedMw": 22126.8,
+      "actualMw": 22440.0,
+      "expectedMw": 22174.6,
       "interval": {
-        "p95Lower": 21731.4,
-        "p95Upper": 22327.6,
-        "p99Lower": 21336.0,
-        "p99Upper": 22528.4
+        "p95Lower": 21914.7,
+        "p95Upper": 22421.4,
+        "p99Lower": 21654.8,
+        "p99Upper": 22668.2
       },
-      "reason": "Actual 22470 MW exceeded p95 upper 22328 MW",
+      "reason": "Actual 22440 MW exceeded p95 upper 22421 MW",
       "tags": [
         "interval"
       ]
     },
     {
-      "id": "2026-05-09T16:00:00+09:00_drop",
-      "type": "drop",
-      "severity": "warning",
-      "startAt": "2026-05-09T16:00:00+09:00",
-      "endAt": "2026-05-09T17:00:00+09:00",
-      "metric": "actual_mw",
-      "actualMw": 25030.0,
-      "expectedMw": 26720.3,
-      "interval": {
-        "p95Lower": 25224.5,
-        "p95Upper": 27025.3,
-        "p99Lower": 23728.7,
-        "p99Upper": 27330.3
-      },
-      "reason": "Actual 25030 MW fell below p95 lower 25224 MW",
-      "tags": [
-        "interval"
-      ]
-    },
-    {
-      "id": "2026-05-09T17:00:00+09:00_drop",
-      "type": "drop",
-      "severity": "warning",
-      "startAt": "2026-05-09T17:00:00+09:00",
-      "endAt": "2026-05-09T18:00:00+09:00",
-      "metric": "actual_mw",
-      "actualMw": 25600.0,
-      "expectedMw": 26918.0,
-      "interval": {
-        "p95Lower": 25643.3,
-        "p95Upper": 27743.7,
-        "p99Lower": 24368.6,
-        "p99Upper": 28569.4
-      },
-      "reason": "Actual 25600 MW fell below p95 lower 25643 MW",
-      "tags": [
-        "interval"
-      ]
-    },
-    {
-      "id": "2026-05-09T18:00:00+09:00_drop",
-      "type": "drop",
-      "severity": "warning",
-      "startAt": "2026-05-09T18:00:00+09:00",
-      "endAt": "2026-05-09T19:00:00+09:00",
-      "metric": "actual_mw",
-      "actualMw": 26490.0,
-      "expectedMw": 27535.3,
-      "interval": {
-        "p95Lower": 26503.6,
-        "p95Upper": 28531.3,
-        "p99Lower": 25471.9,
-        "p99Upper": 29527.3
-      },
-      "reason": "Actual 26490 MW fell below p95 lower 26504 MW",
-      "tags": [
-        "interval"
-      ]
-    },
-    {
-      "id": "2026-05-09T14:00:00+09:00_drift",
+      "id": "2026-05-09T16:00:00+09:00_drift",
       "type": "drift",
       "severity": "warning",
-      "startAt": "2026-05-09T14:00:00+09:00",
-      "endAt": "2026-05-09T19:00:00+09:00",
+      "startAt": "2026-05-09T16:00:00+09:00",
+      "endAt": "2026-05-09T18:00:00+09:00",
       "metric": "residual_mw",
-      "residualAvgMw": -1171.5,
+      "residualAvgMw": -995.3,
       "method": "ewma",
       "thresholdMw": 800.0,
-      "reason": "EWMA residual below ±800 MW for 6 consecutive hours",
+      "reason": "EWMA residual below ±800 MW for 3 consecutive hours",
       "tags": [
         "residual"
       ]
