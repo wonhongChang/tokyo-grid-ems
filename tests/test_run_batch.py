@@ -206,6 +206,26 @@ def test_build_forecast_json_ok_when_has_data():
     assert result["peak"]["forecastMw"] == 30000.0
 
 
+def test_build_forecast_json_normalizes_crossed_bands():
+    from python.forecast.baseline import HourlyForecast
+    fc = HourlyForecast(
+        ts="2024-01-01T20:00:00+09:00",
+        forecast_mw=32000.0,
+        p95_lower_mw=30000.0,
+        p95_upper_mw=31500.0,
+        p99_lower_mw=29000.0,
+        p99_upper_mw=31500.0,
+    )
+
+    result = build_forecast_json(date(2024, 1, 1), [fc], {})
+    point = result["series"][0]
+
+    assert point["p95LowerMw"] <= point["forecastMw"] <= point["p95UpperMw"]
+    assert point["p99LowerMw"] <= point["p95LowerMw"]
+    assert point["p99UpperMw"] >= point["p95UpperMw"]
+    assert result["peak"]["interval"]["p95Upper"] == point["p95UpperMw"]
+
+
 # ── compute_missing_days ──────────────────────────────────────────────────────
 
 def test_compute_missing_days_empty():

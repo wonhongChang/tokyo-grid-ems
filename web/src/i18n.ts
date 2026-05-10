@@ -23,6 +23,7 @@ interface Translations {
   alertEvents: string
   noEvents: string
   forecast: string
+  modelForecast: string
   actual: string
   forecastRange: string
   tepcoForecast: string
@@ -74,6 +75,7 @@ const KO: Translations = {
   alertEvents: '이상 감지 이벤트',
   noEvents: '이벤트 없음',
   forecast: '예측',
+  modelForecast: '모델 예측',
   actual: '실적',
   forecastRange: '예측 범위',
   tepcoForecast: 'TEPCO 예측',
@@ -125,6 +127,7 @@ const EN: Translations = {
   alertEvents: 'Alert Events',
   noEvents: 'No events',
   forecast: 'Forecast',
+  modelForecast: 'Model forecast',
   actual: 'Actual',
   forecastRange: 'Forecast range',
   tepcoForecast: 'TEPCO forecast',
@@ -176,6 +179,7 @@ const JA: Translations = {
   alertEvents: '異常検知イベント',
   noEvents: 'イベントなし',
   forecast: '予測',
+  modelForecast: 'モデル予測',
   actual: '実績',
   forecastRange: '予測範囲',
   tepcoForecast: 'TEPCO予測',

@@ -206,6 +206,25 @@ def build_actual_json(d: date, hourly: pd.DataFrame) -> dict:
     }
 
 
+def _normalize_forecast_bands(fc_list: list[HourlyForecast]) -> list[HourlyForecast]:
+    result: list[HourlyForecast] = []
+    for f in fc_list:
+        mid = round(float(f.forecast_mw), 1)
+        p95_lower = round(min(float(f.p95_lower_mw), float(f.p95_upper_mw), mid), 1)
+        p95_upper = round(max(float(f.p95_lower_mw), float(f.p95_upper_mw), mid), 1)
+        p99_lower = round(min(float(f.p99_lower_mw), float(f.p99_upper_mw), p95_lower, mid), 1)
+        p99_upper = round(max(float(f.p99_lower_mw), float(f.p99_upper_mw), p95_upper, mid), 1)
+        result.append(HourlyForecast(
+            ts=f.ts,
+            forecast_mw=mid,
+            p95_lower_mw=p95_lower,
+            p95_upper_mw=p95_upper,
+            p99_lower_mw=p99_lower,
+            p99_upper_mw=p99_upper,
+        ))
+    return result
+
+
 def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = "baseline_dow_hour_mean") -> dict:
     if not fc_list:
         return {
@@ -215,6 +234,7 @@ def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = 
             "series": [],
             "message": "Insufficient historical data for this date.",
         }
+    fc_list = _normalize_forecast_bands(fc_list)
     cfg_fc = config.get("forecast", {})
     return {
         "date": d.isoformat(),

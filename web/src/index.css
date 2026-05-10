@@ -173,6 +173,21 @@ body {
 .chart-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; }
 .legend-item { display: flex; align-items: center; gap: 5px; }
 .legend-dot { width: 10px; height: 3px; border-radius: 2px; }
+.legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.legend-toggle:hover { color: var(--text); border-color: #cbd5e1; }
+.legend-toggle.active { color: var(--accent); border-color: var(--accent); background: #eff6ff; }
 
 /* ── Misc ────────────────────────────────────────────────────────────────── */
 .date-header { margin-bottom: 16px; }

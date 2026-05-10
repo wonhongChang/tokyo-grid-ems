@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   ComposedChart, Area, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
@@ -8,7 +9,7 @@ import { useT } from '../i18n'
 interface Props {
   forecast: ForecastPoint[]
   actual?: ActualPoint[]
-  showBands?: boolean   // false for yesterday/today (TEPCO data), true for tomorrow (baseline)
+  showBands?: boolean
 }
 
 const MW_TO_MANKW = 10
@@ -41,9 +42,9 @@ function buildChartData(forecast: ForecastPoint[], actual?: ActualPoint[]): Char
   })
 }
 
-function yDomain(rows: ChartRow[], hasActual: boolean, showBands: boolean): [number, number] {
+function yDomain(rows: ChartRow[], hasActual: boolean, showBands: boolean, showModelLine: boolean): [number, number] {
   const vals: number[] = rows.flatMap(r => [
-    r.forecast,
+    ...(showModelLine ? [r.forecast] : []),
     ...(showBands ? [r.p95Base, r.p95Base + r.p95Fill] : []),
     ...(hasActual && r.actual != null ? [r.actual] : []),
     ...(r.tepcoForecast != null ? [r.tepcoForecast] : []),
@@ -61,7 +62,7 @@ function CustomTooltip({ active, payload, label, labels }: {
   active?: boolean
   payload?: Array<{ dataKey: string; value: number }>
   label?: string
-  labels: { forecast: string; actual: string; tepcoForecast: string; forecastRange: string }
+  labels: { modelForecast: string; actual: string; tepcoForecast: string; forecastRange: string }
 }) {
   if (!active || !payload?.length) return null
   const row: Record<string, number> = {}
@@ -78,8 +79,8 @@ function CustomTooltip({ active, payload, label, labels }: {
       {row.actual != null && (
         <div style={{ color: '#ea580c' }}>{labels.actual}: {fmt(row.actual)}</div>
       )}
-      {row.forecast != null && row.tepcoForecast == null && (
-        <div style={{ color: '#2563eb' }}>{labels.forecast}: {fmt(row.forecast)}</div>
+      {row.forecast != null && (
+        <div style={{ color: '#2563eb' }}>{labels.modelForecast}: {fmt(row.forecast)}</div>
       )}
       {row.p95Base != null && (
         <div style={{ color: '#93c5fd' }}>
@@ -92,15 +93,17 @@ function CustomTooltip({ active, payload, label, labels }: {
 
 export function ForecastChart({ forecast, actual, showBands = true }: Props) {
   const { t } = useT()
+  const [showModelForecast, setShowModelForecast] = useState(false)
   if (forecast.length === 0) return null
 
   const data = buildChartData(forecast, actual)
   const hasActual = data.some(r => r.actual != null)
   const hasTepcoFc = data.some(r => r.tepcoForecast != null)
-  const domain = yDomain(data, hasActual, showBands)
+  const showModelLine = !hasTepcoFc || showModelForecast
+  const domain = yDomain(data, hasActual, showBands, showModelLine)
   const fmtAxis = (v: number) => `${v.toLocaleString()}`
   const tooltipLabels = {
-    forecast: t.forecast,
+    modelForecast: t.modelForecast,
     actual: t.actual,
     tepcoForecast: t.tepcoForecast,
     forecastRange: t.forecastRange,
@@ -121,10 +124,20 @@ export function ForecastChart({ forecast, actual, showBands = true }: Props) {
             <span>{t.tepcoForecast}</span>
           </div>
         )}
-        {!hasTepcoFc && (
+        {hasTepcoFc ? (
+          <button
+            type="button"
+            className={`legend-toggle${showModelForecast ? ' active' : ''}`}
+            onClick={() => setShowModelForecast(v => !v)}
+            aria-pressed={showModelForecast}
+          >
+            <div className="legend-dot" style={{ background: '#2563eb', height: 3 }} />
+            <span>{t.modelForecast}</span>
+          </button>
+        ) : (
           <div className="legend-item">
             <div className="legend-dot" style={{ background: '#2563eb', height: 3 }} />
-            <span>{t.forecast}</span>
+            <span>{t.modelForecast}</span>
           </div>
         )}
         {showBands && (
@@ -155,8 +168,7 @@ export function ForecastChart({ forecast, actual, showBands = true }: Props) {
             </>
           )}
 
-          {/* baseline 예측선: TEPCO 예측 없을 때만 표시 (= 내일 탭) */}
-          {!hasTepcoFc && (
+          {showModelLine && (
             <Line type="monotone" dataKey="forecast" stroke="#2563eb" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} />
           )}
 
