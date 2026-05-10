@@ -1,6 +1,7 @@
 """Tests for python/etl/run_batch.py utility functions."""
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -9,6 +10,7 @@ import pandas as pd
 import pytest
 
 from python.etl.run_batch import (
+    _apply_actual_json_latest_fallback,
     build_actual_json,
     build_alerts_json,
     build_forecast_json,
@@ -118,6 +120,40 @@ def test_save_hourly_cache_prefers_actual_rows_over_virtual_rows(tmp_path):
     assert result["actual_mw"].iloc[0] == pytest.approx(20_000.0)
     assert result["forecast_mw"].iloc[0] == pytest.approx(19_800.0)
     assert result["temp_c"].iloc[0] == pytest.approx(8.5)
+
+
+def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-02T00:00:00+09:00",
+                "actualMw": 20_000.0,
+                "tepcoForecastMw": 19_500.0,
+                "usagePct": 80.0,
+                "supplyMw": 25_000.0,
+            },
+            {
+                "ts": "2024-01-02T23:00:00+09:00",
+                "actualMw": None,
+                "tepcoForecastMw": 21_000.0,
+                "usagePct": None,
+                "supplyMw": 25_500.0,
+            },
+        ],
+    }), encoding="utf-8")
+
+    ok_set, summaries = _apply_actual_json_latest_fallback(
+        tmp_path, date(2024, 1, 3), {date(2024, 1, 1)}, {}
+    )
+
+    assert date(2024, 1, 2) in ok_set
+    assert summaries["2024-01-02"]["peakActualMw"] == pytest.approx(21_000.0)
+    assert summaries["2024-01-02"]["peakActualAt"] == "2024-01-02T23:00:00+09:00"
 
 
 # ── build_alerts_json ────────────────────────────────────────────────────────

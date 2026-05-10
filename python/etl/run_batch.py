@@ -626,6 +626,28 @@ def _summary_from_actual_json(out_dir: Path, d: date) -> dict | None:
         return None
 
 
+def _apply_actual_json_latest_fallback(
+    out_dir: Path,
+    today: date,
+    ok_set: set[date],
+    summaries: dict,
+) -> tuple[set[date], dict]:
+    """Use yesterday's actual JSON in status when the monthly CSV is not ready yet."""
+    yesterday = today - timedelta(days=1)
+    if yesterday in ok_set:
+        return ok_set, summaries
+
+    json_summary = _summary_from_actual_json(out_dir, yesterday)
+    if not json_summary:
+        return ok_set, summaries
+
+    updated_ok = set(ok_set)
+    updated_ok.add(yesterday)
+    updated_summaries = {**summaries, yesterday.isoformat(): json_summary}
+    print(f"[STATUS] Using actual/{yesterday.isoformat()}.json for latest (CSV pending)")
+    return updated_ok, updated_summaries
+
+
 def _run_status_only(out_dir: Path, config: dict) -> None:
     from python.etl.fetch_weather import enrich_cache_with_weather
     from python.etl.fetch_today import fetch_csv, parse_hourly, write_actual_json
@@ -653,15 +675,9 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
 
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
-    yesterday = today - timedelta(days=1)
 
     # If yesterday's CSV hasn't been processed yet, derive latest from actual/{yesterday}.json
-    if yesterday not in ok_set:
-        json_summary = _summary_from_actual_json(out_dir, yesterday)
-        if json_summary:
-            summaries = {**summaries, yesterday.isoformat(): json_summary}
-            ok_set = ok_set | {yesterday}
-            print(f"[STATUS] Using actual/{yesterday.isoformat()}.json for latest (CSV pending)")
+    ok_set, summaries = _apply_actual_json_latest_fallback(out_dir, today, ok_set, summaries)
 
     # Fill any missing temp_c in recent cache rows, then extend with forecast weather
     hourly_cache   = enrich_cache_with_weather(hourly_cache)
@@ -852,6 +868,9 @@ def main() -> None:
     # Today / tomorrow forecasts
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
+    status_ok_set, status_summaries = _apply_actual_json_latest_fallback(
+        out_dir, today, ok_set, summaries
+    )
 
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
     today_fc,    today_model    = _get_forecast(forecaster, extended_with_actuals, today,    n_weeks, min_samples, adjuster, guard)
@@ -864,7 +883,7 @@ def main() -> None:
 
     # status.json
     write_json(out_dir / "status.json", build_status_json(
-        ok_set, fail_set, summaries, set(csv_map.keys()),
+        status_ok_set, fail_set, status_summaries, set(csv_map.keys()) | status_ok_set | fail_set,
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
         extended_cache=extended_with_actuals,
     ))
