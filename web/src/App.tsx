@@ -80,7 +80,7 @@ function ForecastPeakCard({ s }: { s: ForecastSummary }) {
   const { t } = useT()
   return (
     <div className="card">
-      <div className="card-title"><SeverityBadge sev={s.severity} /></div>
+      {s.severity !== 'info' && <div className="card-title"><SeverityBadge sev={s.severity} /></div>}
       <div className="peak-grid">
         {s.peakForecastMw != null && (
           <div className="peak-stat">
@@ -119,7 +119,7 @@ function TodayPeakCard({ actual, severity, peakTempC }: { actual: ActualJSON; se
     : null
   return (
     <div className="card">
-      <div className="card-title"><SeverityBadge sev={severity} /></div>
+      {severity !== 'info' && <div className="card-title"><SeverityBadge sev={severity} /></div>}
       <div className="peak-grid">
         {tPeak && (
           <div className="peak-stat">

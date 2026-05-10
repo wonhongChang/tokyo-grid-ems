@@ -83,9 +83,9 @@ class LGBMForecaster:
                 year=target_date.year, month=target_date.month, day=target_date.day,
                 hour=hour, tzinfo=JST,
             )
-            lo  = round(float(q10[hour]), 1)
             mid = round(float(q50[hour]), 1)
-            hi  = round(float(q90[hour]), 1)
+            lo = round(min(float(q10[hour]), float(q90[hour]), mid), 1)
+            hi = round(max(float(q10[hour]), float(q90[hour]), mid), 1)
             # p99 = 2× half-width beyond q10/q90, approximating 99th pct interval
             half_lo = max(0.0, mid - lo)
             half_hi = max(0.0, hi - mid)

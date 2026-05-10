@@ -28,13 +28,15 @@ function buildChartData(forecast: ForecastPoint[], actual?: ActualPoint[]): Char
   return forecast.map(f => {
     const h = f.ts.substring(11, 13)
     const act = actual?.find(a => a.ts.substring(11, 13) === h)
+    const p95Lower = Math.min(f.p95LowerMw, f.p95UpperMw, f.forecastMw)
+    const p95Upper = Math.max(f.p95LowerMw, f.p95UpperMw, f.forecastMw)
     return {
       hour: `${h}:00`,
       forecast: mw(f.forecastMw),
       actual: act?.actualMw != null ? mw(act.actualMw) : null,
       tepcoForecast: act?.tepcoForecastMw != null ? mw(act.tepcoForecastMw) : null,
-      p95Base: mw(f.p95LowerMw),
-      p95Fill: Math.max(0, mw(f.p95UpperMw) - mw(f.p95LowerMw)),
+      p95Base: mw(p95Lower),
+      p95Fill: mw(p95Upper) - mw(p95Lower),
     }
   })
 }

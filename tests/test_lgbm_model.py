@@ -134,6 +134,35 @@ def test_p99_expansion_doubles_half_width(fitted_forecaster, big_cache):
         assert f.p99_upper_mw == pytest.approx(f.p95_upper_mw + half_hi, abs=0.2)
 
 
+def test_predict_normalizes_crossed_quantiles(monkeypatch):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date: pd.DataFrame({"hour": range(24)}),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.model_q10 = FakeModel(30_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q90 = FakeModel(31_000.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    for point in result:
+        assert point.p95_lower_mw <= point.forecast_mw <= point.p95_upper_mw
+        assert point.p95_lower_mw == 30_000.0
+        assert point.forecast_mw == 32_000.0
+        assert point.p95_upper_mw == 32_000.0
+
+
 # ---------------------------------------------------------------------------
 # save / load roundtrip
 # ---------------------------------------------------------------------------
