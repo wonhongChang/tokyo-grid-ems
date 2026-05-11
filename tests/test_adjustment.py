@@ -324,7 +324,9 @@ def test_find_candidates_returns_list():
     target = date(2024, 9, 10)
     result = adj._find_candidates(
         cache, target,
-        target_consec=0, target_anomaly=2.0, target_is_weekday=True,
+        target_consecutive_holiday_len=0,
+        target_temp_anomaly_7d=2.0,
+        target_is_business_day=True,
     )
     assert isinstance(result, list)
     assert all(isinstance(d, date) for d in result)
@@ -336,7 +338,9 @@ def test_find_candidates_all_before_target():
     target = date(2024, 9, 10)
     result = adj._find_candidates(
         cache, target,
-        target_consec=0, target_anomaly=2.0, target_is_weekday=True,
+        target_consecutive_holiday_len=0,
+        target_temp_anomaly_7d=2.0,
+        target_is_business_day=True,
     )
     assert all(d < target for d in result)
 
@@ -347,7 +351,9 @@ def test_find_candidates_respects_max():
     target = date(2024, 9, 10)
     result = adj._find_candidates(
         cache, target,
-        target_consec=0, target_anomaly=2.0, target_is_weekday=True,
+        target_consecutive_holiday_len=0,
+        target_temp_anomaly_7d=2.0,
+        target_is_business_day=True,
     )
     assert len(result) <= 2
 

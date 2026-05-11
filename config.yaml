@@ -2,6 +2,14 @@ forecast:
   n_weeks: 12          # same-weekday lookback window
   min_samples_per_slot: 4  # minimum data points per (dow, hour) slot to generate forecast
 
+intraday_correction:
+  enabled: true
+  lookback_hours: 3          # recent actual-vs-model residuals used for same-day correction
+  min_observed_hours: 3      # wait until enough actuals exist before adjusting future hours
+  shrinkage: 0.6             # partial correction; avoids chasing noisy hourly residuals
+  max_abs_adjustment_mw: 1200
+  decay_per_hour: 0.92       # gradually fades the correction farther into the day
+
 anomaly:
   spike_drop:
     critical_breach_mw: 500      # p99 breach must exceed this MW to be CRITICAL

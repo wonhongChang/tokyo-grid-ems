@@ -208,15 +208,27 @@ def build_actual_json(d: date, hourly: pd.DataFrame) -> dict:
 
 def _normalize_forecast_bands(fc_list: list[HourlyForecast]) -> list[HourlyForecast]:
     result: list[HourlyForecast] = []
-    for f in fc_list:
-        mid = round(float(f.forecast_mw), 1)
-        p95_lower = round(min(float(f.p95_lower_mw), float(f.p95_upper_mw), mid), 1)
-        p95_upper = round(max(float(f.p95_lower_mw), float(f.p95_upper_mw), mid), 1)
-        p99_lower = round(min(float(f.p99_lower_mw), float(f.p99_upper_mw), p95_lower, mid), 1)
-        p99_upper = round(max(float(f.p99_lower_mw), float(f.p99_upper_mw), p95_upper, mid), 1)
+    for forecast in fc_list:
+        point_forecast_mw = round(float(forecast.forecast_mw), 1)
+        p95_lower = round(
+            min(float(forecast.p95_lower_mw), float(forecast.p95_upper_mw), point_forecast_mw),
+            1,
+        )
+        p95_upper = round(
+            max(float(forecast.p95_lower_mw), float(forecast.p95_upper_mw), point_forecast_mw),
+            1,
+        )
+        p99_lower = round(
+            min(float(forecast.p99_lower_mw), float(forecast.p99_upper_mw), p95_lower, point_forecast_mw),
+            1,
+        )
+        p99_upper = round(
+            max(float(forecast.p99_lower_mw), float(forecast.p99_upper_mw), p95_upper, point_forecast_mw),
+            1,
+        )
         result.append(HourlyForecast(
-            ts=f.ts,
-            forecast_mw=mid,
+            ts=forecast.ts,
+            forecast_mw=point_forecast_mw,
             p95_lower_mw=p95_lower,
             p95_upper_mw=p95_upper,
             p99_lower_mw=p99_lower,
@@ -585,7 +597,7 @@ def _make_guard(config: dict):
         return None
 
 
-def _get_forecast(
+def _build_forecast_with_fallback(
     forecaster,
     cache: pd.DataFrame,
     target_date: date,
@@ -594,7 +606,7 @@ def _get_forecast(
     adjuster=None,
     guard=None,
 ) -> tuple[list, str]:
-    """Return (fc_list, model_name).
+    """Return (forecasts, model_name).
 
     Pipeline: LightGBM → AnalogousDayAdjuster → PostHolidayTimeBandGuard → output.
     Falls back to baseline when LightGBM is unavailable or fails.
@@ -602,14 +614,82 @@ def _get_forecast(
     if forecaster is not None:
         try:
             from python.forecast.feature_builder import build_inference_features
-            inf_features = build_inference_features(cache, target_date)
-            raw = forecaster.predict(target_date, cache)
-            adjusted = adjuster.adjust(forecaster, raw, cache, target_date, inf_features) if adjuster else raw
-            guarded  = guard.apply(raw, adjusted, inf_features) if guard else adjusted
-            return guarded, "lgbm_quantile_q50"
+            inference_features = build_inference_features(cache, target_date)
+            raw_lgbm_forecasts = forecaster.predict(target_date, cache)
+            analog_adjusted_forecasts = (
+                adjuster.adjust(
+                    forecaster,
+                    raw_lgbm_forecasts,
+                    cache,
+                    target_date,
+                    inference_features,
+                )
+                if adjuster
+                else raw_lgbm_forecasts
+            )
+            guarded_forecasts = (
+                guard.apply(raw_lgbm_forecasts, analog_adjusted_forecasts, inference_features)
+                if guard
+                else analog_adjusted_forecasts
+            )
+            return guarded_forecasts, "lgbm_quantile_q50"
         except Exception as e:
             print(f"[WARN] LightGBM predict failed for {target_date}: {e}", file=sys.stderr)
     return compute_forecast(cache, target_date, n_weeks, min_samples), "baseline_dow_hour_mean"
+
+
+def _load_actual_series(out_dir: Path, target_date: date) -> list[dict]:
+    actual_path = out_dir / "actual" / f"{target_date.isoformat()}.json"
+    if not actual_path.exists():
+        return []
+    try:
+        data = json.loads(actual_path.read_text(encoding="utf-8"))
+        return data.get("series", [])
+    except Exception as e:
+        print(f"[WARN] Failed to read actual/{target_date.isoformat()}.json: {e}", file=sys.stderr)
+        return []
+
+
+def _apply_intraday_residual_correction(
+    out_dir: Path,
+    target_date: date,
+    forecasts: list[HourlyForecast],
+    model_name: str,
+    config: dict,
+) -> tuple[list[HourlyForecast], str]:
+    """Adjust the remaining hours of today's forecast using observed residuals."""
+    actual_series = _load_actual_series(out_dir, target_date)
+    if not actual_series:
+        return forecasts, model_name
+    try:
+        from python.forecast.intraday_correction import IntradayResidualCorrector
+        correction = IntradayResidualCorrector(config).apply(forecasts, actual_series)
+    except Exception as e:
+        print(f"[WARN] Intraday residual correction failed for {target_date}: {e}", file=sys.stderr)
+        return forecasts, model_name
+
+    if not correction.applied:
+        return forecasts, model_name
+
+    corrected_model_name = f"{model_name}_intraday_residual"
+    print(
+        "[INTRADAY] Residual correction "
+        f"{target_date}: base={correction.base_adjustment_mw:+.1f} MW "
+        f"after hour={correction.last_observed_hour:02d} "
+        f"(observed={correction.observed_hours})"
+    )
+    return correction.forecasts, corrected_model_name
+
+
+def _write_forecast_accuracy_report(out_dir: Path) -> None:
+    try:
+        from python.eval.forecast_accuracy import build_forecast_accuracy_report
+        report = build_forecast_accuracy_report(out_dir, generated_at=ts_now())
+        write_json(out_dir / "metrics" / "forecast_accuracy.json", report)
+        hours = report.get("summary", {}).get("hours", 0)
+        print(f"[METRICS] Forecast accuracy report updated ({hours} comparable hours)")
+    except Exception as e:
+        print(f"[WARN] Forecast accuracy report failed: {e}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -712,12 +792,15 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
 
     # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
-    today_fc, today_model = _get_forecast(
+    today_fc, today_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, today, n_weeks, min_samples, adjuster, guard
+    )
+    today_fc, today_model = _apply_intraday_residual_correction(
+        out_dir, today, today_fc, today_model, config
     )
 
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
-    tomorrow_fc, tomorrow_model = _get_forecast(
+    tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, adjuster, guard
     )
 
@@ -750,6 +833,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
         today_severity=today_severity,
         extended_cache=extended_with_actuals,
     ))
+    _write_forecast_accuracy_report(out_dir)
     print(f"[STATUS] Updated: model={today_model} tomorrow={'enabled' if tomorrow_fc else 'disabled'}")
 
 
@@ -873,7 +957,9 @@ def main() -> None:
     if forecaster is not None and new_ok_dates:
         for d in new_ok_dates:
             try:
-                fc_list, model_name = _get_forecast(forecaster, hourly_cache, d, n_weeks, min_samples, adjuster, guard)
+                fc_list, model_name = _build_forecast_with_fallback(
+                    forecaster, hourly_cache, d, n_weeks, min_samples, adjuster, guard
+                )
                 write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
                            build_forecast_json(d, fc_list, config, model_name))
                 _build_today_alerts(out_dir, d, config)
@@ -893,8 +979,15 @@ def main() -> None:
     )
 
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
-    today_fc,    today_model    = _get_forecast(forecaster, extended_with_actuals, today,    n_weeks, min_samples, adjuster, guard)
-    tomorrow_fc, tomorrow_model = _get_forecast(forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, adjuster, guard)
+    today_fc, today_model = _build_forecast_with_fallback(
+        forecaster, extended_with_actuals, today, n_weeks, min_samples, adjuster, guard
+    )
+    today_fc, today_model = _apply_intraday_residual_correction(
+        out_dir, today, today_fc, today_model, config
+    )
+    tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
+        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, adjuster, guard
+    )
 
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
                build_forecast_json(today, today_fc, config, today_model))
@@ -907,6 +1000,7 @@ def main() -> None:
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
         extended_cache=extended_with_actuals,
     ))
+    _write_forecast_accuracy_report(out_dir)
 
     coverage_to = max(ok_set) if ok_set else None
     print(
