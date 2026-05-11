@@ -4,6 +4,7 @@ import { StatusBar } from './components/StatusBar'
 import { ForecastChart } from './components/ForecastChart'
 import { AlertsList } from './components/AlertsList'
 import { useT, LOCALE_LABELS, type Locale } from './i18n'
+import { formatPowerParts } from './units'
 import type { StatusJSON, ForecastJSON, AlertsJSON, ActualJSON, LatestSummary, ForecastSummary, Severity } from './types'
 
 const BASE = import.meta.env.BASE_URL
@@ -12,10 +13,18 @@ type TabId = 'yesterday' | 'today' | 'tomorrow'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const MW_TO_MANKW = 10
-
 function fmtTime(iso: string) { return iso.substring(11, 16) }
-function fmtMankw(mw: number) { return Math.round(mw / MW_TO_MANKW).toLocaleString() }
+
+function PowerStatValue({ mw }: { mw: number }) {
+  const { locale } = useT()
+  const parts = formatPowerParts(mw, locale)
+  return (
+    <>
+      <span className="peak-stat-value">{parts.value}</span>
+      <span className="peak-stat-unit"> {parts.unit}</span>
+    </>
+  )
+}
 
 function SeverityBadge({ sev }: { sev: Severity }) {
   const { t } = useT()
@@ -37,8 +46,7 @@ function ActualPeakCard({ s }: { s: LatestSummary }) {
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakActual}</div>
             <div>
-              <span className="peak-stat-value">{fmtMankw(s.peakActualMw)}</span>
-              <span className="peak-stat-unit"> 万kW</span>
+              <PowerStatValue mw={s.peakActualMw} />
             </div>
             {s.peakActualAt && <div className="peak-stat-sub">@ {fmtTime(s.peakActualAt)}</div>}
           </div>
@@ -56,8 +64,7 @@ function ActualPeakCard({ s }: { s: LatestSummary }) {
           <div className="peak-stat">
             <div className="peak-stat-label">{t.supply}</div>
             <div>
-              <span className="peak-stat-value">{fmtMankw(s.peakSupplyMw)}</span>
-              <span className="peak-stat-unit"> 万kW</span>
+              <PowerStatValue mw={s.peakSupplyMw} />
             </div>
           </div>
         )}
@@ -86,8 +93,7 @@ function ForecastPeakCard({ s }: { s: ForecastSummary }) {
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakForecast}</div>
             <div>
-              <span className="peak-stat-value">{fmtMankw(s.peakForecastMw)}</span>
-              <span className="peak-stat-unit"> 万kW</span>
+              <PowerStatValue mw={s.peakForecastMw} />
             </div>
             {s.peakForecastAt && <div className="peak-stat-sub">@ {fmtTime(s.peakForecastAt)}</div>}
           </div>
@@ -125,8 +131,7 @@ function TodayPeakCard({ actual, severity, peakTempC }: { actual: ActualJSON; se
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakTepcoForecast}</div>
             <div>
-              <span className="peak-stat-value">{fmtMankw(tPeak.tepcoForecastMw!)}</span>
-              <span className="peak-stat-unit"> 万kW</span>
+              <PowerStatValue mw={tPeak.tepcoForecastMw!} />
             </div>
             <div className="peak-stat-sub">@ {fmtTime(tPeak.ts)}</div>
           </div>
@@ -135,8 +140,7 @@ function TodayPeakCard({ actual, severity, peakTempC }: { actual: ActualJSON; se
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakActual}</div>
             <div>
-              <span className="peak-stat-value">{fmtMankw(aPeak.actualMw!)}</span>
-              <span className="peak-stat-unit"> 万kW</span>
+              <PowerStatValue mw={aPeak.actualMw!} />
             </div>
             <div className="peak-stat-sub">@ {fmtTime(aPeak.ts)}</div>
           </div>

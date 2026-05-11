@@ -4,15 +4,14 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import type { ForecastPoint, ActualPoint } from '../types'
-import { useT } from '../i18n'
+import { useT, type Locale } from '../i18n'
+import { formatPowerDisplayValue, powerAxisStep, powerDisplayValue, powerUnit } from '../units'
 
 interface Props {
   forecast: ForecastPoint[]
   actual?: ActualPoint[]
   showBands?: boolean
 }
-
-const MW_TO_MANKW = 10
 
 interface ChartRow {
   hour: string
@@ -23,9 +22,7 @@ interface ChartRow {
   p95Fill: number
 }
 
-function mw(v: number) { return v / MW_TO_MANKW }
-
-function buildChartData(forecast: ForecastPoint[], actual?: ActualPoint[]): ChartRow[] {
+function buildChartData(forecast: ForecastPoint[], locale: Locale, actual?: ActualPoint[]): ChartRow[] {
   return forecast.map(f => {
     const h = f.ts.substring(11, 13)
     const act = actual?.find(a => a.ts.substring(11, 13) === h)
@@ -33,16 +30,16 @@ function buildChartData(forecast: ForecastPoint[], actual?: ActualPoint[]): Char
     const p95Upper = Math.max(f.p95LowerMw, f.p95UpperMw, f.forecastMw)
     return {
       hour: `${h}:00`,
-      forecast: mw(f.forecastMw),
-      actual: act?.actualMw != null ? mw(act.actualMw) : null,
-      tepcoForecast: act?.tepcoForecastMw != null ? mw(act.tepcoForecastMw) : null,
-      p95Base: mw(p95Lower),
-      p95Fill: mw(p95Upper) - mw(p95Lower),
+      forecast: powerDisplayValue(f.forecastMw, locale),
+      actual: act?.actualMw != null ? powerDisplayValue(act.actualMw, locale) : null,
+      tepcoForecast: act?.tepcoForecastMw != null ? powerDisplayValue(act.tepcoForecastMw, locale) : null,
+      p95Base: powerDisplayValue(p95Lower, locale),
+      p95Fill: powerDisplayValue(p95Upper, locale) - powerDisplayValue(p95Lower, locale),
     }
   })
 }
 
-function yDomain(rows: ChartRow[], hasActual: boolean, showBands: boolean, showModelLine: boolean): [number, number] {
+function yDomain(rows: ChartRow[], hasActual: boolean, showBands: boolean, showModelLine: boolean, step: number): [number, number] {
   const vals: number[] = rows.flatMap(r => [
     ...(showModelLine ? [r.forecast] : []),
     ...(showBands ? [r.p95Base, r.p95Base + r.p95Fill] : []),
@@ -53,22 +50,23 @@ function yDomain(rows: ChartRow[], hasActual: boolean, showBands: boolean, showM
   const hi = Math.max(...vals)
   const pad = (hi - lo) * 0.06
   return [
-    Math.floor((lo - pad) / 200) * 200,
-    Math.ceil((hi + pad) / 200) * 200,
+    Math.floor((lo - pad) / step) * step,
+    Math.ceil((hi + pad) / step) * step,
   ]
 }
 
-function CustomTooltip({ active, payload, label, labels }: {
+function CustomTooltip({ active, payload, label, labels, locale }: {
   active?: boolean
   payload?: Array<{ dataKey: string; value: number }>
   label?: string
   labels: { modelForecast: string; actual: string; tepcoForecast: string; forecastRange: string }
+  locale: Locale
 }) {
   if (!active || !payload?.length) return null
   const row: Record<string, number> = {}
   for (const p of payload) row[p.dataKey] = p.value
 
-  const fmt = (v: number) => `${Math.round(v).toLocaleString()} 万kW`
+  const fmt = (v: number) => `${formatPowerDisplayValue(v, locale)} ${powerUnit(locale)}`
 
   return (
     <div style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '8px 12px', borderRadius: 6, fontSize: 12 }}>
@@ -84,7 +82,7 @@ function CustomTooltip({ active, payload, label, labels }: {
       )}
       {row.p95Base != null && (
         <div style={{ color: '#93c5fd' }}>
-          {labels.forecastRange}: [{Math.round(row.p95Base).toLocaleString()}, {Math.round(row.p95Base + row.p95Fill).toLocaleString()}] 万kW
+          {labels.forecastRange}: [{formatPowerDisplayValue(row.p95Base, locale)}, {formatPowerDisplayValue(row.p95Base + row.p95Fill, locale)}] {powerUnit(locale)}
         </div>
       )}
     </div>
@@ -92,16 +90,16 @@ function CustomTooltip({ active, payload, label, labels }: {
 }
 
 export function ForecastChart({ forecast, actual, showBands = true }: Props) {
-  const { t } = useT()
+  const { t, locale } = useT()
   const [showModelForecast, setShowModelForecast] = useState(false)
   if (forecast.length === 0) return null
 
-  const data = buildChartData(forecast, actual)
+  const data = buildChartData(forecast, locale, actual)
   const hasActual = data.some(r => r.actual != null)
   const hasTepcoFc = data.some(r => r.tepcoForecast != null)
   const showModelLine = !hasTepcoFc || showModelForecast
-  const domain = yDomain(data, hasActual, showBands, showModelLine)
-  const fmtAxis = (v: number) => `${v.toLocaleString()}`
+  const domain = yDomain(data, hasActual, showBands, showModelLine, powerAxisStep(locale))
+  const fmtAxis = (v: number) => formatPowerDisplayValue(v, locale)
   const tooltipLabels = {
     modelForecast: t.modelForecast,
     actual: t.actual,
@@ -157,9 +155,9 @@ export function ForecastChart({ forecast, actual, showBands = true }: Props) {
             tick={{ fontSize: 11 }}
             domain={domain}
             width={52}
-            label={{ value: '万kW', angle: -90, position: 'insideLeft', offset: 12, style: { fontSize: 10, fill: '#94a3b8' } }}
+            label={{ value: powerUnit(locale), angle: -90, position: 'insideLeft', offset: 12, style: { fontSize: 10, fill: '#94a3b8' } }}
           />
-          <Tooltip content={<CustomTooltip labels={tooltipLabels} />} />
+          <Tooltip content={<CustomTooltip labels={tooltipLabels} locale={locale} />} />
 
           {showBands && (
             <>

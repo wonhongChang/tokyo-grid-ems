@@ -64,6 +64,21 @@ export interface AlertEvent {
   endAt: string
   metric: string
   reason: string
+  usagePct?: number
+  thresholdPct?: number
+  supplyMw?: number | null
+  actualMw?: number
+  expectedMw?: number
+  interval?: {
+    p95Lower: number
+    p95Upper: number
+    p99Lower: number
+    p99Upper: number
+  }
+  residualAvgMw?: number
+  thresholdMw?: number
+  method?: string
+  contextNote?: string
   tags: string[]
 }
 
