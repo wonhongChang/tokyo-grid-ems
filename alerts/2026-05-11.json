@@ -4,8 +4,44 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 0,
+    "warning": 2,
     "info": 0
   },
-  "events": []
+  "events": [
+    {
+      "id": "2026-05-11T10:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-11T10:00:00+09:00",
+      "endAt": "2026-05-11T11:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 31610.0,
+      "expectedMw": 30141.2,
+      "interval": {
+        "p95Lower": 28031.6,
+        "p95Upper": 31177.7,
+        "p99Lower": 25922.0,
+        "p99Upper": 32214.2
+      },
+      "reason": "Actual 31610 MW exceeded p95 upper 31178 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-11T09:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-05-11T09:00:00+09:00",
+      "endAt": "2026-05-11T11:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 1674.8,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 3 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    }
+  ]
 }
