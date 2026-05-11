@@ -201,6 +201,60 @@ body {
 }
 .legend-toggle:hover { color: var(--text); border-color: #cbd5e1; }
 .legend-toggle.active { color: var(--accent); border-color: var(--accent); background: #eff6ff; }
+.chart-tooltip {
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.chart-tooltip-title { font-weight: 600; margin-bottom: 4px; color: var(--text); }
+
+/* ── Validation ──────────────────────────────────────────────────────────── */
+.validation-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.validation-stat-grid.compact { margin-bottom: 14px; }
+.validation-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.validation-stat {
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.validation-stat-label { font-size: 11px; color: var(--text-secondary); }
+.validation-stat-value { font-size: 18px; font-weight: 700; margin-top: 2px; }
+.validation-stat-sub { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+.validation-table-wrap { overflow-x: auto; }
+.validation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.validation-table th,
+.validation-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.validation-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  background: var(--bg);
+}
+.validation-table tr:last-child td { border-bottom: none; }
+.validation-comment {
+  min-width: 160px;
+  color: var(--text-secondary);
+  white-space: normal;
+}
 
 /* ── Misc ────────────────────────────────────────────────────────────────── */
 .date-header { margin-bottom: 16px; }

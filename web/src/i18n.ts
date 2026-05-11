@@ -14,6 +14,7 @@ interface Translations {
   tabYesterday: string
   tabToday: string
   tabTomorrow: string
+  tabValidation: string
   peakActual: string
   peakForecast: string
   peakTepcoForecast: string
@@ -66,6 +67,7 @@ const KO: Translations = {
   tabYesterday: '어제',
   tabToday: '오늘',
   tabTomorrow: '내일',
+  tabValidation: '검증',
   peakActual: '최대 실적',
   peakForecast: '최대 예측',
   peakTepcoForecast: 'TEPCO 최대 예측',
@@ -118,6 +120,7 @@ const EN: Translations = {
   tabYesterday: 'Yesterday',
   tabToday: 'Today',
   tabTomorrow: 'Tomorrow',
+  tabValidation: 'Validation',
   peakActual: 'Peak Actual',
   peakForecast: 'Peak Forecast',
   peakTepcoForecast: 'TEPCO Peak Forecast',
@@ -170,6 +173,7 @@ const JA: Translations = {
   tabYesterday: '昨日',
   tabToday: '今日',
   tabTomorrow: '明日',
+  tabValidation: '検証',
   peakActual: 'ピーク実績',
   peakForecast: 'ピーク予測',
   peakTepcoForecast: 'TEPCOピーク予測',

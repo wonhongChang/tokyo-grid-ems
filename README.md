@@ -24,7 +24,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 | 役割 | 技術 |
 |------|------|
 | ETL / パース | Python (pandas) |
-| 予測 / 異常検知 | Python (統計ベースライン → LightGBM 予定) |
+| 予測 / 異常検知 | Python (LightGBM + 統計fallback、rule-based anomaly detection) |
 | ダッシュボード | React + Vite |
 | 配布 | GitHub Pages (静的 JSON) |
 | 自動更新 | GitHub Actions (毎日 + 2時間ごと) |
@@ -33,22 +33,11 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 
 ## アーキテクチャ
 
-```
-TEPCO CSV
-    │
-    ▼
-Python ETL / Quality Gate
-    │  パース → 品質チェック → 予測 → 異常検知
-    ▼
-Static JSON Artifacts
-(web/public/status.json, alerts/, forecast/)
-    │
-    ▼
-GitHub Pages Dashboard (React/Vite)
-```
+![Tokyo Grid EMS Architecture](docs/assets/tokyo-grid-ems-architecture.png)
 
 - **ETL**: TEPCO月次ZIPを毎日ダウンロード → パース → JSON生成 → GitHub Pages へデプロイ
 - **Intraday**: 2時間ごとに当日のリアルタイムデータを取得・更新
+- **検証**: モデルバックテストとTEPCO予測比較を `metrics/` JSONとして生成
 
 ---
 
@@ -142,8 +131,17 @@ ETLが `web/public/` 以下に生成するファイルです。
 | `alerts/YYYY-MM-DD.json` | 異常検知イベント一覧 |
 | `forecast/YYYY-MM-DD.json` | 時間別予測値 + 予測区間（95/99%） |
 | `actual/YYYY-MM-DD.json` | 時間別実績値（当日リアルタイム含む） |
+| `metrics/forecast_accuracy.json` | TEPCO予測に対する運用精度 |
+| `metrics/model_backtest.json` | ベースラインに対するLightGBMバックテスト |
 
 > タイムスタンプはすべて `Asia/Tokyo (+09:00)` 基準のISO 8601形式で出力します。
+
+---
+
+## 検証ドキュメント
+
+- [モデル評価リポート](docs/model-evaluation_ja.md)
+- [異常検知基準](docs/anomaly-criteria_ja.md)
 
 ---
 
@@ -153,8 +151,9 @@ ETLが `web/public/` 以下に生成するファイルです。
 |---------|------|------|
 | Phase 1–3 | ETL / 予測 / 異常検知 / ダッシュボード | ✅ 完了 |
 | Phase 4 | GitHub Pages 自動デプロイ | ✅ 完了 |
-| Phase 5-A | LightGBM 予測モデル（気温なし） | 設計済み |
-| Phase 5-B | 気温データ連携（Open-Meteo） | 設計済み |
+| Phase 5-A | LightGBM 予測モデル | ✅ 運用反映 |
+| Phase 5-B | 気温データ連携（Open-Meteo） | ✅ 運用反映 |
+| Phase 6 | 検証タブ / バックテスト / TEPCO比較 | ✅ 完了 |
 
 ---
 

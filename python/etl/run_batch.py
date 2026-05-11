@@ -547,6 +547,24 @@ def _try_train_lgbm(cache: pd.DataFrame, out_dir: Path):
         return None
 
 
+def _try_train_lgbm_as_of(cache: pd.DataFrame, cutoff_date: date):
+    """Train a temporary LightGBM model using only rows before cutoff_date."""
+    cutoff_ts = pd.Timestamp(cutoff_date, tz=JST)
+    train_cache = cache[cache["ts"] < cutoff_ts].copy()
+    if len(train_cache) < _LGBM_MIN_ROWS:
+        return None
+    try:
+        from python.forecast.lgbm_model import LGBMForecaster
+        forecaster = LGBMForecaster()
+        forecaster.fit(train_cache)
+        return forecaster
+    except ImportError:
+        return None
+    except Exception as e:
+        print(f"[WARN] Historical LightGBM training failed for {cutoff_date}: {e}", file=sys.stderr)
+        return None
+
+
 
 def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> pd.DataFrame:
     """Append virtual rows (NaN actual_mw, non-NaN temp_c) for upcoming days.
@@ -690,6 +708,20 @@ def _write_forecast_accuracy_report(out_dir: Path) -> None:
         print(f"[METRICS] Forecast accuracy report updated ({hours} comparable hours)")
     except Exception as e:
         print(f"[WARN] Forecast accuracy report failed: {e}", file=sys.stderr)
+
+
+def _write_model_backtest_report(out_dir: Path, cache: pd.DataFrame) -> None:
+    try:
+        from python.eval.compare_models import build_model_backtest_report
+        report = build_model_backtest_report(cache, generated_at=ts_now())
+        write_json(out_dir / "metrics" / "model_backtest.json", report)
+        test = report.get("testPeriod", {})
+        print(
+            "[METRICS] Model backtest report updated "
+            f"({test.get('start')} -> {test.get('end')})"
+        )
+    except Exception as e:
+        print(f"[WARN] Model backtest report failed: {e}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -957,8 +989,10 @@ def main() -> None:
     if forecaster is not None and new_ok_dates:
         for d in new_ok_dates:
             try:
+                historical_forecaster = _try_train_lgbm_as_of(hourly_cache, d)
+                historical_cache = hourly_cache[hourly_cache["ts"] < pd.Timestamp(d, tz=JST)].copy()
                 fc_list, model_name = _build_forecast_with_fallback(
-                    forecaster, hourly_cache, d, n_weeks, min_samples, adjuster, guard
+                    historical_forecaster, historical_cache, d, n_weeks, min_samples, adjuster, guard
                 )
                 write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
                            build_forecast_json(d, fc_list, config, model_name))
@@ -1001,6 +1035,7 @@ def main() -> None:
         extended_cache=extended_with_actuals,
     ))
     _write_forecast_accuracy_report(out_dir)
+    _write_model_backtest_report(out_dir, hourly_cache)
 
     coverage_to = max(ok_set) if ok_set else None
     print(

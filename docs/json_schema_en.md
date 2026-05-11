@@ -14,6 +14,8 @@ The ETL/batch pipeline generates files under `web/public/` conforming to this sc
 - `web/public/alerts/YYYY-MM-DD.json`
 - `web/public/forecast/YYYY-MM-DD.json`
 - `web/public/actual/YYYY-MM-DD.json`
+- `web/public/metrics/forecast_accuracy.json`
+- `web/public/metrics/model_backtest.json`
 
 ---
 
@@ -263,6 +265,38 @@ Provides **hourly actual measurements for a specific date**. Same-day data is up
 - `tepcoForecastMw`: TEPCO's official forecast value (from CSV)
 - `usagePct`: usage rate (%)
 - `supplyMw`: available supply capacity (MW)
+
+---
+
+# 5) metrics/*.json
+
+## Purpose
+Evaluation outputs used by the dashboard's **Validation** tab.
+
+## Files
+- `metrics/forecast_accuracy.json`: operational hourly-error comparison between the project model and TEPCO forecasts
+- `metrics/model_backtest.json`: offline LightGBM backtest against the baseline
+
+## Common Fields
+- `schemaVersion`: metrics schema version
+- `timezone`: `Asia/Tokyo`
+- `generatedAt`: evaluation generation timestamp
+
+## forecast_accuracy Key Fields
+- `modelScope.summaryModelFamily`: latest operating model family included in the aggregate summary
+- `modelScope.excludedDates`: dates excluded from the aggregate summary because they use another model family such as baseline
+- `summary.modelMaeMw`, `summary.tepcoMaeMw`: MAE over comparable recent hours
+- `summary.modelWins`, `summary.tepcoWins`: hourly win counts by absolute error
+- `daily[]`: daily MAE and win counts. Dates with `includedInSummary: false` are excluded from the aggregate summary
+- `daily[].maeGapMw`: model MAE minus TEPCO MAE. Positive means TEPCO was closer; negative means the model was closer
+- `daily[].verdict`: daily verdict, one of `model_better`, `tepco_better`, `close`, or `insufficient`
+- `hourly[]`: hour-of-day MAE and win counts
+
+## model_backtest Key Fields
+- `methodology`: backtest strategy and split point
+- `trainPeriod`, `testPeriod`: training and test windows
+- `baseline`, `lightgbm`: RMSE, MAE, MAPE, sample count
+- `improvementPct`: LightGBM improvement against the baseline
 
 ---
 

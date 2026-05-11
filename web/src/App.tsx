@@ -3,13 +3,14 @@ import { useFetch } from './hooks/useFetch'
 import { StatusBar } from './components/StatusBar'
 import { ForecastChart } from './components/ForecastChart'
 import { AlertsList } from './components/AlertsList'
+import { ValidationPanel } from './components/ValidationPanel'
 import { useT, LOCALE_LABELS, type Locale } from './i18n'
 import { formatPowerParts } from './units'
 import type { StatusJSON, ForecastJSON, AlertsJSON, ActualJSON, LatestSummary, ForecastSummary, Severity } from './types'
 
 const BASE = import.meta.env.BASE_URL
 
-type TabId = 'yesterday' | 'today' | 'tomorrow'
+type TabId = 'yesterday' | 'today' | 'tomorrow' | 'validation'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -278,6 +279,7 @@ export default function App({ locale, setLocale }: AppProps) {
     yesterday: t.tabYesterday,
     today: t.tabToday,
     tomorrow: t.tabTomorrow,
+    validation: t.tabValidation,
   }
 
   return (
@@ -315,7 +317,7 @@ export default function App({ locale, setLocale }: AppProps) {
               const yesterdaySev: Severity | null = yPct != null
                 ? (yPct >= 95 ? 'critical' : yPct >= 90 ? 'warning' : null)
                 : null
-              return (['yesterday', 'today', 'tomorrow'] as TabId[]).map(tab => (
+              return (['yesterday', 'today', 'tomorrow', 'validation'] as TabId[]).map(tab => (
                 <button
                   key={tab}
                   className={`tab-btn${activeTab === tab ? ' active' : ''}`}
@@ -355,6 +357,9 @@ export default function App({ locale, setLocale }: AppProps) {
             )}
             {activeTab === 'tomorrow' && (
               <ForecastTab date={tomorrowDate} summary={status.tomorrow} showBands={true} />
+            )}
+            {activeTab === 'validation' && (
+              <ValidationPanel baseUrl={BASE} />
             )}
           </main>
         </>

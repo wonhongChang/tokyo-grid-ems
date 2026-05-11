@@ -104,3 +104,87 @@ export interface ActualJSON {
   availability: Availability
   series: ActualPoint[]
 }
+
+export interface ForecastAccuracyDaily {
+  date: string
+  modelName?: string
+  modelFamily?: string
+  includedInSummary?: boolean
+  hours: number
+  modelMaeMw: number | null
+  tepcoMaeMw: number | null
+  maeGapMw?: number | null
+  verdict?: 'model_better' | 'tepco_better' | 'close' | 'insufficient'
+  modelWins: number
+  tepcoWins: number
+  ties: number
+}
+
+export interface ForecastAccuracyHourly {
+  hour: number
+  samples: number
+  modelMaeMw: number | null
+  tepcoMaeMw: number | null
+  modelWins: number
+  tepcoWins: number
+  ties: number
+}
+
+export interface ForecastAccuracyJSON {
+  schemaVersion: string
+  timezone: string
+  generatedAt: string
+  windowDays: number
+  modelScope?: {
+    summaryModelFamily: string | null
+    summaryModelNames: string[]
+    excludedDates: string[]
+  }
+  summary: {
+    dates: number
+    hours: number
+    modelMaeMw: number | null
+    tepcoMaeMw: number | null
+    modelWins: number
+    tepcoWins: number
+    ties: number
+    modelWinRate: number | null
+  }
+  daily: ForecastAccuracyDaily[]
+  hourly: ForecastAccuracyHourly[]
+}
+
+export interface BacktestMetrics {
+  rmse: number | null
+  mae: number | null
+  mape: number | null
+  n: number
+}
+
+export interface ModelBacktestJSON {
+  schemaVersion: string
+  timezone: string
+  generatedAt: string
+  methodology: {
+    type: string
+    target: string
+    testStart: string
+    minTrainDays: number
+  }
+  trainPeriod: {
+    start: string
+    end: string
+    rows: number
+  }
+  testPeriod: {
+    start: string
+    end: string
+    days: number
+  }
+  baseline: BacktestMetrics
+  lightgbm: BacktestMetrics | null
+  improvementPct: {
+    rmse: number | null
+    mae: number | null
+  }
+}
