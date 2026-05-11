@@ -1,103 +1,107 @@
 # Tokyo Grid EMS
 
-TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 / モニタリングダッシュボード**
+**Power demand forecasting / anomaly detection / monitoring dashboard** built on TEPCO's public electricity data.
 
-> [한국어](README_ko.md) · [English](README_en.md)
+> [日本語](README_ja.md) · [한국어](README_ko.md)
 
----
-
-## プロジェクト概要
-
-東京電力パワーグリッド（TEPCO）が公開する時系列電力データをもとに、以下の3機能を提供する**バッチ処理指向のEMS（エネルギー管理）プロトタイプ**です。
-
-- 電力需要の**予測**（時間別、ピーク時刻・値を含む）
-- 予測に対する**異常パターン検知**（急騰・急落、残差ドリフト、供給予備率リスク）
-- GitHub Pagesで公開可能な**静的ダッシュボード**
-
-> 前提：「リアルタイム」ではなく、**前日までデータが更新される環境**を想定しています。
-> そのため「昨日の異常検知レポート」＋「今日・明日の予測レポート」を中心に構成しています。
+- Live Dashboard: [https://wonhongchang.github.io/tokyo-grid-ems/](https://wonhongchang.github.io/tokyo-grid-ems/)
 
 ---
 
-## 技術スタック
+## Project Overview
 
-| 役割 | 技術 |
+An **automated static EMS (Energy Management System) prototype** built on time-series electricity data published by Tokyo Electric Power Company (TEPCO), providing core features:
+
+- **Demand forecasting** (hourly, with peak time and value)
+- **Anomaly detection** against forecasts (spikes/drops, residual drift, supply reserve risk)
+- A **static dashboard** deployable to GitHub Pages at zero cost
+
+> Assumption: the dashboard is served from static JSON on GitHub Pages, while same-day data is refreshed from TEPCO's intraday CSV every 2 hours.
+> The UI centers on **yesterday's finalized anomaly report** + **today/tomorrow forecasts** + **same-day actual/TEPCO forecast comparison**.
+
+---
+
+## Tech Stack
+
+| Role | Technology |
 |------|------|
-| ETL / パース | Python (pandas) |
-| 予測 / 異常検知 | Python (LightGBM + 統計fallback、rule-based anomaly detection) |
-| ダッシュボード | React + Vite |
-| 配布 | GitHub Pages (静的 JSON) |
-| 自動更新 | GitHub Actions (毎日 + 2時間ごと) |
+| ETL / Parsing | Python (pandas) |
+| Forecasting / Anomaly Detection | Python (LightGBM + statistical fallback, rule-based anomaly detection) |
+| Dashboard | React + Vite |
+| Hosting | GitHub Pages (static JSON) |
+| Automation | GitHub Actions (daily + every 2 hours) |
 
 ---
 
-## アーキテクチャ
+## Architecture
 
 ![Tokyo Grid EMS Architecture](docs/assets/tokyo-grid-ems-architecture.png)
 
-- **ETL**: TEPCO月次ZIPを毎日ダウンロード → パース → JSON生成 → GitHub Pages へデプロイ
-- **Intraday**: 2時間ごとに当日のリアルタイムデータを取得・更新
-- **検証**: モデルバックテストとTEPCO予測比較を `metrics/` JSONとして生成
+- **ETL**: Downloads TEPCO monthly ZIP daily → parses confirmed historical data → generates JSON → deploys to GitHub Pages
+- **Intraday**: Fetches and updates today's TEPCO intraday CSV every 2 hours
+- **Validation**: Generates model backtest and TEPCO-comparison metrics under `metrics/`
 
 ---
 
-## ダッシュボード画面構成
+## Dashboard Layout
 
-**ステータスバー（常時表示）**
-- 最終更新時刻 / データ取得状況
+**Status bar (always visible)**
+- Last updated time / data availability
 
-**タブ 3種**
+**4 tabs**
 
-1. **昨日** — 前日の実績 + 異常イベント
-   - Spike / Drop: 予測区間（95/99%）超過
-   - Drift: 残差の継続的な偏り（EWMA）
-   - Reserve Risk: 使用率・予備率の閾値超過
+1. **Yesterday** — Previous day's actuals + anomaly events
+   - Spike / Drop: forecast interval (95/99%) breach
+   - Drift: persistent residual bias (EWMA)
+   - Reserve Risk: usage rate / reserve margin threshold breach
 
-2. **今日** — 時間別予測 + 予測区間 + ピーク予測（時刻・値）
+2. **Today** — Hourly forecast + forecast bands + peak prediction (time and value)
 
-3. **明日** — 時間別予測 + 予測区間 + ピーク予測（時刻・値）
+3. **Tomorrow** — Hourly forecast + forecast bands + peak prediction (time and value)
+
+4. **Validation** — Model-vs-TEPCO forecast comparison + LightGBM backtest
 
 ---
 
-## TEPCOデータフォーマット
+## TEPCO Data Format
 
-| 項目 | 内容 |
+| Item | Details |
 |------|------|
-| 出典 | TEPCO公開 電力需給データ |
-| エンコーディング | **cp932 (Shift-JIS)** |
-| 単位 | **万kW (= 10 MW)** |
-| フォーマット | 複数テーブルが空行で区切られた**マルチセクションCSV** |
+| Source | TEPCO public electricity supply/demand data |
+| Encoding | **cp932 (Shift-JIS)** |
+| Unit | **万kW (= 10 MW)** |
+| Format | **Multi-section CSV** with multiple tables separated by blank lines |
 
 ---
 
-## リポジトリ構造
+## Repository Structure
 
 ```
 .
 ├── python/
-│   ├── tepc_parser.py          # TEPCOマルチセクションCSVパーサー
+│   ├── tepc_parser.py          # TEPCO multi-section CSV parser
 │   ├── etl/
-│   │   ├── run_batch.py        # バッチ実行 (CSV → JSON生成)
-│   │   ├── fetch_tepco.py      # TEPCO月次ZIP取得
-│   │   ├── fetch_today.py      # 当日リアルタイムデータ取得
-│   │   └── quality_gate.py     # 品質チェック
-│   ├── forecast/               # 需要予測モデル
-│   └── anomaly/                # 異常検知
-├── web/                        # React/Vite ダッシュボード
+│   │   ├── run_batch.py        # Batch runner (CSV → JSON)
+│   │   ├── fetch_tepco.py      # TEPCO monthly ZIP downloader
+│   │   ├── fetch_today.py      # Intraday real-time data fetcher
+│   │   └── quality_gate.py     # Data quality checks
+│   ├── forecast/               # Demand forecasting models
+│   └── anomaly/                # Anomaly detection
+├── web/                        # React/Vite dashboard
 ├── docs/
-│   ├── lgbm-design.md          # LightGBM モデル設計
-│   └── weather-integration.md  # 気温データ連携設計
+│   ├── lgbm-design.md          # LightGBM model design
+│   └── weather-integration.md  # Weather data integration design
 └── data/
-    └── raw/                    # 元CSVデータ（Actionsで自動ダウンロード、git除外）
+    └── raw/                    # Raw CSV data (auto-downloaded by Actions, git-ignored)
         └── YYYY/
             └── YYYYMM_power_usage/
 ```
 
 ---
 
-## クイックスタート
+## Quickstart
 
-### ローカル実行
+### Local setup
 
 ```bash
 python -m venv .venv
@@ -105,59 +109,63 @@ python -m venv .venv
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 
-# TEPCOデータ取得
+# Fetch TEPCO data
 python python/etl/fetch_tepco.py
 
-# ETL実行 → web/public/ 以下にJSON生成
+# Run ETL → generates JSON under web/public/
 python python/etl/run_batch.py --input data/raw --out web/public
 
-# ダッシュボード ローカルプレビュー
+# Local dashboard preview
 cd web && npm install && npm run dev
 ```
 
-### GitHub Pages デプロイ
+### GitHub Pages deployment
 
-[DEPLOY.md](DEPLOY.md) を参照してください。
+See [DEPLOY.md](DEPLOY.md).
 
 ---
 
-## 静的JSON出力物
+## Static JSON Outputs
 
-ETLが `web/public/` 以下に生成するファイルです。
+Files generated by the ETL under `web/public/`:
 
-| ファイル | 内容 |
+| File | Contents |
 |------|------|
-| `status.json` | 全体ステータス（最終更新・今日/明日の予測サマリー） |
-| `alerts/YYYY-MM-DD.json` | 異常検知イベント一覧 |
-| `forecast/YYYY-MM-DD.json` | 時間別予測値 + 予測区間（95/99%） |
-| `actual/YYYY-MM-DD.json` | 時間別実績値（当日リアルタイム含む） |
-| `metrics/forecast_accuracy.json` | TEPCO予測に対する運用精度 |
-| `metrics/model_backtest.json` | ベースラインに対するLightGBMバックテスト |
+| `status.json` | Overall status (last updated, today/tomorrow forecast summaries) |
+| `alerts/YYYY-MM-DD.json` | Anomaly detection event list |
+| `forecast/YYYY-MM-DD.json` | Hourly forecast + prediction intervals (95/99%) |
+| `actual/YYYY-MM-DD.json` | Hourly actuals (includes intraday real-time data) |
+| `metrics/forecast_accuracy.json` | Operational accuracy against TEPCO forecasts |
+| `metrics/model_backtest.json` | LightGBM backtest against the baseline |
 
-> タイムスタンプはすべて `Asia/Tokyo (+09:00)` 基準のISO 8601形式で出力します。
-
----
-
-## 検証ドキュメント
-
-- [モデル評価リポート](docs/model-evaluation_ja.md)
-- [異常検知基準](docs/anomaly-criteria_ja.md)
+> All timestamps are ISO 8601 in `Asia/Tokyo (+09:00)`.
 
 ---
 
-## ロードマップ
+## Documentation
 
-| フェーズ | 内容 | 状態 |
+- [Project walkthrough for students](docs/project-walkthrough.md)
+- [LightGBM model design](docs/lgbm-design.md)
+- [Weather integration design](docs/weather-integration.md)
+- [Model evaluation report](docs/model-evaluation.md)
+- [Anomaly detection criteria](docs/anomaly-criteria.md)
+- [JSON schema contract](docs/json_schema.md)
+
+---
+
+## Roadmap
+
+| Phase | Description | Status |
 |---------|------|------|
-| Phase 1–3 | ETL / 予測 / 異常検知 / ダッシュボード | ✅ 完了 |
-| Phase 4 | GitHub Pages 自動デプロイ | ✅ 完了 |
-| Phase 5-A | LightGBM 予測モデル | ✅ 運用反映 |
-| Phase 5-B | 気温データ連携（Open-Meteo） | ✅ 運用反映 |
-| Phase 6 | 検証タブ / バックテスト / TEPCO比較 | ✅ 完了 |
+| Phase 1–3 | ETL / Forecasting / Anomaly Detection / Dashboard | ✅ Done |
+| Phase 4 | GitHub Pages auto-deploy | ✅ Done |
+| Phase 5-A | LightGBM forecast model | ✅ In production |
+| Phase 5-B | Weather data integration (Open-Meteo) | ✅ In production |
+| Phase 6 | Validation tab / backtest / TEPCO comparison | ✅ Done |
 
 ---
 
-## 作者
+## Author
 
 - Chang Wonhong
 - LinkedIn: https://www.linkedin.com/in/wonhong-chang-6660a0177/

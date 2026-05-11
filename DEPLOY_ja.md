@@ -1,5 +1,7 @@
 # GitHub Pages デプロイガイド
 
+言語: [English](DEPLOY.md) · [한국어](DEPLOY_ko.md)
+
 ## 前提条件
 
 - GitHubアカウント
@@ -19,8 +21,8 @@ git commit -m "initial commit"
 git push -u origin main
 ```
 
-> `web/public/` フォルダ（JSON・parquetキャッシュを含む）も一緒にコミットしてください。  
-> 初回デプロイ時はこのデータが即座に表示されます。
+> `web/public/` 以下の生成データは `main` にコミットしません。
+> ワークフローが `data` ブランチへ保存したうえでGitHub Pagesへデプロイします。
 
 ---
 
@@ -37,7 +39,7 @@ git push -u origin main
 2. **Workflow permissions**: `Read and write permissions` を選択
 3. `Allow GitHub Actions to create and approve pull requests` にチェック
 
-> ワークフローがETL結果を `web/public/` にコミット・プッシュするため、書き込み権限が必要です。
+> ワークフローが生成JSON/cache出力を `data` ブランチにコミット・プッシュするため、書き込み権限が必要です。
 
 ---
 
@@ -54,8 +56,8 @@ git push -u origin main
 
 | ワークフロー | 実行時刻 | 役割 |
 |---|---|---|
-| `ETL + Deploy` | 毎日 01:30 JST | TEPCO前日CSVダウンロード → ETL → デプロイ |
-| `Intraday Update` | 2時間ごと | 当日リアルタイムデータ更新 → デプロイ |
+| `ETL + Deploy` | 毎日 09:20 JST | TEPCO月次ZIPダウンロード → 確定済み履歴データ処理 → metrics → デプロイ |
+| `Intraday Update` | 00:10 JST + 01:40〜23:40 JST 2時間ごと | 当日TEPCO intraday CSV更新 → 予測/status → デプロイ |
 
 ---
 
@@ -72,11 +74,11 @@ Actionsタブ → ワークフロー実行 → 各Stepのログを確認
 | `Permission denied` on git push | Workflow permissions 未設定 | Step 3を再確認 |
 | ビルド後404 | Pages Sourceが `Actions` になっていない | Step 2を再確認 |
 | `ModuleNotFoundError` | requirements.txtにパッケージが不足 | ローカルで `pip install` 後にrequirements.txtを更新 |
-| チャートデータなし | `web/public/` が未コミット | `git add web/public/` 後に再コミット |
+| チャートデータなし | dataブランチがまだ作成・更新されていない | `ETL + Deploy` を実行し、当日データが必要なら `Intraday Update` も実行 |
 
 ---
 
 ## Vite BASE_URL
 
-ワークフロー内で `VITE_BASE_PATH: /${{ github.event.repository.name }}/` として自動設定されます。  
+ワークフロー内で `VITE_BASE_PATH: /${{ github.event.repository.name }}/` として自動設定されます。
 リポジトリ名を変更しても自動的に追従するため、個別の修正は不要です。

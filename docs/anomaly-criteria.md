@@ -1,49 +1,42 @@
-# 이상탐지 기준
+# Anomaly Detection Criteria
 
-Tokyo Grid EMS의 이상탐지는 “알고리즘이 이상하다고 말하는 이유”를 대시보드에서 설명할 수 있도록 세 가지 이벤트로 나눕니다.
+Languages: [한국어](anomaly-criteria_ko.md) · [日本語](anomaly-criteria_ja.md)
 
-| 이벤트 | 목적 | 입력 |
+Tokyo Grid EMS separates anomaly detection into three event types so the dashboard can explain why an alert was raised.
+
+| Event | Purpose | Inputs |
 |---|---|---|
-| Reserve Risk | 공급 여유가 줄어드는 구간 감지 | 사용률, 공급력 |
-| Spike / Drop | 예측 범위를 벗어난 급등/급락 감지 | 실적 전력, 예측 구간 |
-| Drift | 모델 예측이 여러 시간 연속 한쪽으로 빗나가는 현상 감지 | 실적-예측 잔차 |
+| Reserve Risk | Detect low supply margin periods | usage rate, supply capacity |
+| Spike / Drop | Detect demand outside the forecast interval | actual demand, forecast bands |
+| Drift | Detect sustained model bias over multiple hours | actual-minus-forecast residuals |
 
-설정값은 `config.yaml`의 `anomaly` 블록에서 관리합니다.
+Thresholds are configured in the `anomaly` block of `config.yaml`.
 
 ---
 
-## 1. Reserve Risk
+## Reserve Risk
 
-공급력 대비 사용률이 기준치를 넘으면 이벤트를 생성합니다.
+An event is raised when usage rate reaches a threshold.
 
-기본 기준:
-
-| Severity | 조건 |
+| Severity | Condition |
 |---|---|
 | warning | `usage_pct >= 90.0` |
 | critical | `usage_pct >= 95.0` |
 
-대시보드 표현:
-
-- 본문: `전력 사용률이 경고 기준에 도달했습니다.`
-- 지표 칩: 사용률, 기준, 공급력
-
-이 이벤트는 예측 모델의 정확도와 별개로, 전력 수급 KPI 자체가 위험 구간에 들어왔는지 보여줍니다.
+Dashboard copy keeps the message short, while usage rate, threshold, and supply capacity are shown as metric chips.
 
 ---
 
-## 2. Spike / Drop
+## Spike / Drop
 
-실적 전력이 예측 구간을 벗어났는지 확인합니다.
+Spike/drop compares actual demand against prediction intervals.
 
-판정 기준:
-
-| 이벤트 | warning | critical |
+| Event | warning | critical |
 |---|---|---|
-| Spike | 실적이 `p95Upper` 초과 | 실적이 `p99Upper`를 넘고, 초과 폭이 MW 또는 % 기준 이상 |
-| Drop | 실적이 `p95Lower` 미만 | 실적이 `p99Lower`를 밑돌고, 초과 폭이 MW 또는 % 기준 이상 |
+| Spike | actual > `p95Upper` | actual > `p99Upper` and breach exceeds MW or % threshold |
+| Drop | actual < `p95Lower` | actual < `p99Lower` and breach exceeds MW or % threshold |
 
-기본 critical 기준:
+Default critical thresholds:
 
 ```yaml
 spike_drop:
@@ -51,50 +44,26 @@ spike_drop:
   critical_breach_pct: 2.0
 ```
 
-대시보드 표현:
+---
 
-- Spike: `실제 수요가 예측 범위를 웃돌았습니다.`
-- Drop: `실제 수요가 예측 범위보다 낮았습니다.`
-- 지표 칩: 실적, 모델 예측, 예측 상한/하한
+## Drift
 
-이벤트 본문에는 숫자를 반복하지 않고, 수치는 칩으로 분리합니다.
+Drift captures sustained bias rather than a single-hour miss.
+
+Process:
+
+1. Compute `residual = actual_mw - forecast_mw`.
+2. Apply EWMA with `ewma_alpha = 0.3`.
+3. Raise an event when EWMA exceeds `threshold_mw = 800` for at least `sustained_hours = 3`.
+
+Positive drift means actual demand stayed above the model forecast. Negative drift means it stayed below.
 
 ---
 
-## 3. Drift
+## Design Principles
 
-한 시간의 급격한 오차보다, 여러 시간 동안 같은 방향으로 누적되는 편향을 감지합니다.
-
-계산 방식:
-
-1. 시간별 잔차를 계산합니다.
-   - `residual = actual_mw - forecast_mw`
-2. 잔차에 EWMA를 적용합니다.
-   - 기본 `ewma_alpha = 0.3`
-3. EWMA가 기준값을 연속 시간 이상 넘으면 drift 이벤트를 생성합니다.
-   - 기본 `threshold_mw = 800`
-   - 기본 `sustained_hours = 3`
-
-해석:
-
-| 방향 | 의미 |
-|---|---|
-| positive drift | 실제 수요가 모델 예측보다 지속적으로 높음 |
-| negative drift | 실제 수요가 모델 예측보다 지속적으로 낮음 |
-
-대시보드 표현:
-
-- `실제 수요가 모델 예측보다 계속 높게 나타났습니다.`
-- `실제 수요가 모델 예측보다 계속 낮게 나타났습니다.`
-- 지표 칩: 평균 오차, 기준
-
-Drift는 모델의 단기 보정 필요성을 알려주는 신호이며, intraday residual correction과도 연결됩니다.
-
----
-
-## 설계 원칙
-
-- **경고 문장은 짧게**: 사용자는 먼저 “무슨 일이 일어났는지”를 읽습니다.
-- **숫자는 칩으로 분리**: 사용률, 기준, 공급력, 평균 오차 등은 비교하기 쉽게 별도 표시합니다.
-- **모델 오차와 수급 위험을 분리**: 예측 실패와 공급 여유 부족은 다른 종류의 문제이므로 별도 이벤트로 유지합니다.
-- **설정값은 코드가 아니라 config에서 관리**: 운영 기준을 조정할 때 탐지 코드를 수정하지 않도록 합니다.
+- Keep alert messages short.
+- Put numbers in metric chips.
+- Separate model-error events from supply-risk events.
+- Exclude `tepco_forecast_fallback` rows from actual-based anomaly checks.
+- Keep thresholds in config rather than hardcoding them in detector logic.

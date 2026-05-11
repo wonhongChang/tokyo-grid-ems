@@ -1,40 +1,42 @@
-# 기온 데이터 연동 설계
+# Weather Data Integration Design
 
-> Phase 5-B: LightGBM 모델에 기온 피처 추가  
-> Open-Meteo API (무료, 인증 없음) — 도쿄 좌표 기준
+> Production feature: adding Open-Meteo temperature features to the LightGBM model
+> Open-Meteo API (free, no auth required) — Tokyo coordinates
+
+Languages: [한국어](weather-integration_ko.md) · [日本語](weather-integration_ja.md)
 
 ---
 
-## 왜 기온인가
+## Why Temperature
 
-전력 수요의 30–40%는 기온으로 설명됩니다.
+Temperature explains 30–40% of electricity demand variation.
 
-| 계절 | 메커니즘 | 수요 영향 |
+| Season | Mechanism | Demand Impact |
 |---|---|---|
-| 여름 (7–9월) | 기온 ↑ → 에어컨 부하 ↑ | 강한 양의 상관 |
-| 겨울 (12–2월) | 기온 ↓ → 난방 부하 ↑ | 강한 음의 상관 |
-| 봄/가을 | 기온 15–20°C 쾌적 구간 | 수요 최소 |
+| Summer (Jul–Sep) | Temp ↑ → AC load ↑ | Strong positive correlation |
+| Winter (Dec–Feb) | Temp ↓ → Heating load ↑ | Strong negative correlation |
+| Spring/Autumn | Temp 15–20°C comfort zone | Demand minimum |
 
-기온 없이 캘린더·래그 피처만 쓰는 Phase 5-A 대비 **RMSE 20–35% 추가 개선** 예상.
+The original motivation was to improve over calendar + lag features only. In production, temperature is also used to explain HVAC-driven demand and to stabilize forecasts around hot or cold days.
 
 ---
 
-## 데이터 소스: Open-Meteo
+## Data Source: Open-Meteo
 
 ```
 API: https://api.open-meteo.com/v1/forecast
-도쿄 좌표: latitude=35.6762, longitude=139.6503
-시간대: Asia/Tokyo
+Tokyo coordinates: latitude=35.6762, longitude=139.6503
+Timezone: Asia/Tokyo
 ```
 
-### 무료 엔드포인트 두 가지
+### Two Free Endpoints
 
-| 용도 | 엔드포인트 파라미터 | 내용 |
+| Purpose | Endpoint Parameter | Content |
 |---|---|---|
-| 과거 실적 | `&past_days=92` | 과거 92일 시간별 실적 기온 |
-| 미래 예측 | `&forecast_days=2` | 오늘+내일 시간별 예측 기온 |
+| Historical | `&past_days=92` | Hourly historical temperatures for past 92 days |
+| Forecast | `&forecast_days=2` | Hourly forecast temperatures for today + tomorrow |
 
-### 응답 예시
+### Response Example
 
 ```json
 {
@@ -45,11 +47,11 @@ API: https://api.open-meteo.com/v1/forecast
 }
 ```
 
-인증 키 불필요, 상업적 이용 가능 (CC BY 4.0).
+No API key required. Commercial use allowed (CC BY 4.0).
 
 ---
 
-## 신규 파일: `python/etl/fetch_weather.py`
+## New File: `python/etl/fetch_weather.py`
 
 ```python
 import requests
@@ -95,48 +97,48 @@ def load_weather_cache(path: Path) -> pd.DataFrame | None:
 
 ---
 
-## 기온 피처 설계
+## Temperature Feature Design
 
 ```python
-# 현재 시점 기온 (실적 또는 예측)
-'temp_c'         # 해당 시간의 기온 (°C)
+# Current temperature (actual or forecast)
+'temp_c'         # temperature at that hour (°C)
 
-# 전일 기온 래그 (수요 관성 반영)
-'temp_lag_24h'   # 어제 같은 시간 기온
+# Previous-day temperature lag (demand inertia)
+'temp_lag_24h'   # temperature at same hour yesterday
 
-# 냉난방도일 (HDD/CDD)
-'hdd'            # max(0, 18 - temp_c)  — 난방 필요도
-'cdd'            # max(0, temp_c - 26)  — 냉방 필요도
+# Heating/Cooling Degree values (HDD/CDD)
+'hdd'            # max(0, 18 - temp_c)  — heating need
+'cdd'            # max(0, temp_c - 26)  — cooling need
 
-# 예측 시점용 (내일 예측 시 Open-Meteo forecast 사용)
-'temp_forecast'  # Open-Meteo 예측 기온 (추론 시에만)
+# Forecast-only feature (uses Open-Meteo forecast when predicting tomorrow)
+'temp_forecast'  # Open-Meteo forecast temperature (inference only)
 ```
 
-> **HDD/CDD 선택 이유**: 기온의 비선형 효과를 선형화.  
-> 18°C 이하에서는 낮을수록 난방 수요 선형 증가.  
-> 26°C 이상에서는 높을수록 냉방 수요 선형 증가.
+> **Why HDD/CDD**: linearizes the non-linear temperature effect.
+> Below 18°C, heating demand increases linearly as temperature drops.
+> Above 26°C, cooling demand increases linearly as temperature rises.
 
 ---
 
-## 파일 구조 변경
+## File Structure Changes
 
 ```
 python/
   etl/
-    fetch_weather.py    # 신규: Open-Meteo 수집
-    run_batch.py        # 수정: 날씨 캐시 통합
+    fetch_weather.py    # New: Open-Meteo data collection
+    run_batch.py        # Modified: weather cache integration
   forecast/
-    feature_builder.py  # 수정: 기온 피처 추가
+    feature_builder.py  # Modified: temperature features added
 ```
 
 ```
 web/public/
-  .weather_cache.parquet   # 기온 캐시 (모델 파일처럼 커밋)
+  .weather_cache.parquet   # temperature cache (committed like model file)
 ```
 
 ---
 
-## `feature_builder.py` 수정
+## `feature_builder.py` Modifications
 
 ```python
 def build_features(
@@ -145,11 +147,11 @@ def build_features(
 ) -> tuple[pd.DataFrame, pd.Series]:
     """
     power_cache: hourly_cache (ts, actual_mw, supply_mw, ...)
-    weather_cache: fetch_weather() 결과 (ts, temp_c)
+    weather_cache: result of fetch_weather() (ts, temp_c)
     """
     df = power_cache.copy()
 
-    # 기존 피처 (캘린더 + 래그)
+    # Existing features (calendar + lag)
     df['hour']      = df['ts'].dt.hour
     df['dayofweek'] = df['ts'].dt.dayofweek
     df['month']     = df['ts'].dt.month
@@ -159,13 +161,13 @@ def build_features(
     df['lag_168h']  = df['actual_mw'].shift(168)
     df['lag_336h']  = df['actual_mw'].shift(336)
 
-    # 기온 피처 (weather_cache가 있을 때만)
+    # Temperature features (only when weather_cache is provided)
     if weather_cache is not None:
         df = df.merge(weather_cache, on='ts', how='left')
         df['temp_lag_24h'] = df['temp_c'].shift(24)
         df['hdd'] = (18 - df['temp_c']).clip(lower=0)
         df['cdd'] = (df['temp_c'] - 26).clip(lower=0)
-    
+
     feature_cols = [
         'hour', 'dayofweek', 'month', 'is_holiday', 'is_weekend',
         'lag_24h', 'lag_168h', 'lag_336h',
@@ -178,87 +180,87 @@ def build_features(
 
 ---
 
-## `run_batch.py` 통합 전략
+## `run_batch.py` Integration Strategy
 
 ```python
 WEATHER_CACHE_PATH = out_dir / ".weather_cache.parquet"
 
-# ETL 실행 시 날씨 수집 (실패해도 계속 진행)
+# Fetch weather during ETL run (non-fatal if it fails)
 try:
     weather_df = fetch_weather(past_days=92, forecast_days=2)
     save_weather_cache(weather_df, WEATHER_CACHE_PATH)
 except Exception as e:
     print(f"Weather fetch failed (non-fatal): {e}")
-    weather_df = load_weather_cache(WEATHER_CACHE_PATH)  # 캐시 fallback
+    weather_df = load_weather_cache(WEATHER_CACHE_PATH)  # cache fallback
 
-# LightGBM 훈련 시 기온 포함
+# Include temperature when training LightGBM
 if forecaster and weather_df is not None:
     forecaster.fit(hourly_cache, weather_cache=weather_df)
 else:
-    forecaster.fit(hourly_cache)  # 기온 없이 훈련
+    forecaster.fit(hourly_cache)  # train without temperature
 
-# 예측 시 내일 예측 기온 사용
+# Use tomorrow's forecast temperature for prediction
 tomorrow_weather = weather_df[weather_df['ts'].dt.date == tomorrow] if weather_df is not None else None
 tomorrow_fc = forecaster.predict(tomorrow, hourly_cache, weather=tomorrow_weather)
 ```
 
 ---
 
-## GitHub Actions 통합
+## GitHub Actions Integration
 
 ```yaml
-# .github/workflows/etl.yml 에 추가
+# Add to .github/workflows/etl.yml
 - name: Fetch weather data
   run: python python/etl/fetch_weather.py --save web/public/.weather_cache.parquet
-  continue-on-error: true   # 날씨 API 실패해도 ETL 전체 중단 안 함
+  continue-on-error: true   # don't abort ETL if weather API fails
 ```
 
-### 캐시 파일 커밋
+### Cache File Commit
 
 ```yaml
 - name: Commit outputs
   run: |
     git add web/public/forecast/ web/public/status.json
-    git add web/public/.weather_cache.parquet || true  # 없어도 OK
+    git add web/public/.weather_cache.parquet || true  # OK if missing
     git add web/public/.lgbm_model.pkl || true
     git commit -m "auto: ETL $(date -u +%Y-%m-%dT%H:%M)Z" || true
 ```
 
 ---
 
-## 훈련/추론 시점 기온 소스
+## Temperature Source by Prediction Stage
 
-| 시점 | 기온 소스 | 비고 |
+| Stage | Temperature Source | Notes |
 |---|---|---|
-| 훈련 (과거 전체) | `past_days=365` 실적 기온 | 연 1회 풀 재학습 가능 |
-| 어제 예측 | 실적 기온 (확정) | 정확 |
-| 오늘 예측 | 실적 기온 (오전) + 예측 기온 (오후) | 혼합 |
-| 내일 예측 | Open-Meteo 48h 예측 기온 | ±1–2°C 오차 허용 |
+| Training (full history) | `past_days=365` historical | Annual full retrain possible |
+| Yesterday's forecast | Historical actuals (confirmed) | Exact |
+| Today's forecast | Historical (morning) + forecast (afternoon) | Mixed |
+| Tomorrow's forecast | Open-Meteo 48h forecast | ±1–2°C error tolerated |
 
-> 내일 기온 예측 오차가 모델 오차에 전파됨.  
-> 여름 폭염 기간엔 예측 오차가 크므로 불확실성 밴드가 자동으로 넓어짐 (quantile regression 특성).
+> Tomorrow's temperature forecast error propagates into model error.
+> During summer heat waves, forecast error is large — uncertainty bands widen automatically (quantile regression property).
 
 ---
 
-## 평가 계획
+## Evaluation Plan
 
-Phase 5-A (기온 없음) 대비 비교:
+Comparison against Phase 5-A (no temperature):
 
 ```
-테스트 기간: 2026-01-01 ~ 2026-05-04
+Test period: 2026-01-01 ~ 2026-05-04
 
-지표        Phase 5-A    Phase 5-B    개선율
-RMSE (MW)   측정 예정     측정 예정     예상 -20~35%
-MAE  (MW)   측정 예정     측정 예정
-여름 RMSE   측정 예정     측정 예정     개선 더 큼
-겨울 RMSE   측정 예정     측정 예정
+Metric      Phase 5-A    Phase 5-B    Improvement
+RMSE (MW)   TBD          TBD          est. -20~35%
+MAE  (MW)   TBD          TBD
+Summer RMSE TBD          TBD          larger improvement
+Winter RMSE TBD          TBD
 ```
 
-결과는 `web/public/model_eval.json`에 저장:
+Results saved to `web/public/model_eval.json`:
 
 ```json
 {
-  "evaluated_at": "2026-05-05T01:30:00+09:00",
+  "evaluated_at": "2026-05-05T09:20:00+09:00",
   "test_period": { "from": "2026-01-01", "to": "2026-05-04" },
   "baseline":  { "rmse": null, "mae": null, "mape": null },
   "lgbm_no_temp": { "rmse": null, "mae": null, "mape": null },
@@ -268,23 +270,23 @@ MAE  (MW)   측정 예정     측정 예정
 
 ---
 
-## 구현 순서
+## Implementation Steps
 
-1. `fetch_weather.py` 작성 및 수동 테스트 (`python -m python.etl.fetch_weather`)
-2. `feature_builder.py`에 기온 피처 추가 + 단위 테스트
-3. `LGBMForecaster.fit()` — `weather_cache` 선택 인자 추가
-4. `run_batch.py` 통합 (날씨 fetch → 모델 훈련 → 예측)
-5. `requirements.txt`에 `requests` 확인 (이미 있을 가능성 높음)
-6. `compare_models.py`로 A/B 평가 후 `model_eval.json` 저장
-7. (선택) UI에 "모델 성능" 카드 추가
+1. Write `fetch_weather.py` + manual test (`python -m python.etl.fetch_weather`)
+2. Add temperature features to `feature_builder.py` + unit tests
+3. Add `weather_cache` optional arg to `LGBMForecaster.fit()`
+4. Integrate into `run_batch.py` (weather fetch → model training → prediction)
+5. Verify `requests` is in `requirements.txt` (likely already present)
+6. Run A/B evaluation with `compare_models.py` and save `model_eval.json`
+7. (Optional) Add "Model Performance" card to UI
 
 ---
 
-## 리스크 및 대응
+## Risks and Mitigations
 
-| 리스크 | 가능성 | 대응 |
+| Risk | Likelihood | Mitigation |
 |---|---|---|
-| Open-Meteo API 일시 중단 | 낮음 | `continue-on-error: true` + 이전 캐시 사용 |
-| 과거 기온 데이터 공백 | 낮음 | `past_days` 값 늘려 재수집 가능 |
-| 기온 래그 feature leakage | 주의 | 추론 시 미래 기온은 예측값만 사용 |
-| 여름 폭염 외삽 | 중간 | 훈련 데이터에 과거 폭염 기간 포함 확인 |
+| Open-Meteo API outage | Low | `continue-on-error: true` + use previous cache |
+| Gaps in historical temperature data | Low | Increase `past_days` and re-fetch |
+| Temperature lag feature leakage | Watch | Use only forecast values for future temperatures during inference |
+| Summer heatwave extrapolation | Medium | Ensure training data includes past heatwave periods |

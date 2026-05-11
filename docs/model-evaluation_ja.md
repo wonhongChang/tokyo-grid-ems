@@ -1,5 +1,7 @@
 # モデル評価リポート
 
+言語: [English](model-evaluation.md) · [한국어](model-evaluation_ko.md)
+
 Tokyo Grid EMSでは、予測性能を2つの観点で評価します。
 
 1. **オフラインバックテスト**: 過去データ上でLightGBMが統計ベースラインを改善しているか確認します。
@@ -57,6 +59,7 @@ web/public/metrics/forecast_accuracy.json
 - 実績需要、自社モデル予測、TEPCO予測の3つが揃う直近時間だけを比較します。
 - それぞれの絶対誤差を計算します。
 - サマリー、日別、時間帯別にMAEと勝敗数を集計します。
+- `actualSource` が `tepco_forecast_fallback` の行は除外します。
 - 全体サマリー(`summary`)には直近の運用モデル系列のみを含めます。
   - 例: 現在の運用モデルがLightGBMの場合、baseline時代の予測日は全体勝率から除外します。
 

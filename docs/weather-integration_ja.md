@@ -1,7 +1,9 @@
 # 気温データ連携設計
 
-> Phase 5-B: LightGBMモデルへの気温特徴量追加  
+> 運用機能: LightGBMモデルへのOpen-Meteo気温特徴量追加
 > Open-Meteo API（無料、認証不要）— 東京座標基準
+
+言語: [English](weather-integration.md) · [한국어](weather-integration_ko.md)
 
 ---
 
@@ -15,7 +17,7 @@
 | 冬 (12〜2月) | 気温 ↓ → 暖房負荷 ↑ | 強い負の相関 |
 | 春/秋 | 気温15〜20°C 快適域 | 需要最小 |
 
-気温なしのカレンダー・ラグ特徴量のみのPhase 5-A対比で **RMSE 20〜35%追加改善**を期待。
+当初の目的は、カレンダー・ラグ特徴量のみの場合より予測を安定させることでした。現在の運用では、冷暖房需要を説明し、高温・低温日の予測を補正するために気温特徴量を使用しています。
 
 ---
 
@@ -112,8 +114,8 @@ def load_weather_cache(path: Path) -> pd.DataFrame | None:
 'temp_forecast'  # Open-Meteo予測気温（推論時のみ）
 ```
 
-> **HDD/CDD選択の理由**: 気温の非線形効果を線形化。  
-> 18°C以下では低いほど暖房需要が線形増加。  
+> **HDD/CDD選択の理由**: 気温の非線形効果を線形化。
+> 18°C以下では低いほど暖房需要が線形増加。
 > 26°C以上では高いほど冷房需要が線形増加。
 
 ---
@@ -235,7 +237,7 @@ tomorrow_fc = forecaster.predict(tomorrow, hourly_cache, weather=tomorrow_weathe
 | 今日予測 | 実績気温（午前）+ 予測気温（午後） | 混合 |
 | 明日予測 | Open-Meteo 48h予測気温 | ±1〜2°C誤差許容 |
 
-> 明日の気温予測誤差がモデル誤差に伝播する。  
+> 明日の気温予測誤差がモデル誤差に伝播する。
 > 夏の猛暑期は予測誤差が大きいため、不確実性バンドが自動的に広がる（quantile regression の特性）。
 
 ---
@@ -258,7 +260,7 @@ MAE  (MW)   測定予定      測定予定
 
 ```json
 {
-  "evaluated_at": "2026-05-05T01:30:00+09:00",
+  "evaluated_at": "2026-05-05T09:20:00+09:00",
   "test_period": { "from": "2026-01-01", "to": "2026-05-04" },
   "baseline":  { "rmse": null, "mae": null, "mape": null },
   "lgbm_no_temp": { "rmse": null, "mae": null, "mape": null },
