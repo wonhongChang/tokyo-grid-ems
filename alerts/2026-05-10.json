@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 4,
+    "warning": 7,
     "info": 0
   },
   "events": [
@@ -45,10 +45,10 @@
       "startAt": "2026-05-10T17:00:00+09:00",
       "endAt": "2026-05-10T18:00:00+09:00",
       "metric": "usage_pct",
-      "usagePct": 91.0,
+      "usagePct": 92.0,
       "thresholdPct": 90.0,
       "supplyMw": 27660.0,
-      "reason": "Usage 91.0% exceeded warning threshold 90.0%",
+      "reason": "Usage 92.0% exceeded warning threshold 90.0%",
       "tags": [
         "kpi"
       ]
@@ -66,6 +66,66 @@
       "reason": "Usage 90.0% exceeded warning threshold 90.0%",
       "tags": [
         "kpi"
+      ]
+    },
+    {
+      "id": "2026-05-10T07:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-10T07:00:00+09:00",
+      "endAt": "2026-05-10T08:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 20920.0,
+      "expectedMw": 20143.6,
+      "interval": {
+        "p95Lower": 19656.7,
+        "p95Upper": 20764.0,
+        "p99Lower": 19169.8,
+        "p99Upper": 21384.4
+      },
+      "reason": "Actual 20920 MW exceeded p95 upper 20764 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-10T12:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-10T12:00:00+09:00",
+      "endAt": "2026-05-10T13:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 24760.0,
+      "expectedMw": 24272.0,
+      "interval": {
+        "p95Lower": 23349.7,
+        "p95Upper": 24675.0,
+        "p99Lower": 22427.4,
+        "p99Upper": 25078.0
+      },
+      "reason": "Actual 24760 MW exceeded p95 upper 24675 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-10T23:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-10T23:00:00+09:00",
+      "endAt": "2026-05-11T00:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 22270.0,
+      "expectedMw": 22057.8,
+      "interval": {
+        "p95Lower": 21757.1,
+        "p95Upper": 22262.5,
+        "p99Lower": 21456.4,
+        "p99Upper": 22467.2
+      },
+      "reason": "Actual 22270 MW exceeded p95 upper 22262 MW",
+      "tags": [
+        "interval"
       ]
     }
   ]
