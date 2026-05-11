@@ -93,6 +93,7 @@ export interface AlertsJSON {
 export interface ActualPoint {
   ts: string
   actualMw: number | null
+  actualSource?: 'observed' | 'tepco_forecast_fallback' | null
   tepcoForecastMw: number | null
   usagePct: number | null
   supplyMw: number | null

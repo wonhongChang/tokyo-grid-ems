@@ -11,6 +11,7 @@ import pytest
 
 from python.etl.run_batch import (
     _apply_actual_json_latest_fallback,
+    _inject_today_actuals,
     build_actual_json,
     build_alerts_json,
     build_forecast_json,
@@ -154,6 +155,40 @@ def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):
     assert date(2024, 1, 2) in ok_set
     assert summaries["2024-01-02"]["peakActualMw"] == pytest.approx(21_000.0)
     assert summaries["2024-01-02"]["peakActualAt"] == "2024-01-02T23:00:00+09:00"
+
+
+def test_inject_today_actuals_keeps_tepco_forecast_fallback_until_csv_arrives(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-02T23:00:00+09:00",
+                "actualMw": 21_000.0,
+                "actualSource": "tepco_forecast_fallback",
+                "tepcoForecastMw": 21_000.0,
+                "usagePct": None,
+                "supplyMw": 25_500.0,
+            },
+        ],
+    }), encoding="utf-8")
+    cache = pd.DataFrame({
+        "ts": pd.Series([], dtype="datetime64[ns, Asia/Tokyo]"),
+        "actual_mw": pd.Series([], dtype="float64"),
+        "forecast_mw": pd.Series([], dtype="float64"),
+        "usage_pct": pd.Series([], dtype="float64"),
+        "supply_mw": pd.Series([], dtype="float64"),
+        "temp_c": pd.Series([], dtype="float64"),
+    })
+
+    result = _inject_today_actuals(tmp_path, date(2024, 1, 3), cache)
+
+    row = result.loc[result["ts"] == pd.Timestamp("2024-01-02T23:00:00+09:00")].iloc[0]
+    assert row["actual_mw"] == pytest.approx(21_000.0)
+    assert row["forecast_mw"] == pytest.approx(21_000.0)
 
 
 # ── build_alerts_json ────────────────────────────────────────────────────────

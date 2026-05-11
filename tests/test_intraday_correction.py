@@ -98,6 +98,35 @@ def test_intraday_correction_waits_for_minimum_observed_hours():
     assert result.forecasts == forecasts
 
 
+def test_intraday_correction_uses_tepco_forecast_fallback_for_operational_adjustment():
+    target = date(2026, 5, 11)
+    forecasts = _make_forecasts(target, 20_000.0)
+    actual_series = [
+        _actual_point(target, 8, 21_000.0),
+        _actual_point(target, 9, 21_000.0),
+        {
+            **_actual_point(target, 10, 21_000.0),
+            "actualSource": "tepco_forecast_fallback",
+        },
+    ]
+
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.5,
+            "decay_per_hour": 1.0,
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.applied is True
+    assert result.observed_hours == 3
+    assert result.last_observed_hour == 10
+    assert result.forecasts[11].forecast_mw == pytest.approx(20_500.0)
+
+
 def test_intraday_correction_clips_large_adjustment():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)

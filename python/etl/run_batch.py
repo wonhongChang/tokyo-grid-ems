@@ -47,6 +47,7 @@ JST = ZoneInfo("Asia/Tokyo")
 
 _LGBM_MODEL_NAME = ".lgbm_model.pkl"
 _LGBM_MIN_ROWS   = 90 * 24
+_TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
 
 # ---------------------------------------------------------------------------
 # Config
@@ -322,7 +323,8 @@ def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd
         for ts in new_ts:
             row: dict = {"ts": ts, "temp_c": float("nan")}
             for c in ("actual_mw", "forecast_mw", "usage_pct", "supply_mw"):
-                row[c] = float(upd_df.loc[ts, c]) if c in upd_df.columns else float("nan")
+                value = upd_df.loc[ts, c] if c in upd_df.columns else None
+                row[c] = float(value) if value is not None and pd.notna(value) else float("nan")
             new_rows.append({c: row.get(c, float("nan")) for c in _CACHE_COLS})
         result = pd.concat(
             [result, pd.DataFrame(new_rows)], ignore_index=True
@@ -366,6 +368,8 @@ def _build_today_alerts(
         actual_data = json.loads(actual_path.read_text(encoding="utf-8"))
         rows = []
         for pt in actual_data.get("series", []):
+            if pt.get("actualSource") == _TEPCO_FORECAST_FALLBACK_SOURCE:
+                continue
             if pt.get("actualMw") is None:
                 continue
             rows.append({

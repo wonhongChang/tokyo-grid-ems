@@ -55,6 +55,8 @@ def _comparable_rows_for_date(public_dir: Path, date_iso: str) -> list[dict]:
 
     rows: list[dict] = []
     for actual_point in actual.get("series", []):
+        if actual_point.get("actualSource") == "tepco_forecast_fallback":
+            continue
         hour = actual_point.get("ts", "")[11:13]
         forecast_point = forecast_by_hour.get(hour)
         if forecast_point is None:

@@ -252,6 +252,7 @@ Provides **hourly actual measurements for a specific date**. Same-day data is up
     {
       "ts": "2025-12-01T00:00:00+09:00",
       "actualMw": 42000.0,
+      "actualSource": "observed",
       "tepcoForecastMw": 41500.0,
       "usagePct": 68.5,
       "supplyMw": 61000.0
@@ -262,6 +263,7 @@ Provides **hourly actual measurements for a specific date**. Same-day data is up
 
 ## Field Descriptions
 - `actualMw`: actual power demand (MW); `null` for unconfirmed hours
+- `actualSource`: source of `actualMw`; `observed` for measured values, `tepco_forecast_fallback` when the 23:40 JST refresh fills a still-missing 23:00 actual with TEPCO's forecast. Fallback values are used for operational forecast inputs, but excluded from validation metrics and anomaly actual checks
 - `tepcoForecastMw`: TEPCO's official forecast value (from CSV)
 - `usagePct`: usage rate (%)
 - `supplyMw`: available supply capacity (MW)

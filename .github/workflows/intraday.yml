@@ -5,10 +5,8 @@ on:
     # Midnight rollover (JST 00:10) so the dashboard switches dates before the first intraday refresh.
     - cron: '10 15 * * *'
     # Every 2 hours after TEPCO's hourly refresh has settled.
-    # JST: 01:40, 03:40, 05:40, 07:40, 11:40, 13:40, 15:40, 17:40, 19:40, 21:40, 23:40
-    # 09:00 hour is handled by the daily ETL workflow.
-    - cron: '40 2-14/2 * * *'
-    - cron: '40 16-22/2 * * *'
+    # JST: 01:40, 03:40, 05:40, 07:40, 09:40, 11:40, 13:40, 15:40, 17:40, 19:40, 21:40, 23:40
+    - cron: '40 0-22/2 * * *'
   workflow_dispatch:
 
 permissions:
