@@ -184,6 +184,13 @@ body {
 /* ── Chart ───────────────────────────────────────────────────────────────── */
 .chart-container { margin-top: 8px; }
 .chart-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; }
+.chart-frame { width: 100%; }
+.chart-unit-label {
+  margin: 0 0 3px 40px;
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 1;
+}
 .legend-item { display: flex; align-items: center; gap: 5px; }
 .legend-dot { width: 10px; height: 3px; border-radius: 2px; }
 .legend-toggle {
@@ -209,6 +216,16 @@ body {
   font-size: 12px;
 }
 .chart-tooltip-title { font-weight: 600; margin-bottom: 4px; color: var(--text); }
+
+@media (max-width: 640px) {
+  .chart-container {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .chart-unit-label {
+    margin-left: 36px;
+  }
+}
 
 /* ── Validation ──────────────────────────────────────────────────────────── */
 .validation-stat-grid {

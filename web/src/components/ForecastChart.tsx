@@ -146,39 +146,42 @@ export function ForecastChart({ forecast, actual, showBands = true }: Props) {
         )}
       </div>
 
-      <ResponsiveContainer width="100%" height={300}>
-        <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 48 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-          <XAxis dataKey="hour" tick={{ fontSize: 11 }} interval={5} />
-          <YAxis
-            tickFormatter={fmtAxis}
-            tick={{ fontSize: 11 }}
-            domain={domain}
-            width={52}
-            label={{ value: powerUnit(locale), angle: -90, position: 'insideLeft', offset: 12, style: { fontSize: 10, fill: '#94a3b8' } }}
-          />
-          <Tooltip content={<CustomTooltip labels={tooltipLabels} locale={locale} />} />
+      <div className="chart-frame">
+        <div className="chart-unit-label">{powerUnit(locale)}</div>
+        <ResponsiveContainer width="100%" height={300}>
+          <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="hour" tick={{ fontSize: 11 }} interval={5} />
+            <YAxis
+              tickFormatter={fmtAxis}
+              tick={{ fontSize: 11 }}
+              tickMargin={4}
+              domain={domain}
+              width={40}
+            />
+            <Tooltip content={<CustomTooltip labels={tooltipLabels} locale={locale} />} />
 
-          {showBands && (
-            <>
-              <Area type="monotone" dataKey="p95Base" stackId="p95" stroke="none" fill="transparent" legendType="none" isAnimationActive={false} />
-              <Area type="monotone" dataKey="p95Fill" stackId="p95" stroke="none" fill="#93c5fd" fillOpacity={0.5} legendType="none" isAnimationActive={false} />
-            </>
-          )}
+            {showBands && (
+              <>
+                <Area type="monotone" dataKey="p95Base" stackId="p95" stroke="none" fill="transparent" legendType="none" isAnimationActive={false} />
+                <Area type="monotone" dataKey="p95Fill" stackId="p95" stroke="none" fill="#93c5fd" fillOpacity={0.5} legendType="none" isAnimationActive={false} />
+              </>
+            )}
 
-          {showModelLine && (
-            <Line type="monotone" dataKey="forecast" stroke="#2563eb" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} />
-          )}
+            {showModelLine && (
+              <Line type="monotone" dataKey="forecast" stroke="#2563eb" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} />
+            )}
 
-          {hasTepcoFc && (
-            <Line type="monotone" dataKey="tepcoForecast" stroke="#7c3aed" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} connectNulls={false} />
-          )}
+            {hasTepcoFc && (
+              <Line type="monotone" dataKey="tepcoForecast" stroke="#7c3aed" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} connectNulls={false} />
+            )}
 
-          {hasActual && (
-            <Line type="monotone" dataKey="actual" stroke="#ea580c" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} connectNulls={false} />
-          )}
-        </ComposedChart>
-      </ResponsiveContainer>
+            {hasActual && (
+              <Line type="monotone" dataKey="actual" stroke="#ea580c" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} connectNulls={false} />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   )
 }
