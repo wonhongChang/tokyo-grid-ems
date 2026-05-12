@@ -12,6 +12,7 @@ import pytest
 from python.etl.run_batch import (
     _apply_actual_json_latest_fallback,
     _inject_today_actuals,
+    _load_existing_forecast,
     build_actual_json,
     build_alerts_json,
     build_forecast_json,
@@ -259,6 +260,40 @@ def test_build_forecast_json_normalizes_crossed_bands():
     assert point["p99LowerMw"] <= point["p95LowerMw"]
     assert point["p99UpperMw"] >= point["p95UpperMw"]
     assert result["peak"]["interval"]["p95Upper"] == point["p95UpperMw"]
+
+
+def test_load_existing_forecast_returns_published_forecast(tmp_path):
+    forecast_dir = tmp_path / "forecast"
+    forecast_dir.mkdir()
+    (forecast_dir / "2024-01-01.json").write_text(json.dumps({
+        "date": "2024-01-01",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "model": {"name": "lgbm_quantile_q50_intraday_residual"},
+        "series": [
+            {
+                "ts": "2024-01-01T00:00:00+09:00",
+                "forecastMw": 30_000.0,
+                "p95LowerMw": 29_000.0,
+                "p95UpperMw": 31_000.0,
+                "p99LowerMw": 28_000.0,
+                "p99UpperMw": 32_000.0,
+            }
+        ],
+    }), encoding="utf-8")
+
+    fc_list, model_name = _load_existing_forecast(tmp_path, date(2024, 1, 1))
+
+    assert model_name == "lgbm_quantile_q50_intraday_residual"
+    assert len(fc_list) == 1
+    assert fc_list[0].forecast_mw == pytest.approx(30_000.0)
+
+
+def test_load_existing_forecast_missing_file_returns_empty(tmp_path):
+    fc_list, model_name = _load_existing_forecast(tmp_path, date(2024, 1, 1))
+
+    assert fc_list == []
+    assert model_name is None
 
 
 # ── compute_missing_days ──────────────────────────────────────────────────────

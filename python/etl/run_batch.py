@@ -263,6 +263,38 @@ def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = 
     }
 
 
+def _load_existing_forecast(out_dir: Path, d: date) -> tuple[list[HourlyForecast], str | None]:
+    """Load an already-published forecast for d, if it exists.
+
+    Daily ETL runs after the operating day has finished.  If a forecast JSON was
+    already published by the previous day's status/intraday runs, preserve it so
+    the dashboard and operational accuracy report continue to compare against
+    the forecast users actually saw.
+    """
+    forecast_path = out_dir / "forecast" / f"{d.isoformat()}.json"
+    if not forecast_path.exists():
+        return [], None
+    try:
+        data = json.loads(forecast_path.read_text(encoding="utf-8"))
+        result = [
+            HourlyForecast(
+                ts=pt["ts"],
+                forecast_mw=pt["forecastMw"],
+                p95_lower_mw=pt["p95LowerMw"],
+                p95_upper_mw=pt["p95UpperMw"],
+                p99_lower_mw=pt["p99LowerMw"],
+                p99_upper_mw=pt["p99UpperMw"],
+            )
+            for pt in data.get("series", [])
+            if pt.get("forecastMw") is not None
+        ]
+        model_name = data.get("model", {}).get("name")
+        return result, model_name
+    except Exception as e:
+        print(f"[WARN] Failed to read existing forecast/{d.isoformat()}.json: {e}", file=sys.stderr)
+        return [], None
+
+
 def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd.DataFrame:
     """Inject actual_mw from actual/ JSONs for dates missing from cache.
 
@@ -930,6 +962,7 @@ def main() -> None:
 
     new_ok = new_fail = 0
     new_ok_dates: list[date] = []
+    reforecast_dates: list[date] = []
 
     for d, csv_path in csv_map.items():
         if d in ok_set or d in fail_set:
@@ -943,16 +976,27 @@ def main() -> None:
 
             hourly = parsed.hourly
 
-            # Forecast uses only history BEFORE this date (filtered inside compute_forecast)
-            fc_list = compute_forecast(hourly_cache, d, n_weeks, min_samples)
+            existing_fc_list, existing_model_name = _load_existing_forecast(out_dir, d)
+            should_write_forecast = not existing_fc_list
+            if existing_fc_list:
+                fc_list = existing_fc_list
+                print(
+                    f"[ETL] Preserving existing forecast/{d.isoformat()}.json "
+                    f"({existing_model_name or 'unknown model'})"
+                )
+            else:
+                # Forecast uses only history BEFORE this date (filtered inside compute_forecast)
+                fc_list = compute_forecast(hourly_cache, d, n_weeks, min_samples)
+                reforecast_dates.append(d)
 
             # Anomaly detection on today's actuals vs forecast
             events = detect_anomalies(hourly, fc_list, config.get("anomaly", {}))
 
             write_json(out_dir / "alerts" / f"{d.isoformat()}.json",
                        build_alerts_json(d, events))
-            write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
-                       build_forecast_json(d, fc_list, config))
+            if should_write_forecast:
+                write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
+                           build_forecast_json(d, fc_list, config))
             write_json(out_dir / "actual" / f"{d.isoformat()}.json",
                        build_actual_json(d, hourly))
 
@@ -989,9 +1033,10 @@ def main() -> None:
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
 
-    # Re-generate forecast + alerts for newly processed dates using LightGBM
-    if forecaster is not None and new_ok_dates:
-        for d in new_ok_dates:
+    # Re-generate backfilled forecasts using LightGBM only when no operational
+    # forecast JSON already existed for that date.
+    if forecaster is not None and reforecast_dates:
+        for d in reforecast_dates:
             try:
                 historical_forecaster = _try_train_lgbm_as_of(hourly_cache, d)
                 historical_cache = hourly_cache[hourly_cache["ts"] < pd.Timestamp(d, tz=JST)].copy()
