@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 4,
+    "warning": 5,
     "info": 0
   },
   "events": [
@@ -66,6 +66,26 @@
       "reason": "Usage 91.0% exceeded warning threshold 90.0%",
       "tags": [
         "kpi"
+      ]
+    },
+    {
+      "id": "2026-05-12T00:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-12T00:00:00+09:00",
+      "endAt": "2026-05-12T01:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 22570.0,
+      "expectedMw": 22279.3,
+      "interval": {
+        "p95Lower": 21575.3,
+        "p95Upper": 22538.9,
+        "p99Lower": 20871.3,
+        "p99Upper": 22798.5
+      },
+      "reason": "Actual 22570 MW exceeded p95 upper 22539 MW",
+      "tags": [
+        "interval"
       ]
     }
   ]
