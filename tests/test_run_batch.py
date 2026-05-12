@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
+from python.forecast.baseline import HourlyForecast
 from python.etl.run_batch import (
     _apply_actual_json_latest_fallback,
     _inject_today_actuals,
@@ -16,6 +17,7 @@ from python.etl.run_batch import (
     build_actual_json,
     build_alerts_json,
     build_forecast_json,
+    build_status_json,
     compute_missing_days,
     discover_csv_files,
     extract_day_summary,
@@ -260,6 +262,77 @@ def test_build_forecast_json_normalizes_crossed_bands():
     assert point["p99LowerMw"] <= point["p95LowerMw"]
     assert point["p99UpperMw"] >= point["p95UpperMw"]
     assert result["peak"]["interval"]["p95Upper"] == point["p95UpperMw"]
+
+
+def _forecast_point(d: date, forecast_mw: float) -> HourlyForecast:
+    return HourlyForecast(
+        ts=f"{d.isoformat()}T11:00:00+09:00",
+        forecast_mw=forecast_mw,
+        p95_lower_mw=forecast_mw - 500.0,
+        p95_upper_mw=forecast_mw + 500.0,
+        p99_lower_mw=forecast_mw - 800.0,
+        p99_upper_mw=forecast_mw + 800.0,
+    )
+
+
+def _recent_supply_cache(supply_mw: float = 34_000.0) -> pd.DataFrame:
+    base = pd.Timestamp("2024-01-08T00:00:00+09:00")
+    return pd.DataFrame({
+        "ts": [base + pd.Timedelta(hours=i) for i in range(24 * 14)],
+        "supply_mw": [supply_mw] * (24 * 14),
+    })
+
+
+def _reserve_risk_config() -> dict:
+    return {
+        "anomaly": {
+            "reserve_risk": {
+                "warning_pct": 90.0,
+                "critical_pct": 95.0,
+            }
+        }
+    }
+
+
+def test_build_status_json_allows_today_forecast_critical_when_no_actual_override():
+    today = date(2024, 1, 22)
+    yesterday = date(2024, 1, 21)
+
+    result = build_status_json(
+        ok_set={yesterday},
+        fail_set=set(),
+        summaries={},
+        csv_dates={yesterday},
+        today=today,
+        today_fc=[_forecast_point(today, 33_000.0)],
+        tomorrow=date(2024, 1, 23),
+        tomorrow_fc=[],
+        cache=_recent_supply_cache(),
+        config=_reserve_risk_config(),
+    )
+
+    assert result["today"]["severity"] == "critical"
+
+
+def test_build_status_json_caps_tomorrow_forecast_severity_at_warning():
+    today = date(2024, 1, 22)
+    yesterday = date(2024, 1, 21)
+    tomorrow = date(2024, 1, 23)
+
+    result = build_status_json(
+        ok_set={yesterday},
+        fail_set=set(),
+        summaries={},
+        csv_dates={yesterday},
+        today=today,
+        today_fc=[],
+        tomorrow=tomorrow,
+        tomorrow_fc=[_forecast_point(tomorrow, 33_000.0)],
+        cache=_recent_supply_cache(),
+        config=_reserve_risk_config(),
+    )
+
+    assert result["tomorrow"]["severity"] == "warning"
 
 
 def test_load_existing_forecast_returns_published_forecast(tmp_path):

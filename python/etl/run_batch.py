@@ -451,8 +451,13 @@ def compute_missing_days(csv_dates: set[date]) -> list[str]:
     return result
 
 
-def _forecast_severity(fc_list: list, cache: pd.DataFrame, config: dict) -> str:
-    """Estimate severity for a future forecast using peak forecast vs recent supply."""
+def _forecast_severity(
+    fc_list: list,
+    cache: pd.DataFrame,
+    config: dict,
+    allow_critical: bool = True,
+) -> str:
+    """Estimate severity from peak forecast vs recent supply."""
     if not fc_list:
         return "info"
     peak_fc_mw = max(f.forecast_mw for f in fc_list)
@@ -467,7 +472,7 @@ def _forecast_severity(fc_list: list, cache: pd.DataFrame, config: dict) -> str:
         est_pct = peak_fc_mw / recent_supply * 100
         rr = config.get("anomaly", {}).get("reserve_risk", {})
         if est_pct >= rr.get("critical_pct", 95.0):
-            return "critical"
+            return "critical" if allow_critical else "warning"
         if est_pct >= rr.get("warning_pct", 90.0):
             return "warning"
     return "info"
@@ -509,7 +514,11 @@ def build_status_json(
         if not fc_list:
             return None
         peak = peak_of_forecasts(fc_list)
-        sev = override_sev if override_sev is not None else _forecast_severity(fc_list, cache, config)
+        sev = (
+            override_sev
+            if override_sev is not None
+            else _forecast_severity(fc_list, cache, config, allow_critical=d <= today)
+        )
         result = {
             "date": d.isoformat(),
             "peakForecastMw": peak["forecastMw"] if peak else None,
