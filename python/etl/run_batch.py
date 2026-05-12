@@ -300,32 +300,44 @@ def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd
 
     Covers today (lag_24h for tomorrow) and any recent days not yet in the
     hourly cache (e.g. yesterday when TEPCO CSV hasn't been published yet).
-    Looks back up to 7 days to pick up any actual/ files absent from cache.
+    Missing published actuals temporarily use TEPCO forecasts as lag inputs until
+    the monthly CSV provides final observed values.
     """
-    cache_dates = set(cache[cache["actual_mw"].notna()]["ts"].dt.date)
+    if cache.empty or "ts" not in cache.columns:
+        normalized_cache = cache.copy()
+        cached_actuals = pd.Series(dtype="float64")
+    else:
+        normalized_cache = cache.copy()
+        normalized_cache["ts"] = pd.to_datetime(normalized_cache["ts"], utc=True).dt.tz_convert("Asia/Tokyo")
+        cached_actuals = (
+            normalized_cache.set_index("ts")["actual_mw"]
+            if "actual_mw" in normalized_cache.columns
+            else pd.Series(dtype="float64")
+        )
 
-    # Collect all actual JSON dates that are not fully in cache
     updates: dict = {}
     actual_dir = out_dir / "actual"
     lookback = [today - timedelta(days=i) for i in range(8)]
     for d in lookback:
-        if d in cache_dates:
-            continue
         actual_path = actual_dir / f"{d.isoformat()}.json"
         if not actual_path.exists():
             continue
         try:
             data = json.loads(actual_path.read_text(encoding="utf-8"))
-            is_today = (d == today)
             for pt in data.get("series", []):
+                ts = pd.Timestamp(pt["ts"]).tz_convert("Asia/Tokyo")
                 actual_mw = pt.get("actualMw")
-                # For today's missing hours, fall back to TEPCO's published forecast
+                is_fallback = pt.get("actualSource") == _TEPCO_FORECAST_FALLBACK_SOURCE
                 if actual_mw is None:
-                    if is_today:
-                        actual_mw = pt.get("tepcoForecastMw")
+                    actual_mw = pt.get("tepcoForecastMw")
+                    is_fallback = True
                     if actual_mw is None:
                         continue
-                ts = pd.Timestamp(pt["ts"]).tz_convert("Asia/Tokyo")
+                existing_actual = cached_actuals.loc[ts] if ts in cached_actuals.index else float("nan")
+                if isinstance(existing_actual, pd.Series):
+                    existing_actual = existing_actual.dropna().iloc[0] if existing_actual.notna().any() else float("nan")
+                if is_fallback and pd.notna(existing_actual):
+                    continue
                 updates[ts] = {
                     "actual_mw":   actual_mw,
                     "forecast_mw": pt.get("tepcoForecastMw"),
@@ -342,7 +354,7 @@ def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd
         [{"ts": ts, **vals} for ts, vals in updates.items()]
     ).set_index("ts")
 
-    result = cache.copy().set_index("ts")
+    result = normalized_cache.set_index("ts")
     update_cols = [c for c in ("actual_mw", "forecast_mw", "usage_pct", "supply_mw")
                    if c in upd_df.columns and c in result.columns]
     result.update(upd_df[update_cols])

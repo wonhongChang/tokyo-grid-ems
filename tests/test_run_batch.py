@@ -194,6 +194,58 @@ def test_inject_today_actuals_keeps_tepco_forecast_fallback_until_csv_arrives(tm
     assert row["forecast_mw"] == pytest.approx(21_000.0)
 
 
+def test_inject_today_actuals_fills_missing_yesterday_hours_from_tepco_forecast(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-02T22:00:00+09:00",
+                "actualMw": 20_000.0,
+                "actualSource": "observed",
+                "tepcoForecastMw": 19_800.0,
+                "usagePct": 80.0,
+                "supplyMw": 25_000.0,
+            },
+            {
+                "ts": "2024-01-02T23:00:00+09:00",
+                "actualMw": None,
+                "actualSource": None,
+                "tepcoForecastMw": 21_000.0,
+                "usagePct": None,
+                "supplyMw": 25_500.0,
+            },
+        ],
+    }), encoding="utf-8")
+    cache = pd.DataFrame([
+        {
+            "ts": pd.Timestamp("2024-01-02T22:00:00+09:00"),
+            "actual_mw": 20_000.0,
+            "forecast_mw": 19_800.0,
+            "usage_pct": 80.0,
+            "supply_mw": 25_000.0,
+            "temp_c": 8.5,
+        },
+        {
+            "ts": pd.Timestamp("2024-01-02T23:00:00+09:00"),
+            "actual_mw": float("nan"),
+            "forecast_mw": 21_000.0,
+            "usage_pct": float("nan"),
+            "supply_mw": 25_500.0,
+            "temp_c": 8.3,
+        },
+    ])
+
+    result = _inject_today_actuals(tmp_path, date(2024, 1, 3), cache)
+
+    row = result.loc[result["ts"] == pd.Timestamp("2024-01-02T23:00:00+09:00")].iloc[0]
+    assert row["actual_mw"] == pytest.approx(21_000.0)
+    assert row["forecast_mw"] == pytest.approx(21_000.0)
+
+
 # ── build_alerts_json ────────────────────────────────────────────────────────
 
 def test_build_alerts_json_empty_events():
