@@ -56,7 +56,7 @@ git push -u origin main
 
 | Workflow | Schedule | Role |
 |---|---|---|
-| `ETL + Deploy` | Daily at 09:20 JST | Download TEPCO monthly ZIP → process confirmed historical data → metrics → deploy |
+| `ETL + Deploy` | Daily at 07:20, 08:20, 09:20 JST | Download TEPCO monthly ZIP → process confirmed historical data → metrics → deploy. Repeated morning runs cover delayed ZIP publication and are idempotent. |
 | `Intraday Update` | 00:10 JST + 01:40–23:40 JST every 2 hours | Refresh same-day TEPCO intraday CSV → forecasts/status → deploy |
 
 ---

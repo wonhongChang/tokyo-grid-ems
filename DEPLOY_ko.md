@@ -56,7 +56,7 @@ git push -u origin main
 
 | 워크플로 | 실행 시각 | 역할 |
 |---|---|---|
-| `ETL + Deploy` | 매일 09:20 JST | TEPCO 월별 ZIP 다운로드 → 확정 이력 데이터 처리 → metrics → 배포 |
+| `ETL + Deploy` | 매일 07:20, 08:20, 09:20 JST | TEPCO 월별 ZIP 다운로드 → 확정 이력 데이터 처리 → metrics → 배포. ZIP 공개 지연을 흡수하기 위한 반복 실행이며 멱등적으로 동작 |
 | `Intraday Update` | 00:10 JST + 01:40~23:40 JST 2시간마다 | 당일 TEPCO intraday CSV 갱신 → 예측/status → 배포 |
 
 ---
