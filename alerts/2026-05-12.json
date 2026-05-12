@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 5,
+    "warning": 8,
     "info": 0
   },
   "events": [
@@ -69,6 +69,36 @@
       ]
     },
     {
+      "id": "2026-05-12T18:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-05-12T18:00:00+09:00",
+      "endAt": "2026-05-12T19:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 92.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 33170.0,
+      "reason": "Usage 92.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2026-05-12T19:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-05-12T19:00:00+09:00",
+      "endAt": "2026-05-12T20:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 90.0,
+      "thresholdPct": 90.0,
+      "supplyMw": 33110.0,
+      "reason": "Usage 90.0% exceeded warning threshold 90.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
       "id": "2026-05-12T00:00:00+09:00_spike",
       "type": "spike",
       "severity": "warning",
@@ -84,6 +114,26 @@
         "p99Upper": 22798.5
       },
       "reason": "Actual 22570 MW exceeded p95 upper 22539 MW",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-12T19:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-12T19:00:00+09:00",
+      "endAt": "2026-05-12T20:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 30030.0,
+      "expectedMw": 29951.0,
+      "interval": {
+        "p95Lower": 28548.3,
+        "p95Upper": 29951.0,
+        "p99Lower": 27145.6,
+        "p99Upper": 29951.0
+      },
+      "reason": "Actual 30030 MW exceeded p99 upper 29951 MW by 79 MW (0.26%)",
       "tags": [
         "interval"
       ]
