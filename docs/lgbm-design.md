@@ -79,6 +79,12 @@ At the final 23:00 hour, if TEPCO has not published the actual value by the 23:4
 
 This fallback is allowed as an operational forecast input, but is excluded from model validation metrics and anomaly actual checks.
 
+## Daytime Heat Guard
+
+`python/forecast/adjustment.py` applies a conservative post-processing guard before intraday correction. When the same-hour 168h lag points to a holiday or weekend and the current daytime temperature anomaly is high, the guard prevents analogous-day adjustment from pushing daytime forecasts downward. This is designed for cases such as a warm business afternoon following a holiday-contaminated same-weekday lag.
+
+See [Daytime Heat Guard Improvement](daytime-heat-guard.md) for the incident analysis, implementation details, and validation result.
+
 ---
 
 ## Training and Inference Flow

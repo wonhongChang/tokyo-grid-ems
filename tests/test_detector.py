@@ -100,7 +100,7 @@ def test_reserve_risk_event_schema():
 def test_spike_warning_above_p95():
     forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
     # p95_upper ≈ 31960; p99_upper ≈ 32576
-    actual = [32100.0] + [30000.0] * 23  # above p95, below p99 → warning
+    actual = [32150.0] + [30000.0] * 23
     events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
     spikes = [e for e in events if e["type"] == "spike"]
     assert len(spikes) >= 1
@@ -155,6 +155,13 @@ def test_spike_p99_small_breach_is_warning():
     spikes = [e for e in events if e["type"] == "spike"]
     assert len(spikes) >= 1
     assert spikes[0]["severity"] == "warning"
+
+
+def test_p95_tiny_breach_is_not_an_event():
+    forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
+    actual = [31980.0] + [30000.0] * 23
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
+    assert not [e for e in events if e["type"] == "spike"]
 
 
 def test_drop_p99_breach_pct_triggers_critical():

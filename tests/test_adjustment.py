@@ -33,6 +33,7 @@ def _config(
             "analogous_day": {
                 "month_window": 1,
                 "temp_anomaly_tol": 4.0,
+                "daytime_temp_hours": [10, 11, 12, 13, 14, 15, 16, 17],
                 "consec_holiday_tol": 2,
                 "min_candidates": min_candidates,
                 "max_candidates": max_candidates,

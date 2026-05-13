@@ -36,10 +36,14 @@ Spike/drop compares actual demand against prediction intervals.
 | Spike | actual > `p95Upper` | actual > `p99Upper` and breach exceeds MW or % threshold |
 | Drop | actual < `p95Lower` | actual < `p99Lower` and breach exceeds MW or % threshold |
 
+Tiny p95 breaches are ignored so that a 1-50 MW edge crossing does not become a dashboard alert. By default, a p95 warning needs either a 150 MW breach or a 0.5% breach.
+
 Default critical thresholds:
 
 ```yaml
 spike_drop:
+  warning_breach_mw: 150
+  warning_breach_pct: 0.5
   critical_breach_mw: 500
   critical_breach_pct: 2.0
 ```

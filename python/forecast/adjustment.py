@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -24,7 +24,8 @@ class AnalogousDayAdjuster:
 
     Analogous days are selected by: same calendar-month neighbourhood, same weekday
     type (weekday vs non-working), similar consecutive-holiday length, and similar
-    7-day temperature anomaly.  Residuals are shrunk and capped before application.
+    daytime 7-day temperature anomaly.  Residuals are shrunk and capped before
+    application.
     """
 
     def __init__(self, config: dict) -> None:
@@ -41,6 +42,9 @@ class AnalogousDayAdjuster:
         self._shift_shrinkage            = float(analog_config.get("shift_shrinkage", 0.7))
         self._single_candidate_shrinkage = float(analog_config.get("single_candidate_shrinkage", 0.5))
         self._max_abs_shift_mw           = float(analog_config.get("max_abs_shift_mw", 2500.0))
+        self._daytime_temp_hours         = set(analog_config.get(
+            "daytime_temp_hours", [10, 11, 12, 13, 14, 15, 16, 17]
+        ))
 
     # ------------------------------------------------------------------
     # Candidate search
@@ -91,7 +95,8 @@ class AnalogousDayAdjuster:
             ):
                 continue
 
-            # Temperature anomaly (skip filter when target anomaly is unknown)
+            # Daytime temperature anomaly (skip filter when target anomaly is unknown).
+            # This avoids diluting warm afternoon HVAC demand with cool overnight hours.
             if not np.isnan(target_temp_anomaly_7d) and "temp_c" in cache.columns:
                 cutoff = pd.Timestamp(
                     candidate_date.year,
@@ -101,11 +106,13 @@ class AnalogousDayAdjuster:
                 )
                 past_week = cache[
                     (cache["ts"] < cutoff) &
-                    (cache["ts"] >= cutoff - pd.Timedelta(hours=168))
+                    (cache["ts"] >= cutoff - pd.Timedelta(hours=168)) &
+                    (cache["ts"].dt.hour.isin(self._daytime_temp_hours))
                 ]["temp_c"].dropna()
-                if len(past_week) >= 24:
+                if len(past_week) >= len(self._daytime_temp_hours):
                     candidate_day_temps = cache[
-                        cache["ts"].dt.date == candidate_date
+                        (cache["ts"].dt.date == candidate_date) &
+                        (cache["ts"].dt.hour.isin(self._daytime_temp_hours))
                     ]["temp_c"].dropna()
                     if len(candidate_day_temps) == 0:
                         continue
@@ -149,9 +156,17 @@ class AnalogousDayAdjuster:
 
         row0 = inference_features.iloc[0]
         target_consecutive_holiday_len = int(row0["consec_holiday_len"])
-        target_temp_anomaly_7d = float(
-            np.nanmean(inference_features["temp_anomaly_7d"].values)
-        )
+        if "daytime_temp_anomaly_7d" in inference_features.columns:
+            target_temp_anomaly_7d = float(
+                np.nanmean(inference_features["daytime_temp_anomaly_7d"].values)
+            )
+        else:
+            daytime_rows = inference_features[
+                inference_features["hour"].isin(self._daytime_temp_hours)
+            ]
+            target_temp_anomaly_7d = float(
+                np.nanmean(daytime_rows["temp_anomaly_7d"].values)
+            )
         target_is_business_day = bool(row0["is_non_business_day"] == 0)
 
         candidates = self._find_candidates(
@@ -240,6 +255,8 @@ class PostHolidayTimeBandGuard:
     - Daytime (default 10-18h, only when temp_anomaly_7d >= threshold): actual demand
       tends to be HIGHER than predicted; block any negative adjuster shift so it cannot
       worsen midday underestimation.
+    The daytime guard also applies when the same-hour 168h lag comes from a holiday or
+    weekend, because that lag can pull a warm business-afternoon forecast too low.
 
     Offset values are 0 by default (block-only).  Set downward_offset_mw /
     upward_offset_mw in config when empirical calibration warrants it.
@@ -266,6 +283,7 @@ class PostHolidayTimeBandGuard:
         self._dt_block_neg   = bool(daytime_config.get("block_negative_shift", True))
         self._dt_offset      = float(daytime_config.get("upward_offset_mw", 0.0))
         self._dt_max_offset  = float(daytime_config.get("max_upward_offset_mw", 900.0))
+        self._activate_on_holiday_lag = bool(daytime_config.get("activate_on_holiday_lag", True))
 
     def apply(
         self,
@@ -282,8 +300,17 @@ class PostHolidayTimeBandGuard:
             return adjusted_forecasts
 
         row0 = inference_features.iloc[0]
-        if (float(row0["consec_holiday_len"]) < self._min_consec or
-                float(row0["days_since_holiday_end"]) > self._max_dsh):
+        target_date = pd.Timestamp(raw_forecasts[0].ts).date()
+        lag_168h_date = target_date - timedelta(days=7)
+        post_holiday_active = (
+            float(row0["consec_holiday_len"]) >= self._min_consec
+            and float(row0["days_since_holiday_end"]) <= self._max_dsh
+        )
+        lag_holiday_active = (
+            self._activate_on_holiday_lag
+            and _is_nonworking(lag_168h_date)
+        )
+        if not (post_holiday_active or lag_holiday_active):
             return adjusted_forecasts
 
         from python.forecast.baseline import HourlyForecast
@@ -294,7 +321,7 @@ class PostHolidayTimeBandGuard:
             shift = adjusted_forecast.forecast_mw - raw_forecast.forecast_mw
 
             # Early morning guard
-            if hour in self._em_hours:
+            if post_holiday_active and hour in self._em_hours:
                 # Step 1: blocking determines the base
                 base = (
                     raw_forecast
@@ -320,7 +347,8 @@ class PostHolidayTimeBandGuard:
             if hour in self._dt_hours:
                 row = inference_features.iloc[hour]
                 temp_anomaly_7d = float(row["temp_anomaly_7d"])
-                if not np.isnan(temp_anomaly_7d) and temp_anomaly_7d >= self._dt_min_anomaly:
+                heat_signal = temp_anomaly_7d
+                if not np.isnan(heat_signal) and heat_signal >= self._dt_min_anomaly:
                     # Step 1: blocking determines the base
                     base = (
                         raw_forecast
