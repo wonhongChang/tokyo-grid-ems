@@ -1,6 +1,6 @@
 # 모델 평가 리포트
 
-언어: [English](model-evaluation.md) · [日本語](model-evaluation_ja.md)
+언어: [English](../en/model-evaluation.md) · [日本語](../ja/model-evaluation.md)
 
 Tokyo Grid EMS는 예측 성능을 두 관점으로 분리해서 평가합니다.
 

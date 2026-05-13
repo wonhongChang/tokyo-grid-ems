@@ -1,6 +1,6 @@
 # Anomaly Detection Criteria
 
-Languages: [한국어](anomaly-criteria_ko.md) · [日本語](anomaly-criteria_ja.md)
+Languages: [한국어](../ko/anomaly-criteria.md) · [日本語](../ja/anomaly-criteria.md)
 
 Tokyo Grid EMS separates anomaly detection into three event types so the dashboard can explain why an alert was raised.
 

@@ -112,8 +112,10 @@ DATE,TIME,当日実績(５分間隔値)(万kW),太陽光発電実績(...),太陽
 │   └── anomaly/                # 이상 탐지
 ├── web/                        # React/Vite 대시보드
 ├── docs/
-│   ├── lgbm-design.md          # LightGBM 모델 설계
-│   └── weather-integration.md  # 기온 데이터 연동 설계
+│   ├── en/                     # 영어 문서
+│   ├── ko/                     # 한국어 문서
+│   ├── ja/                     # 일본어 문서
+│   └── assets/                 # README와 문서용 이미지
 └── data/
     └── raw/                    # 원본 CSV (Actions에서 자동 다운로드, git 제외)
         └── YYYY/
@@ -167,12 +169,13 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 ## 문서
 
-- [학생을 위한 프로젝트 전체 설명](docs/project-walkthrough_ko.md)
-- [LightGBM 모델 설계](docs/lgbm-design_ko.md)
-- [기온 데이터 연동 설계](docs/weather-integration_ko.md)
-- [모델 평가 리포트](docs/model-evaluation_ko.md)
-- [이상탐지 기준](docs/anomaly-criteria_ko.md)
-- [JSON 스키마 계약](docs/json_schema_ko.md)
+- [학생을 위한 프로젝트 전체 설명](docs/ko/project-walkthrough.md)
+- [LightGBM 모델 설계](docs/ko/lgbm-design.md)
+- [2026-05-13 주간 고온 보호 보정](docs/ko/model-improvement-2026-05-13-daytime-heat-guard.md)
+- [기온 데이터 연동 설계](docs/ko/weather-integration.md)
+- [모델 평가 리포트](docs/ko/model-evaluation.md)
+- [이상탐지 기준](docs/ko/anomaly-criteria.md)
+- [JSON 스키마 계약](docs/ko/json_schema.md)
 
 ---
 

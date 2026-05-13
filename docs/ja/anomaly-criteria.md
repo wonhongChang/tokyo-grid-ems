@@ -1,6 +1,6 @@
 # 異常検知基準
 
-言語: [English](anomaly-criteria.md) · [한국어](anomaly-criteria_ko.md)
+言語: [English](../en/anomaly-criteria.md) · [한국어](../ko/anomaly-criteria.md)
 
 Tokyo Grid EMSでは、アラート理由をダッシュボードで説明できるように、異常検知を3種類のイベントに分けています。
 

@@ -1,6 +1,6 @@
 # 이상탐지 기준
 
-언어: [English](anomaly-criteria.md) · [日本語](anomaly-criteria_ja.md)
+언어: [English](../en/anomaly-criteria.md) · [日本語](../ja/anomaly-criteria.md)
 
 Tokyo Grid EMS의 이상탐지는 “알고리즘이 이상하다고 말하는 이유”를 대시보드에서 설명할 수 있도록 세 가지 이벤트로 나눕니다.
 

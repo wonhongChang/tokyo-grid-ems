@@ -3,7 +3,7 @@
 > Production feature: adding Open-Meteo temperature features to the LightGBM model
 > Open-Meteo API (free, no auth required) — Tokyo coordinates
 
-Languages: [한국어](weather-integration_ko.md) · [日本語](weather-integration_ja.md)
+Languages: [한국어](../ko/weather-integration.md) · [日本語](../ja/weather-integration.md)
 
 ---
 

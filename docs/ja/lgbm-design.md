@@ -2,7 +2,7 @@
 
 > 現在の運用設計: カレンダー、ラグ、祝日、気温、intraday補正特徴量を使うLightGBM quantile regression。
 
-言語: [English](lgbm-design.md) · [한국어](lgbm-design_ko.md)
+言語: [English](../en/lgbm-design.md) · [한국어](../ko/lgbm-design.md)
 
 ---
 
@@ -78,6 +78,14 @@ residual = actualMw - modelForecastMw
 ```
 
 この値は運用予測の入力には使いますが、モデル検証指標と異常検知の実績判定からは除外します。
+
+---
+
+## 日中高温ガード
+
+`python/forecast/adjustment.py` はintraday補正の前に、保守的な後処理ガードを適用します。同時刻168時間ラグが祝日または週末を指し、現在の日中気温偏差が高い場合、類似日補正が日中予測を下方向へ押し下げることを防ぎます。
+
+詳しい事象分析、実装内容、検証結果は [2026-05-13 日中高温ガード改善](model-improvement-2026-05-13-daytime-heat-guard.md) に整理しています。
 
 ---
 

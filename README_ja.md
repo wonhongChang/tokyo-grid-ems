@@ -89,8 +89,10 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 │   └── anomaly/                # 異常検知
 ├── web/                        # React/Vite ダッシュボード
 ├── docs/
-│   ├── lgbm-design.md          # LightGBM モデル設計
-│   └── weather-integration.md  # 気温データ連携設計
+│   ├── en/                     # 英語ドキュメント
+│   ├── ko/                     # 韓国語ドキュメント
+│   ├── ja/                     # 日本語ドキュメント
+│   └── assets/                 # READMEとドキュメント用画像
 └── data/
     └── raw/                    # 元CSVデータ（Actionsで自動ダウンロード、git除外）
         └── YYYY/
@@ -144,12 +146,13 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 ## ドキュメント
 
-- [学生向けプロジェクト概要](docs/project-walkthrough_ja.md)
-- [LightGBMモデル設計](docs/lgbm-design_ja.md)
-- [気温データ連携設計](docs/weather-integration_ja.md)
-- [モデル評価リポート](docs/model-evaluation_ja.md)
-- [異常検知基準](docs/anomaly-criteria_ja.md)
-- [JSONスキーマ契約](docs/json_schema_ja.md)
+- [学生向けプロジェクト概要](docs/ja/project-walkthrough.md)
+- [LightGBMモデル設計](docs/ja/lgbm-design.md)
+- [2026-05-13 日中高温ガード改善](docs/ja/model-improvement-2026-05-13-daytime-heat-guard.md)
+- [気温データ連携設計](docs/ja/weather-integration.md)
+- [モデル評価リポート](docs/ja/model-evaluation.md)
+- [異常検知基準](docs/ja/anomaly-criteria.md)
+- [JSONスキーマ契約](docs/ja/json_schema.md)
 
 ---
 

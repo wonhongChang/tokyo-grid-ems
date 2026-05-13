@@ -1,6 +1,6 @@
 # JSON 스키마 명세 (Dashboard Contract)
 
-언어: [English](json_schema.md) · [日本語](json_schema_ja.md)
+언어: [English](../en/json_schema.md) · [日本語](../ja/json_schema.md)
 
 GitHub Pages(정적 대시보드)가 직접 읽는 **정적 JSON 산출물 계약**입니다.
 ETL/배치 파이프라인은 이 스키마에 맞춰 `web/public/` 아래 파일들을 생성합니다.

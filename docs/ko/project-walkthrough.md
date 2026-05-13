@@ -1,6 +1,6 @@
 # 학생을 위한 프로젝트 전체 설명
 
-언어: [English](project-walkthrough.md) · [日本語](project-walkthrough_ja.md)
+언어: [English](../en/project-walkthrough.md) · [日本語](../ja/project-walkthrough.md)
 
 이 문서는 코딩과 데이터 파이프라인을 배우는 학생이 Tokyo Grid EMS 전체 구조를 이해할 수 있도록 설명합니다.
 

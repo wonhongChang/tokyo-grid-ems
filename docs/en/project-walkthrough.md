@@ -1,6 +1,6 @@
 # Project Walkthrough for Students
 
-Languages: [한국어](project-walkthrough_ko.md) · [日本語](project-walkthrough_ja.md)
+Languages: [한국어](../ko/project-walkthrough.md) · [日本語](../ja/project-walkthrough.md)
 
 This document explains Tokyo Grid EMS for someone learning programming and data engineering.
 

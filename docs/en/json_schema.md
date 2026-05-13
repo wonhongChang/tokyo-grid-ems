@@ -1,6 +1,6 @@
 # JSON Schema Specification (Dashboard Contract)
 
-Languages: [한국어](json_schema_ko.md) · [日本語](json_schema_ja.md)
+Languages: [한국어](../ko/json_schema.md) · [日本語](../ja/json_schema.md)
 
 This is the **static JSON output contract** that the GitHub Pages dashboard reads directly.
 The ETL/batch pipeline generates files under `web/public/` conforming to this schema.

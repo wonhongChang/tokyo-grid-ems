@@ -1,6 +1,6 @@
 # 学生向けプロジェクト全体ガイド
 
-言語: [English](project-walkthrough.md) · [한국어](project-walkthrough_ko.md)
+言語: [English](../en/project-walkthrough.md) · [한국어](../ko/project-walkthrough.md)
 
 この文書は、プログラミングやデータパイプラインを学ぶ学生がTokyo Grid EMSの全体像を理解できるように説明するものです。
 

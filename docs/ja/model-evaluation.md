@@ -1,6 +1,6 @@
 # モデル評価リポート
 
-言語: [English](model-evaluation.md) · [한국어](model-evaluation_ko.md)
+言語: [English](../en/model-evaluation.md) · [한국어](../ko/model-evaluation.md)
 
 Tokyo Grid EMSでは、予測性能を2つの観点で評価します。
 

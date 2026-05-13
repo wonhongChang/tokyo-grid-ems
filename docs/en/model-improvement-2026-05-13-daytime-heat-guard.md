@@ -2,6 +2,10 @@
 
 > Operational improvement added after the 2026-05-13 warm-afternoon forecast miss.
 
+Languages: [한국어](../ko/model-improvement-2026-05-13-daytime-heat-guard.md) · [日本語](../ja/model-improvement-2026-05-13-daytime-heat-guard.md)
+
+---
+
 ## Why This Was Needed
 
 On 2026-05-13, the model under-forecasted Tokyo-area demand during the 11:00-17:00 JST window. The miss was concentrated around the daytime peak:

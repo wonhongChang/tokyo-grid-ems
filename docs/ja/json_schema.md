@@ -1,6 +1,6 @@
 # JSONスキーマ仕様 (Dashboard Contract)
 
-言語: [English](json_schema.md) · [한국어](json_schema_ko.md)
+言語: [English](../en/json_schema.md) · [한국어](../ko/json_schema.md)
 
 GitHub Pages（静的ダッシュボード）が直接読み込む**静的JSON出力物の契約**です。
 ETL/バッチパイプラインはこのスキーマに従い `web/public/` 以下のファイルを生成します。

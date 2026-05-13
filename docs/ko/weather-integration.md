@@ -3,7 +3,7 @@
 > 운영 기능: LightGBM 모델에 Open-Meteo 기온 피처 추가
 > Open-Meteo API (무료, 인증 없음) — 도쿄 좌표 기준
 
-언어: [English](weather-integration.md) · [日本語](weather-integration_ja.md)
+언어: [English](../en/weather-integration.md) · [日本語](../ja/weather-integration.md)
 
 ---
 

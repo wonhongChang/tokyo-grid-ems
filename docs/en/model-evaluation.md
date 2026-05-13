@@ -1,6 +1,6 @@
 # Model Evaluation Report
 
-Languages: [한국어](model-evaluation_ko.md) · [日本語](model-evaluation_ja.md)
+Languages: [한국어](../ko/model-evaluation.md) · [日本語](../ja/model-evaluation.md)
 
 Tokyo Grid EMS evaluates forecast quality from two angles.
 

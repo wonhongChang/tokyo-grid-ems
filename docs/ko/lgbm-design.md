@@ -2,7 +2,7 @@
 
 > 현재 운영 설계: 캘린더, 래그, 공휴일, 기온, intraday 보정 피처를 사용하는 LightGBM quantile regression.
 
-언어: [English](lgbm-design.md) · [日本語](lgbm-design_ja.md)
+언어: [English](../en/lgbm-design.md) · [日本語](../ja/lgbm-design.md)
 
 ---
 
@@ -78,6 +78,14 @@ residual = actualMw - modelForecastMw
 ```
 
 이 값은 운영 예측 입력에는 쓰지만, 모델 검증 지표와 이상탐지의 실측 판정에서는 제외합니다.
+
+---
+
+## 주간 고온 보호 보정
+
+`python/forecast/adjustment.py`는 intraday 보정 전에 보수적인 후처리 보호 장치를 적용합니다. 같은 시간대 168시간 래그가 휴일 또는 주말을 가리키고, 현재 주간 기온 편차가 높은 경우 유사일 보정이 낮 시간대 예측을 아래로 끌어내리지 못하게 막습니다.
+
+자세한 사고 분석, 구현 내용, 검증 결과는 [2026-05-13 주간 고온 보호 보정](model-improvement-2026-05-13-daytime-heat-guard.md)에 정리했습니다.
 
 ---
 

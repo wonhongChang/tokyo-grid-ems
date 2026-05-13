@@ -3,7 +3,7 @@
 > 運用機能: LightGBMモデルへのOpen-Meteo気温特徴量追加
 > Open-Meteo API（無料、認証不要）— 東京座標基準
 
-言語: [English](weather-integration.md) · [한국어](weather-integration_ko.md)
+言語: [English](../en/weather-integration.md) · [한국어](../ko/weather-integration.md)
 
 ---
 
