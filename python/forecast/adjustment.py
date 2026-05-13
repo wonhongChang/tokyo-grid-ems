@@ -20,7 +20,7 @@ def _is_nonworking(d: date) -> bool:
 
 
 class AnalogousDayAdjuster:
-    """Shift LGBM q50/q10/q90 forecasts by per-hour mean residuals from analogous past days.
+    """Shift LGBM q50/q025/q975 forecasts by per-hour mean residuals from analogous past days.
 
     Analogous days are selected by: same calendar-month neighbourhood, same weekday
     type (weekday vs non-working), similar consecutive-holiday length, and similar

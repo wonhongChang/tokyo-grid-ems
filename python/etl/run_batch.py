@@ -580,7 +580,11 @@ def _try_load_lgbm(out_dir: Path):
         return None
     try:
         from python.forecast.lgbm_model import LGBMForecaster
-        return LGBMForecaster.load(model_path)
+        forecaster = LGBMForecaster.load(model_path)
+        if hasattr(forecaster, "is_compatible") and not forecaster.is_compatible():
+            print("[WARN] LightGBM model interval version is stale; retraining required", file=sys.stderr)
+            return None
+        return forecaster
     except Exception as e:
         print(f"[WARN] LightGBM load failed: {e}", file=sys.stderr)
         return None
@@ -879,6 +883,8 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
 
     # Inject recent missing actuals (yesterday + today) for both forecasts
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
+    if forecaster is None:
+        forecaster = _try_train_lgbm(extended_with_actuals, out_dir)
 
     # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
     today_fc, today_model = _build_forecast_with_fallback(

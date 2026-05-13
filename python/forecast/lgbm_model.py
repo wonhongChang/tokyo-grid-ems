@@ -32,15 +32,17 @@ _LGBM_PARAMS = {
 
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
+    INTERVAL_VERSION = "q025_q50_q975_p95_v1"
 
     def __init__(self, n_estimators: int = 500, learning_rate: float = 0.05) -> None:
         if not _HAS_LGBM:
             raise ImportError("lightgbm is required: pip install lightgbm")
         self.n_estimators = n_estimators
         self.learning_rate = learning_rate
-        self.model_q10: "LGBMRegressor | None" = None
+        self.interval_version = self.INTERVAL_VERSION
+        self.model_q025: "LGBMRegressor | None" = None
         self.model_q50: "LGBMRegressor | None" = None
-        self.model_q90: "LGBMRegressor | None" = None
+        self.model_q975: "LGBMRegressor | None" = None
 
     def _make_model(self, alpha: float) -> "LGBMRegressor":
         return LGBMRegressor(
@@ -52,7 +54,7 @@ class LGBMForecaster:
         )
 
     def fit(self, cache: pd.DataFrame) -> None:
-        """Train q10/q50/q90 quantile models on hourly cache. Needs >= 90 days."""
+        """Train q025/q50/q975 quantile models on hourly cache. Needs >= 90 days."""
         X, y = build_training_features(cache)
         if len(X) < self.MIN_TRAIN_ROWS:
             raise ValueError(
@@ -60,22 +62,32 @@ class LGBMForecaster:
                 f"got {len(X)} after feature build."
             )
         for alpha, attr in [
-            (0.10, "model_q10"),
+            (0.025, "model_q025"),
             (0.50, "model_q50"),
-            (0.90, "model_q90"),
+            (0.975, "model_q975"),
         ]:
             m = self._make_model(alpha)
             m.fit(X, y)
             setattr(self, attr, m)
+        self.interval_version = self.INTERVAL_VERSION
+
+    def is_compatible(self) -> bool:
+        """Return True when a loaded pickle has the current interval model layout."""
+        return (
+            getattr(self, "interval_version", None) == self.INTERVAL_VERSION
+            and getattr(self, "model_q025", None) is not None
+            and getattr(self, "model_q50", None) is not None
+            and getattr(self, "model_q975", None) is not None
+        )
 
     def predict(self, target_date: date, cache: pd.DataFrame) -> list[HourlyForecast]:
         """Return 24-hour HourlyForecast list for target_date."""
-        if self.model_q50 is None:
-            raise RuntimeError("Call fit() before predict().")
+        if not self.is_compatible():
+            raise RuntimeError("Call fit() before predict(), or retrain an older LightGBM model.")
         X = build_inference_features(cache, target_date)
-        q10 = self.model_q10.predict(X)
+        q025 = self.model_q025.predict(X)
         q50 = self.model_q50.predict(X)
-        q90 = self.model_q90.predict(X)
+        q975 = self.model_q975.predict(X)
 
         result: list[HourlyForecast] = []
         for hour in range(24):
@@ -84,9 +96,9 @@ class LGBMForecaster:
                 hour=hour, tzinfo=JST,
             )
             mid = round(float(q50[hour]), 1)
-            lo = round(min(float(q10[hour]), float(q90[hour]), mid), 1)
-            hi = round(max(float(q10[hour]), float(q90[hour]), mid), 1)
-            # p99 = 2× half-width beyond q10/q90, approximating 99th pct interval
+            lo = round(min(float(q025[hour]), float(q975[hour]), mid), 1)
+            hi = round(max(float(q025[hour]), float(q975[hour]), mid), 1)
+            # p99 = 2x half-width beyond the q025/q975 interval as a conservative outer band.
             half_lo = max(0.0, mid - lo)
             half_hi = max(0.0, hi - mid)
             result.append(HourlyForecast(

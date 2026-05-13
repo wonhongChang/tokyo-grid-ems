@@ -72,6 +72,9 @@ def test_fit_succeeds_at_minimum_threshold():
     f = LGBMForecaster(n_estimators=10, learning_rate=0.1)
     f.fit(_make_cache(105))
     assert f.model_q50 is not None
+    assert f.model_q025 is not None
+    assert f.model_q975 is not None
+    assert f.is_compatible()
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +99,8 @@ def test_predict_ts_spans_all_hours(fitted_forecaster, big_cache):
 
 def test_predict_raises_before_fit():
     f = LGBMForecaster.__new__(LGBMForecaster)
-    f.model_q10 = f.model_q50 = f.model_q90 = None
+    f.model_q025 = f.model_q50 = f.model_q975 = None
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
     with pytest.raises(RuntimeError, match="fit\\(\\)"):
         f.predict(date(2023, 5, 1), _make_cache(120))
 
@@ -105,12 +109,12 @@ def test_predict_raises_before_fit():
 # predict — quantile ordering
 # ---------------------------------------------------------------------------
 
-def test_q10_lte_q50(fitted_forecaster, big_cache):
+def test_q025_lte_q50(fitted_forecaster, big_cache):
     for f in fitted_forecaster.predict(date(2023, 5, 1), big_cache):
         assert f.p95_lower_mw <= f.forecast_mw + 1.0
 
 
-def test_q50_lte_q90(fitted_forecaster, big_cache):
+def test_q50_lte_q975(fitted_forecaster, big_cache):
     for f in fitted_forecaster.predict(date(2023, 5, 1), big_cache):
         assert f.forecast_mw <= f.p95_upper_mw + 1.0
 
@@ -150,9 +154,10 @@ def test_predict_normalizes_crossed_quantiles(monkeypatch):
     )
 
     f = LGBMForecaster.__new__(LGBMForecaster)
-    f.model_q10 = FakeModel(30_000.0)
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(30_000.0)
     f.model_q50 = FakeModel(32_000.0)
-    f.model_q90 = FakeModel(31_000.0)
+    f.model_q975 = FakeModel(31_000.0)
 
     result = f.predict(date(2023, 5, 1), pd.DataFrame())
 
@@ -161,6 +166,15 @@ def test_predict_normalizes_crossed_quantiles(monkeypatch):
         assert point.p95_lower_mw == 30_000.0
         assert point.forecast_mw == 32_000.0
         assert point.p95_upper_mw == 32_000.0
+
+
+def test_old_q10_q90_pickle_layout_is_incompatible():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.model_q10 = object()
+    f.model_q50 = object()
+    f.model_q90 = object()
+
+    assert not f.is_compatible()
 
 
 # ---------------------------------------------------------------------------
