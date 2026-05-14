@@ -247,7 +247,7 @@ class AnalogousDayAdjuster:
 # ---------------------------------------------------------------------------
 
 class PostHolidayTimeBandGuard:
-    """Prevent AnalogousDayAdjuster from shifting in the wrong direction on post-holiday days.
+    """Prevent AnalogousDayAdjuster from shifting in the wrong direction.
 
     Two regimes for the first business day after a long holiday (consec_holiday_len >= 3):
     - Early morning (default 1-6h): actual demand tends to be LOWER than predicted;
@@ -257,6 +257,8 @@ class PostHolidayTimeBandGuard:
       worsen midday underestimation.
     The daytime guard also applies when the same-hour 168h lag comes from a holiday or
     weekend, because that lag can pull a warm business-afternoon forecast too low.
+    It can also apply a smaller ordinary warm-day offset when current temperature is
+    high for the season, covering hot business days without holiday-lag contamination.
 
     Offset values are 0 by default (block-only).  Set downward_offset_mw /
     upward_offset_mw in config when empirical calibration warrants it.
@@ -284,6 +286,15 @@ class PostHolidayTimeBandGuard:
         self._dt_offset      = float(daytime_config.get("upward_offset_mw", 0.0))
         self._dt_max_offset  = float(daytime_config.get("max_upward_offset_mw", 900.0))
         self._activate_on_holiday_lag = bool(daytime_config.get("activate_on_holiday_lag", True))
+        self._activate_on_warm_day = bool(daytime_config.get("activate_on_warm_day", False))
+        warm_day_min_temp_c = daytime_config.get("warm_day_min_temp_c")
+        self._warm_day_min_temp_c = (
+            float(warm_day_min_temp_c) if warm_day_min_temp_c is not None else None
+        )
+        self._warm_day_min_anomaly_doy = float(
+            daytime_config.get("warm_day_min_temp_anomaly_doy", 1.0)
+        )
+        self._warm_day_offset = float(daytime_config.get("warm_day_upward_offset_mw", 0.0))
 
     def apply(
         self,
@@ -310,7 +321,7 @@ class PostHolidayTimeBandGuard:
             self._activate_on_holiday_lag
             and _is_nonworking(lag_168h_date)
         )
-        if not (post_holiday_active or lag_holiday_active):
+        if not (post_holiday_active or lag_holiday_active or self._activate_on_warm_day):
             return adjusted_forecasts
 
         from python.forecast.baseline import HourlyForecast
@@ -347,8 +358,29 @@ class PostHolidayTimeBandGuard:
             if hour in self._dt_hours:
                 row = inference_features.iloc[hour]
                 temp_anomaly_7d = float(row["temp_anomaly_7d"])
-                heat_signal = temp_anomaly_7d
-                if not np.isnan(heat_signal) and heat_signal >= self._dt_min_anomaly:
+                holiday_heat_active = (
+                    (post_holiday_active or lag_holiday_active)
+                    and not np.isnan(temp_anomaly_7d)
+                    and temp_anomaly_7d >= self._dt_min_anomaly
+                )
+                temp_c = float(row["temp_c"]) if pd.notna(row.get("temp_c")) else np.nan
+                temp_anomaly_doy = (
+                    float(row["temp_anomaly_doy"])
+                    if pd.notna(row.get("temp_anomaly_doy"))
+                    else np.nan
+                )
+                meets_optional_temp_floor = (
+                    self._warm_day_min_temp_c is None
+                    or (not np.isnan(temp_c) and temp_c >= self._warm_day_min_temp_c)
+                )
+                warm_day_active = (
+                    self._activate_on_warm_day
+                    and meets_optional_temp_floor
+                    and not np.isnan(temp_anomaly_doy)
+                    and temp_anomaly_doy >= self._warm_day_min_anomaly_doy
+                )
+
+                if holiday_heat_active or warm_day_active:
                     # Step 1: blocking determines the base
                     base = (
                         raw_forecast
@@ -356,7 +388,12 @@ class PostHolidayTimeBandGuard:
                         else adjusted_forecast
                     )
                     # Step 2: apply upward offset (independent of block decision)
-                    dt_offset = min(self._dt_offset, self._dt_max_offset)
+                    offset_candidates = []
+                    if holiday_heat_active:
+                        offset_candidates.append(self._dt_offset)
+                    if warm_day_active and shift <= 0:
+                        offset_candidates.append(self._warm_day_offset)
+                    dt_offset = min(max(offset_candidates or [0.0]), self._dt_max_offset)
                     if dt_offset == 0.0:
                         result.append(base)
                     else:

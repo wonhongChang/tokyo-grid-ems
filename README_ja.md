@@ -149,6 +149,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [学生向けプロジェクト概要](docs/ja/project-walkthrough.md)
 - [LightGBMモデル設計](docs/ja/lgbm-design.md)
 - [2026-05-13 日中高温ガード改善](docs/ja/model-improvement-2026-05-13-daytime-heat-guard.md)
+- [2026-05-14 暖かい日中の過少予測補正](docs/ja/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
 - [気温データ連携設計](docs/ja/weather-integration.md)
 - [モデル評価リポート](docs/ja/model-evaluation.md)
 - [異常検知基準](docs/ja/anomaly-criteria.md)
