@@ -51,11 +51,21 @@ Feature engineering lives in `python/forecast/feature_builder.py`.
 | Lag | 24h, 48h, 168h, 336h | captures demand persistence |
 | Rolling stats | 4-week same hour/weekday mean and std | provides stable local history |
 | Holiday correction | last business day, consecutive holidays, days since holiday end | avoids underestimating post-holiday demand |
-| Weather | temperature, cooling/heating degree, temperature anomalies | captures HVAC-driven demand |
+| Weather | temperature, configurable cooling/heating degree, temperature anomalies, 168h temperature/cooling deltas | captures HVAC-driven demand and week-over-week regime changes |
 | Interactions | holiday x heat, post-holiday x heat | handles Golden Week and similar return-to-work spikes |
 | Lag context | lag_24h_dsh, lag_24h_consec, lag_168h_dsh | tells the model when lag values are holiday-contaminated |
 
-The current feature set has 28 explicit features.
+The current feature set has 30 explicit features.
+
+Cooling/heating degree balance points are configured in `config.yaml`:
+
+```yaml
+weather_features:
+  cooling_base_temp_c: 22.0
+  heating_base_temp_c: 10.0
+```
+
+`temp_delta_168h` and `cooling_delta_168h` help the model recognize when the same-hour value from one week ago is no longer a reliable demand anchor because the weather regime has changed.
 
 ---
 
@@ -86,6 +96,8 @@ This fallback is allowed as an operational forecast input, but is excluded from 
 See [Daytime Heat Guard Improvement](model-improvement-2026-05-13-daytime-heat-guard.md) for the incident analysis, implementation details, and validation result.
 
 See [Warm Daytime Bias Guard](model-improvement-2026-05-14-warm-daytime-bias-guard.md) for the follow-up warm-day generalization.
+
+See [Lag Temperature Regime Features](model-improvement-2026-05-14-lag-temperature-regime-features.md) for the feature-side follow-up.
 
 ---
 

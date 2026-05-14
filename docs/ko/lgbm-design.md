@@ -51,11 +51,21 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | 래그 | 24h, 48h, 168h, 336h | 전력 수요의 관성 반영 |
 | 롤링 통계 | 최근 4주 같은 요일/시간 평균과 표준편차 | 안정적인 과거 기준 제공 |
 | 공휴일 보정 | 직전 평일, 연속 휴일 수, 휴일 종료 후 경과일 | 연휴 직후 과소예측 완화 |
-| 기온 | 기온, 냉방/난방 degree, 기온 이상치 | 냉난방 수요 반영 |
+| 기온 | 기온, 설정 가능한 냉방/난방 degree, 기온 이상치, 168시간 기온/냉방 변화량 | 냉난방 수요와 전주 대비 계절 변화 반영 |
 | 교호작용 | holiday x heat, post-holiday x heat | 골든위크 이후 복귀 수요 보정 |
 | 래그 컨텍스트 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh | 래그값이 휴일 수요에 오염됐는지 알려줌 |
 
-현재 명시적 피처 수는 28개입니다.
+현재 명시적 피처 수는 30개입니다.
+
+냉방/난방 degree의 기준온도는 `config.yaml`에서 설정합니다.
+
+```yaml
+weather_features:
+  cooling_base_temp_c: 22.0
+  heating_base_temp_c: 10.0
+```
+
+`temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요를 그대로 믿기 어려운 계절 전환 상황을 모델에 알려주는 피처입니다.
 
 ---
 
@@ -88,6 +98,8 @@ residual = actualMw - modelForecastMw
 자세한 사고 분석, 구현 내용, 검증 결과는 [2026-05-13 주간 고온 보호 보정](model-improvement-2026-05-13-daytime-heat-guard.md)에 정리했습니다.
 
 후속 일반화 내용은 [2026-05-14 따뜻한 낮 시간대 과소예측 보정](model-improvement-2026-05-14-warm-daytime-bias-guard.md)에 정리했습니다.
+
+피처 측면의 후속 개선은 [2026-05-14 전주 대비 기온 변화 피처](model-improvement-2026-05-14-lag-temperature-regime-features.md)에 정리했습니다.
 
 ---
 

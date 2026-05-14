@@ -32,6 +32,8 @@ FEATURE_COLS: list[str] = [
     "temp_c", "cooling_degree", "heating_degree",
     "temp_anomaly_7d",   # temp_c minus trailing 7-day mean (how abnormal vs recent week)
     "temp_anomaly_doy",  # temp_c minus historical (month, hour) mean; kept for model compatibility
+    "temp_delta_168h",      # current temp_c minus 7-day-ago same-hour temp_c
+    "cooling_delta_168h",   # current cooling_degree minus 7-day-ago same-hour cooling_degree
     # Interaction: holiday × heat surplus (captures post-holiday demand spike on hot days)
     "holiday_x_heat",                    # consec_holiday_len × max(0, temp_anomaly_7d)
     "post_holiday_x_heat",               # int(1 ≤ days_since_holiday_end ≤ 2) × max(0, temp_anomaly_7d)
@@ -50,6 +52,9 @@ _SEASON_RANGES = [
     (358, 366, 3),  # New Year zone (1) : Dec 24 – Dec 31
     (1,    10, 3),  # New Year zone (2) : Jan  1 – Jan 10
 ]
+
+_DEFAULT_COOLING_BASE_TEMP_C = 22.0
+_DEFAULT_HEATING_BASE_TEMP_C = 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +159,26 @@ def _ensure_tz(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _weather_feature_config(config: dict | None = None) -> tuple[float, float]:
+    """Return configurable balance points used by degree-day style features."""
+    weather_config = (config or {}).get("weather_features", {})
+    cooling_base = float(
+        weather_config.get("cooling_base_temp_c", _DEFAULT_COOLING_BASE_TEMP_C)
+    )
+    heating_base = float(
+        weather_config.get("heating_base_temp_c", _DEFAULT_HEATING_BASE_TEMP_C)
+    )
+    return cooling_base, heating_base
+
+
+def _cooling_degree(temp_c: float, cooling_base_temp_c: float) -> float:
+    return max(0.0, temp_c - cooling_base_temp_c)
+
+
+def _heating_degree(temp_c: float, heating_base_temp_c: float) -> float:
+    return max(0.0, heating_base_temp_c - temp_c)
+
+
 # ---------------------------------------------------------------------------
 # Holiday lag columns (shared between training and inference)
 # ---------------------------------------------------------------------------
@@ -203,7 +228,10 @@ def _add_holiday_lag_cols(
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_training_features(cache: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+def build_training_features(
+    cache: pd.DataFrame,
+    config: dict | None = None,
+) -> tuple[pd.DataFrame, pd.Series]:
     """Return (X, y) from hourly cache for training.
 
     Rows with missing actual_mw or any non-temperature feature column are dropped.
@@ -211,6 +239,7 @@ def build_training_features(cache: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
     the cache has a temp_c column with sufficient coverage; rows missing temp_c are
     also dropped via dropna.
     """
+    cooling_base_temp_c, heating_base_temp_c = _weather_feature_config(config)
     df = _ensure_tz(cache)
     df = df[df["actual_mw"].notna()].sort_values("ts").reset_index(drop=True)
 
@@ -251,20 +280,33 @@ def build_training_features(cache: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
 
     # Temperature features
     if "temp_c" in df.columns:
-        df["cooling_degree"]  = (df["temp_c"] - 22.0).clip(lower=0.0)
-        df["heating_degree"]  = (10.0 - df["temp_c"]).clip(lower=0.0)
+        df["cooling_degree"]  = (df["temp_c"] - cooling_base_temp_c).clip(lower=0.0)
+        df["heating_degree"]  = (heating_base_temp_c - df["temp_c"]).clip(lower=0.0)
         # How abnormal vs recent 7 days (shift 1h to prevent self-inclusion)
         trailing_7d_temp_mean = df["temp_c"].shift(1).rolling(168, min_periods=24).mean()
         df["temp_anomaly_7d"] = df["temp_c"] - trailing_7d_temp_mean
         # How abnormal vs historical same (month, hour) average
         month_hour_temp_mean = df.groupby(["month", "hour"])["temp_c"].transform("mean")
         df["temp_anomaly_doy"] = df["temp_c"] - month_hour_temp_mean
+        temp_history = df[["ts", "temp_c", "cooling_degree"]].copy()
+        shifted_temp = (
+            temp_history.assign(ts=temp_history["ts"] + pd.Timedelta(hours=168))
+                .rename(columns={
+                    "temp_c": "temp_c_168h",
+                    "cooling_degree": "cooling_degree_168h",
+                })
+        )
+        df = df.merge(shifted_temp, on="ts", how="left")
+        df["temp_delta_168h"] = df["temp_c"] - df["temp_c_168h"]
+        df["cooling_delta_168h"] = df["cooling_degree"] - df["cooling_degree_168h"]
     else:
         df["temp_c"]           = np.nan
         df["cooling_degree"]   = np.nan
         df["heating_degree"]   = np.nan
         df["temp_anomaly_7d"]  = np.nan
         df["temp_anomaly_doy"] = np.nan
+        df["temp_delta_168h"] = np.nan
+        df["cooling_delta_168h"] = np.nan
 
     # Interaction features: holiday × heat surplus
     positive_temp_anomaly_7d = df["temp_anomaly_7d"].clip(lower=0.0)
@@ -281,12 +323,17 @@ def build_training_features(cache: pd.DataFrame) -> tuple[pd.DataFrame, pd.Serie
     return df[FEATURE_COLS].copy(), df["actual_mw"].copy()
 
 
-def build_inference_features(cache: pd.DataFrame, target_date: date) -> pd.DataFrame:
+def build_inference_features(
+    cache: pd.DataFrame,
+    target_date: date,
+    config: dict | None = None,
+) -> pd.DataFrame:
     """Return a 24-row DataFrame (one row per hour) for predicting target_date.
 
     cache may contain virtual rows (NaN actual_mw, non-NaN temp_c) for target_date
     added by run_batch._extend_cache_with_forecast_weather.
     """
+    cooling_base_temp_c, heating_base_temp_c = _weather_feature_config(config)
     cache = _ensure_tz(cache)
     actual_rows = cache[cache["actual_mw"].notna()].copy()
 
@@ -305,8 +352,13 @@ def build_inference_features(cache: pd.DataFrame, target_date: date) -> pd.DataF
         hour_to_temp: dict[int, float] = {
             int(row["ts"].hour): float(row["temp_c"]) for _, row in target_day_temps.iterrows()
         }
+        temp_by_ts: dict[pd.Timestamp, float] = {
+            row["ts"]: float(row["temp_c"])
+            for _, row in cache[["ts", "temp_c"]].dropna(subset=["temp_c"]).iterrows()
+        }
     else:
         hour_to_temp = {}
+        temp_by_ts = {}
 
     # Trailing 7-day mean temperature (same for all 24 hours of target_date)
     target_start = pd.Timestamp(
@@ -367,8 +419,25 @@ def build_inference_features(cache: pd.DataFrame, target_date: date) -> pd.DataF
 
         hour_temp_c = hour_to_temp.get(hour, float("nan"))
         has_hour_temp = not np.isnan(hour_temp_c)
-        cooling = max(0.0, hour_temp_c - 22.0) if has_hour_temp else np.nan
-        heating = max(0.0, 10.0 - hour_temp_c) if has_hour_temp else np.nan
+        cooling = _cooling_degree(hour_temp_c, cooling_base_temp_c) if has_hour_temp else np.nan
+        heating = _heating_degree(hour_temp_c, heating_base_temp_c) if has_hour_temp else np.nan
+        temp_168h = temp_by_ts.get(ts - pd.Timedelta(hours=168), float("nan"))
+        has_temp_168h = not np.isnan(temp_168h)
+        cooling_168h = (
+            _cooling_degree(temp_168h, cooling_base_temp_c)
+            if has_temp_168h
+            else np.nan
+        )
+        temp_delta_168h = (
+            hour_temp_c - temp_168h
+            if has_hour_temp and has_temp_168h
+            else np.nan
+        )
+        cooling_delta_168h = (
+            cooling - cooling_168h
+            if has_hour_temp and has_temp_168h
+            else np.nan
+        )
         temp_anomaly_vs_7d_mean = (
             hour_temp_c - recent_7d_temp_mean
             if has_hour_temp and not np.isnan(recent_7d_temp_mean)
@@ -428,6 +497,8 @@ def build_inference_features(cache: pd.DataFrame, target_date: date) -> pd.DataF
             "heating_degree":   heating,
             "temp_anomaly_7d":  temp_anomaly_vs_7d_mean,
             "temp_anomaly_doy": temp_anomaly_vs_month_hour_mean,
+            "temp_delta_168h":      temp_delta_168h,
+            "cooling_delta_168h":   cooling_delta_168h,
             "holiday_x_heat":                    holiday_heat_interaction,
             "post_holiday_x_heat":               post_holiday_heat_interaction,
             "business_hour_x_post_holiday_heat": business_hour_post_holiday_heat_interaction,

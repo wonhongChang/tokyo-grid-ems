@@ -193,6 +193,21 @@ def test_cooling_degree_correct_value():
     assert np.allclose(X["cooling_degree"].values, 8.0, atol=1e-6)
 
 
+def test_cooling_degree_uses_configured_base_temperature():
+    """cooling_degree should use the configured balance point, not a hard-coded value."""
+    start = pd.Timestamp("2024-01-01", tz=JST)
+    n = 400 * 24
+    df = pd.DataFrame({
+        "ts":        pd.date_range(start, periods=n, freq="h"),
+        "actual_mw": np.full(n, 20_000.0),
+        "temp_c":    np.full(n, 30.0),
+    })
+    X, _ = build_training_features(df, {
+        "weather_features": {"cooling_base_temp_c": 20.0}
+    })
+    assert np.allclose(X["cooling_degree"].values, 10.0, atol=1e-6)
+
+
 def test_training_without_temp_c_drops_rows():
     """Rows without temp_c are excluded from training set."""
     cache = _make_cache(200)
@@ -206,6 +221,8 @@ def test_training_has_temp_anomaly_columns():
     X, _ = build_training_features(cache)
     assert "temp_anomaly_7d"  in X.columns
     assert "temp_anomaly_doy" in X.columns
+    assert "temp_delta_168h" in X.columns
+    assert "cooling_delta_168h" in X.columns
 
 
 def test_temp_anomaly_7d_sign_on_hot_spike():
@@ -325,11 +342,25 @@ def test_inference_cooling_degree_correct():
     assert np.allclose(out["heating_degree"].values, 0.0, atol=1e-6)
 
 
+def test_inference_cooling_degree_uses_configured_base_temperature():
+    cache = _make_cache(400)
+    target = date(2025, 1, 15)
+    cache.loc[cache["ts"].dt.date == target, "temp_c"] = 30.0
+
+    out = build_inference_features(cache, target, {
+        "weather_features": {"cooling_base_temp_c": 20.0}
+    })
+
+    assert np.allclose(out["cooling_degree"].values, 10.0, atol=1e-6)
+
+
 def test_inference_has_temp_anomaly_columns():
     cache = _make_cache(400)
     out = build_inference_features(cache, date(2025, 1, 15))
     assert "temp_anomaly_7d"  in out.columns
     assert "temp_anomaly_doy" in out.columns
+    assert "temp_delta_168h" in out.columns
+    assert "cooling_delta_168h" in out.columns
 
 
 def test_inference_temp_anomaly_7d_positive_on_hot_day():
@@ -348,6 +379,20 @@ def test_inference_temp_anomaly_7d_positive_on_hot_day():
 
     out = build_inference_features(cache, target)
     assert (out["temp_anomaly_7d"] > 0).all()
+
+
+def test_inference_delta_168h_compares_same_hour_last_week():
+    cache = _make_cache(600)
+    target = date(2025, 6, 1)
+    current_mask = cache["ts"].dt.date == target
+    prior_week_mask = cache["ts"].dt.date == date(2025, 5, 25)
+    cache.loc[current_mask, "temp_c"] = 25.0
+    cache.loc[prior_week_mask, "temp_c"] = 20.0
+
+    out = build_inference_features(cache, target)
+
+    assert np.allclose(out["temp_delta_168h"].values, 5.0, atol=1e-6)
+    assert np.allclose(out["cooling_delta_168h"].values, 3.0, atol=1e-6)
 
 
 # ---------------------------------------------------------------------------
@@ -460,9 +505,9 @@ def test_inference_has_interaction_columns():
 
 
 def test_interaction_feature_cols_count():
-    """FEATURE_COLS should have 28 features total (25 original + 3 lag context)."""
+    """FEATURE_COLS should include weather-delta features and lag context."""
     from python.forecast.feature_builder import FEATURE_COLS
-    assert len(FEATURE_COLS) == 28
+    assert len(FEATURE_COLS) == 30
 
 
 def test_holiday_x_heat_nonneg():

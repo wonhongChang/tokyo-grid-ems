@@ -51,11 +51,21 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | ラグ | 24h, 48h, 168h, 336h | 電力需要の慣性を表す |
 | ローリング統計 | 直近4週の同曜日・同時刻平均と標準偏差 | 安定した過去基準を与える |
 | 祝日補正 | 直前平日、連続休日数、休日終了後日数 | 連休直後の過少予測を抑える |
-| 気温 | 気温、冷房/暖房degree、気温偏差 | 冷暖房需要を反映する |
+| 気温 | 気温、設定可能な冷房/暖房degree、気温偏差、168時間気温/冷房変化量 | 冷暖房需要と前週比の気象レジーム変化を反映する |
 | 交互作用 | holiday x heat, post-holiday x heat | GW後などの復帰需要を補正する |
 | ラグ文脈 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh | ラグ値が休日需要に影響されたかを伝える |
 
-現在の明示的特徴量数は28個です。
+現在の明示的特徴量数は30個です。
+
+冷房/暖房degreeの基準温度は `config.yaml` で設定します。
+
+```yaml
+weather_features:
+  cooling_base_temp_c: 22.0
+  heating_base_temp_c: 10.0
+```
+
+`temp_delta_168h` と `cooling_delta_168h` は、前週同時刻の需要をそのまま信頼しにくい季節移行局面をモデルに伝える特徴量です。
 
 ---
 
@@ -88,6 +98,8 @@ residual = actualMw - modelForecastMw
 詳しい事象分析、実装内容、検証結果は [2026-05-13 日中高温ガード改善](model-improvement-2026-05-13-daytime-heat-guard.md) に整理しています。
 
 後続の一般化は [2026-05-14 暖かい日中の過少予測補正](model-improvement-2026-05-14-warm-daytime-bias-guard.md) に整理しています。
+
+特徴量側の後続改善は [2026-05-14 前週比気温変化特徴量](model-improvement-2026-05-14-lag-temperature-regime-features.md) に整理しています。
 
 ---
 

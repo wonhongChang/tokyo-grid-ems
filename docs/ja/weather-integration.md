@@ -51,72 +51,60 @@ API: https://api.open-meteo.com/v1/forecast
 
 ---
 
-## 新規ファイル: `python/etl/fetch_weather.py`
+## 気温取得モジュール: `python/etl/fetch_weather.py`
 
 ```python
-import requests
-import pandas as pd
-from pathlib import Path
-from datetime import date
-
 TOKYO_LAT = 35.6762
 TOKYO_LON = 139.6503
-BASE_URL   = "https://api.open-meteo.com/v1/forecast"
+_ARCHIVE_URL  = "https://archive-api.open-meteo.com/v1/archive"
+_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+_MAX_RETRIES  = 3
 
-def fetch_weather(past_days: int = 92, forecast_days: int = 2) -> pd.DataFrame:
-    """
-    Returns DataFrame: ts (tz-aware JST), temp_c (float)
-    Covers past_days history + forecast_days future.
-    """
-    params = {
-        "latitude":    TOKYO_LAT,
-        "longitude":   TOKYO_LON,
-        "hourly":      "temperature_2m",
-        "timezone":    "Asia/Tokyo",
-        "past_days":   past_days,
-        "forecast_days": forecast_days,
-    }
-    resp = requests.get(BASE_URL, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()["hourly"]
+def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
+    """東京の時間別過去気温をarchive APIから取得します。"""
 
-    df = pd.DataFrame({
-        "ts":     pd.to_datetime(data["time"]).tz_localize("Asia/Tokyo"),
-        "temp_c": data["temperature_2m"],
-    })
-    return df
+def fetch_forecast_temps(days: int = 3) -> pd.DataFrame:
+    """今日と今後数日の時間別予測気温を取得します。"""
 
-def save_weather_cache(df: pd.DataFrame, path: Path) -> None:
-    df.to_parquet(path, index=False)
-
-def load_weather_cache(path: Path) -> pd.DataFrame | None:
-    if not path.exists():
-        return None
-    return pd.read_parquet(path)
+def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
+    """actual_mwがあるhourly cache行の欠損temp_cを補完します。"""
 ```
+
+`run_batch.py` は気温を `.hourly_cache.parquet` 内に保存するため、電力需要履歴と気温履歴が一緒に移動します。
 
 ---
 
 ## 気温特徴量設計
 
 ```python
-# 現時点の気温（実績または予測）
-'temp_c'         # その時刻の気温 (°C)
+# 現時点の気温（実績archiveまたは予測）
+'temp_c'              # その時刻の気温 (°C)
 
-# 前日気温ラグ（需要の慣性を反映）
-'temp_lag_24h'   # 昨日同時刻の気温
+# 冷房/暖房degree
+'cooling_degree'      # max(0, temp_c - cooling_base_temp_c)
+'heating_degree'      # max(0, heating_base_temp_c - temp_c)
 
-# 冷暖房度日 (HDD/CDD)
-'hdd'            # max(0, 18 - temp_c)  — 暖房必要度
-'cdd'            # max(0, temp_c - 26)  — 冷房必要度
+# 気温レジームの文脈
+'temp_anomaly_7d'     # temp_c - 直近7日平均
+'temp_anomaly_doy'    # temp_c - 過去同月/同時刻平均
+'temp_delta_168h'     # 現在同時刻の気温 - 168時間前の気温
+'cooling_delta_168h'  # 現在の冷房degree - 168時間前の冷房degree
 
-# 予測時点用（明日予測時にOpen-Meteo forecastを使用）
-'temp_forecast'  # Open-Meteo予測気温（推論時のみ）
+# 連休明け需要と暑さの交互作用
+'holiday_x_heat'
+'post_holiday_x_heat'
+'business_hour_x_post_holiday_heat'
 ```
 
-> **HDD/CDD選択の理由**: 気温の非線形効果を線形化。
-> 18°C以下では低いほど暖房需要が線形増加。
-> 26°C以上では高いほど冷房需要が線形増加。
+冷房/暖房degreeの基準温度は設定値として管理します。
+
+```yaml
+weather_features:
+  cooling_base_temp_c: 22.0
+  heating_base_temp_c: 10.0
+```
+
+> **degree値と168時間変化量を使う理由**: degree値は冷暖房需要の非線形効果を扱いやすくし、`temp_delta_168h` と `cooling_delta_168h` は前週同時刻の需要をそのまま信頼しにくい状況をモデルに伝えます。
 
 ---
 
@@ -133,7 +121,8 @@ python/
 
 ```
 web/public/
-  .weather_cache.parquet   # 気温キャッシュ（モデルファイルと同様にコミット）
+  .hourly_cache.parquet    # temp_cを含む電力需要キャッシュ
+  .lgbm_model.pkl          # 学習済みLightGBMモデル
 ```
 
 ---
@@ -141,41 +130,20 @@ web/public/
 ## `feature_builder.py` の修正
 
 ```python
-def build_features(
-    power_cache: pd.DataFrame,
-    weather_cache: pd.DataFrame | None = None,
+def build_training_features(
+    cache: pd.DataFrame,
+    config: dict | None = None,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """
-    power_cache: hourly_cache (ts, actual_mw, supply_mw, ...)
-    weather_cache: fetch_weather() の結果 (ts, temp_c)
+    cache: ts, actual_mw, supply_mw, temp_c などを含む hourly cache
+    config: weather_features の基準温度を含む
     """
-    df = power_cache.copy()
-
-    # 既存特徴量（カレンダー + ラグ）
-    df['hour']      = df['ts'].dt.hour
-    df['dayofweek'] = df['ts'].dt.dayofweek
-    df['month']     = df['ts'].dt.month
-    df['is_holiday'] = df['ts'].dt.date.apply(_is_holiday)
-    df['is_weekend'] = df['dayofweek'].isin([5, 6]).astype(int)
-    df['lag_24h']   = df['actual_mw'].shift(24)
-    df['lag_168h']  = df['actual_mw'].shift(168)
-    df['lag_336h']  = df['actual_mw'].shift(336)
-
-    # 気温特徴量（weather_cacheがある場合のみ）
-    if weather_cache is not None:
-        df = df.merge(weather_cache, on='ts', how='left')
-        df['temp_lag_24h'] = df['temp_c'].shift(24)
-        df['hdd'] = (18 - df['temp_c']).clip(lower=0)
-        df['cdd'] = (df['temp_c'] - 26).clip(lower=0)
-
-    feature_cols = [
-        'hour', 'dayofweek', 'month', 'is_holiday', 'is_weekend',
-        'lag_24h', 'lag_168h', 'lag_336h',
-        *([ 'temp_c', 'temp_lag_24h', 'hdd', 'cdd' ] if weather_cache is not None else [])
-    ]
-    X = df[feature_cols].dropna()
-    y = df.loc[X.index, 'actual_mw']
-    return X, y
+    cooling_base_temp_c, heating_base_temp_c = _weather_feature_config(config)
+    df["cooling_degree"] = (df["temp_c"] - cooling_base_temp_c).clip(lower=0.0)
+    df["heating_degree"] = (heating_base_temp_c - df["temp_c"]).clip(lower=0.0)
+    df["temp_delta_168h"] = df["temp_c"] - df["temp_c_168h"]
+    df["cooling_delta_168h"] = df["cooling_degree"] - df["cooling_degree_168h"]
+    return df[FEATURE_COLS], df["actual_mw"]
 ```
 
 ---
@@ -183,25 +151,17 @@ def build_features(
 ## `run_batch.py` 統合戦略
 
 ```python
-WEATHER_CACHE_PATH = out_dir / ".weather_cache.parquet"
+# hourly cache の欠損した過去 temp_c を補完します。
+hourly_cache = enrich_cache_with_weather(hourly_cache)
 
-# ETL実行時に気象データ収集（失敗しても継続）
-try:
-    weather_df = fetch_weather(past_days=92, forecast_days=2)
-    save_weather_cache(weather_df, WEATHER_CACHE_PATH)
-except Exception as e:
-    print(f"Weather fetch failed (non-fatal): {e}")
-    weather_df = load_weather_cache(WEATHER_CACHE_PATH)  # キャッシュフォールバック
+# 今日/明日の予測で使う temp_c のため、将来気温行を仮想的に追加します。
+# これらの行は actual_mw が NaN なので実績需要としては扱われません。
+extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
 
-# LightGBM訓練時に気温を含める
-if forecaster and weather_df is not None:
-    forecaster.fit(hourly_cache, weather_cache=weather_df)
-else:
-    forecaster.fit(hourly_cache)  # 気温なしで訓練
-
-# 予測時に明日の予測気温を使用
-tomorrow_weather = weather_df[weather_df['ts'].dt.date == tomorrow] if weather_df is not None else None
-tomorrow_fc = forecaster.predict(tomorrow, hourly_cache, weather=tomorrow_weather)
+# 同じ weather feature 設定で学習と推論を行います。
+forecaster = LGBMForecaster(config=config)
+forecaster.fit(hourly_cache)
+tomorrow_fc = forecaster.predict(tomorrow, extended_cache)
 ```
 
 ---
@@ -209,10 +169,8 @@ tomorrow_fc = forecaster.predict(tomorrow, hourly_cache, weather=tomorrow_weathe
 ## GitHub Actions 統合
 
 ```yaml
-# .github/workflows/etl.yml に追加
-- name: Fetch weather data
-  run: python python/etl/fetch_weather.py --save web/public/.weather_cache.parquet
-  continue-on-error: true   # 気象API失敗でもETL全体を止めない
+# ETLとintradayは python/etl/run_batch.py を実行します。
+# 気温archive/forecast取得はbatch job内部で処理されます。
 ```
 
 ### キャッシュファイルのコミット
@@ -221,7 +179,7 @@ tomorrow_fc = forecaster.predict(tomorrow, hourly_cache, weather=tomorrow_weathe
 - name: Commit outputs
   run: |
     git add web/public/forecast/ web/public/status.json
-    git add web/public/.weather_cache.parquet || true  # なくてもOK
+    git add web/public/.hourly_cache.parquet || true
     git add web/public/.lgbm_model.pkl || true
     git commit -m "auto: ETL $(date -u +%Y-%m-%dT%H:%M)Z" || true
 ```
@@ -232,13 +190,13 @@ tomorrow_fc = forecaster.predict(tomorrow, hourly_cache, weather=tomorrow_weathe
 
 | タイミング | 気温ソース | 備考 |
 |---|---|---|
-| 訓練（過去全体） | `past_days=365` 実績気温 | 年1回フル再学習可能 |
+| 訓練（過去全体） | Open-Meteo archive API | 過去 `temp_c` は `.hourly_cache.parquet` に保存 |
 | 昨日予測 | 実績気温（確定） | 正確 |
 | 今日予測 | 実績気温（午前）+ 予測気温（午後） | 混合 |
 | 明日予測 | Open-Meteo 48h予測気温 | ±1〜2°C誤差許容 |
 
 > 明日の気温予測誤差がモデル誤差に伝播する。
-> 夏の猛暑期は予測誤差が大きいため、不確実性バンドが自動的に広がる（quantile regression の特性）。
+> 夏の猛暑期は予測誤差が大きくなる可能性があるため、quantileモデルと異常検知結果はその不確実性も含めて解釈する必要があります。
 
 ---
 
@@ -270,15 +228,14 @@ MAE  (MW)   測定予定      測定予定
 
 ---
 
-## 実装順序
+## 現在の実装チェックリスト
 
-1. `fetch_weather.py` 作成 + 手動テスト (`python -m python.etl.fetch_weather`)
-2. `feature_builder.py` に気温特徴量追加 + 単体テスト
-3. `LGBMForecaster.fit()` — `weather_cache` オプション引数追加
-4. `run_batch.py` 統合（気象fetch → モデル訓練 → 予測）
-5. `requirements.txt` に `requests` を確認（既存の可能性大）
-6. `compare_models.py` でA/B評価後 `model_eval.json` 保存
-7. （選択）UIに「モデル性能」カード追加
+1. `fetch_weather.py` はOpen-Meteo archive/forecastエンドポイントをretry/backoff付きで使用します。
+2. `run_batch.py` は過去 `temp_c` を `.hourly_cache.parquet` に補完します。
+3. 将来予測気温は `actual_mw = NaN` の仮想cache行として追加します。
+4. `feature_builder.py` はdegree値、気温偏差、168時間気温変化量を含む30個のLightGBM特徴量を生成します。
+5. `LGBMForecaster(config=config)` は学習と推論で同じweather feature設定を使用します。
+6. 特徴量バージョンが変わった場合、既存保存モデルはstale扱いとなり次回実行で再学習されます。
 
 ---
 
@@ -286,7 +243,7 @@ MAE  (MW)   測定予定      測定予定
 
 | リスク | 可能性 | 対応 |
 |---|---|---|
-| Open-Meteo API一時停止 | 低 | `continue-on-error: true` + 前回キャッシュ使用 |
-| 過去気温データの空白 | 低 | `past_days` 値を増やして再収集可能 |
+| Open-Meteo API一時停止 | 低 | retry/backoffを適用、過去気温取得失敗はnon-fatalで既存cache値を維持 |
+| 過去気温データの空白 | 低 | API復旧後にETL再実行、欠損行は `temp_c = NaN` のまま残りモデル学習から除外 |
 | 気温ラグのfeature leakage | 注意 | 推論時の将来気温は予測値のみ使用 |
 | 夏の猛暑外挿 | 中 | 訓練データに過去猛暑期間が含まれていることを確認 |

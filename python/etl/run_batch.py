@@ -582,7 +582,7 @@ def _try_load_lgbm(out_dir: Path):
         from python.forecast.lgbm_model import LGBMForecaster
         forecaster = LGBMForecaster.load(model_path)
         if hasattr(forecaster, "is_compatible") and not forecaster.is_compatible():
-            print("[WARN] LightGBM model interval version is stale; retraining required", file=sys.stderr)
+            print("[WARN] LightGBM model feature version is stale; retraining required", file=sys.stderr)
             return None
         return forecaster
     except Exception as e:
@@ -590,13 +590,13 @@ def _try_load_lgbm(out_dir: Path):
         return None
 
 
-def _try_train_lgbm(cache: pd.DataFrame, out_dir: Path):
+def _try_train_lgbm(cache: pd.DataFrame, out_dir: Path, config: dict | None = None):
     """Train and save LGBMForecaster. Returns forecaster or None on any failure."""
     if len(cache) < _LGBM_MIN_ROWS:
         return None
     try:
         from python.forecast.lgbm_model import LGBMForecaster
-        forecaster = LGBMForecaster()
+        forecaster = LGBMForecaster(config=config)
         forecaster.fit(cache)
         forecaster.save(out_dir / _LGBM_MODEL_NAME)
         print(f"[LGBM] Trained and saved -> {_LGBM_MODEL_NAME}")
@@ -608,7 +608,11 @@ def _try_train_lgbm(cache: pd.DataFrame, out_dir: Path):
         return None
 
 
-def _try_train_lgbm_as_of(cache: pd.DataFrame, cutoff_date: date):
+def _try_train_lgbm_as_of(
+    cache: pd.DataFrame,
+    cutoff_date: date,
+    config: dict | None = None,
+):
     """Train a temporary LightGBM model using only rows before cutoff_date."""
     cutoff_ts = pd.Timestamp(cutoff_date, tz=JST)
     train_cache = cache[cache["ts"] < cutoff_ts].copy()
@@ -616,7 +620,7 @@ def _try_train_lgbm_as_of(cache: pd.DataFrame, cutoff_date: date):
         return None
     try:
         from python.forecast.lgbm_model import LGBMForecaster
-        forecaster = LGBMForecaster()
+        forecaster = LGBMForecaster(config=config)
         forecaster.fit(train_cache)
         return forecaster
     except ImportError:
@@ -682,6 +686,7 @@ def _build_forecast_with_fallback(
     target_date: date,
     n_weeks: int,
     min_samples: int,
+    config: dict | None = None,
     adjuster=None,
     guard=None,
 ) -> tuple[list, str]:
@@ -693,7 +698,7 @@ def _build_forecast_with_fallback(
     if forecaster is not None:
         try:
             from python.forecast.feature_builder import build_inference_features
-            inference_features = build_inference_features(cache, target_date)
+            inference_features = build_inference_features(cache, target_date, config)
             raw_lgbm_forecasts = forecaster.predict(target_date, cache)
             analog_adjusted_forecasts = (
                 adjuster.adjust(
@@ -884,11 +889,11 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     # Inject recent missing actuals (yesterday + today) for both forecasts
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
     if forecaster is None:
-        forecaster = _try_train_lgbm(extended_with_actuals, out_dir)
+        forecaster = _try_train_lgbm(extended_with_actuals, out_dir, config)
 
     # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
     today_fc, today_model = _build_forecast_with_fallback(
-        forecaster, extended_with_actuals, today, n_weeks, min_samples, adjuster, guard
+        forecaster, extended_with_actuals, today, n_weeks, min_samples, config, adjuster, guard
     )
     today_fc, today_model = _apply_intraday_residual_correction(
         out_dir, today, today_fc, today_model, config
@@ -896,7 +901,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
 
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
-        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, adjuster, guard
+        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard
     )
 
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
@@ -907,7 +912,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     day_context = None
     try:
         from python.forecast.feature_builder import build_inference_features
-        day_context = _make_day_context(build_inference_features(extended_cache, today), config)
+        day_context = _make_day_context(build_inference_features(extended_cache, today, config), config)
     except Exception:
         pass
     alerts_summary = _build_today_alerts(out_dir, today, config, day_context=day_context)
@@ -1056,7 +1061,7 @@ def main() -> None:
     save_hourly_cache(out_dir, hourly_cache)
 
     # Train and save LightGBM on the weather-enriched cache
-    forecaster = _try_train_lgbm(hourly_cache, out_dir)
+    forecaster = _try_train_lgbm(hourly_cache, out_dir, config)
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
 
@@ -1065,10 +1070,11 @@ def main() -> None:
     if forecaster is not None and reforecast_dates:
         for d in reforecast_dates:
             try:
-                historical_forecaster = _try_train_lgbm_as_of(hourly_cache, d)
+                historical_forecaster = _try_train_lgbm_as_of(hourly_cache, d, config)
                 historical_cache = hourly_cache[hourly_cache["ts"] < pd.Timestamp(d, tz=JST)].copy()
                 fc_list, model_name = _build_forecast_with_fallback(
-                    historical_forecaster, historical_cache, d, n_weeks, min_samples, adjuster, guard
+                    historical_forecaster, historical_cache, d, n_weeks, min_samples,
+                    config, adjuster, guard
                 )
                 write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
                            build_forecast_json(d, fc_list, config, model_name))
@@ -1090,13 +1096,13 @@ def main() -> None:
 
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
     today_fc, today_model = _build_forecast_with_fallback(
-        forecaster, extended_with_actuals, today, n_weeks, min_samples, adjuster, guard
+        forecaster, extended_with_actuals, today, n_weeks, min_samples, config, adjuster, guard
     )
     today_fc, today_model = _apply_intraday_residual_correction(
         out_dir, today, today_fc, today_model, config
     )
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
-        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, adjuster, guard
+        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard
     )
 
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",

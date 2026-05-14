@@ -150,7 +150,7 @@ def test_predict_normalizes_crossed_quantiles(monkeypatch):
     monkeypatch.setattr(
         mod,
         "build_inference_features",
-        lambda _cache, _target_date: pd.DataFrame({"hour": range(24)}),
+        lambda _cache, _target_date, _config=None: pd.DataFrame({"hour": range(24)}),
     )
 
     f = LGBMForecaster.__new__(LGBMForecaster)
@@ -173,6 +173,16 @@ def test_old_q10_q90_pickle_layout_is_incompatible():
     f.model_q10 = object()
     f.model_q50 = object()
     f.model_q90 = object()
+
+    assert not f.is_compatible()
+
+
+def test_old_feature_version_is_incompatible():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.interval_version = "q025_q50_q975_p95_v1"
+    f.model_q025 = object()
+    f.model_q50 = object()
+    f.model_q975 = object()
 
     assert not f.is_compatible()
 

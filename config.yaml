@@ -2,6 +2,10 @@ forecast:
   n_weeks: 12          # same-weekday lookback window
   min_samples_per_slot: 4  # minimum data points per (dow, hour) slot to generate forecast
 
+weather_features:
+  cooling_base_temp_c: 22.0  # configurable balance point for cooling-degree features
+  heating_base_temp_c: 10.0  # configurable balance point for heating-degree features
+
 intraday_correction:
   enabled: true
   lookback_hours: 3          # recent actual-vs-model residuals used for same-day correction

@@ -32,13 +32,19 @@ _LGBM_PARAMS = {
 
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
-    INTERVAL_VERSION = "q025_q50_q975_p95_v1"
+    INTERVAL_VERSION = "q025_q50_q975_p95_v2_weather_delta"
 
-    def __init__(self, n_estimators: int = 500, learning_rate: float = 0.05) -> None:
+    def __init__(
+        self,
+        n_estimators: int = 500,
+        learning_rate: float = 0.05,
+        config: dict | None = None,
+    ) -> None:
         if not _HAS_LGBM:
             raise ImportError("lightgbm is required: pip install lightgbm")
         self.n_estimators = n_estimators
         self.learning_rate = learning_rate
+        self.config = config or {}
         self.interval_version = self.INTERVAL_VERSION
         self.model_q025: "LGBMRegressor | None" = None
         self.model_q50: "LGBMRegressor | None" = None
@@ -55,7 +61,7 @@ class LGBMForecaster:
 
     def fit(self, cache: pd.DataFrame) -> None:
         """Train q025/q50/q975 quantile models on hourly cache. Needs >= 90 days."""
-        X, y = build_training_features(cache)
+        X, y = build_training_features(cache, self.config)
         if len(X) < self.MIN_TRAIN_ROWS:
             raise ValueError(
                 f"LGBMForecaster.fit: need >= {self.MIN_TRAIN_ROWS} rows (90 days), "
@@ -84,7 +90,7 @@ class LGBMForecaster:
         """Return 24-hour HourlyForecast list for target_date."""
         if not self.is_compatible():
             raise RuntimeError("Call fit() before predict(), or retrain an older LightGBM model.")
-        X = build_inference_features(cache, target_date)
+        X = build_inference_features(cache, target_date, getattr(self, "config", {}))
         q025 = self.model_q025.predict(X)
         q50 = self.model_q50.predict(X)
         q975 = self.model_q975.predict(X)
