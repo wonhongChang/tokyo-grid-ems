@@ -2,7 +2,7 @@
 
 > 09:00-18:00 JSTの時間帯で繰り返された暖かい日の過少予測を受けて追加した運用改善記録です。
 
-言語: [English](../en/model-improvement-2026-05-14-warm-daytime-bias-guard.md) · [한국어](../ko/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
+言語: [English](../../en/model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md) · [한국어](../../ko/model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
 
 ---
 

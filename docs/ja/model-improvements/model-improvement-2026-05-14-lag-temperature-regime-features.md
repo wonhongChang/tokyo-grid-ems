@@ -2,7 +2,7 @@
 
 > 季節移行期に前週同時刻の需要ラグが低すぎる基準点になる問題を減らすための特徴量改善記録です。
 
-言語: [English](../en/model-improvement-2026-05-14-lag-temperature-regime-features.md) · [한국어](../ko/model-improvement-2026-05-14-lag-temperature-regime-features.md)
+言語: [English](../../en/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md) · [한국어](../../ko/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md)
 
 ---
 

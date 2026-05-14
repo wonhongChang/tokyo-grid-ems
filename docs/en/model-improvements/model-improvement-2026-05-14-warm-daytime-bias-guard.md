@@ -2,7 +2,7 @@
 
 > Follow-up operational improvement after repeated warm-day under-forecasting in the 09:00-18:00 JST window.
 
-Languages: [한국어](../ko/model-improvement-2026-05-14-warm-daytime-bias-guard.md) · [日本語](../ja/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
+Languages: [한국어](../../ko/model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md) · [日本語](../../ja/model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
 
 ---
 

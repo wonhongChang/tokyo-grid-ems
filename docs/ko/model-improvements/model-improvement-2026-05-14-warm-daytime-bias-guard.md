@@ -2,7 +2,7 @@
 
 > 09:00-18:00 JST 구간에서 반복된 따뜻한 날 과소예측을 보고 추가한 후속 운영 개선 기록입니다.
 
-언어: [English](../en/model-improvement-2026-05-14-warm-daytime-bias-guard.md) · [日本語](../ja/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
+언어: [English](../../en/model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md) · [日本語](../../ja/model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
 
 ---
 

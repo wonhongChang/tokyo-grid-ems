@@ -2,7 +2,7 @@
 
 > Feature-side improvement for season-transition periods where last week's demand lag can be too low.
 
-Languages: [한국어](../ko/model-improvement-2026-05-14-lag-temperature-regime-features.md) · [日本語](../ja/model-improvement-2026-05-14-lag-temperature-regime-features.md)
+Languages: [한국어](../../ko/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md) · [日本語](../../ja/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md)
 
 ---
 

@@ -2,7 +2,7 @@
 
 > 2026-05-13 오후 시간대 과소예측을 분석한 뒤 추가한 운영 개선 기록입니다.
 
-언어: [English](../en/model-improvement-2026-05-13-daytime-heat-guard.md) · [日本語](../ja/model-improvement-2026-05-13-daytime-heat-guard.md)
+언어: [English](../../en/model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md) · [日本語](../../ja/model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md)
 
 ---
 

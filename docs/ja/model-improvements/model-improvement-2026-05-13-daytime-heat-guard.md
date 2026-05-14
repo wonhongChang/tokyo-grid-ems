@@ -2,7 +2,7 @@
 
 > 2026-05-13の暖かい午後に発生した過少予測を分析し、運用モデルに追加した改善記録です。
 
-言語: [English](../en/model-improvement-2026-05-13-daytime-heat-guard.md) · [한국어](../ko/model-improvement-2026-05-13-daytime-heat-guard.md)
+言語: [English](../../en/model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md) · [한국어](../../ko/model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md)
 
 ---
 

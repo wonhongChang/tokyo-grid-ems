@@ -95,11 +95,11 @@ residual = actualMw - modelForecastMw
 
 `python/forecast/adjustment.py` はintraday補正の前に、保守的な後処理ガードを適用します。同時刻168時間ラグが祝日または週末を指し、現在の日中気温偏差が高い場合、類似日補正が日中予測を下方向へ押し下げることを防ぎます。また、祝日ラグがない場合でも、季節に対して暖かい平日の日中には小さめの通常高温ガードを適用します。
 
-詳しい事象分析、実装内容、検証結果は [2026-05-13 日中高温ガード改善](model-improvement-2026-05-13-daytime-heat-guard.md) に整理しています。
+詳しい事象分析、実装内容、検証結果は [2026-05-13 日中高温ガード改善](model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md) に整理しています。
 
-後続の一般化は [2026-05-14 暖かい日中の過少予測補正](model-improvement-2026-05-14-warm-daytime-bias-guard.md) に整理しています。
+後続の一般化は [2026-05-14 暖かい日中の過少予測補正](model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md) に整理しています。
 
-特徴量側の後続改善は [2026-05-14 前週比気温変化特徴量](model-improvement-2026-05-14-lag-temperature-regime-features.md) に整理しています。
+特徴量側の後続改善は [2026-05-14 前週比気温変化特徴量](model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md) に整理しています。
 
 ---
 

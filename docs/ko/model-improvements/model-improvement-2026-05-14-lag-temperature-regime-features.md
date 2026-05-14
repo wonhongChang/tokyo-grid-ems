@@ -2,7 +2,7 @@
 
 > 전주 같은 시간대 수요가 계절 전환기에 너무 낮은 기준점이 되는 문제를 줄이기 위한 피처 개선 기록입니다.
 
-언어: [English](../en/model-improvement-2026-05-14-lag-temperature-regime-features.md) · [日本語](../ja/model-improvement-2026-05-14-lag-temperature-regime-features.md)
+언어: [English](../../en/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md) · [日本語](../../ja/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md)
 
 ---
 
