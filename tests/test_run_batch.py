@@ -12,6 +12,7 @@ import pytest
 from python.forecast.baseline import HourlyForecast
 from python.etl.run_batch import (
     _apply_actual_json_latest_fallback,
+    _extend_cache_with_forecast_weather,
     _inject_today_actuals,
     _load_existing_forecast,
     build_actual_json,
@@ -124,6 +125,57 @@ def test_save_hourly_cache_prefers_actual_rows_over_virtual_rows(tmp_path):
     assert result["actual_mw"].iloc[0] == pytest.approx(20_000.0)
     assert result["forecast_mw"].iloc[0] == pytest.approx(19_800.0)
     assert result["temp_c"].iloc[0] == pytest.approx(8.5)
+
+
+def test_extend_cache_refreshes_existing_virtual_forecast_weather(monkeypatch):
+    ts = pd.Timestamp("2024-01-02T12:00:00+09:00")
+    cache = pd.DataFrame([{
+        "ts": ts,
+        "actual_mw": float("nan"),
+        "forecast_mw": float("nan"),
+        "usage_pct": float("nan"),
+        "supply_mw": float("nan"),
+        "temp_c": 24.5,
+    }])
+    weather = pd.DataFrame({
+        "ts": [ts],
+        "temp_c": [21.8],
+    })
+    monkeypatch.setattr(
+        "python.etl.fetch_weather.fetch_forecast_temps",
+        lambda days=3: weather,
+    )
+
+    result = _extend_cache_with_forecast_weather(cache, days=3)
+
+    assert len(result) == 1
+    assert result["temp_c"].iloc[0] == pytest.approx(21.8)
+
+
+def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
+    ts = pd.Timestamp("2024-01-02T12:00:00+09:00")
+    cache = pd.DataFrame([{
+        "ts": ts,
+        "actual_mw": 30_000.0,
+        "forecast_mw": 29_500.0,
+        "usage_pct": 80.0,
+        "supply_mw": 36_000.0,
+        "temp_c": 24.5,
+    }])
+    weather = pd.DataFrame({
+        "ts": [ts],
+        "temp_c": [21.8],
+    })
+    monkeypatch.setattr(
+        "python.etl.fetch_weather.fetch_forecast_temps",
+        lambda days=3: weather,
+    )
+
+    result = _extend_cache_with_forecast_weather(cache, days=3)
+
+    assert len(result) == 1
+    assert result["actual_mw"].iloc[0] == pytest.approx(30_000.0)
+    assert result["temp_c"].iloc[0] == pytest.approx(24.5)
 
 
 def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):

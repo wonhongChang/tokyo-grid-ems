@@ -29,6 +29,8 @@ weather_features:
 
 Because the feature columns changed, the LightGBM model compatibility version was bumped. Existing saved models are treated as stale and will be retrained by the next ETL/intraday run.
 
+Intraday runs also refresh virtual forecast-weather rows while `actual_mw` is still missing. This prevents stale morning weather forecasts from locking the model into an outdated daily temperature curve.
+
 ## Design Boundary
 
 This does not use TEPCO forecast values as model inputs. It only adds weather-derived context so the model can learn when week-over-week demand lags should be trusted less.

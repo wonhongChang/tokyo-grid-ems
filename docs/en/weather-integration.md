@@ -232,7 +232,7 @@ Results saved to `web/public/model_eval.json`:
 
 1. `fetch_weather.py` uses Open-Meteo archive and forecast endpoints with retry/backoff.
 2. `run_batch.py` fills historical `temp_c` into `.hourly_cache.parquet`.
-3. Future forecast temperatures are appended as virtual cache rows with `actual_mw = NaN`.
+3. Future forecast temperatures are appended and refreshed as virtual cache rows with `actual_mw = NaN`.
 4. `feature_builder.py` creates 30 LightGBM features, including degree values, temperature anomalies, and 168h weather deltas.
 5. `LGBMForecaster(config=config)` uses the same weather feature settings for training and inference.
 6. Feature versioning marks older saved models as stale so the next run retrains them.

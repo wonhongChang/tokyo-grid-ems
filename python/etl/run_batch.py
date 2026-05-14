@@ -632,10 +632,12 @@ def _try_train_lgbm_as_of(
 
 
 def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> pd.DataFrame:
-    """Append virtual rows (NaN actual_mw, non-NaN temp_c) for upcoming days.
+    """Upsert virtual forecast-weather rows for upcoming days.
 
     build_inference_features looks up temp_c for the target_date from cache,
-    so these virtual rows make forecast temperatures available to the model.
+    so these virtual rows make forecast temperatures available to the model. Existing
+    virtual rows are refreshed because intraday weather forecasts can change materially.
+    Rows with actual_mw are treated as historical observations and are not overwritten.
     """
     try:
         from python.etl.fetch_weather import fetch_forecast_temps
@@ -644,16 +646,29 @@ def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> p
         print(f"[WARN] Forecast weather fetch failed: {e}", file=sys.stderr)
         return cache
 
-    existing_ts = set(cache["ts"])
-    new_rows = weather[~weather["ts"].isin(existing_ts)].copy()
-    if new_rows.empty:
-        return cache
+    result = cache.copy()
+    for col in _CACHE_COLS:
+        if col not in result.columns:
+            result[col] = float("nan")
 
+    weather_temp = weather[["ts", "temp_c"]].copy()
+    forecast_temp_col = "_forecast_temp_c"
+    result = result.merge(
+        weather_temp.rename(columns={"temp_c": forecast_temp_col}),
+        on="ts",
+        how="left",
+    )
+    can_refresh_temp = result["actual_mw"].isna() & result[forecast_temp_col].notna()
+    result.loc[can_refresh_temp, "temp_c"] = result.loc[can_refresh_temp, forecast_temp_col]
+    result = result.drop(columns=[forecast_temp_col])
+
+    existing_ts = set(result["ts"])
+    new_rows = weather_temp[~weather_temp["ts"].isin(existing_ts)].copy()
     for col in _CACHE_COLS:
         if col not in new_rows.columns:
             new_rows[col] = float("nan")
 
-    result = pd.concat([cache, new_rows[_CACHE_COLS]], ignore_index=True)
+    result = pd.concat([result[_CACHE_COLS], new_rows[_CACHE_COLS]], ignore_index=True)
     return result.sort_values("ts").reset_index(drop=True)
 
 
