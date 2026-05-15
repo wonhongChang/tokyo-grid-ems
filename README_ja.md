@@ -152,6 +152,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [2026-05-14 暖かい日中の過少予測補正](docs/ja/model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
 - [2026-05-14 前週比気温変化特徴量](docs/ja/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md)
 - [気温データ連携設計](docs/ja/weather-integration.md)
+- [データ保持とアーカイブ戦略](docs/ja/data-retention-strategy.md)
 - [モデル評価リポート](docs/ja/model-evaluation.md)
 - [異常検知基準](docs/ja/anomaly-criteria.md)
 - [JSONスキーマ契約](docs/ja/json_schema.md)
