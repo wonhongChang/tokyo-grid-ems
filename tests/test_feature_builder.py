@@ -13,6 +13,7 @@ from python.forecast.feature_builder import (
     _consec_holiday_len,
     _days_since_holiday_end,
     _ensure_tz,
+    _is_nonworking,
     _last_biz_day,
     _major_holiday_season,
     build_inference_features,
@@ -534,7 +535,7 @@ def test_inference_has_interaction_columns():
 def test_interaction_feature_cols_count():
     """FEATURE_COLS should include weather-delta features and lag context."""
     from python.forecast.feature_builder import FEATURE_COLS
-    assert len(FEATURE_COLS) == 34
+    assert len(FEATURE_COLS) == 37
 
 
 def test_holiday_x_heat_nonneg():
@@ -597,15 +598,71 @@ def test_inference_interaction_zero_when_no_heat():
 def test_training_has_lag_context_columns():
     cache = _make_cache(200)
     X, _ = build_training_features(cache)
-    for col in ["lag_24h_dsh", "lag_24h_consec", "lag_168h_dsh"]:
+    for col in [
+        "lag_24h_dsh",
+        "lag_24h_consec",
+        "lag_168h_dsh",
+        "lag_24h_business_type_mismatch",
+        "lag_24h_mismatch_x_business_hour",
+        "recent_same_business_type_mean",
+    ]:
         assert col in X.columns
 
 
 def test_inference_has_lag_context_columns():
     cache = _make_cache(400)
     out = build_inference_features(cache, date(2025, 1, 13))
-    for col in ["lag_24h_dsh", "lag_24h_consec", "lag_168h_dsh"]:
+    for col in [
+        "lag_24h_dsh",
+        "lag_24h_consec",
+        "lag_168h_dsh",
+        "lag_24h_business_type_mismatch",
+        "lag_24h_mismatch_x_business_hour",
+        "recent_same_business_type_mean",
+    ]:
         assert col in out.columns
+
+
+def test_inference_lag_24h_business_type_mismatch_saturday():
+    cache = _make_cache(400)
+    out = build_inference_features(cache, date(2025, 1, 11))  # Saturday after Friday
+
+    assert (out["lag_24h_business_type_mismatch"] == 1).all()
+    daytime = out[out["hour"].between(8, 18)]
+    overnight = out[~out["hour"].between(8, 18)]
+    assert (daytime["lag_24h_mismatch_x_business_hour"] == 1).all()
+    assert (overnight["lag_24h_mismatch_x_business_hour"] == 0).all()
+
+
+def test_inference_lag_24h_business_type_no_mismatch_sunday():
+    cache = _make_cache(400)
+    out = build_inference_features(cache, date(2025, 1, 12))  # Sunday after Saturday
+
+    assert (out["lag_24h_business_type_mismatch"] == 0).all()
+    assert (out["lag_24h_mismatch_x_business_hour"] == 0).all()
+
+
+def test_inference_recent_same_business_type_mean_uses_non_business_days():
+    start = pd.Timestamp("2025-01-01", tz=JST)
+    n = 30 * 24
+    timestamps = pd.date_range(start, periods=n, freq="h")
+    actual_mw = [
+        10_000.0 + ts.hour if _is_nonworking(ts.date()) else 30_000.0 + ts.hour
+        for ts in timestamps
+    ]
+    df = pd.DataFrame({
+        "ts": timestamps,
+        "actual_mw": actual_mw,
+        "temp_c": np.full(n, 20.0),
+    })
+
+    out = build_inference_features(df, date(2025, 1, 18))  # Saturday
+
+    assert np.allclose(
+        out["recent_same_business_type_mean"].values,
+        [10_000.0 + hour for hour in range(24)],
+        atol=1e-6,
+    )
 
 
 def test_lag_24h_consec_post_golden_week():

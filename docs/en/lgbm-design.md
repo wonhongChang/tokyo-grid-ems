@@ -53,9 +53,9 @@ Feature engineering lives in `python/forecast/feature_builder.py`.
 | Holiday correction | last business day, consecutive holidays, days since holiday end | avoids underestimating post-holiday demand |
 | Weather | temperature, apparent temperature, configurable cooling/heating degree, temperature anomalies, 24h/168h temperature and cooling deltas | captures HVAC-driven demand and day-over-day/week-over-week regime changes |
 | Interactions | holiday x heat, post-holiday x heat | handles Golden Week and similar return-to-work spikes |
-| Lag context | lag_24h_dsh, lag_24h_consec, lag_168h_dsh | tells the model when lag values are holiday-contaminated |
+| Lag context | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h business-type mismatch, recent same business-type mean | tells the model when lag values are holiday-contaminated or crossed a business/non-business boundary |
 
-The current feature set has 34 explicit features.
+The current feature set has 37 explicit features.
 
 Cooling/heating degree balance points are configured in `config.yaml`:
 
@@ -66,6 +66,8 @@ weather_features:
 ```
 
 `temp_delta_24h` and `cooling_delta_24h` help the model decide how much to trust yesterday's same-hour demand when today's weather has shifted. `temp_delta_168h` and `cooling_delta_168h` do the same for the same-hour value from one week ago. `apparent_temp_c` and `apparent_cooling_degree` add a feels-like temperature signal when humidity, wind, or solar conditions make air temperature alone incomplete.
+
+`lag_24h_business_type_mismatch` and `lag_24h_mismatch_x_business_hour` help the model treat Friday-to-Saturday and Sunday-to-Monday lag values more carefully, especially during daytime business hours. `recent_same_business_type_mean` provides a broader same-hour anchor from recent business or non-business days.
 
 ---
 
@@ -100,6 +102,8 @@ See [Warm Daytime Bias Guard](model-improvements/model-improvement-2026-05-14-wa
 See [Lag Temperature Regime Features](model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md) for the feature-side follow-up.
 
 See [24h Weather Delta and Apparent Temperature Features](model-improvements/model-improvement-2026-05-15-24h-weather-apparent-features.md) for the next feature-side follow-up.
+
+See [Business-Type Lag Features](model-improvements/model-improvement-2026-05-16-business-type-lag-features.md) for the weekend/weekday transition follow-up.
 
 ---
 

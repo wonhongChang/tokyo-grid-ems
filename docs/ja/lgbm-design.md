@@ -53,9 +53,9 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | 祝日補正 | 直前平日、連続休日数、休日終了後日数 | 連休直後の過少予測を抑える |
 | 気温 | 気温、体感温度、設定可能な冷房/暖房degree、気温偏差、24時間/168時間の気温・冷房変化量 | 冷暖房需要と前日比/前週比の気象レジーム変化を反映する |
 | 交互作用 | holiday x heat, post-holiday x heat | GW後などの復帰需要を補正する |
-| ラグ文脈 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh | ラグ値が休日需要に影響されたかを伝える |
+| ラグ文脈 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h営業/非営業mismatch, 直近同営業タイプ平均 | ラグ値が休日需要に影響されたか、または営業/非営業境界をまたいだかを伝える |
 
-現在の明示的特徴量数は34個です。
+現在の明示的特徴量数は37個です。
 
 冷房/暖房degreeの基準温度は `config.yaml` で設定します。
 
@@ -66,6 +66,8 @@ weather_features:
 ```
 
 `temp_delta_24h` と `cooling_delta_24h` は、今日の天候が前日同時刻から変わった場合に、前日需要ラグをどの程度信頼するかをモデルに伝える特徴量です。`temp_delta_168h` と `cooling_delta_168h` は、前週同時刻の需要に対して同じ役割を持ちます。`apparent_temp_c` と `apparent_cooling_degree` は、湿度・風・日射などにより気温だけでは体感を表しきれない場合を補う信号です。
+
+`lag_24h_business_type_mismatch` と `lag_24h_mismatch_x_business_hour` は、金曜→土曜、日曜→月曜のように前日ラグが営業/非営業境界をまたぐ場合をモデルに伝えます。特に日中の業務需要差を慎重に扱うための信号です。`recent_same_business_type_mean` は、直近の同じ営業タイプ・同時刻の平均を追加の基準線として与えます。
 
 ---
 
@@ -102,6 +104,8 @@ residual = actualMw - modelForecastMw
 特徴量側の後続改善は [2026-05-14 前週比気温変化特徴量](model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md) に整理しています。
 
 次の特徴量改善は [2026-05-15 前日比気象変化と体感温度特徴量](model-improvements/model-improvement-2026-05-15-24h-weather-apparent-features.md) に整理しています。
+
+週末/平日遷移の改善は [2026-05-16 営業タイプ遷移lag特徴量](model-improvements/model-improvement-2026-05-16-business-type-lag-features.md) に整理しています。
 
 ---
 

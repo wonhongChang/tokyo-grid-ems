@@ -45,6 +45,9 @@ FEATURE_COLS: list[str] = [
     "lag_24h_dsh",    # days_since_holiday_end(yesterday) — was yesterday post-holiday?
     "lag_24h_consec", # consec_holiday_len(yesterday) — how many holidays preceded yesterday?
     "lag_168h_dsh",   # days_since_holiday_end(7 days ago)
+    "lag_24h_business_type_mismatch",        # target and previous day differ in business/non-business type
+    "lag_24h_mismatch_x_business_hour",      # mismatch focused on daytime demand hours
+    "recent_same_business_type_mean",        # recent same-hour mean for business vs non-business days
 ]
 
 # Golden Week / Obon / New Year day-of-year zones (wider than the holiday itself
@@ -252,6 +255,15 @@ def build_training_features(
     df["is_weekend"]          = (df["dayofweek"] >= 5).astype(int)
     df["is_holiday"]          = df["ts"].dt.date.map(lambda d: int(_is_holiday(d)))
     df["is_non_business_day"] = df["ts"].dt.date.map(lambda d: int(_is_nonworking(d)))
+    df["prev_day_is_non_business_day"] = df["ts"].dt.date.map(
+        lambda d: int(_is_nonworking(d - timedelta(days=1)))
+    )
+    df["lag_24h_business_type_mismatch"] = (
+        df["is_non_business_day"] != df["prev_day_is_non_business_day"]
+    ).astype(int)
+    df["lag_24h_mismatch_x_business_hour"] = (
+        df["lag_24h_business_type_mismatch"] * df["hour"].between(8, 18).astype(int)
+    )
 
     # Standard lag features via timestamp-shift merge
     actual_history = df[["ts", "actual_mw"]].copy()
@@ -274,6 +286,13 @@ def build_training_features(
     )
     df["roll_4w_std"] = hour_weekday_group.transform(
         lambda s: s.shift(1).rolling(4, min_periods=1).std().fillna(0.0)
+    )
+    # Recent same-hour mean within the same business/non-business type.
+    # This gives weekend/holiday forecasts a broader non-business anchor when
+    # lag_24h comes from a different type of day.
+    hour_business_type_group = df.groupby(["hour", "is_non_business_day"])["actual_mw"]
+    df["recent_same_business_type_mean"] = hour_business_type_group.transform(
+        lambda s: s.shift(1).rolling(8, min_periods=1).mean()
     )
 
     # Holiday lag correction features
@@ -363,8 +382,16 @@ def build_inference_features(
     actual_mw_by_ts: dict = dict(zip(actual_rows["ts"], actual_rows["actual_mw"]))
     actual_rows["_hour"] = actual_rows["ts"].dt.hour
     actual_rows["_dow"]  = actual_rows["ts"].dt.dayofweek
+    actual_rows["_is_non_business_day"] = actual_rows["ts"].dt.date.map(
+        lambda d: int(_is_nonworking(d))
+    )
 
     is_public_holiday = int(_is_holiday(target_date))
+    is_target_non_business_day = int(_is_nonworking(target_date))
+    prev_day_is_non_business_day = int(_is_nonworking(target_date - timedelta(days=1)))
+    lag_24h_business_type_mismatch = int(
+        is_target_non_business_day != prev_day_is_non_business_day
+    )
     date_feature_map = _date_features([target_date])
 
     # Temperature lookup for target_date (includes virtual forecast rows)
@@ -442,6 +469,11 @@ def build_inference_features(
             (actual_rows["_dow"]  == day_of_week)  &
             (actual_rows["ts"]    <  ts)
         ].tail(4)
+        recent_same_business_type = actual_rows[
+            (actual_rows["_hour"] == hour) &
+            (actual_rows["_is_non_business_day"] == is_target_non_business_day) &
+            (actual_rows["ts"] < ts)
+        ].tail(8)
 
         target_date_features = date_feature_map[target_date]
 
@@ -532,7 +564,7 @@ def build_inference_features(
             "month":                  ts.month,
             "is_holiday":             is_public_holiday,
             "is_weekend":             int(day_of_week >= 5),
-            "is_non_business_day":    int(_is_nonworking(target_date)),
+            "is_non_business_day":    is_target_non_business_day,
             "lag_24h":                lag_24h,
             "lag_48h":                lag_48h,
             "lag_168h":               lag_168h,
@@ -546,6 +578,11 @@ def build_inference_features(
                 float(recent_same_hour_weekday["actual_mw"].std())
                 if len(recent_same_hour_weekday) > 1
                 else 0.0
+            ),
+            "recent_same_business_type_mean": (
+                float(recent_same_business_type["actual_mw"].mean())
+                if len(recent_same_business_type) > 0
+                else np.nan
             ),
             "lag_last_biz_hour":      _lag_day("last_biz_day"),
             "lag_last_nonhol_hour":   _lag_day("last_nonhol_day"),
@@ -569,6 +606,10 @@ def build_inference_features(
             "lag_24h_dsh":    target_date_features["lag_24h_dsh"],
             "lag_24h_consec": target_date_features["lag_24h_consec"],
             "lag_168h_dsh":   target_date_features["lag_168h_dsh"],
+            "lag_24h_business_type_mismatch": lag_24h_business_type_mismatch,
+            "lag_24h_mismatch_x_business_hour": (
+                lag_24h_business_type_mismatch * int(8 <= hour <= 18)
+            ),
         })
 
     return pd.DataFrame(rows)[FEATURE_COLS]
