@@ -1,6 +1,6 @@
 # Weather Data Integration Design
 
-> Production feature: adding Open-Meteo temperature features to the LightGBM model
+> Production feature: adding Open-Meteo temperature and apparent-temperature features to the LightGBM model
 > Open-Meteo API (free, no auth required) — Tokyo coordinates
 
 Languages: [한국어](../ko/weather-integration.md) · [日本語](../ja/weather-integration.md)
@@ -9,7 +9,7 @@ Languages: [한국어](../ko/weather-integration.md) · [日本語](../ja/weathe
 
 ## Why Temperature
 
-Temperature explains 30–40% of electricity demand variation.
+Temperature explains 30–40% of electricity demand variation. Apparent temperature adds a "feels-like" signal that can better reflect cooling demand on humid or windy days.
 
 | Season | Mechanism | Demand Impact |
 |---|---|---|
@@ -42,7 +42,8 @@ Timezone: Asia/Tokyo
 {
   "hourly": {
     "time": ["2026-05-05T00:00", "2026-05-05T01:00", ...],
-    "temperature_2m": [18.3, 17.9, 17.5, ...]
+    "temperature_2m": [18.3, 17.9, 17.5, ...],
+    "apparent_temperature": [18.1, 17.6, 17.0, ...]
   }
 }
 ```
@@ -61,16 +62,16 @@ _FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 _MAX_RETRIES  = 3
 
 def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
-    """Fetch hourly archive temperature for Tokyo."""
+    """Fetch hourly archive weather for Tokyo."""
 
 def fetch_forecast_temps(days: int = 3) -> pd.DataFrame:
-    """Fetch hourly forecast temperature for today and upcoming days."""
+    """Fetch hourly forecast weather for today and upcoming days."""
 
 def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
-    """Fill missing temp_c values in the hourly cache where actual_mw exists."""
+    """Fill missing weather values in the hourly cache where actual_mw exists."""
 ```
 
-`run_batch.py` persists temperature inside `.hourly_cache.parquet`, so demand and weather history move together.
+`run_batch.py` persists temperature and apparent temperature inside `.hourly_cache.parquet`, so demand and weather history move together.
 
 ---
 
@@ -79,14 +80,18 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
 ```python
 # Current temperature (actual archive or forecast)
 'temp_c'              # temperature at that hour (°C)
+'apparent_temp_c'     # apparent / feels-like temperature at that hour (°C)
 
 # Cooling/heating degree values
 'cooling_degree'      # max(0, temp_c - cooling_base_temp_c)
 'heating_degree'      # max(0, heating_base_temp_c - temp_c)
+'apparent_cooling_degree'  # max(0, apparent_temp_c - cooling_base_temp_c)
 
 # Temperature regime context
 'temp_anomaly_7d'     # temp_c minus trailing 7-day mean
 'temp_anomaly_doy'    # temp_c minus historical same month/hour mean
+'temp_delta_24h'      # current same-hour temp minus previous-day temp
+'cooling_delta_24h'   # current cooling degree minus previous-day cooling degree
 'temp_delta_168h'     # current same-hour temp minus 168h-ago temp
 'cooling_delta_168h'  # current cooling degree minus 168h-ago cooling degree
 
@@ -104,7 +109,7 @@ weather_features:
   heating_base_temp_c: 10.0
 ```
 
-> **Why degree values and 168h deltas**: degree values linearize HVAC-driven demand, while `temp_delta_168h` and `cooling_delta_168h` tell the model when last week's same-hour demand is no longer a reliable anchor.
+> **Why degree values and weather deltas**: degree values linearize HVAC-driven demand. The 24h deltas tell the model when yesterday's same-hour demand should be trusted less because today's weather is different. The 168h deltas do the same for last week's same-hour demand.
 
 ---
 
@@ -121,7 +126,7 @@ python/
 
 ```
 web/public/
-  .hourly_cache.parquet    # demand cache, including temp_c when available
+  .hourly_cache.parquet    # demand cache, including temp_c/apparent_temp_c when available
   .lgbm_model.pkl          # trained LightGBM model
 ```
 
@@ -135,12 +140,16 @@ def build_training_features(
     config: dict | None = None,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """
-    cache: hourly cache with ts, actual_mw, supply_mw, temp_c, ...
+    cache: hourly cache with ts, actual_mw, supply_mw, temp_c, apparent_temp_c, ...
     config: includes weather_features balance points
     """
     cooling_base_temp_c, heating_base_temp_c = _weather_feature_config(config)
+    df["apparent_temp_c"] = df["apparent_temp_c"].fillna(df["temp_c"])
     df["cooling_degree"] = (df["temp_c"] - cooling_base_temp_c).clip(lower=0.0)
     df["heating_degree"] = (heating_base_temp_c - df["temp_c"]).clip(lower=0.0)
+    df["apparent_cooling_degree"] = (df["apparent_temp_c"] - cooling_base_temp_c).clip(lower=0.0)
+    df["temp_delta_24h"] = df["temp_c"] - df["temp_c_24h"]
+    df["cooling_delta_24h"] = df["cooling_degree"] - df["cooling_degree_24h"]
     df["temp_delta_168h"] = df["temp_c"] - df["temp_c_168h"]
     df["cooling_delta_168h"] = df["cooling_degree"] - df["cooling_degree_168h"]
     return df[FEATURE_COLS], df["actual_mw"]
@@ -151,10 +160,10 @@ def build_training_features(
 ## `run_batch.py` Integration Strategy
 
 ```python
-# Fill missing historical temp_c values in the hourly cache.
+# Fill missing historical temp_c/apparent_temp_c values in the hourly cache.
 hourly_cache = enrich_cache_with_weather(hourly_cache)
 
-# Append virtual future rows with forecast temp_c so inference can use
+# Append virtual future rows with forecast weather so inference can use
 # today's and tomorrow's weather without treating those rows as actual demand.
 extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
 
@@ -190,7 +199,7 @@ tomorrow_fc = forecaster.predict(tomorrow, extended_cache)
 
 | Stage | Temperature Source | Notes |
 |---|---|---|
-| Training (full history) | Open-Meteo archive API | Historical `temp_c` is stored in `.hourly_cache.parquet` |
+| Training (full history) | Open-Meteo archive API | Historical `temp_c` / `apparent_temp_c` are stored in `.hourly_cache.parquet` |
 | Yesterday's forecast | Historical actuals (confirmed) | Exact |
 | Today's forecast | Historical (morning) + forecast (afternoon) | Mixed |
 | Tomorrow's forecast | Open-Meteo 48h forecast | ±1–2°C error tolerated |
@@ -231,9 +240,9 @@ Results saved to `web/public/model_eval.json`:
 ## Current Implementation Checklist
 
 1. `fetch_weather.py` uses Open-Meteo archive and forecast endpoints with retry/backoff.
-2. `run_batch.py` fills historical `temp_c` into `.hourly_cache.parquet`.
-3. Future forecast temperatures are appended and refreshed as virtual cache rows with `actual_mw = NaN`.
-4. `feature_builder.py` creates 30 LightGBM features, including degree values, temperature anomalies, and 168h weather deltas.
+2. `run_batch.py` fills historical `temp_c` and `apparent_temp_c` into `.hourly_cache.parquet`.
+3. Future forecast weather is appended and refreshed as virtual cache rows with `actual_mw = NaN`.
+4. `feature_builder.py` creates 34 LightGBM features, including degree values, apparent temperature, temperature anomalies, and 24h/168h weather deltas.
 5. `LGBMForecaster(config=config)` uses the same weather feature settings for training and inference.
 6. Feature versioning marks older saved models as stale so the next run retrains them.
 

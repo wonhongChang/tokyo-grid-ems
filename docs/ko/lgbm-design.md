@@ -51,11 +51,11 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | 래그 | 24h, 48h, 168h, 336h | 전력 수요의 관성 반영 |
 | 롤링 통계 | 최근 4주 같은 요일/시간 평균과 표준편차 | 안정적인 과거 기준 제공 |
 | 공휴일 보정 | 직전 평일, 연속 휴일 수, 휴일 종료 후 경과일 | 연휴 직후 과소예측 완화 |
-| 기온 | 기온, 설정 가능한 냉방/난방 degree, 기온 이상치, 168시간 기온/냉방 변화량 | 냉난방 수요와 전주 대비 계절 변화 반영 |
+| 기온 | 기온, 체감온도, 설정 가능한 냉방/난방 degree, 기온 이상치, 24시간/168시간 기온·냉방 변화량 | 냉난방 수요와 전일/전주 대비 계절 변화 반영 |
 | 교호작용 | holiday x heat, post-holiday x heat | 골든위크 이후 복귀 수요 보정 |
 | 래그 컨텍스트 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh | 래그값이 휴일 수요에 오염됐는지 알려줌 |
 
-현재 명시적 피처 수는 30개입니다.
+현재 명시적 피처 수는 34개입니다.
 
 냉방/난방 degree의 기준온도는 `config.yaml`에서 설정합니다.
 
@@ -65,7 +65,7 @@ weather_features:
   heating_base_temp_c: 10.0
 ```
 
-`temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요를 그대로 믿기 어려운 계절 전환 상황을 모델에 알려주는 피처입니다.
+`temp_delta_24h`와 `cooling_delta_24h`는 오늘 날씨가 어제 같은 시간과 달라졌을 때, 전날 수요 lag를 얼마나 믿을지 모델에 알려주는 피처입니다. `temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요에 대해 같은 역할을 합니다. `apparent_temp_c`와 `apparent_cooling_degree`는 습도, 바람, 일사 등으로 실제 체감이 기온만으로 부족할 때를 보완하는 신호입니다.
 
 ---
 
@@ -101,12 +101,14 @@ residual = actualMw - modelForecastMw
 
 피처 측면의 후속 개선은 [2026-05-14 전주 대비 기온 변화 피처](model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md)에 정리했습니다.
 
+다음 피처 개선은 [2026-05-15 전일 대비 날씨 변화와 체감온도 피처](model-improvements/model-improvement-2026-05-15-24h-weather-apparent-features.md)에 정리했습니다.
+
 ---
 
 ## 학습과 추론 흐름
 
 1. ETL이 TEPCO 월별 ZIP에서 확정 이력 데이터를 읽습니다.
-2. Open-Meteo 기온 데이터를 붙입니다.
+2. Open-Meteo 기온/체감온도 데이터를 붙입니다.
 3. LightGBM을 학습하고 `web/public/.lgbm_model.pkl`로 저장합니다.
 4. status/intraday workflow가 모델을 다시 로드합니다.
 5. 월별 ZIP이 아직 갱신되지 않은 구간은 최근 actual JSON으로 cache를 보강합니다.

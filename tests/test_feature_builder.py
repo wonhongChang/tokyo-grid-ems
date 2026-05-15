@@ -51,6 +51,7 @@ def _make_cache(n_days: int = 200, base: str = "2024-01-01") -> pd.DataFrame:
         "usage_pct":  actual_mw / 250,
         "supply_mw":  np.full(n, 25_000.0),
         "temp_c":     temp_c,
+        "apparent_temp_c": temp_c + 1.5,
     })
 
 
@@ -219,8 +220,12 @@ def test_training_without_temp_c_drops_rows():
 def test_training_has_temp_anomaly_columns():
     cache = _make_cache(200)
     X, _ = build_training_features(cache)
+    assert "apparent_temp_c" in X.columns
+    assert "apparent_cooling_degree" in X.columns
     assert "temp_anomaly_7d"  in X.columns
     assert "temp_anomaly_doy" in X.columns
+    assert "temp_delta_24h" in X.columns
+    assert "cooling_delta_24h" in X.columns
     assert "temp_delta_168h" in X.columns
     assert "cooling_delta_168h" in X.columns
 
@@ -313,9 +318,11 @@ def test_inference_temp_c_from_cache():
     # Plant a known temp for each hour of target_date
     mask = cache["ts"].dt.date == target
     cache.loc[mask, "temp_c"] = 25.0
+    cache.loc[mask, "apparent_temp_c"] = 27.0
 
     out = build_inference_features(cache, target)
     assert np.allclose(out["temp_c"].values, 25.0, atol=1e-6)
+    assert np.allclose(out["apparent_temp_c"].values, 27.0, atol=1e-6)
 
 
 def test_inference_temp_nan_when_not_in_cache():
@@ -336,10 +343,12 @@ def test_inference_cooling_degree_correct():
     cache = _make_cache(400)
     target = date(2025, 1, 15)
     cache.loc[cache["ts"].dt.date == target, "temp_c"] = 30.0
+    cache.loc[cache["ts"].dt.date == target, "apparent_temp_c"] = 32.0
 
     out = build_inference_features(cache, target)
     assert np.allclose(out["cooling_degree"].values, 8.0, atol=1e-6)
     assert np.allclose(out["heating_degree"].values, 0.0, atol=1e-6)
+    assert np.allclose(out["apparent_cooling_degree"].values, 10.0, atol=1e-6)
 
 
 def test_inference_cooling_degree_uses_configured_base_temperature():
@@ -357,10 +366,28 @@ def test_inference_cooling_degree_uses_configured_base_temperature():
 def test_inference_has_temp_anomaly_columns():
     cache = _make_cache(400)
     out = build_inference_features(cache, date(2025, 1, 15))
+    assert "apparent_temp_c" in out.columns
+    assert "apparent_cooling_degree" in out.columns
     assert "temp_anomaly_7d"  in out.columns
     assert "temp_anomaly_doy" in out.columns
+    assert "temp_delta_24h" in out.columns
+    assert "cooling_delta_24h" in out.columns
     assert "temp_delta_168h" in out.columns
     assert "cooling_delta_168h" in out.columns
+
+
+def test_inference_delta_24h_compares_same_hour_yesterday():
+    cache = _make_cache(600)
+    target = date(2025, 6, 1)
+    current_mask = cache["ts"].dt.date == target
+    prior_day_mask = cache["ts"].dt.date == date(2025, 5, 31)
+    cache.loc[current_mask, "temp_c"] = 18.0
+    cache.loc[prior_day_mask, "temp_c"] = 25.0
+
+    out = build_inference_features(cache, target)
+
+    assert np.allclose(out["temp_delta_24h"].values, -7.0, atol=1e-6)
+    assert np.allclose(out["cooling_delta_24h"].values, -3.0, atol=1e-6)
 
 
 def test_inference_temp_anomaly_7d_positive_on_hot_day():
@@ -507,7 +534,7 @@ def test_inference_has_interaction_columns():
 def test_interaction_feature_cols_count():
     """FEATURE_COLS should include weather-delta features and lag context."""
     from python.forecast.feature_builder import FEATURE_COLS
-    assert len(FEATURE_COLS) == 30
+    assert len(FEATURE_COLS) == 34
 
 
 def test_holiday_x_heat_nonneg():

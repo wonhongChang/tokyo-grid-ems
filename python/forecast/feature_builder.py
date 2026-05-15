@@ -30,8 +30,11 @@ FEATURE_COLS: list[str] = [
     "major_holiday_season",
     # Temperature
     "temp_c", "cooling_degree", "heating_degree",
+    "apparent_temp_c", "apparent_cooling_degree",
     "temp_anomaly_7d",   # temp_c minus trailing 7-day mean (how abnormal vs recent week)
     "temp_anomaly_doy",  # temp_c minus historical (month, hour) mean; kept for model compatibility
+    "temp_delta_24h",       # current temp_c minus previous-day same-hour temp_c
+    "cooling_delta_24h",    # current cooling_degree minus previous-day same-hour cooling_degree
     "temp_delta_168h",      # current temp_c minus 7-day-ago same-hour temp_c
     "cooling_delta_168h",   # current cooling_degree minus 7-day-ago same-hour cooling_degree
     # Interaction: holiday × heat surplus (captures post-holiday demand spike on hot days)
@@ -280,8 +283,14 @@ def build_training_features(
 
     # Temperature features
     if "temp_c" in df.columns:
+        if "apparent_temp_c" not in df.columns:
+            df["apparent_temp_c"] = df["temp_c"]
+        df["apparent_temp_c"] = df["apparent_temp_c"].fillna(df["temp_c"])
         df["cooling_degree"]  = (df["temp_c"] - cooling_base_temp_c).clip(lower=0.0)
         df["heating_degree"]  = (heating_base_temp_c - df["temp_c"]).clip(lower=0.0)
+        df["apparent_cooling_degree"] = (
+            df["apparent_temp_c"] - cooling_base_temp_c
+        ).clip(lower=0.0)
         # How abnormal vs recent 7 days (shift 1h to prevent self-inclusion)
         trailing_7d_temp_mean = df["temp_c"].shift(1).rolling(168, min_periods=24).mean()
         df["temp_anomaly_7d"] = df["temp_c"] - trailing_7d_temp_mean
@@ -289,22 +298,36 @@ def build_training_features(
         month_hour_temp_mean = df.groupby(["month", "hour"])["temp_c"].transform("mean")
         df["temp_anomaly_doy"] = df["temp_c"] - month_hour_temp_mean
         temp_history = df[["ts", "temp_c", "cooling_degree"]].copy()
-        shifted_temp = (
+        shifted_temp_24h = (
+            temp_history.assign(ts=temp_history["ts"] + pd.Timedelta(hours=24))
+                .rename(columns={
+                    "temp_c": "temp_c_24h",
+                    "cooling_degree": "cooling_degree_24h",
+                })
+        )
+        shifted_temp_168h = (
             temp_history.assign(ts=temp_history["ts"] + pd.Timedelta(hours=168))
                 .rename(columns={
                     "temp_c": "temp_c_168h",
                     "cooling_degree": "cooling_degree_168h",
                 })
         )
-        df = df.merge(shifted_temp, on="ts", how="left")
+        df = df.merge(shifted_temp_24h, on="ts", how="left")
+        df = df.merge(shifted_temp_168h, on="ts", how="left")
+        df["temp_delta_24h"] = df["temp_c"] - df["temp_c_24h"]
+        df["cooling_delta_24h"] = df["cooling_degree"] - df["cooling_degree_24h"]
         df["temp_delta_168h"] = df["temp_c"] - df["temp_c_168h"]
         df["cooling_delta_168h"] = df["cooling_degree"] - df["cooling_degree_168h"]
     else:
         df["temp_c"]           = np.nan
         df["cooling_degree"]   = np.nan
         df["heating_degree"]   = np.nan
+        df["apparent_temp_c"] = np.nan
+        df["apparent_cooling_degree"] = np.nan
         df["temp_anomaly_7d"]  = np.nan
         df["temp_anomaly_doy"] = np.nan
+        df["temp_delta_24h"] = np.nan
+        df["cooling_delta_24h"] = np.nan
         df["temp_delta_168h"] = np.nan
         df["cooling_delta_168h"] = np.nan
 
@@ -346,18 +369,31 @@ def build_inference_features(
 
     # Temperature lookup for target_date (includes virtual forecast rows)
     if "temp_c" in cache.columns:
-        target_day_temps = cache[
-            cache["ts"].dt.date == target_date
-        ][["ts", "temp_c"]].dropna(subset=["temp_c"])
+        cache_weather = cache[["ts", "temp_c"]].copy()
+        if "apparent_temp_c" in cache.columns:
+            cache_weather["apparent_temp_c"] = cache["apparent_temp_c"]
+        else:
+            cache_weather["apparent_temp_c"] = cache_weather["temp_c"]
+        cache_weather["apparent_temp_c"] = cache_weather["apparent_temp_c"].fillna(
+            cache_weather["temp_c"]
+        )
+        target_day_temps = cache_weather[
+            cache_weather["ts"].dt.date == target_date
+        ].dropna(subset=["temp_c"])
         hour_to_temp: dict[int, float] = {
             int(row["ts"].hour): float(row["temp_c"]) for _, row in target_day_temps.iterrows()
         }
+        hour_to_apparent_temp: dict[int, float] = {
+            int(row["ts"].hour): float(row["apparent_temp_c"])
+            for _, row in target_day_temps.iterrows()
+        }
         temp_by_ts: dict[pd.Timestamp, float] = {
             row["ts"]: float(row["temp_c"])
-            for _, row in cache[["ts", "temp_c"]].dropna(subset=["temp_c"]).iterrows()
+            for _, row in cache_weather.dropna(subset=["temp_c"]).iterrows()
         }
     else:
         hour_to_temp = {}
+        hour_to_apparent_temp = {}
         temp_by_ts = {}
 
     # Trailing 7-day mean temperature (same for all 24 hours of target_date)
@@ -419,13 +455,37 @@ def build_inference_features(
 
         hour_temp_c = hour_to_temp.get(hour, float("nan"))
         has_hour_temp = not np.isnan(hour_temp_c)
+        hour_apparent_temp_c = hour_to_apparent_temp.get(hour, hour_temp_c)
+        has_hour_apparent_temp = not np.isnan(hour_apparent_temp_c)
         cooling = _cooling_degree(hour_temp_c, cooling_base_temp_c) if has_hour_temp else np.nan
         heating = _heating_degree(hour_temp_c, heating_base_temp_c) if has_hour_temp else np.nan
+        apparent_cooling = (
+            _cooling_degree(hour_apparent_temp_c, cooling_base_temp_c)
+            if has_hour_apparent_temp
+            else np.nan
+        )
+        temp_24h = temp_by_ts.get(ts - pd.Timedelta(hours=24), float("nan"))
+        has_temp_24h = not np.isnan(temp_24h)
+        cooling_24h = (
+            _cooling_degree(temp_24h, cooling_base_temp_c)
+            if has_temp_24h
+            else np.nan
+        )
         temp_168h = temp_by_ts.get(ts - pd.Timedelta(hours=168), float("nan"))
         has_temp_168h = not np.isnan(temp_168h)
         cooling_168h = (
             _cooling_degree(temp_168h, cooling_base_temp_c)
             if has_temp_168h
+            else np.nan
+        )
+        temp_delta_24h = (
+            hour_temp_c - temp_24h
+            if has_hour_temp and has_temp_24h
+            else np.nan
+        )
+        cooling_delta_24h = (
+            cooling - cooling_24h
+            if has_hour_temp and has_temp_24h
             else np.nan
         )
         temp_delta_168h = (
@@ -495,8 +555,12 @@ def build_inference_features(
             "temp_c":           hour_temp_c,
             "cooling_degree":   cooling,
             "heating_degree":   heating,
+            "apparent_temp_c":   hour_apparent_temp_c,
+            "apparent_cooling_degree": apparent_cooling,
             "temp_anomaly_7d":  temp_anomaly_vs_7d_mean,
             "temp_anomaly_doy": temp_anomaly_vs_month_hour_mean,
+            "temp_delta_24h":       temp_delta_24h,
+            "cooling_delta_24h":    cooling_delta_24h,
             "temp_delta_168h":      temp_delta_168h,
             "cooling_delta_168h":   cooling_delta_168h,
             "holiday_x_heat":                    holiday_heat_interaction,

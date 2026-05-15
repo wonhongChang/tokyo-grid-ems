@@ -107,6 +107,7 @@ def test_save_hourly_cache_prefers_actual_rows_over_virtual_rows(tmp_path):
             "usage_pct": float("nan"),
             "supply_mw": float("nan"),
             "temp_c": 9.0,
+            "apparent_temp_c": 8.0,
         },
         {
             "ts": ts,
@@ -115,6 +116,7 @@ def test_save_hourly_cache_prefers_actual_rows_over_virtual_rows(tmp_path):
             "usage_pct": 80.0,
             "supply_mw": 25_000.0,
             "temp_c": 8.5,
+            "apparent_temp_c": 7.5,
         },
     ])
 
@@ -125,6 +127,7 @@ def test_save_hourly_cache_prefers_actual_rows_over_virtual_rows(tmp_path):
     assert result["actual_mw"].iloc[0] == pytest.approx(20_000.0)
     assert result["forecast_mw"].iloc[0] == pytest.approx(19_800.0)
     assert result["temp_c"].iloc[0] == pytest.approx(8.5)
+    assert result["apparent_temp_c"].iloc[0] == pytest.approx(7.5)
 
 
 def test_extend_cache_refreshes_existing_virtual_forecast_weather(monkeypatch):
@@ -136,10 +139,12 @@ def test_extend_cache_refreshes_existing_virtual_forecast_weather(monkeypatch):
         "usage_pct": float("nan"),
         "supply_mw": float("nan"),
         "temp_c": 24.5,
+        "apparent_temp_c": 25.5,
     }])
     weather = pd.DataFrame({
         "ts": [ts],
         "temp_c": [21.8],
+        "apparent_temp_c": [20.8],
     })
     monkeypatch.setattr(
         "python.etl.fetch_weather.fetch_forecast_temps",
@@ -150,6 +155,7 @@ def test_extend_cache_refreshes_existing_virtual_forecast_weather(monkeypatch):
 
     assert len(result) == 1
     assert result["temp_c"].iloc[0] == pytest.approx(21.8)
+    assert result["apparent_temp_c"].iloc[0] == pytest.approx(20.8)
 
 
 def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
@@ -161,10 +167,12 @@ def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
         "usage_pct": 80.0,
         "supply_mw": 36_000.0,
         "temp_c": 24.5,
+        "apparent_temp_c": 25.5,
     }])
     weather = pd.DataFrame({
         "ts": [ts],
         "temp_c": [21.8],
+        "apparent_temp_c": [20.8],
     })
     monkeypatch.setattr(
         "python.etl.fetch_weather.fetch_forecast_temps",
@@ -176,6 +184,7 @@ def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
     assert len(result) == 1
     assert result["actual_mw"].iloc[0] == pytest.approx(30_000.0)
     assert result["temp_c"].iloc[0] == pytest.approx(24.5)
+    assert result["apparent_temp_c"].iloc[0] == pytest.approx(25.5)
 
 
 def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):

@@ -1,6 +1,6 @@
 # 기온 데이터 연동 설계
 
-> 운영 기능: LightGBM 모델에 Open-Meteo 기온 피처 추가
+> 운영 기능: LightGBM 모델에 Open-Meteo 기온/체감온도 피처 추가
 > Open-Meteo API (무료, 인증 없음) — 도쿄 좌표 기준
 
 언어: [English](../en/weather-integration.md) · [日本語](../ja/weather-integration.md)
@@ -9,7 +9,7 @@
 
 ## 왜 기온인가
 
-전력 수요의 30–40%는 기온으로 설명됩니다.
+전력 수요의 30–40%는 기온으로 설명됩니다. 체감온도는 습도, 바람, 일사 등으로 사람이 느끼는 더위가 실제 기온과 달라질 때 냉방 수요를 더 잘 설명하는 보조 신호입니다.
 
 | 계절 | 메커니즘 | 수요 영향 |
 |---|---|---|
@@ -42,7 +42,8 @@ API: https://api.open-meteo.com/v1/forecast
 {
   "hourly": {
     "time": ["2026-05-05T00:00", "2026-05-05T01:00", ...],
-    "temperature_2m": [18.3, 17.9, 17.5, ...]
+    "temperature_2m": [18.3, 17.9, 17.5, ...],
+    "apparent_temperature": [18.1, 17.6, 17.0, ...]
   }
 }
 ```
@@ -61,16 +62,16 @@ _FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 _MAX_RETRIES  = 3
 
 def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
-    """도쿄 시간별 과거 기온을 archive API에서 가져옵니다."""
+    """도쿄 시간별 과거 날씨를 archive API에서 가져옵니다."""
 
 def fetch_forecast_temps(days: int = 3) -> pd.DataFrame:
-    """오늘과 앞으로 며칠의 시간별 예측 기온을 가져옵니다."""
+    """오늘과 앞으로 며칠의 시간별 예측 날씨를 가져옵니다."""
 
 def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
-    """actual_mw가 있는 hourly cache 행의 누락된 temp_c를 채웁니다."""
+    """actual_mw가 있는 hourly cache 행의 누락된 날씨 값을 채웁니다."""
 ```
 
-`run_batch.py`는 기온을 `.hourly_cache.parquet` 안에 저장하므로 전력 수요 이력과 기온 이력이 함께 이동합니다.
+`run_batch.py`는 기온과 체감온도를 `.hourly_cache.parquet` 안에 저장하므로 전력 수요 이력과 날씨 이력이 함께 이동합니다.
 
 ---
 
@@ -79,14 +80,18 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
 ```python
 # 현재 시점 기온 (실적 archive 또는 예측)
 'temp_c'              # 해당 시간의 기온 (°C)
+'apparent_temp_c'     # 해당 시간의 체감온도 (°C)
 
 # 냉방/난방 degree
 'cooling_degree'      # max(0, temp_c - cooling_base_temp_c)
 'heating_degree'      # max(0, heating_base_temp_c - temp_c)
+'apparent_cooling_degree'  # max(0, apparent_temp_c - cooling_base_temp_c)
 
 # 기온 레짐 컨텍스트
 'temp_anomaly_7d'     # temp_c - 최근 7일 평균
 'temp_anomaly_doy'    # temp_c - 과거 같은 월/시간 평균
+'temp_delta_24h'      # 현재 같은 시간 기온 - 전날 같은 시간 기온
+'cooling_delta_24h'   # 현재 냉방 degree - 전날 같은 시간 냉방 degree
 'temp_delta_168h'     # 현재 같은 시간 기온 - 168시간 전 기온
 'cooling_delta_168h'  # 현재 냉방 degree - 168시간 전 냉방 degree
 
@@ -104,7 +109,7 @@ weather_features:
   heating_base_temp_c: 10.0
 ```
 
-> **degree 값과 168시간 변화량을 쓰는 이유**: degree 값은 냉난방 수요의 비선형 효과를 다루기 쉽게 만들고, `temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요를 그대로 믿기 어려운 상황을 모델에 알려줍니다.
+> **degree 값과 날씨 변화량을 쓰는 이유**: degree 값은 냉난방 수요의 비선형 효과를 다루기 쉽게 만듭니다. 24시간 변화량은 오늘 날씨가 어제와 달라 전날 같은 시간 수요를 덜 믿어야 하는 상황을 알려주고, 168시간 변화량은 전주 같은 시간대 수요에 대해 같은 역할을 합니다.
 
 ---
 
@@ -121,7 +126,7 @@ python/
 
 ```
 web/public/
-  .hourly_cache.parquet    # temp_c를 포함하는 전력 수요 캐시
+  .hourly_cache.parquet    # temp_c/apparent_temp_c를 포함하는 전력 수요 캐시
   .lgbm_model.pkl          # 학습된 LightGBM 모델
 ```
 
@@ -135,12 +140,16 @@ def build_training_features(
     config: dict | None = None,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """
-    cache: ts, actual_mw, supply_mw, temp_c 등을 포함하는 hourly cache
+    cache: ts, actual_mw, supply_mw, temp_c, apparent_temp_c 등을 포함하는 hourly cache
     config: weather_features 기준온도 포함
     """
     cooling_base_temp_c, heating_base_temp_c = _weather_feature_config(config)
+    df["apparent_temp_c"] = df["apparent_temp_c"].fillna(df["temp_c"])
     df["cooling_degree"] = (df["temp_c"] - cooling_base_temp_c).clip(lower=0.0)
     df["heating_degree"] = (heating_base_temp_c - df["temp_c"]).clip(lower=0.0)
+    df["apparent_cooling_degree"] = (df["apparent_temp_c"] - cooling_base_temp_c).clip(lower=0.0)
+    df["temp_delta_24h"] = df["temp_c"] - df["temp_c_24h"]
+    df["cooling_delta_24h"] = df["cooling_degree"] - df["cooling_degree_24h"]
     df["temp_delta_168h"] = df["temp_c"] - df["temp_c_168h"]
     df["cooling_delta_168h"] = df["cooling_degree"] - df["cooling_degree_168h"]
     return df[FEATURE_COLS], df["actual_mw"]
@@ -151,10 +160,10 @@ def build_training_features(
 ## `run_batch.py` 통합 전략
 
 ```python
-# hourly cache의 누락된 과거 temp_c를 채웁니다.
+# hourly cache의 누락된 과거 temp_c/apparent_temp_c를 채웁니다.
 hourly_cache = enrich_cache_with_weather(hourly_cache)
 
-# 오늘/내일 예측에 쓸 temp_c를 위해 미래 기온 행을 가상으로 추가합니다.
+# 오늘/내일 예측에 쓸 날씨 값을 위해 미래 날씨 행을 가상으로 추가합니다.
 # 이 행들은 actual_mw가 NaN이라 실측 수요로 취급되지 않습니다.
 extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
 
@@ -190,7 +199,7 @@ tomorrow_fc = forecaster.predict(tomorrow, extended_cache)
 
 | 시점 | 기온 소스 | 비고 |
 |---|---|---|
-| 훈련 (과거 전체) | Open-Meteo archive API | 과거 `temp_c`는 `.hourly_cache.parquet`에 저장 |
+| 훈련 (과거 전체) | Open-Meteo archive API | 과거 `temp_c` / `apparent_temp_c`는 `.hourly_cache.parquet`에 저장 |
 | 어제 예측 | 실적 기온 (확정) | 정확 |
 | 오늘 예측 | 실적 기온 (오전) + 예측 기온 (오후) | 혼합 |
 | 내일 예측 | Open-Meteo 48h 예측 기온 | ±1–2°C 오차 허용 |
@@ -231,9 +240,9 @@ MAE  (MW)   측정 예정     측정 예정
 ## 현재 구현 체크리스트
 
 1. `fetch_weather.py`는 Open-Meteo archive/forecast 엔드포인트를 retry/backoff와 함께 사용합니다.
-2. `run_batch.py`는 과거 `temp_c`를 `.hourly_cache.parquet`에 채웁니다.
-3. 미래 예측 기온은 `actual_mw = NaN`인 가상 cache 행으로 추가하고, intraday 실행 때마다 갱신합니다.
-4. `feature_builder.py`는 degree 값, 기온 이상치, 168시간 기온 변화량을 포함한 30개 LightGBM 피처를 생성합니다.
+2. `run_batch.py`는 과거 `temp_c`와 `apparent_temp_c`를 `.hourly_cache.parquet`에 채웁니다.
+3. 미래 예측 날씨는 `actual_mw = NaN`인 가상 cache 행으로 추가하고, intraday 실행 때마다 갱신합니다.
+4. `feature_builder.py`는 degree 값, 체감온도, 기온 이상치, 24시간/168시간 날씨 변화량을 포함한 34개 LightGBM 피처를 생성합니다.
 5. `LGBMForecaster(config=config)`는 학습과 추론에서 같은 weather feature 설정을 사용합니다.
 6. 피처 버전이 바뀌면 기존 저장 모델을 stale로 보고 다음 실행에서 재학습합니다.
 
