@@ -93,7 +93,7 @@ This fallback is allowed as an operational forecast input, but is excluded from 
 
 ## Daytime Heat Guard
 
-`python/forecast/adjustment.py` applies a conservative post-processing guard before intraday correction. When the same-hour 168h lag points to a holiday or weekend and the current daytime temperature anomaly is high, the guard prevents analogous-day adjustment from pushing daytime forecasts downward. It also applies a smaller warm-business-day guard when daytime temperature is high for the season, even without holiday-lag contamination.
+`python/forecast/adjustment.py` applies a conservative post-processing guard before intraday correction. On business days, when the same-hour 168h lag points to a holiday/weekend and the current daytime temperature anomaly is high, the guard prevents analogous-day adjustment from pushing daytime forecasts downward. It also applies a smaller warm-business-day guard when daytime temperature is high for the season, even without holiday-lag contamination. Non-business-day heat is left to the LightGBM weather features rather than a manual upward guard.
 
 See [Daytime Heat Guard Improvement](model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md) for the incident analysis, implementation details, and validation result.
 

@@ -313,12 +313,14 @@ class PostHolidayTimeBandGuard:
         row0 = inference_features.iloc[0]
         target_date = pd.Timestamp(raw_forecasts[0].ts).date()
         lag_168h_date = target_date - timedelta(days=7)
+        target_is_business_day = bool(row0.get("is_non_business_day", 0) == 0)
         post_holiday_active = (
             float(row0["consec_holiday_len"]) >= self._min_consec
             and float(row0["days_since_holiday_end"]) <= self._max_dsh
         )
         lag_holiday_active = (
             self._activate_on_holiday_lag
+            and target_is_business_day
             and _is_nonworking(lag_168h_date)
         )
         if not (post_holiday_active or lag_holiday_active or self._activate_on_warm_day):
@@ -375,6 +377,7 @@ class PostHolidayTimeBandGuard:
                 )
                 warm_day_active = (
                     self._activate_on_warm_day
+                    and target_is_business_day
                     and meets_optional_temp_floor
                     and not np.isnan(temp_anomaly_doy)
                     and temp_anomaly_doy >= self._warm_day_min_anomaly_doy

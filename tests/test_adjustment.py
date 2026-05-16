@@ -407,6 +407,7 @@ def _make_post_holiday_inf(
     dsh: int = 1,
     temp_anomaly_morning: float = 0.5,
     temp_anomaly_daytime: float = 5.0,
+    is_non_business_day: int = 0,
 ) -> pd.DataFrame:
     """inference_features where early morning has low anomaly, daytime has high anomaly."""
     rows = []
@@ -414,7 +415,9 @@ def _make_post_holiday_inf(
         anom = temp_anomaly_daytime if 10 <= h <= 18 else temp_anomaly_morning
         rows.append({
             "hour": h, "dayofweek": 0, "month": 5,
-            "is_holiday": 0, "is_weekend": 0, "is_non_business_day": 0,
+            "is_holiday": 0,
+            "is_weekend": is_non_business_day,
+            "is_non_business_day": is_non_business_day,
             "lag_24h": 20_000.0, "lag_48h": 20_000.0,
             "lag_168h": 20_000.0, "lag_336h": 20_000.0,
             "roll_4w_mean": 20_000.0, "roll_4w_std": 100.0,
@@ -706,6 +709,44 @@ def test_guard_adds_small_offset_for_ordinary_warm_day():
         h = pd.Timestamp(fc_r.ts).hour
         if 10 <= h <= 18:
             assert fc_res.forecast_mw == pytest.approx(fc_r.forecast_mw + 250.0)
+
+
+def test_guard_does_not_add_warm_day_offset_on_non_business_day():
+    """Weekend/holiday heat remains a model feature; manual warm-day offset is business-day only."""
+    guard = PostHolidayTimeBandGuard(_guard_config(
+        warm_day=True,
+        warm_day_offset=250.0,
+    ))
+    target = date(2026, 5, 16)  # Saturday
+    raw = _make_raw_forecasts(target, 28_000.0)
+    adj = []
+    for fc in raw:
+        h = pd.Timestamp(fc.ts).hour
+        bump = -400.0 if 10 <= h <= 18 else 0.0
+        from python.forecast.baseline import HourlyForecast
+        adj.append(HourlyForecast(
+            ts=fc.ts,
+            forecast_mw=fc.forecast_mw + bump,
+            p95_lower_mw=fc.p95_lower_mw + bump,
+            p95_upper_mw=fc.p95_upper_mw + bump,
+            p99_lower_mw=fc.p99_lower_mw + bump,
+            p99_upper_mw=fc.p99_upper_mw + bump,
+        ))
+    inf = _make_post_holiday_inf(
+        consec=0,
+        dsh=0,
+        temp_anomaly_daytime=5.0,
+        is_non_business_day=1,
+    )
+    inf.loc[inf["hour"].between(10, 18), "temp_c"] = 25.0
+    inf.loc[inf["hour"].between(10, 18), "temp_anomaly_doy"] = 2.0
+
+    result = guard.apply(raw, adj, inf)
+
+    for fc_a, fc_res in zip(adj, result):
+        h = pd.Timestamp(fc_a.ts).hour
+        if 10 <= h <= 18:
+            assert fc_res.forecast_mw == pytest.approx(fc_a.forecast_mw)
 
 
 def test_guard_does_not_add_warm_day_offset_when_adjuster_already_raises():

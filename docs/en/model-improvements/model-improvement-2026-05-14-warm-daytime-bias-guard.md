@@ -27,6 +27,7 @@ The pattern was not only a Golden Week lag problem. Ordinary warm weekdays also 
 It activates only when all of these are true:
 
 - the hour is in the configured daytime window,
+- the target date is a business day,
 - `temp_anomaly_doy >= warm_day_min_temp_anomaly_doy`,
 - the analogous-day adjustment is not already raising the forecast.
 
@@ -50,5 +51,6 @@ This is intentionally smaller than the holiday-lag guard.
 - It does not use TEPCO forecast values as model inputs.
 - It is based on seasonal temperature anomaly instead of a fixed absolute temperature cutoff.
 - It does not add extra offset when analogous-day adjustment is already moving upward.
+- It does not add a manual warm-day offset on weekends or public holidays; non-business-day heat remains handled by model weather features.
 
 The goal is to reduce repeated warm-day daytime under-forecasting without turning the model into a manual high-bias forecast.

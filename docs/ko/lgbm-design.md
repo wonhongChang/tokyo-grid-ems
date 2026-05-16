@@ -95,7 +95,7 @@ residual = actualMw - modelForecastMw
 
 ## 주간 고온 보호 보정
 
-`python/forecast/adjustment.py`는 intraday 보정 전에 보수적인 후처리 보호 장치를 적용합니다. 같은 시간대 168시간 래그가 휴일 또는 주말을 가리키고, 현재 주간 기온 편차가 높은 경우 유사일 보정이 낮 시간대 예측을 아래로 끌어내리지 못하게 막습니다. 또 휴일 래그가 없어도 계절 대비 따뜻한 평일 낮에는 더 작은 일반 고온 guard를 적용합니다.
+`python/forecast/adjustment.py`는 intraday 보정 전에 보수적인 후처리 보호 장치를 적용합니다. 영업일에 같은 시간대 168시간 래그가 휴일 또는 주말을 가리키고, 현재 주간 기온 편차가 높은 경우 유사일 보정이 낮 시간대 예측을 아래로 끌어내리지 못하게 막습니다. 또 휴일 래그가 없어도 계절 대비 따뜻한 평일 낮에는 더 작은 일반 고온 guard를 적용합니다. 비영업일의 더위 효과는 수동 상향 guard가 아니라 LightGBM 날씨 피처에 맡깁니다.
 
 자세한 사고 분석, 구현 내용, 검증 결과는 [2026-05-13 주간 고온 보호 보정](model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md)에 정리했습니다.
 
