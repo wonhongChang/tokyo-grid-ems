@@ -41,7 +41,11 @@ from python.etl.quality_gate import run_quality_gate, QualityStatus
 from python.forecast.baseline import (
     compute_forecast, forecast_to_dict, peak_of_forecasts, HourlyForecast,
 )
-from python.anomaly.detector import detect_anomalies
+from python.anomaly.detector import (
+    DEFAULT_RESERVE_CRITICAL_PCT,
+    DEFAULT_RESERVE_WARNING_PCT,
+    detect_anomalies,
+)
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -60,7 +64,10 @@ def load_config(config_path: Path) -> dict:
     return {
         "forecast": {"n_weeks": 12, "min_samples_per_slot": 4},
         "anomaly": {
-            "reserve_risk": {"warning_pct": 90.0, "critical_pct": 95.0},
+            "reserve_risk": {
+                "warning_pct": DEFAULT_RESERVE_WARNING_PCT,
+                "critical_pct": DEFAULT_RESERVE_CRITICAL_PCT,
+            },
             "drift": {"ewma_alpha": 0.3, "threshold_mw": 800.0, "sustained_hours": 3},
         },
     }
@@ -488,9 +495,9 @@ def _forecast_severity(
     if recent_supply and recent_supply > 0:
         est_pct = peak_fc_mw / recent_supply * 100
         rr = config.get("anomaly", {}).get("reserve_risk", {})
-        if est_pct >= rr.get("critical_pct", 95.0):
+        if est_pct >= rr.get("critical_pct", DEFAULT_RESERVE_CRITICAL_PCT):
             return "critical" if allow_critical else "warning"
-        if est_pct >= rr.get("warning_pct", 90.0):
+        if est_pct >= rr.get("warning_pct", DEFAULT_RESERVE_WARNING_PCT):
             return "warning"
     return "info"
 

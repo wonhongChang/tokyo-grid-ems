@@ -50,7 +50,7 @@ def _make_forecasts(forecast_mw: float = 30000.0, std: float = 1000.0) -> list[H
 # ── Reserve Risk ─────────────────────────────────────────────────────────────
 
 def test_reserve_risk_warning():
-    hourly = _make_hourly(usage_pct=[91.0] + [80.0] * 23)
+    hourly = _make_hourly(usage_pct=[92.0] + [80.0] * 23)
     events = detect_anomalies(hourly, [], {})
     rr = [e for e in events if e["type"] == "reserve_risk"]
     assert len(rr) == 1
@@ -58,7 +58,7 @@ def test_reserve_risk_warning():
 
 
 def test_reserve_risk_critical():
-    hourly = _make_hourly(usage_pct=[96.0] + [80.0] * 23)
+    hourly = _make_hourly(usage_pct=[97.0] + [80.0] * 23)
     events = detect_anomalies(hourly, [], {})
     rr = [e for e in events if e["type"] == "reserve_risk"]
     assert len(rr) == 1
@@ -66,7 +66,7 @@ def test_reserve_risk_critical():
 
 
 def test_reserve_risk_below_threshold():
-    hourly = _make_hourly(usage_pct=[89.9] * 24)
+    hourly = _make_hourly(usage_pct=[91.9] * 24)
     events = detect_anomalies(hourly, [], {})
     assert not [e for e in events if e["type"] == "reserve_risk"]
 
@@ -81,14 +81,14 @@ def test_reserve_risk_custom_threshold():
 
 
 def test_reserve_risk_multiple_hours():
-    hourly = _make_hourly(usage_pct=[91.0, 96.0] + [80.0] * 22)
+    hourly = _make_hourly(usage_pct=[92.0, 97.0] + [80.0] * 22)
     events = detect_anomalies(hourly, [], {})
     rr = [e for e in events if e["type"] == "reserve_risk"]
     assert len(rr) == 2
 
 
 def test_reserve_risk_event_schema():
-    hourly = _make_hourly(usage_pct=[91.0] + [80.0] * 23)
+    hourly = _make_hourly(usage_pct=[92.0] + [80.0] * 23)
     events = detect_anomalies(hourly, [], {})
     rr = events[0]
     for key in ("id", "type", "severity", "startAt", "endAt", "metric", "usagePct", "reason"):
@@ -266,12 +266,12 @@ def test_drift_event_schema():
 
 def test_event_ids_are_unique():
     hourly = _make_hourly(
-        usage_pct=[96.0] * 5 + [80.0] * 19,
+        usage_pct=[98.0] * 5 + [80.0] * 19,
         actual_mw=[33000.0] * 5 + [30000.0] * 19,
     )
     forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
     cfg = {
-        "reserve_risk": {"warning_pct": 90.0, "critical_pct": 95.0},
+        "reserve_risk": {"warning_pct": 92.0, "critical_pct": 97.0},
         "drift": {"ewma_alpha": 0.3, "threshold_mw": 800.0, "sustained_hours": 3},
     }
     events = detect_anomalies(hourly, forecasts, cfg)

@@ -20,8 +20,9 @@ Tokyo Grid EMSでは、アラート理由をダッシュボードで説明でき
 
 | Severity | 条件 |
 |---|---|
-| warning | `usage_pct >= 90.0` |
-| critical | `usage_pct >= 95.0` |
+| 安定 | `usage_pct < 92.0` |
+| warning | `92.0 <= usage_pct < 97.0` |
+| 危険 (`critical`) | `usage_pct >= 97.0` |
 
 ダッシュボードでは本文を短くし、使用率・基準・供給力はメトリックチップで表示します。
 

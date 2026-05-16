@@ -16,12 +16,13 @@ Thresholds are configured in the `anomaly` block of `config.yaml`.
 
 ## Reserve Risk
 
-An event is raised when usage rate reaches a threshold.
+An event is raised when TEPCO usage rate reaches a threshold. Below 92% is treated as stable, 92% to below 97% is warning, and 97% or higher is critical.
 
 | Severity | Condition |
 |---|---|
-| warning | `usage_pct >= 90.0` |
-| critical | `usage_pct >= 95.0` |
+| stable | `usage_pct < 92.0` |
+| warning | `92.0 <= usage_pct < 97.0` |
+| danger (`critical`) | `usage_pct >= 97.0` |
 
 Dashboard copy keeps the message short, while usage rate, threshold, and supply capacity are shown as metric chips.
 

@@ -42,7 +42,7 @@ function labelsFor(locale: Locale) {
 }
 
 function thresholdName(severity: Severity, locale: Locale): string {
-  if (locale === 'en') return severity === 'critical' ? 'critical threshold' : 'warning threshold'
+  if (locale === 'en') return severity === 'critical' ? 'danger threshold' : 'warning threshold'
   if (locale === 'ja') return severity === 'critical' ? '危険基準' : '警戒基準'
   return severity === 'critical' ? '위험 기준' : '경고 기준'
 }

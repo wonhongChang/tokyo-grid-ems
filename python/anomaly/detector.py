@@ -4,6 +4,9 @@ import pandas as pd
 
 from python.forecast.baseline import HourlyForecast
 
+DEFAULT_RESERVE_WARNING_PCT = 92.0
+DEFAULT_RESERVE_CRITICAL_PCT = 97.0
+
 
 def detect_anomalies(
     hourly: pd.DataFrame,
@@ -32,8 +35,8 @@ def detect_anomalies(
 # ---------------------------------------------------------------------------
 
 def _reserve_risk(hourly: pd.DataFrame, cfg: dict) -> list[dict]:
-    warning_pct = cfg.get("warning_pct", 90.0)
-    critical_pct = cfg.get("critical_pct", 95.0)
+    warning_pct = cfg.get("warning_pct", DEFAULT_RESERVE_WARNING_PCT)
+    critical_pct = cfg.get("critical_pct", DEFAULT_RESERVE_CRITICAL_PCT)
     events = []
 
     for _, row in hourly.sort_values("ts").iterrows():

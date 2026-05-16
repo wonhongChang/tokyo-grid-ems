@@ -9,12 +9,21 @@ import { formatPowerParts } from './units'
 import type { StatusJSON, ForecastJSON, AlertsJSON, ActualJSON, LatestSummary, ForecastSummary, Severity } from './types'
 
 const BASE = import.meta.env.BASE_URL
+const USAGE_WARNING_PCT = 92
+const USAGE_CRITICAL_PCT = 97
 
 type TabId = 'yesterday' | 'today' | 'tomorrow' | 'validation'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string) { return iso.substring(11, 16) }
+
+function usageSeverity(pct: number | null | undefined): Severity | null {
+  if (pct == null) return null
+  if (pct >= USAGE_CRITICAL_PCT) return 'critical'
+  if (pct >= USAGE_WARNING_PCT) return 'warning'
+  return null
+}
 
 function PowerStatValue({ mw }: { mw: number }) {
   const { locale } = useT()
@@ -37,8 +46,7 @@ function SeverityBadge({ sev }: { sev: Severity }) {
 
 function ActualPeakCard({ s }: { s: LatestSummary }) {
   const { t } = useT()
-  const pct = s.peakUsagePct
-  const sev: Severity | null = pct != null ? (pct >= 95 ? 'critical' : pct >= 90 ? 'warning' : null) : null
+  const sev = usageSeverity(s.peakUsagePct)
   return (
     <div className="card">
       {sev && <div className="card-title"><SeverityBadge sev={sev} /></div>}
@@ -313,10 +321,7 @@ export default function App({ locale, setLocale }: AppProps) {
           <nav className="tabs">
             <div className="inner">
             {(() => {
-              const yPct = status.latest?.peakUsagePct ?? null
-              const yesterdaySev: Severity | null = yPct != null
-                ? (yPct >= 95 ? 'critical' : yPct >= 90 ? 'warning' : null)
-                : null
+              const yesterdaySev = usageSeverity(status.latest?.peakUsagePct)
               return (['yesterday', 'today', 'tomorrow', 'validation'] as TabId[]).map(tab => (
                 <button
                   key={tab}

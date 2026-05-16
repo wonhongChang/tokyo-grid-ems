@@ -162,7 +162,7 @@ Provides **anomaly detection results** for the previous day as individual events
       "endAt": "2025-12-01T19:00:00+09:00",
       "metric": "usage_pct",
       "usagePct": 95.4,
-      "thresholdPct": 95.0,
+      "thresholdPct": 92.0,
       "supplyMw": 61000.0,
       "reason": "Usage rate exceeded threshold",
       "tags": ["kpi"]

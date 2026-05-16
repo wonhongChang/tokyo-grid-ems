@@ -400,8 +400,8 @@ def _reserve_risk_config() -> dict:
     return {
         "anomaly": {
             "reserve_risk": {
-                "warning_pct": 90.0,
-                "critical_pct": 95.0,
+                "warning_pct": 92.0,
+                "critical_pct": 97.0,
             }
         }
     }
