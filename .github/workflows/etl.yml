@@ -61,6 +61,9 @@ jobs:
       - name: Run ETL
         run: python python/etl/run_batch.py
 
+      - name: Refresh intraday actuals, forecasts, and status
+        run: python python/etl/run_batch.py --status-only
+
       # ── Push web/public to data branch ────────────────────────────────────
       - name: Push web/public to data branch
         run: |
