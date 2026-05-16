@@ -16,10 +16,33 @@ function fmtPct(value: number): string {
   return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}%`
 }
 
+function reserveRiskCriteria(locale: Locale) {
+  if (locale === 'en') {
+    return {
+      title: 'Usage thresholds',
+      warning: 'Warning: 92% to under 97%',
+      critical: 'Danger: 97% or higher',
+    }
+  }
+  if (locale === 'ja') {
+    return {
+      title: '使用率基準',
+      warning: '警告: 92%以上97%未満',
+      critical: '危険: 97%以上',
+    }
+  }
+  return {
+    title: '사용률 기준',
+    warning: '경고: 92% 이상 97% 미만',
+    critical: '위험: 97% 이상',
+  }
+}
+
 function labelsFor(locale: Locale) {
   if (locale === 'en') {
     return {
       threshold: 'Threshold',
+      reserveRange: 'Risk range',
       upperBand: 'Upper band',
       lowerBand: 'Lower band',
       averageResidual: 'Avg residual',
@@ -28,6 +51,7 @@ function labelsFor(locale: Locale) {
   if (locale === 'ja') {
     return {
       threshold: '基準',
+      reserveRange: 'リスク区分',
       upperBand: '上限',
       lowerBand: '下限',
       averageResidual: '平均残差',
@@ -35,24 +59,40 @@ function labelsFor(locale: Locale) {
   }
   return {
     threshold: '기준',
+    reserveRange: '위험 구간',
     upperBand: '상한',
     lowerBand: '하한',
     averageResidual: '평균 오차',
   }
 }
 
-function thresholdName(severity: Severity, locale: Locale): string {
-  if (locale === 'en') return severity === 'critical' ? 'danger threshold' : 'warning threshold'
-  if (locale === 'ja') return severity === 'critical' ? '危険基準' : '警戒基準'
-  return severity === 'critical' ? '위험 기준' : '경고 기준'
+function reserveRiskRange(severity: Severity, locale: Locale): string {
+  if (severity === 'critical') {
+    if (locale === 'en') return '97% or higher'
+    if (locale === 'ja') return '97%以上'
+    return '97% 이상'
+  }
+  if (locale === 'en') return '92% to under 97%'
+  if (locale === 'ja') return '92%以上97%未満'
+  return '92% 이상 97% 미만'
 }
 
 function localizedReason(event: AlertEvent, locale: Locale): string {
   if (event.type === 'reserve_risk' && event.usagePct != null && event.thresholdPct != null) {
-    const threshold = thresholdName(event.severity, locale)
-    if (locale === 'en') return `Grid usage has reached the ${threshold}.`
-    if (locale === 'ja') return `電力使用率が${threshold}に達しました。`
-    return `전력 사용률이 ${threshold}에 도달했습니다.`
+    const range = reserveRiskRange(event.severity, locale)
+    if (locale === 'en') {
+      return event.severity === 'critical'
+        ? `Grid usage entered the danger range (${range}).`
+        : `Grid usage entered the warning range (${range}).`
+    }
+    if (locale === 'ja') {
+      return event.severity === 'critical'
+        ? `使用率が危険域（${range}）に入りました。`
+        : `使用率が警告域（${range}）に入りました。`
+    }
+    return event.severity === 'critical'
+      ? `전력 사용률이 위험 구간(${range})에 들어갔습니다.`
+      : `전력 사용률이 경고 구간(${range})에 들어갔습니다.`
   }
 
   if (event.type === 'drift' && event.residualAvgMw != null) {
@@ -99,7 +139,7 @@ function AlertItem({ event }: { event: AlertEvent }) {
 
   if (event.type === 'reserve_risk') {
     if (event.usagePct != null) chips.push({ label: t.metricUsagePct, value: fmtPct(event.usagePct) })
-    if (event.thresholdPct != null) chips.push({ label: localLabels.threshold, value: fmtPct(event.thresholdPct) })
+    chips.push({ label: localLabels.reserveRange, value: reserveRiskRange(event.severity, locale) })
     if (event.supplyMw != null) chips.push({ label: t.supply, value: formatPower(event.supplyMw, locale) })
   } else if (event.type === 'drift') {
     if (event.residualAvgMw != null) chips.push({ label: localLabels.averageResidual, value: formatPower(event.residualAvgMw, locale) })
@@ -143,12 +183,18 @@ function AlertItem({ event }: { event: AlertEvent }) {
 }
 
 export function AlertsList({ alerts }: Props) {
-  const { t } = useT()
+  const { t, locale } = useT()
   const { summary, events } = alerts
+  const criteria = reserveRiskCriteria(locale)
 
   return (
     <div className="card">
       <div className="card-title">{t.alertEvents}</div>
+      <div className="reserve-risk-criteria" aria-label={criteria.title}>
+        <span className="reserve-risk-criteria-title">{criteria.title}</span>
+        <span className="badge warning">{criteria.warning}</span>
+        <span className="badge critical">{criteria.critical}</span>
+      </div>
       <div className="alert-summary" style={{ marginBottom: events.length > 0 ? 12 : 0 }}>
         {summary.critical > 0 && <span className="badge critical">{summary.critical} {t.severityCritical}</span>}
         {summary.warning > 0 && <span className="badge warning">{summary.warning} {t.severityWarning}</span>}

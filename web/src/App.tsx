@@ -6,7 +6,10 @@ import { AlertsList } from './components/AlertsList'
 import { ValidationPanel } from './components/ValidationPanel'
 import { useT, LOCALE_LABELS, type Locale } from './i18n'
 import { formatPowerParts } from './units'
-import type { StatusJSON, ForecastJSON, AlertsJSON, ActualJSON, LatestSummary, ForecastSummary, Severity } from './types'
+import type {
+  StatusJSON, ForecastJSON, AlertsJSON, ActualJSON,
+  LatestSummary, ForecastSummary, Severity, ForecastPoint, ActualPoint,
+} from './types'
 
 const BASE = import.meta.env.BASE_URL
 const USAGE_WARNING_PCT = 92
@@ -17,6 +20,49 @@ type TabId = 'yesterday' | 'today' | 'tomorrow' | 'validation'
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string) { return iso.substring(11, 16) }
+
+function fmtPct(value: number): string {
+  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
+}
+
+type UsageMetricSource = 'reported' | 'model_forecast'
+
+interface UsageMetric {
+  usagePct: number
+  supplyMw: number
+  at: string
+  source: UsageMetricSource
+}
+
+function usageMetricLabels(locale: Locale) {
+  if (locale === 'en') return { estimatedPeakUsage: 'Estimated Peak Usage' }
+  if (locale === 'ja') return { estimatedPeakUsage: '予測最大使用率' }
+  return { estimatedPeakUsage: '예상 최대 사용률' }
+}
+
+function peakUsageMetric(forecast?: ForecastPoint[] | null, actual?: ActualPoint[] | null): UsageMetric | null {
+  if (!forecast?.length || !actual?.length) return null
+
+  const candidates = forecast.flatMap(f => {
+    const hour = f.ts.substring(11, 13)
+    const act = actual.find(a => a.ts.substring(11, 13) === hour)
+    if (act?.supplyMw == null || act.supplyMw <= 0) return []
+
+    const observedUsagePct = act.usagePct ?? (act.actualMw != null ? (act.actualMw / act.supplyMw) * 100 : null)
+    const source: UsageMetricSource = observedUsagePct != null ? 'reported' : 'model_forecast'
+    const usagePct = observedUsagePct ?? (f.forecastMw / act.supplyMw) * 100
+
+    return [{
+      usagePct,
+      supplyMw: act.supplyMw,
+      at: f.ts,
+      source,
+    }]
+  })
+
+  if (candidates.length === 0) return null
+  return candidates.reduce((best, row) => row.usagePct > best.usagePct ? row : best)
+}
 
 function usageSeverity(pct: number | null | undefined): Severity | null {
   if (pct == null) return null
@@ -40,6 +86,34 @@ function SeverityBadge({ sev }: { sev: Severity }) {
   const { t } = useT()
   const label = sev === 'critical' ? t.criticalBadge : sev === 'warning' ? t.warningBadge : t.infoBadge
   return <span className={`badge ${sev}`}>{label}</span>
+}
+
+function UsageMetricStats({ metric }: { metric: UsageMetric | null }) {
+  const { t, locale } = useT()
+  if (!metric) return null
+
+  const labels = usageMetricLabels(locale)
+  const usageLabel = metric.source === 'model_forecast' ? labels.estimatedPeakUsage : t.peakUsage
+
+  return (
+    <>
+      <div className="peak-stat">
+        <div className="peak-stat-label">{usageLabel}</div>
+        <div>
+          <span className="peak-stat-value">{fmtPct(metric.usagePct)}</span>
+          <span className="peak-stat-unit"> %</span>
+        </div>
+        <div className="peak-stat-sub">@ {fmtTime(metric.at)}</div>
+      </div>
+      <div className="peak-stat">
+        <div className="peak-stat-label">{t.supply}</div>
+        <div>
+          <PowerStatValue mw={metric.supplyMw} />
+        </div>
+        <div className="peak-stat-sub">@ {fmtTime(metric.at)}</div>
+      </div>
+    </>
+  )
 }
 
 // ── Peak Cards ────────────────────────────────────────────────────────────────
@@ -92,8 +166,13 @@ function ActualPeakCard({ s }: { s: LatestSummary }) {
   )
 }
 
-function ForecastPeakCard({ s }: { s: ForecastSummary }) {
+function ForecastPeakCard({ s, forecast, actual }: {
+  s: ForecastSummary
+  forecast?: ForecastPoint[]
+  actual?: ActualPoint[]
+}) {
   const { t } = useT()
+  const usageMetric = peakUsageMetric(forecast, actual)
   return (
     <div className="card">
       {s.severity !== 'info' && <div className="card-title"><SeverityBadge sev={s.severity} /></div>}
@@ -107,6 +186,7 @@ function ForecastPeakCard({ s }: { s: ForecastSummary }) {
             {s.peakForecastAt && <div className="peak-stat-sub">@ {fmtTime(s.peakForecastAt)}</div>}
           </div>
         )}
+        <UsageMetricStats metric={usageMetric} />
         {s.peakTempC != null && (
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakTemp}</div>
@@ -122,8 +202,14 @@ function ForecastPeakCard({ s }: { s: ForecastSummary }) {
   )
 }
 
-function TodayPeakCard({ actual, severity, peakTempC }: { actual: ActualJSON; severity: Severity; peakTempC?: number }) {
+function TodayPeakCard({ actual, forecast, severity, peakTempC }: {
+  actual: ActualJSON
+  forecast?: ForecastPoint[]
+  severity: Severity
+  peakTempC?: number
+}) {
   const { t } = useT()
+  const usageMetric = peakUsageMetric(forecast, actual.series)
   const tepcoPoints = actual.series.filter(p => p.tepcoForecastMw != null)
   const tPeak = tepcoPoints.length > 0
     ? tepcoPoints.reduce((a, b) => b.tepcoForecastMw! > a.tepcoForecastMw! ? b : a)
@@ -154,6 +240,7 @@ function TodayPeakCard({ actual, severity, peakTempC }: { actual: ActualJSON; se
             <div className="peak-stat-sub">@ {fmtTime(aPeak.ts)}</div>
           </div>
         )}
+        <UsageMetricStats metric={usageMetric} />
         {peakTempC != null && (
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakTemp}</div>
@@ -240,8 +327,8 @@ function ForecastTab({ date, summary, showBands = false }: { date: string | null
       {!loading && (
         <>
           {hasTepco && actual.data && summary
-            ? <TodayPeakCard actual={actual.data} severity={summary.severity} peakTempC={summary.peakTempC} />
-            : summary && <ForecastPeakCard s={summary} />
+            ? <TodayPeakCard actual={actual.data} forecast={forecast.data?.series} severity={summary.severity} peakTempC={summary.peakTempC} />
+            : summary && <ForecastPeakCard s={summary} forecast={forecast.data?.series} actual={actual.data?.series} />
           }
           {alerts.data && <AlertsList alerts={alerts.data} />}
 

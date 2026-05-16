@@ -18,6 +18,9 @@ interface ChartRow {
   forecast: number
   actual: number | null
   tepcoForecast: number | null
+  supply: number | null
+  usagePct: number | null
+  usageSource: 'reported' | 'model_forecast' | null
   p95Base: number
   p95Fill: number
 }
@@ -28,18 +31,31 @@ function buildChartData(forecast: ForecastPoint[], locale: Locale, actual?: Actu
     const act = actual?.find(a => a.ts.substring(11, 13) === h)
     const p95Lower = Math.min(f.p95LowerMw, f.p95UpperMw, f.forecastMw)
     const p95Upper = Math.max(f.p95LowerMw, f.p95UpperMw, f.forecastMw)
+    const estimatedUsagePct = act?.supplyMw != null && act.supplyMw > 0
+      ? ((act.actualMw ?? f.forecastMw) / act.supplyMw) * 100
+      : null
+    const usagePct = act?.usagePct ?? estimatedUsagePct
     return {
       hour: `${h}:00`,
       forecast: powerDisplayValue(f.forecastMw, locale),
       actual: act?.actualMw != null ? powerDisplayValue(act.actualMw, locale) : null,
       tepcoForecast: act?.tepcoForecastMw != null ? powerDisplayValue(act.tepcoForecastMw, locale) : null,
+      supply: act?.supplyMw != null ? powerDisplayValue(act.supplyMw, locale) : null,
+      usagePct,
+      usageSource: act?.usagePct != null ? 'reported' : usagePct != null ? 'model_forecast' : null,
       p95Base: powerDisplayValue(p95Lower, locale),
       p95Fill: powerDisplayValue(p95Upper, locale) - powerDisplayValue(p95Lower, locale),
     }
   })
 }
 
-function yDomain(rows: ChartRow[], hasActual: boolean, showBands: boolean, showModelLine: boolean, step: number): [number, number] {
+function yDomain(
+  rows: ChartRow[],
+  hasActual: boolean,
+  showBands: boolean,
+  showModelLine: boolean,
+  step: number,
+): [number, number] {
   const vals: number[] = rows.flatMap(r => [
     ...(showModelLine ? [r.forecast] : []),
     ...(showBands ? [r.p95Base, r.p95Base + r.p95Fill] : []),
@@ -55,14 +71,43 @@ function yDomain(rows: ChartRow[], hasActual: boolean, showBands: boolean, showM
   ]
 }
 
+function fmtPct(value: number): string {
+  return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}%`
+}
+
+function metricLabels(locale: Locale) {
+  if (locale === 'en') {
+    return {
+      estimatedUsage: 'Estimated usage rate',
+    }
+  }
+  if (locale === 'ja') {
+    return {
+      estimatedUsage: '予測使用率',
+    }
+  }
+  return {
+    estimatedUsage: '예상 사용률',
+  }
+}
+
 function CustomTooltip({ active, payload, label, labels, locale }: {
   active?: boolean
-  payload?: Array<{ dataKey: string; value: number }>
+  payload?: Array<{ dataKey: string; value: number; payload?: ChartRow }>
   label?: string
-  labels: { modelForecast: string; actual: string; tepcoForecast: string; forecastRange: string }
+  labels: {
+    modelForecast: string
+    actual: string
+    tepcoForecast: string
+    forecastRange: string
+    supply: string
+    usageRate: string
+    estimatedUsageRate: string
+  }
   locale: Locale
 }) {
   if (!active || !payload?.length) return null
+  const point = payload[0]?.payload
   const row: Record<string, number> = {}
   for (const p of payload) row[p.dataKey] = p.value
 
@@ -76,6 +121,14 @@ function CustomTooltip({ active, payload, label, labels, locale }: {
       )}
       {row.actual != null && (
         <div style={{ color: '#ea580c' }}>{labels.actual}: {fmt(row.actual)}</div>
+      )}
+      {point?.supply != null && (
+        <div style={{ color: '#0f766e' }}>{labels.supply}: {fmt(point.supply)}</div>
+      )}
+      {point?.usagePct != null && (
+        <div style={{ color: '#dc2626' }}>
+          {point.usageSource === 'reported' ? labels.usageRate : labels.estimatedUsageRate}: {fmtPct(point.usagePct)}
+        </div>
       )}
       {row.forecast != null && (
         <div style={{ color: '#2563eb' }}>{labels.modelForecast}: {fmt(row.forecast)}</div>
@@ -100,11 +153,15 @@ export function ForecastChart({ forecast, actual, showBands = true }: Props) {
   const showModelLine = !hasTepcoFc || showModelForecast
   const domain = yDomain(data, hasActual, showBands, showModelLine, powerAxisStep(locale))
   const fmtAxis = (v: number) => formatPowerDisplayValue(v, locale)
+  const labels = metricLabels(locale)
   const tooltipLabels = {
     modelForecast: t.modelForecast,
     actual: t.actual,
     tepcoForecast: t.tepcoForecast,
     forecastRange: t.forecastRange,
+    supply: t.supply,
+    usageRate: t.metricUsagePct,
+    estimatedUsageRate: labels.estimatedUsage,
   }
 
   return (
@@ -153,6 +210,7 @@ export function ForecastChart({ forecast, actual, showBands = true }: Props) {
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
             <XAxis dataKey="hour" tick={{ fontSize: 11 }} interval={5} />
             <YAxis
+              yAxisId="power"
               tickFormatter={fmtAxis}
               tick={{ fontSize: 11 }}
               tickMargin={4}
@@ -163,21 +221,21 @@ export function ForecastChart({ forecast, actual, showBands = true }: Props) {
 
             {showBands && (
               <>
-                <Area type="monotone" dataKey="p95Base" stackId="p95" stroke="none" fill="transparent" legendType="none" isAnimationActive={false} />
-                <Area type="monotone" dataKey="p95Fill" stackId="p95" stroke="none" fill="#93c5fd" fillOpacity={0.5} legendType="none" isAnimationActive={false} />
+                <Area yAxisId="power" type="monotone" dataKey="p95Base" stackId="p95" stroke="none" fill="transparent" legendType="none" isAnimationActive={false} />
+                <Area yAxisId="power" type="monotone" dataKey="p95Fill" stackId="p95" stroke="none" fill="#93c5fd" fillOpacity={0.5} legendType="none" isAnimationActive={false} />
               </>
             )}
 
             {showModelLine && (
-              <Line type="monotone" dataKey="forecast" stroke="#2563eb" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} />
+              <Line yAxisId="power" type="monotone" dataKey="forecast" stroke="#2563eb" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} />
             )}
 
             {hasTepcoFc && (
-              <Line type="monotone" dataKey="tepcoForecast" stroke="#7c3aed" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} connectNulls={false} />
+              <Line yAxisId="power" type="monotone" dataKey="tepcoForecast" stroke="#7c3aed" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} connectNulls={false} />
             )}
 
             {hasActual && (
-              <Line type="monotone" dataKey="actual" stroke="#ea580c" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} connectNulls={false} />
+              <Line yAxisId="power" type="monotone" dataKey="actual" stroke="#ea580c" strokeWidth={2} dot={false} legendType="none" isAnimationActive={false} connectNulls={false} />
             )}
           </ComposedChart>
         </ResponsiveContainer>

@@ -413,7 +413,7 @@ def _build_today_alerts(
     config: dict,
     day_context: dict | None = None,
 ) -> dict | None:
-    """Build and write today's alerts JSON.  Returns the alerts summary dict, or None on failure."""
+    """Build and write alerts JSON for one date. Returns the summary dict, or None on failure."""
     actual_path  = out_dir / "actual"   / f"{today.isoformat()}.json"
     forecast_path = out_dir / "forecast" / f"{today.isoformat()}.json"
     alerts_path  = out_dir / "alerts"   / f"{today.isoformat()}.json"
@@ -454,11 +454,37 @@ def _build_today_alerts(
         events = detect_anomalies(hourly, fc_list, config.get("anomaly", {}), day_context)
         payload = build_alerts_json(today, events)
         write_json(alerts_path, payload)
-        print(f"[STATUS] Today alerts: {len(events)} events -> {alerts_path.name}")
+        print(f"[STATUS] Alerts {today.isoformat()}: {len(events)} events -> {alerts_path.name}")
         return payload.get("summary")
     except Exception as e:
         print(f"[WARN] Failed to build today alerts: {e}", file=sys.stderr)
     return None
+
+
+def _build_alerts_for_date(
+    out_dir: Path,
+    d: date,
+    config: dict,
+    cache: pd.DataFrame,
+) -> dict | None:
+    """Rebuild alerts for any actual/forecast date using the current anomaly config."""
+    day_context = None
+    try:
+        from python.forecast.feature_builder import build_inference_features
+        day_context = _make_day_context(build_inference_features(cache, d, config), config)
+    except Exception:
+        pass
+    return _build_today_alerts(out_dir, d, config, day_context=day_context)
+
+
+def _severity_from_alerts_summary(summary: dict | None) -> str | None:
+    if summary is None:
+        return None
+    if summary.get("critical", 0) > 0:
+        return "critical"
+    if summary.get("warning", 0) > 0:
+        return "warning"
+    return "info"
 
 
 
@@ -954,23 +980,15 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
                build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
 
-    day_context = None
-    try:
-        from python.forecast.feature_builder import build_inference_features
-        day_context = _make_day_context(build_inference_features(extended_cache, today, config), config)
-    except Exception:
-        pass
-    alerts_summary = _build_today_alerts(out_dir, today, config, day_context=day_context)
+    # Rebuild recent actual alerts with the current config. This keeps yesterday's
+    # alert file in sync after threshold/config changes even when the daily CSV
+    # has already been processed.
+    yesterday = today - timedelta(days=1)
+    _build_alerts_for_date(out_dir, yesterday, config, extended_with_actuals)
+    alerts_summary = _build_alerts_for_date(out_dir, today, config, extended_with_actuals)
 
     # Derive today's severity from actual alerts (not from forecast-based reserve risk estimate)
-    today_severity = None
-    if alerts_summary is not None:
-        if alerts_summary.get("critical", 0) > 0:
-            today_severity = "critical"
-        elif alerts_summary.get("warning", 0) > 0:
-            today_severity = "warning"
-        else:
-            today_severity = "info"
+    today_severity = _severity_from_alerts_summary(alerts_summary)
 
     write_json(out_dir / "status.json", build_status_json(
         ok_set, fail_set, summaries, ok_set | fail_set,
@@ -1155,10 +1173,17 @@ def main() -> None:
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
                build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
 
+    # Keep recent alert files aligned with the current anomaly thresholds, even
+    # if their daily CSVs were processed by an older config.
+    yesterday = today - timedelta(days=1)
+    _build_alerts_for_date(out_dir, yesterday, config, extended_with_actuals)
+    today_alerts_summary = _build_alerts_for_date(out_dir, today, config, extended_with_actuals)
+
     # status.json
     write_json(out_dir / "status.json", build_status_json(
         status_ok_set, fail_set, status_summaries, set(csv_map.keys()) | status_ok_set | fail_set,
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
+        today_severity=_severity_from_alerts_summary(today_alerts_summary),
         extended_cache=extended_with_actuals,
     ))
     _write_forecast_accuracy_report(out_dir)
