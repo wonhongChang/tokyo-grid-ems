@@ -176,6 +176,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 - [2026-05-14 전주 대비 기온 변화 피처](docs/ko/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md)
 - [2026-05-15 전일 대비 날씨 변화와 체감온도 피처](docs/ko/model-improvements/model-improvement-2026-05-15-24h-weather-apparent-features.md)
 - [2026-05-16 영업 타입 전환 lag 피처](docs/ko/model-improvements/model-improvement-2026-05-16-business-type-lag-features.md)
+- [2026-05-17 intraday 기온 예보 bias 보정과 과거 예측 고정](docs/ko/model-improvements/model-improvement-2026-05-17-intraday-weather-bias-correction.md)
 - [기온 데이터 연동 설계](docs/ko/weather-integration.md)
 - [데이터 보존 및 아카이브 전략](docs/ko/data-retention-strategy.md)
 - [모델 평가 리포트](docs/ko/model-evaluation.md)
