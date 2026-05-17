@@ -12,6 +12,7 @@ import pytest
 
 from python.etl.fetch_weather import (
     _fetch_json,
+    _parse_jma_official_timeseries,
     _parse_response,
     enrich_cache_with_weather,
     fetch_forecast_temps,
@@ -37,6 +38,28 @@ _SAMPLE_WITH_NULL = {
         "temperature_2m": [5.2, None],
         "apparent_temperature": [3.2, None],
     }
+}
+
+_JMA_OFFICIAL_TIMESERIES_RESPONSE = {
+    "firstAreaCode": "130010",
+    "reportDateTime": "2026-05-17T17:00:00+09:00",
+    "pointTimeSeries": {
+        "pointNameEN": "Tokyo",
+        "timeDefines": [
+            {"dateTime": "2026-05-18T00:00:00+09:00"},
+            {"dateTime": "2026-05-18T03:00:00+09:00"},
+            {"dateTime": "2026-05-18T06:00:00+09:00"},
+            {"dateTime": "2026-05-18T09:00:00+09:00"},
+            {"dateTime": "2026-05-18T12:00:00+09:00"},
+            {"dateTime": "2026-05-18T15:00:00+09:00"},
+            {"dateTime": "2026-05-18T18:00:00+09:00"},
+            {"dateTime": "2026-05-18T21:00:00+09:00"},
+            {"dateTime": "2026-05-19T00:00:00+09:00"},
+        ],
+        "temperature": [18, 17, 17, 21, 27, 28, 23, 20, 19],
+        "maxTemperature": ["", "", "", 29, 29, 29, 29, "", ""],
+        "minTemperature": [16, 16, 16, 16, "", "", "", "", ""],
+    },
 }
 
 
@@ -86,6 +109,34 @@ def test_parse_response_null_becomes_nan():
     df = _parse_response(_SAMPLE_WITH_NULL)
     assert math.isnan(df["temp_c"].iloc[1])
     assert math.isnan(df["apparent_temp_c"].iloc[1])
+
+
+# ---------------------------------------------------------------------------
+# _parse_jma_official_timeseries
+# ---------------------------------------------------------------------------
+
+def test_parse_jma_official_timeseries_interpolates_to_hourly():
+    df = _parse_jma_official_timeseries(
+        _JMA_OFFICIAL_TIMESERIES_RESPONSE,
+        days=1,
+        today=date(2026, 5, 18),
+    )
+
+    assert len(df) == 24
+    assert str(df["ts"].dt.tz) == "Asia/Tokyo"
+    assert df["ts"].iloc[0] == pd.Timestamp("2026-05-18T00:00:00+09:00")
+    assert df["ts"].iloc[-1] == pd.Timestamp("2026-05-18T23:00:00+09:00")
+
+
+def test_parse_jma_official_timeseries_keeps_official_min_max():
+    df = _parse_jma_official_timeseries(
+        _JMA_OFFICIAL_TIMESERIES_RESPONSE,
+        days=1,
+        today=date(2026, 5, 18),
+    )
+
+    assert df["temp_c"].min() == pytest.approx(16.0)
+    assert df["temp_c"].max() == pytest.approx(29.0)
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +195,14 @@ def test_fetch_past_temps_passes_correct_dates():
     assert params["end_date"]   == "2024-03-20"
 
 
+def test_fetch_past_temps_uses_tokyo_center_coordinates():
+    with patch("python.etl.fetch_weather._fetch_json", return_value=_SAMPLE_RESPONSE) as mock:
+        fetch_past_temps(date(2024, 3, 15), date(2024, 3, 20))
+    params = mock.call_args[0][1]
+    assert params["latitude"] == pytest.approx(35.6589)
+    assert params["longitude"] == pytest.approx(139.7066)
+
+
 # ---------------------------------------------------------------------------
 # fetch_forecast_temps
 # ---------------------------------------------------------------------------
@@ -161,6 +220,72 @@ def test_fetch_forecast_temps_passes_days():
         fetch_forecast_temps(days=5)
     params = mock.call_args[0][1]
     assert params["forecast_days"] == 5
+
+
+def test_fetch_forecast_temps_uses_official_jma_timeseries_endpoint():
+    with patch("python.etl.fetch_weather._fetch_json", return_value=_SAMPLE_RESPONSE) as mock:
+        fetch_forecast_temps(days=5)
+    url = mock.call_args_list[0][0][0]
+    assert url == "https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json"
+
+
+def test_fetch_forecast_temps_uses_jma_endpoint():
+    with patch("python.etl.fetch_weather._fetch_json", return_value=_SAMPLE_RESPONSE) as mock:
+        fetch_forecast_temps(days=5)
+    url = mock.call_args[0][0]
+    assert url == "https://api.open-meteo.com/v1/jma"
+
+
+def test_fetch_forecast_temps_uses_tokyo_center_coordinates():
+    with patch("python.etl.fetch_weather._fetch_json", return_value=_SAMPLE_RESPONSE) as mock:
+        fetch_forecast_temps(days=5)
+    params = mock.call_args[0][1]
+    assert params["latitude"] == pytest.approx(35.6589)
+    assert params["longitude"] == pytest.approx(139.7066)
+
+
+def test_fetch_forecast_temps_prefers_official_jma_temperature():
+    fallback_response = {
+        "hourly": {
+            "time": [f"2026-05-18T{hour:02d}:00" for hour in range(24)],
+            "temperature_2m": [20.0] * 24,
+            "apparent_temperature": [21.0] * 24,
+        }
+    }
+    official = _parse_jma_official_timeseries(
+        _JMA_OFFICIAL_TIMESERIES_RESPONSE,
+        days=1,
+        today=date(2026, 5, 18),
+    )
+    fallback = _parse_response(fallback_response)
+
+    with (
+        patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official),
+        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=fallback),
+    ):
+        result = fetch_forecast_temps(days=1)
+
+    assert len(result) == 24
+    assert result["temp_c"].max() == pytest.approx(29.0)
+    assert result["temp_c"].min() == pytest.approx(16.0)
+    peak = result.loc[result["temp_c"].idxmax()]
+    assert peak["apparent_temp_c"] == pytest.approx(30.0)
+
+
+def test_fetch_forecast_temps_falls_back_to_open_meteo_when_official_fails():
+    fallback = _parse_response(_SAMPLE_RESPONSE)
+
+    with (
+        patch(
+            "python.etl.fetch_weather.fetch_jma_official_forecast_temps",
+            side_effect=OSError("official unavailable"),
+        ),
+        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=fallback),
+    ):
+        result = fetch_forecast_temps(days=1)
+
+    assert len(result) == 4
+    assert result["temp_c"].iloc[0] == pytest.approx(5.2)
 
 
 # ---------------------------------------------------------------------------
