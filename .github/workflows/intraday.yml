@@ -8,6 +8,9 @@ on:
     # Morning 07:20/09:20 JST are handled by ETL + Deploy to avoid duplicate Pages deployments.
     # JST: 01:20, 03:20, 05:20, 11:20, 13:20, 15:20, 17:20, 19:20, 21:20, 23:20
     - cron: '20 2-20/2 * * *'
+    # Catch-up for the important late-morning refresh if the 11:20 JST scheduled run is delayed or dropped.
+    # JST: 12:05
+    - cron: '5 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -19,9 +22,6 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   update-today:
     runs-on: ubuntu-latest
@@ -30,9 +30,9 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -76,9 +76,9 @@ jobs:
           cd -
           git worktree remove /tmp/data-wt --force
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -92,9 +92,9 @@ jobs:
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: web/dist
 
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         id: deploy
