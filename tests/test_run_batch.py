@@ -12,7 +12,9 @@ import pytest
 from python.forecast.baseline import HourlyForecast
 from python.etl.run_batch import (
     _apply_actual_json_latest_fallback,
+    _apply_weather_forecast_bias_correction,
     _extend_cache_with_forecast_weather,
+    _freeze_observed_forecast_hours,
     _inject_today_actuals,
     _load_existing_forecast,
     build_actual_json,
@@ -185,6 +187,96 @@ def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
     assert result["actual_mw"].iloc[0] == pytest.approx(30_000.0)
     assert result["temp_c"].iloc[0] == pytest.approx(24.5)
     assert result["apparent_temp_c"].iloc[0] == pytest.approx(25.5)
+
+
+def test_weather_forecast_bias_correction_raises_near_term_morning_forecast(monkeypatch):
+    base = pd.Timestamp("2024-01-02T08:00:00+09:00")
+    cache = pd.DataFrame([{
+        "ts": base + pd.Timedelta(hours=i),
+        "actual_mw": float("nan"),
+        "forecast_mw": float("nan"),
+        "usage_pct": float("nan"),
+        "supply_mw": float("nan"),
+        "temp_c": 20.0,
+        "apparent_temp_c": 19.0,
+    } for i in range(6)])
+    observed_weather = pd.DataFrame({
+        "ts": [base, base + pd.Timedelta(hours=1)],
+        "temp_c": [22.0, 22.0],
+        "apparent_temp_c": [21.0, 21.0],
+    })
+    monkeypatch.setattr(
+        "python.etl.fetch_weather.fetch_past_temps",
+        lambda start, end: observed_weather,
+    )
+
+    result = _apply_weather_forecast_bias_correction(
+        cache,
+        {
+            "weather_forecast_bias_correction": {
+                "enabled": True,
+                "lookback_hours": 4,
+                "observation_lag_hours": 1,
+                "horizon_hours": 4,
+                "min_abs_bias_c": 0.1,
+                "max_abs_bias_c": 2.5,
+                "decay_per_hour": 0.5,
+            }
+        },
+        now=pd.Timestamp("2024-01-02T10:30:00+09:00"),
+    )
+
+    by_hour = {int(row["ts"].hour): row for _, row in result.iterrows()}
+    assert by_hour[8]["temp_c"] == pytest.approx(20.0)
+    assert by_hour[9]["temp_c"] == pytest.approx(20.0)
+    assert by_hour[10]["temp_c"] == pytest.approx(22.0)
+    assert by_hour[11]["temp_c"] == pytest.approx(21.0)
+    assert by_hour[12]["temp_c"] == pytest.approx(20.5)
+    assert by_hour[13]["temp_c"] == pytest.approx(20.25)
+    assert by_hour[10]["apparent_temp_c"] == pytest.approx(21.0)
+
+
+def test_weather_forecast_bias_correction_lowers_cold_biased_forecast(monkeypatch):
+    base = pd.Timestamp("2024-01-02T06:00:00+09:00")
+    cache = pd.DataFrame([{
+        "ts": base + pd.Timedelta(hours=i),
+        "actual_mw": float("nan"),
+        "forecast_mw": float("nan"),
+        "usage_pct": float("nan"),
+        "supply_mw": float("nan"),
+        "temp_c": 8.0,
+        "apparent_temp_c": 7.0,
+    } for i in range(5)])
+    observed_weather = pd.DataFrame({
+        "ts": [base, base + pd.Timedelta(hours=1)],
+        "temp_c": [6.0, 6.0],
+        "apparent_temp_c": [5.0, 5.0],
+    })
+    monkeypatch.setattr(
+        "python.etl.fetch_weather.fetch_past_temps",
+        lambda start, end: observed_weather,
+    )
+
+    result = _apply_weather_forecast_bias_correction(
+        cache,
+        {
+            "weather_forecast_bias_correction": {
+                "enabled": True,
+                "lookback_hours": 4,
+                "observation_lag_hours": 1,
+                "horizon_hours": 2,
+                "min_abs_bias_c": 0.1,
+                "max_abs_bias_c": 2.5,
+                "decay_per_hour": 0.5,
+            }
+        },
+        now=pd.Timestamp("2024-01-02T08:30:00+09:00"),
+    )
+
+    by_hour = {int(row["ts"].hour): row for _, row in result.iterrows()}
+    assert by_hour[8]["temp_c"] == pytest.approx(6.0)
+    assert by_hour[9]["temp_c"] == pytest.approx(7.0)
+    assert by_hour[10]["temp_c"] == pytest.approx(8.0)
 
 
 def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):
@@ -388,6 +480,17 @@ def _forecast_point(d: date, forecast_mw: float) -> HourlyForecast:
     )
 
 
+def _forecast_point_at(d: date, hour: int, forecast_mw: float) -> HourlyForecast:
+    return HourlyForecast(
+        ts=f"{d.isoformat()}T{hour:02d}:00:00+09:00",
+        forecast_mw=forecast_mw,
+        p95_lower_mw=forecast_mw - 500.0,
+        p95_upper_mw=forecast_mw + 500.0,
+        p99_lower_mw=forecast_mw - 800.0,
+        p99_upper_mw=forecast_mw + 800.0,
+    )
+
+
 def _recent_supply_cache(supply_mw: float = 34_000.0) -> pd.DataFrame:
     base = pd.Timestamp("2024-01-08T00:00:00+09:00")
     return pd.DataFrame({
@@ -480,6 +583,113 @@ def test_load_existing_forecast_missing_file_returns_empty(tmp_path):
 
     assert fc_list == []
     assert model_name is None
+
+
+def test_freeze_observed_forecast_hours_keeps_published_observed_hours(tmp_path):
+    target = date(2024, 1, 2)
+    forecast_dir = tmp_path / "forecast"
+    actual_dir = tmp_path / "actual"
+    forecast_dir.mkdir()
+    actual_dir.mkdir()
+    (forecast_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "model": {"name": "lgbm_quantile_q50_intraday_residual"},
+        "series": [
+            {
+                "ts": "2024-01-02T10:00:00+09:00",
+                "forecastMw": 31_000.0,
+                "p95LowerMw": 30_000.0,
+                "p95UpperMw": 32_000.0,
+                "p99LowerMw": 29_500.0,
+                "p99UpperMw": 32_500.0,
+            },
+            {
+                "ts": "2024-01-02T11:00:00+09:00",
+                "forecastMw": 32_000.0,
+                "p95LowerMw": 31_000.0,
+                "p95UpperMw": 33_000.0,
+                "p99LowerMw": 30_500.0,
+                "p99UpperMw": 33_500.0,
+            },
+        ],
+    }), encoding="utf-8")
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-02T10:00:00+09:00",
+                "actualMw": 31_500.0,
+                "actualSource": "observed",
+            },
+            {
+                "ts": "2024-01-02T11:00:00+09:00",
+                "actualMw": None,
+                "actualSource": None,
+            },
+        ],
+    }), encoding="utf-8")
+
+    result, model_name = _freeze_observed_forecast_hours(
+        tmp_path,
+        target,
+        [_forecast_point_at(target, 10, 29_000.0), _forecast_point_at(target, 11, 30_000.0)],
+        "lgbm_quantile_q50",
+    )
+
+    assert model_name == "lgbm_quantile_q50"
+    assert result[0].forecast_mw == pytest.approx(31_000.0)
+    assert result[0].p95_upper_mw == pytest.approx(32_000.0)
+    assert result[1].forecast_mw == pytest.approx(30_000.0)
+
+
+def test_freeze_observed_forecast_hours_does_not_freeze_tepco_fallback(tmp_path):
+    target = date(2024, 1, 2)
+    forecast_dir = tmp_path / "forecast"
+    actual_dir = tmp_path / "actual"
+    forecast_dir.mkdir()
+    actual_dir.mkdir()
+    (forecast_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "model": {"name": "lgbm_quantile_q50_intraday_residual"},
+        "series": [
+            {
+                "ts": "2024-01-02T23:00:00+09:00",
+                "forecastMw": 31_000.0,
+                "p95LowerMw": 30_000.0,
+                "p95UpperMw": 32_000.0,
+                "p99LowerMw": 29_500.0,
+                "p99UpperMw": 32_500.0,
+            },
+        ],
+    }), encoding="utf-8")
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-02T23:00:00+09:00",
+                "actualMw": 30_800.0,
+                "actualSource": "tepco_forecast_fallback",
+            },
+        ],
+    }), encoding="utf-8")
+
+    result, model_name = _freeze_observed_forecast_hours(
+        tmp_path,
+        target,
+        [_forecast_point_at(target, 23, 29_000.0)],
+        "lgbm_quantile_q50",
+    )
+
+    assert model_name == "lgbm_quantile_q50"
+    assert result[0].forecast_mw == pytest.approx(29_000.0)
 
 
 # ── compute_missing_days ──────────────────────────────────────────────────────

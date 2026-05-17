@@ -63,6 +63,15 @@ def load_config(config_path: Path) -> dict:
             return yaml.safe_load(f)
     return {
         "forecast": {"n_weeks": 12, "min_samples_per_slot": 4},
+        "weather_forecast_bias_correction": {
+            "enabled": True,
+            "lookback_hours": 4,
+            "observation_lag_hours": 1,
+            "horizon_hours": 4,
+            "min_abs_bias_c": 0.8,
+            "max_abs_bias_c": 2.5,
+            "decay_per_hour": 0.75,
+        },
         "anomaly": {
             "reserve_risk": {
                 "warning_pct": DEFAULT_RESERVE_WARNING_PCT,
@@ -305,6 +314,95 @@ def _load_existing_forecast(out_dir: Path, d: date) -> tuple[list[HourlyForecast
     except Exception as e:
         print(f"[WARN] Failed to read existing forecast/{d.isoformat()}.json: {e}", file=sys.stderr)
         return [], None
+
+
+def _to_jst_timestamp(value) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        return ts.tz_localize(JST)
+    return ts.tz_convert(JST)
+
+
+def _load_observed_actual_hours(out_dir: Path, d: date) -> set[int]:
+    """Return hours with a real observed actual in actual/d.json.
+
+    The marked TEPCO fallback for the final hour is intentionally excluded. It
+    is useful as a temporary lag input, but it is not an observed actual.
+    """
+    actual_path = out_dir / "actual" / f"{d.isoformat()}.json"
+    if not actual_path.exists():
+        return set()
+
+    try:
+        data = json.loads(actual_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[WARN] Failed to read actual/{d.isoformat()}.json: {e}", file=sys.stderr)
+        return set()
+
+    observed_hours: set[int] = set()
+    for pt in data.get("series", []):
+        if pt.get("actualMw") is None:
+            continue
+        if pt.get("actualSource") == _TEPCO_FORECAST_FALLBACK_SOURCE:
+            continue
+        try:
+            ts = _to_jst_timestamp(pt["ts"])
+        except Exception:
+            continue
+        if ts.date() == d:
+            observed_hours.add(ts.hour)
+    return observed_hours
+
+
+def _freeze_observed_forecast_hours(
+    out_dir: Path,
+    d: date,
+    forecasts: list[HourlyForecast],
+    model_name: str,
+) -> tuple[list[HourlyForecast], str]:
+    """Keep already-published forecasts for hours that now have actuals.
+
+    Intraday runs rebuild the whole day each time. Without this guard, a past
+    hour can appear to change after the actual value arrived because the raw
+    model is re-run without the intraday residual correction that was active
+    before that hour was observed.
+    """
+    observed_hours = _load_observed_actual_hours(out_dir, d)
+    if not observed_hours:
+        return forecasts, model_name
+
+    existing_forecasts, existing_model_name = _load_existing_forecast(out_dir, d)
+    if not existing_forecasts:
+        return forecasts, model_name
+
+    existing_by_hour: dict[int, HourlyForecast] = {}
+    for forecast in existing_forecasts:
+        try:
+            ts = _to_jst_timestamp(forecast.ts)
+        except Exception:
+            continue
+        if ts.date() == d:
+            existing_by_hour[ts.hour] = forecast
+
+    frozen_count = 0
+    result: list[HourlyForecast] = []
+    for forecast in forecasts:
+        try:
+            ts = _to_jst_timestamp(forecast.ts)
+        except Exception:
+            result.append(forecast)
+            continue
+        if ts.date() == d and ts.hour in observed_hours and ts.hour in existing_by_hour:
+            result.append(existing_by_hour[ts.hour])
+            frozen_count += 1
+        else:
+            result.append(forecast)
+
+    if frozen_count:
+        print(f"[FORECAST] Preserved {frozen_count} observed forecast hours for {d.isoformat()}")
+    if forecasts and frozen_count == len(forecasts) and existing_model_name:
+        return result, existing_model_name
+    return result, model_name
 
 
 def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd.DataFrame:
@@ -728,6 +826,123 @@ def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> p
     return result.sort_values("ts").reset_index(drop=True)
 
 
+def _bounded_float(value, default: float, min_value: float | None = None) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    if min_value is not None:
+        result = max(min_value, result)
+    return result
+
+
+def _apply_weather_forecast_bias_correction(
+    cache: pd.DataFrame,
+    config: dict,
+    now: datetime | None = None,
+) -> pd.DataFrame:
+    """Nudge near-term same-day forecast weather toward recent observed weather.
+
+    This corrects the weather input, not the electric demand target. If the
+    forecast has been too cold or too warm during the last few observed hours,
+    apply a capped, fading +/- adjustment to the next same-day forecast hours.
+    """
+    cfg = config.get("weather_forecast_bias_correction", {})
+    if not cfg.get("enabled", True) or cache.empty or "ts" not in cache.columns:
+        return cache
+
+    lookback_hours = _bounded_float(cfg.get("lookback_hours"), 4.0, min_value=1.0)
+    observation_lag_hours = _bounded_float(cfg.get("observation_lag_hours"), 1.0, min_value=0.0)
+    horizon_hours = int(_bounded_float(cfg.get("horizon_hours"), 4.0, min_value=1.0))
+    min_abs_bias_c = _bounded_float(cfg.get("min_abs_bias_c"), 0.8, min_value=0.0)
+    max_abs_bias_c = _bounded_float(cfg.get("max_abs_bias_c"), 2.5, min_value=0.1)
+    decay_per_hour = min(1.0, _bounded_float(cfg.get("decay_per_hour"), 0.75, min_value=0.0))
+
+    now_ts = _to_jst_timestamp(now or datetime.now(tz=JST))
+    observed_cutoff = now_ts - pd.Timedelta(hours=observation_lag_hours)
+    observed_start = max(
+        pd.Timestamp(now_ts.date(), tz=JST),
+        observed_cutoff - pd.Timedelta(hours=lookback_hours),
+    )
+
+    result = cache.copy()
+    for col in _CACHE_COLS:
+        if col not in result.columns:
+            result[col] = float("nan")
+    result["ts"] = pd.to_datetime(result["ts"], utc=True).dt.tz_convert("Asia/Tokyo")
+
+    try:
+        from python.etl.fetch_weather import fetch_past_temps
+        observed_weather = fetch_past_temps(now_ts.date(), now_ts.date())
+    except Exception as e:
+        print(f"[WARN] Weather bias correction fetch failed: {e}", file=sys.stderr)
+        return cache
+
+    if observed_weather.empty:
+        return cache
+    observed_weather = observed_weather.copy()
+    observed_weather["ts"] = pd.to_datetime(observed_weather["ts"], utc=True).dt.tz_convert("Asia/Tokyo")
+    observed_weather = observed_weather[
+        (observed_weather["ts"] >= observed_start)
+        & (observed_weather["ts"] <= observed_cutoff)
+    ]
+    if observed_weather.empty:
+        return cache
+
+    forecast_weather = result[["ts", "temp_c", "apparent_temp_c"]].copy()
+    comparison = observed_weather.merge(
+        forecast_weather.rename(columns={
+            "temp_c": "_forecast_temp_c",
+            "apparent_temp_c": "_forecast_apparent_temp_c",
+        }),
+        on="ts",
+        how="inner",
+    )
+    comparison = comparison.dropna(subset=["temp_c", "_forecast_temp_c"])
+    if comparison.empty:
+        return cache
+
+    temp_bias = float((comparison["temp_c"] - comparison["_forecast_temp_c"]).median())
+    temp_bias = max(-max_abs_bias_c, min(max_abs_bias_c, temp_bias))
+    if abs(temp_bias) < min_abs_bias_c:
+        return cache
+
+    apparent_bias = temp_bias
+    if "apparent_temp_c" in comparison.columns and "_forecast_apparent_temp_c" in comparison.columns:
+        apparent_comparison = comparison.dropna(subset=["apparent_temp_c", "_forecast_apparent_temp_c"])
+        if not apparent_comparison.empty:
+            apparent_bias = float(
+                (apparent_comparison["apparent_temp_c"] - apparent_comparison["_forecast_apparent_temp_c"]).median()
+            )
+            apparent_bias = max(-max_abs_bias_c, min(max_abs_bias_c, apparent_bias))
+
+    future_mask = (
+        (result["ts"].dt.date == now_ts.date())
+        & (result["ts"] > observed_cutoff)
+        & result["actual_mw"].isna()
+    )
+    future_index = list(result.loc[future_mask].sort_values("ts").index[:horizon_hours])
+    if not future_index:
+        return cache
+
+    for step, idx in enumerate(future_index):
+        decay = decay_per_hour ** step
+        result.at[idx, "temp_c"] = result.at[idx, "temp_c"] + temp_bias * decay
+        if pd.notna(result.at[idx, "apparent_temp_c"]):
+            result.at[idx, "apparent_temp_c"] = result.at[idx, "apparent_temp_c"] + apparent_bias * decay
+
+    latest_observed_hour = comparison["ts"].max().hour
+    first_adjusted_hour = int(result.loc[future_index[0], "ts"].hour)
+    last_adjusted_hour = int(result.loc[future_index[-1], "ts"].hour)
+    print(
+        "[WEATHER] Forecast bias correction "
+        f"{now_ts.date()}: bias={temp_bias:+.1f}C "
+        f"(samples={len(comparison)}, latest_obs={latest_observed_hour:02d}:00, "
+        f"hours={first_adjusted_hour:02d}-{last_adjusted_hour:02d})"
+    )
+    return result.sort_values("ts").reset_index(drop=True)
+
+
 def _make_adjuster(config: dict):
     """Instantiate AnalogousDayAdjuster from config. Returns None on import failure."""
     try:
@@ -951,6 +1166,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     # Fill any missing temp_c in recent cache rows, then extend with forecast weather
     hourly_cache   = enrich_cache_with_weather(hourly_cache)
     extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
+    extended_cache = _apply_weather_forecast_bias_correction(extended_cache, config)
     save_hourly_cache(out_dir, extended_cache)
 
     forecaster = _try_load_lgbm(out_dir)
@@ -968,6 +1184,9 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     )
     today_fc, today_model = _apply_intraday_residual_correction(
         out_dir, today, today_fc, today_model, config
+    )
+    today_fc, today_model = _freeze_observed_forecast_hours(
+        out_dir, today, today_fc, today_model
     )
 
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
@@ -1148,6 +1367,7 @@ def main() -> None:
 
     # Extend cache with forecast weather for today/tomorrow inference
     extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
+    extended_cache = _apply_weather_forecast_bias_correction(extended_cache, config)
     save_hourly_cache(out_dir, extended_cache)
 
     # Today / tomorrow forecasts
@@ -1163,6 +1383,9 @@ def main() -> None:
     )
     today_fc, today_model = _apply_intraday_residual_correction(
         out_dir, today, today_fc, today_model, config
+    )
+    today_fc, today_model = _freeze_observed_forecast_hours(
+        out_dir, today, today_fc, today_model
     )
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard

@@ -6,6 +6,15 @@ weather_features:
   cooling_base_temp_c: 22.0  # configurable balance point for cooling-degree features
   heating_base_temp_c: 10.0  # configurable balance point for heating-degree features
 
+weather_forecast_bias_correction:
+  enabled: true
+  lookback_hours: 4          # recent observed-vs-forecast temperature gap
+  observation_lag_hours: 1   # avoid using the still-forming current hour
+  horizon_hours: 4           # apply only to near-term same-day future hours
+  min_abs_bias_c: 0.8        # ignore tiny weather forecast noise
+  max_abs_bias_c: 2.5        # cap both warm and cold corrections
+  decay_per_hour: 0.75       # fade the correction each hour ahead
+
 intraday_correction:
   enabled: true
   lookback_hours: 3          # recent actual-vs-model residuals used for same-day correction
