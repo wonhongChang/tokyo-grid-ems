@@ -608,14 +608,24 @@ def _forecast_severity(
     """Estimate severity from peak forecast vs recent supply."""
     if not fc_list:
         return "info"
-    peak_fc_mw = max(f.forecast_mw for f in fc_list)
+    peak_forecast = max(fc_list, key=lambda f: f.forecast_mw)
+    peak_fc_mw = peak_forecast.forecast_mw
     recent_supply = None
     if "supply_mw" in cache.columns:
-        supply_df = cache[["ts", "supply_mw"]].dropna(subset=["supply_mw"])
-        # p75 of recent weekday supply: robust against GW-low outliers and peak-day highs
-        weekday_supply = supply_df[supply_df["ts"].dt.dayofweek < 5].tail(24 * 14)
-        if not weekday_supply.empty:
-            recent_supply = weekday_supply["supply_mw"].quantile(0.75)
+        supply_df = cache[["ts", "supply_mw"]].dropna(subset=["supply_mw"]).copy()
+        if not supply_df.empty:
+            try:
+                peak_ts = _to_jst_timestamp(peak_forecast.ts)
+                exact_supply = supply_df.loc[supply_df["ts"] == peak_ts, "supply_mw"].dropna()
+                if not exact_supply.empty:
+                    recent_supply = float(exact_supply.iloc[-1])
+            except Exception:
+                recent_supply = None
+        if recent_supply is None:
+            # p75 of recent weekday supply: robust against GW-low outliers and peak-day highs
+            weekday_supply = supply_df[supply_df["ts"].dt.dayofweek < 5].tail(24 * 14)
+            if not weekday_supply.empty:
+                recent_supply = weekday_supply["supply_mw"].quantile(0.75)
     if recent_supply and recent_supply > 0:
         est_pct = peak_fc_mw / recent_supply * 100
         rr = config.get("anomaly", {}).get("reserve_risk", {})
@@ -665,7 +675,12 @@ def build_status_json(
         sev = (
             override_sev
             if override_sev is not None
-            else _forecast_severity(fc_list, cache, config, allow_critical=d <= today)
+            else _forecast_severity(
+                fc_list,
+                extended_cache if extended_cache is not None else cache,
+                config,
+                allow_critical=d <= today,
+            )
         )
         result = {
             "date": d.isoformat(),

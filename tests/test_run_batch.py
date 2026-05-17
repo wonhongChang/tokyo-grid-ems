@@ -530,6 +530,33 @@ def test_build_status_json_allows_today_forecast_critical_when_no_actual_overrid
     assert result["today"]["severity"] == "critical"
 
 
+def test_build_status_json_uses_same_day_supply_for_forecast_severity():
+    today = date(2024, 1, 22)
+    yesterday = date(2024, 1, 21)
+    historical_cache = _recent_supply_cache(supply_mw=34_000.0)
+    same_day_supply = pd.DataFrame({
+        "ts": [pd.Timestamp("2024-01-22T11:00:00+09:00")],
+        "supply_mw": [40_350.0],
+    })
+    extended_cache = pd.concat([historical_cache, same_day_supply], ignore_index=True)
+
+    result = build_status_json(
+        ok_set={yesterday},
+        fail_set=set(),
+        summaries={},
+        csv_dates={yesterday},
+        today=today,
+        today_fc=[_forecast_point(today, 34_889.5)],
+        tomorrow=date(2024, 1, 23),
+        tomorrow_fc=[],
+        cache=historical_cache,
+        config=_reserve_risk_config(),
+        extended_cache=extended_cache,
+    )
+
+    assert result["today"]["severity"] == "info"
+
+
 def test_build_status_json_caps_tomorrow_forecast_severity_at_warning():
     today = date(2024, 1, 22)
     yesterday = date(2024, 1, 21)
