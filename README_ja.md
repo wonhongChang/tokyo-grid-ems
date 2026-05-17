@@ -148,17 +148,22 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 - [学生向けプロジェクト概要](docs/ja/project-walkthrough.md)
 - [LightGBMモデル設計](docs/ja/lgbm-design.md)
+- [気温データ連携設計](docs/ja/weather-integration.md)
+- [データ保持とアーカイブ戦略](docs/ja/data-retention-strategy.md)
+- [モデル評価リポート](docs/ja/model-evaluation.md)
+- [異常検知基準](docs/ja/anomaly-criteria.md)
+- [JSONスキーマ契約](docs/ja/json_schema.md)
+
+---
+
+## モデル改善ログ
+
 - [2026-05-13 日中高温ガード改善](docs/ja/model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md)
 - [2026-05-14 暖かい日中の過少予測補正](docs/ja/model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md)
 - [2026-05-14 前週比気温変化特徴量](docs/ja/model-improvements/model-improvement-2026-05-14-lag-temperature-regime-features.md)
 - [2026-05-15 前日比気象変化と体感温度特徴量](docs/ja/model-improvements/model-improvement-2026-05-15-24h-weather-apparent-features.md)
 - [2026-05-16 営業タイプ遷移lag特徴量](docs/ja/model-improvements/model-improvement-2026-05-16-business-type-lag-features.md)
 - [2026-05-17 intraday気温予報bias補正と過去予測の固定](docs/ja/model-improvements/model-improvement-2026-05-17-intraday-weather-bias-correction.md)
-- [気温データ連携設計](docs/ja/weather-integration.md)
-- [データ保持とアーカイブ戦略](docs/ja/data-retention-strategy.md)
-- [モデル評価リポート](docs/ja/model-evaluation.md)
-- [異常検知基準](docs/ja/anomaly-criteria.md)
-- [JSONスキーマ契約](docs/ja/json_schema.md)
 
 ---
 
