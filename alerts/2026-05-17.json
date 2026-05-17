@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 4,
+    "warning": 6,
     "info": 0
   },
   "events": [
@@ -36,14 +36,14 @@
       "endAt": "2026-05-17T19:00:00+09:00",
       "metric": "actual_mw",
       "actualMw": 27930.0,
-      "expectedMw": 27333.4,
+      "expectedMw": 27260.4,
       "interval": {
-        "p95Lower": 25538.0,
-        "p95Upper": 27492.3,
-        "p99Lower": 23742.6,
-        "p99Upper": 27651.2
+        "p95Lower": 25542.3,
+        "p95Upper": 27463.7,
+        "p99Lower": 23824.2,
+        "p99Upper": 27667.0
       },
-      "reason": "Actual 27930 MW exceeded p99 upper 27651 MW by 279 MW (1.00%)",
+      "reason": "Actual 27930 MW exceeded p99 upper 27667 MW by 263 MW (0.94%)",
       "tags": [
         "interval"
       ]
@@ -56,14 +56,14 @@
       "endAt": "2026-05-17T20:00:00+09:00",
       "metric": "actual_mw",
       "actualMw": 28080.0,
-      "expectedMw": 27180.0,
+      "expectedMw": 27169.8,
       "interval": {
-        "p95Lower": 24933.5,
-        "p95Upper": 27399.5,
-        "p99Lower": 22687.0,
-        "p99Upper": 27619.0
+        "p95Lower": 24879.0,
+        "p95Upper": 27401.0,
+        "p99Lower": 22588.2,
+        "p99Upper": 27632.2
       },
-      "reason": "Actual 28080 MW exceeded p99 upper 27619 MW by 461 MW (1.64%)",
+      "reason": "Actual 28080 MW exceeded p99 upper 27632 MW by 448 MW (1.59%)",
       "tags": [
         "interval"
       ]
@@ -76,16 +76,51 @@
       "endAt": "2026-05-17T21:00:00+09:00",
       "metric": "actual_mw",
       "actualMw": 27030.0,
-      "expectedMw": 25746.0,
+      "expectedMw": 25663.6,
       "interval": {
-        "p95Lower": 24107.8,
-        "p95Upper": 26321.1,
-        "p99Lower": 22469.6,
-        "p99Upper": 26896.2
+        "p95Lower": 24077.2,
+        "p95Upper": 26240.9,
+        "p99Lower": 22490.8,
+        "p99Upper": 26818.2
       },
-      "reason": "Actual 27030 MW exceeded p99 upper 26896 MW by 134 MW (0.50%)",
+      "reason": "Actual 27030 MW exceeded p99 upper 26818 MW by 212 MW (0.78%)",
       "tags": [
         "interval"
+      ]
+    },
+    {
+      "id": "2026-05-17T21:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-17T21:00:00+09:00",
+      "endAt": "2026-05-17T22:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 25560.0,
+      "expectedMw": 24617.3,
+      "interval": {
+        "p95Lower": 23236.6,
+        "p95Upper": 25312.5,
+        "p99Lower": 21855.9,
+        "p99Upper": 26007.7
+      },
+      "reason": "Actual 25560 MW exceeded p95 upper 25312 MW by 248 MW (0.97%)",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-17T20:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-05-17T20:00:00+09:00",
+      "endAt": "2026-05-17T22:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 1091.3,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 3 consecutive hours",
+      "tags": [
+        "residual"
       ]
     }
   ]
