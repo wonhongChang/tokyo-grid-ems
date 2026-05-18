@@ -1,0 +1,1284 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-05-19T00:32:49+09:00",
+  "date": "2026-05-18",
+  "availability": "ok",
+  "visibility": {
+    "intendedUse": "internal_model_diagnostics",
+    "containsInternalFeatureNames": true,
+    "uiVisible": false,
+    "storedWithOperationalOutputs": true
+  },
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "family": "lgbm_quantile_q50"
+  },
+  "operationReport": {
+    "schemaVersion": "1.0.0",
+    "timezone": "Asia/Tokyo",
+    "generatedAt": "2026-05-19T00:32:49+09:00",
+    "date": "2026-05-18",
+    "availability": "ok",
+    "model": {
+      "name": "lgbm_quantile_q50_intraday_residual",
+      "family": "lgbm_quantile_q50"
+    },
+    "summary": {
+      "comparableHours": 22,
+      "modelMaeMw": 485.1,
+      "tepcoMaeMw": 448.2,
+      "maeGapMw": 36.9,
+      "verdict": "close",
+      "modelWins": 11,
+      "tepcoWins": 11,
+      "ties": 0
+    },
+    "peak": {
+      "actual": {
+        "hour": 14,
+        "actualMw": 34500.0
+      },
+      "model": {
+        "hour": 13,
+        "forecastMw": 34971.4,
+        "errorAtActualPeakMw": -233.3,
+        "timeErrorHours": -1
+      },
+      "tepco": {
+        "hour": 14,
+        "forecastMw": 35420.0,
+        "errorAtActualPeakMw": 920.0,
+        "timeErrorHours": 0
+      }
+    },
+    "timeBands": [
+      {
+        "code": "overnight",
+        "label": "00-05",
+        "hours": 6,
+        "modelMaeMw": 103.7,
+        "tepcoMaeMw": 271.7,
+        "modelBiasMw": -95.0,
+        "verdict": "model_better"
+      },
+      {
+        "code": "morning_ramp",
+        "label": "06-10",
+        "hours": 5,
+        "modelMaeMw": 876.3,
+        "tepcoMaeMw": 406.0,
+        "modelBiasMw": -851.0,
+        "verdict": "tepco_better"
+      },
+      {
+        "code": "daytime",
+        "label": "11-15",
+        "hours": 5,
+        "modelMaeMw": 405.5,
+        "tepcoMaeMw": 594.0,
+        "modelBiasMw": 312.2,
+        "verdict": "model_better"
+      },
+      {
+        "code": "late_afternoon",
+        "label": "16-18",
+        "hours": 3,
+        "modelMaeMw": 869.5,
+        "tepcoMaeMw": 516.7,
+        "modelBiasMw": -869.5,
+        "verdict": "tepco_better"
+      },
+      {
+        "code": "evening",
+        "label": "19-23",
+        "hours": 3,
+        "modelMaeMw": 343.8,
+        "tepcoMaeMw": 560.0,
+        "modelBiasMw": -279.3,
+        "verdict": "model_better"
+      }
+    ],
+    "topMisses": [
+      {
+        "hour": 9,
+        "actualMw": 31440.0,
+        "modelForecastMw": 29994.3,
+        "tepcoForecastMw": 31730.0,
+        "modelErrorMw": -1445.7,
+        "tepcoErrorMw": 290.0,
+        "modelAbsErrorMw": 1445.7,
+        "tepcoAbsErrorMw": 290.0
+      },
+      {
+        "hour": 16,
+        "actualMw": 34110.0,
+        "modelForecastMw": 32716.6,
+        "tepcoForecastMw": 34720.0,
+        "modelErrorMw": -1393.4,
+        "tepcoErrorMw": 610.0,
+        "modelAbsErrorMw": 1393.4,
+        "tepcoAbsErrorMw": 610.0
+      },
+      {
+        "hour": 8,
+        "actualMw": 27970.0,
+        "modelForecastMw": 26582.2,
+        "tepcoForecastMw": 28670.0,
+        "modelErrorMw": -1387.8,
+        "tepcoErrorMw": 700.0,
+        "modelAbsErrorMw": 1387.8,
+        "tepcoAbsErrorMw": 700.0
+      }
+    ],
+    "insights": [
+      {
+        "code": "morning_ramp_underestimated",
+        "severity": "warning",
+        "title": "Morning demand rose faster than the model expected.",
+        "evidence": {
+          "band": "06-10",
+          "modelBiasMw": -851.0
+        }
+      },
+      {
+        "code": "afternoon_plateau_underestimated",
+        "severity": "warning",
+        "title": "Late afternoon demand stayed higher than the model expected.",
+        "evidence": {
+          "band": "16-18",
+          "modelBiasMw": -869.5
+        }
+      },
+      {
+        "code": "large_single_hour_miss",
+        "severity": "warning",
+        "title": "One or more hours had a large model error.",
+        "evidence": {
+          "hour": 9,
+          "modelAbsErrorMw": 1445.7
+        }
+      }
+    ]
+  },
+  "featureBuildError": null,
+  "diagnosticSummary": {
+    "lag24ToSameBusinessTypeGapByBand": [
+      {
+        "code": "overnight",
+        "label": "00-05",
+        "mean": 979.4
+      },
+      {
+        "code": "morning_ramp",
+        "label": "06-10",
+        "mean": 5023.8
+      },
+      {
+        "code": "daytime",
+        "label": "11-15",
+        "mean": 4694.8
+      },
+      {
+        "code": "late_afternoon",
+        "label": "16-18",
+        "mean": 2748.3
+      },
+      {
+        "code": "evening",
+        "label": "19-23",
+        "mean": 1232.1
+      }
+    ],
+    "tempAnomaly7dByBand": [
+      {
+        "code": "overnight",
+        "label": "00-05",
+        "mean": -5.9
+      },
+      {
+        "code": "morning_ramp",
+        "label": "06-10",
+        "mean": -2.5
+      },
+      {
+        "code": "daytime",
+        "label": "11-15",
+        "mean": 5.7
+      },
+      {
+        "code": "late_afternoon",
+        "label": "16-18",
+        "mean": 3.5
+      },
+      {
+        "code": "evening",
+        "label": "19-23",
+        "mean": 0.7
+      }
+    ],
+    "tempDelta24hByBand": [
+      {
+        "code": "overnight",
+        "label": "00-05",
+        "mean": -2.6
+      },
+      {
+        "code": "morning_ramp",
+        "label": "06-10",
+        "mean": -4.8
+      },
+      {
+        "code": "daytime",
+        "label": "11-15",
+        "mean": -3.7
+      },
+      {
+        "code": "late_afternoon",
+        "label": "16-18",
+        "mean": -3.9
+      },
+      {
+        "code": "evening",
+        "label": "19-23",
+        "mean": -2.3
+      }
+    ]
+  },
+  "rows": [
+    {
+      "hour": 0,
+      "actualMw": 21510.0,
+      "modelForecastMw": 21178.0,
+      "tepcoForecastMw": 21620.0,
+      "modelErrorMw": -332.0,
+      "tepcoErrorMw": 110.0,
+      "modelAbsErrorMw": 332.0,
+      "tepcoAbsErrorMw": 110.0,
+      "calendarFeatures": {
+        "hour": 0,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 21350,
+        "lag_48h": 22610,
+        "lag_168h": 20830,
+        "lag_336h": 19930,
+        "lag_last_biz_hour": 22690,
+        "lag_last_nonhol_hour": 21350,
+        "recent_same_business_type_mean": 22081.25,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 1340,
+        "lag_24h_to_same_business_type_gap": 731.25,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 16.9,
+        "apparent_temp_c": 18,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -4.021,
+        "temp_anomaly_doy": 0.162,
+        "temp_delta_24h": -1.5,
+        "cooling_delta_24h": 0,
+        "temp_delta_168h": -1.4,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 1,
+      "actualMw": 20460.0,
+      "modelForecastMw": 20281.9,
+      "tepcoForecastMw": 20620.0,
+      "modelErrorMw": -178.1,
+      "tepcoErrorMw": 160.0,
+      "modelAbsErrorMw": 178.1,
+      "tepcoAbsErrorMw": 160.0,
+      "calendarFeatures": {
+        "hour": 1,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 20330,
+        "lag_48h": 21610,
+        "lag_168h": 20000,
+        "lag_336h": 19180,
+        "lag_last_biz_hour": 21630,
+        "lag_last_nonhol_hour": 20330,
+        "recent_same_business_type_mean": 21088.75,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 1300,
+        "lag_24h_to_same_business_type_gap": 758.75,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 16,
+        "apparent_temp_c": 16.7,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -4.921,
+        "temp_anomaly_doy": -0.336,
+        "temp_delta_24h": -1.8,
+        "cooling_delta_24h": 0,
+        "temp_delta_168h": -1.8,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 2,
+      "actualMw": 20270.0,
+      "modelForecastMw": 20296.0,
+      "tepcoForecastMw": 20510.0,
+      "modelErrorMw": 26.0,
+      "tepcoErrorMw": 240.0,
+      "modelAbsErrorMw": 26.0,
+      "tepcoAbsErrorMw": 240.0,
+      "calendarFeatures": {
+        "hour": 2,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 20230,
+        "lag_48h": 21450,
+        "lag_168h": 20110,
+        "lag_336h": 19190,
+        "lag_last_biz_hour": 21540,
+        "lag_last_nonhol_hour": 20230,
+        "recent_same_business_type_mean": 21015,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 1310,
+        "lag_24h_to_same_business_type_gap": 785,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 15.1,
+        "apparent_temp_c": 15.6,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -5.821,
+        "temp_anomaly_doy": -0.818,
+        "temp_delta_24h": -2.4,
+        "cooling_delta_24h": 0,
+        "temp_delta_168h": -2.0,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 3,
+      "actualMw": 20730.0,
+      "modelForecastMw": 20672.6,
+      "tepcoForecastMw": 20930.0,
+      "modelErrorMw": -57.4,
+      "tepcoErrorMw": 200.0,
+      "modelAbsErrorMw": 57.4,
+      "tepcoAbsErrorMw": 200.0,
+      "calendarFeatures": {
+        "hour": 3,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 20560,
+        "lag_48h": 21690,
+        "lag_168h": 20530,
+        "lag_336h": 19500,
+        "lag_last_biz_hour": 21920,
+        "lag_last_nonhol_hour": 20560,
+        "recent_same_business_type_mean": 21410,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 1360,
+        "lag_24h_to_same_business_type_gap": 850,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 14.6,
+        "apparent_temp_c": 15.1,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -6.321,
+        "temp_anomaly_doy": -0.966,
+        "temp_delta_24h": -3.6,
+        "cooling_delta_24h": 0,
+        "temp_delta_168h": -2.4,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 4,
+      "actualMw": 21050.0,
+      "modelForecastMw": 21032.9,
+      "tepcoForecastMw": 21270.0,
+      "modelErrorMw": -17.1,
+      "tepcoErrorMw": 220.0,
+      "modelAbsErrorMw": 17.1,
+      "tepcoAbsErrorMw": 220.0,
+      "calendarFeatures": {
+        "hour": 4,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 20620,
+        "lag_48h": 21750,
+        "lag_168h": 20890,
+        "lag_336h": 19770,
+        "lag_last_biz_hour": 22220,
+        "lag_last_nonhol_hour": 20620,
+        "recent_same_business_type_mean": 21713.75,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 1600,
+        "lag_24h_to_same_business_type_gap": 1093.75,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 14,
+        "apparent_temp_c": 14.6,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -6.921,
+        "temp_anomaly_doy": -1.237,
+        "temp_delta_24h": -3.4,
+        "cooling_delta_24h": 0,
+        "temp_delta_168h": -3.1,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 5,
+      "actualMw": 21030.0,
+      "modelForecastMw": 21018.5,
+      "tepcoForecastMw": 21730.0,
+      "modelErrorMw": -11.5,
+      "tepcoErrorMw": 700.0,
+      "modelAbsErrorMw": 11.5,
+      "tepcoAbsErrorMw": 700.0,
+      "calendarFeatures": {
+        "hour": 5,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 20080,
+        "lag_48h": 21080,
+        "lag_168h": 20930,
+        "lag_336h": 19850,
+        "lag_last_biz_hour": 22420,
+        "lag_last_nonhol_hour": 20080,
+        "recent_same_business_type_mean": 21737.5,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 2340,
+        "lag_24h_to_same_business_type_gap": 1657.5,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 13.8,
+        "apparent_temp_c": 14.2,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -7.121,
+        "temp_anomaly_doy": -1.241,
+        "temp_delta_24h": -3.2,
+        "cooling_delta_24h": 0,
+        "temp_delta_168h": -3.2,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 6,
+      "actualMw": 21960.0,
+      "modelForecastMw": 22023.1,
+      "tepcoForecastMw": 22620.0,
+      "modelErrorMw": 63.1,
+      "tepcoErrorMw": 660.0,
+      "modelAbsErrorMw": 63.1,
+      "tepcoAbsErrorMw": 660.0,
+      "calendarFeatures": {
+        "hour": 6,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 19520,
+        "lag_48h": 20810,
+        "lag_168h": 21740,
+        "lag_336h": 19850,
+        "lag_last_biz_hour": 23260,
+        "lag_last_nonhol_hour": 19520,
+        "recent_same_business_type_mean": 22546.25,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 3740,
+        "lag_24h_to_same_business_type_gap": 3026.25,
+        "lag_24h_gap_x_business_hour": 3026.25
+      },
+      "weatherFeatures": {
+        "temp_c": 14.5,
+        "apparent_temp_c": 15.3,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -6.421,
+        "temp_anomaly_doy": -1.288,
+        "temp_delta_24h": -4.1,
+        "cooling_delta_24h": 0,
+        "temp_delta_168h": -3,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 7,
+      "actualMw": 24240.0,
+      "modelForecastMw": 23769.3,
+      "tepcoForecastMw": 24600.0,
+      "modelErrorMw": -470.7,
+      "tepcoErrorMw": 360.0,
+      "modelAbsErrorMw": 470.7,
+      "tepcoAbsErrorMw": 360.0,
+      "calendarFeatures": {
+        "hour": 7,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 20500,
+        "lag_48h": 21910,
+        "lag_168h": 24010,
+        "lag_336h": 20660,
+        "lag_last_biz_hour": 25050,
+        "lag_last_nonhol_hour": 20500,
+        "recent_same_business_type_mean": 24625,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 4550,
+        "lag_24h_to_same_business_type_gap": 4125,
+        "lag_24h_gap_x_business_hour": 4125
+      },
+      "weatherFeatures": {
+        "temp_c": 16.1,
+        "apparent_temp_c": 17.3,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -4.821,
+        "temp_anomaly_doy": -0.958,
+        "temp_delta_24h": -4.8,
+        "cooling_delta_24h": 0,
+        "temp_delta_168h": -2.9,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 8,
+      "actualMw": 27970.0,
+      "modelForecastMw": 26582.2,
+      "tepcoForecastMw": 28670.0,
+      "modelErrorMw": -1387.8,
+      "tepcoErrorMw": 700.0,
+      "modelAbsErrorMw": 1387.8,
+      "tepcoAbsErrorMw": 700.0,
+      "calendarFeatures": {
+        "hour": 8,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 22060,
+        "lag_48h": 23640,
+        "lag_168h": 27610,
+        "lag_336h": 21540,
+        "lag_last_biz_hour": 27540,
+        "lag_last_nonhol_hour": 22060,
+        "recent_same_business_type_mean": 27823.75,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 5480,
+        "lag_24h_to_same_business_type_gap": 5763.75,
+        "lag_24h_gap_x_business_hour": 5763.75
+      },
+      "weatherFeatures": {
+        "temp_c": 18.4,
+        "apparent_temp_c": 20.1,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": -2.521,
+        "temp_anomaly_doy": 0.067,
+        "temp_delta_24h": -4.8,
+        "cooling_delta_24h": -1.2,
+        "temp_delta_168h": -2.4,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 9,
+      "actualMw": 31440.0,
+      "modelForecastMw": 29994.3,
+      "tepcoForecastMw": 31730.0,
+      "modelErrorMw": -1445.7,
+      "tepcoErrorMw": 290.0,
+      "modelAbsErrorMw": 1445.7,
+      "tepcoAbsErrorMw": 290.0,
+      "calendarFeatures": {
+        "hour": 9,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 24080,
+        "lag_48h": 25480,
+        "lag_168h": 30630,
+        "lag_336h": 22540,
+        "lag_last_biz_hour": 29460,
+        "lag_last_nonhol_hour": 24080,
+        "recent_same_business_type_mean": 30456.25,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 5380,
+        "lag_24h_to_same_business_type_gap": 6376.25,
+        "lag_24h_gap_x_business_hour": 6376.25
+      },
+      "weatherFeatures": {
+        "temp_c": 20.7,
+        "apparent_temp_c": 22.9,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0.9,
+        "temp_anomaly_7d": -0.221,
+        "temp_anomaly_doy": 1.101,
+        "temp_delta_24h": -5.2,
+        "cooling_delta_24h": -3.9,
+        "temp_delta_168h": -2,
+        "cooling_delta_168h": -0.7
+      }
+    },
+    {
+      "hour": 10,
+      "actualMw": 33070.0,
+      "modelForecastMw": 32056.0,
+      "tepcoForecastMw": 33050.0,
+      "modelErrorMw": -1014.0,
+      "tepcoErrorMw": -20.0,
+      "modelAbsErrorMw": 1014.0,
+      "tepcoAbsErrorMw": 20.0,
+      "calendarFeatures": {
+        "hour": 10,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 25410,
+        "lag_48h": 26980,
+        "lag_168h": 31670,
+        "lag_336h": 23700,
+        "lag_last_biz_hour": 29550,
+        "lag_last_nonhol_hour": 25410,
+        "recent_same_business_type_mean": 31237.5,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 4140,
+        "lag_24h_to_same_business_type_gap": 5827.5,
+        "lag_24h_gap_x_business_hour": 5827.5
+      },
+      "weatherFeatures": {
+        "temp_c": 22.6,
+        "apparent_temp_c": 25.7,
+        "cooling_degree": 0.6,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 3.7,
+        "temp_anomaly_7d": 1.679,
+        "temp_anomaly_doy": 1.777,
+        "temp_delta_24h": -5.2,
+        "cooling_delta_24h": -5.2,
+        "temp_delta_168h": -1,
+        "cooling_delta_168h": -1
+      }
+    },
+    {
+      "hour": 11,
+      "actualMw": 33920.0,
+      "modelForecastMw": 34263.9,
+      "tepcoForecastMw": 34510.0,
+      "modelErrorMw": 343.9,
+      "tepcoErrorMw": 590.0,
+      "modelAbsErrorMw": 343.9,
+      "tepcoAbsErrorMw": 590.0,
+      "calendarFeatures": {
+        "hour": 11,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 26170,
+        "lag_48h": 27590,
+        "lag_168h": 32050,
+        "lag_336h": 24840,
+        "lag_last_biz_hour": 30370,
+        "lag_last_nonhol_hour": 26170,
+        "recent_same_business_type_mean": 31696.25,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 4200,
+        "lag_24h_to_same_business_type_gap": 5526.25,
+        "lag_24h_gap_x_business_hour": 5526.25
+      },
+      "weatherFeatures": {
+        "temp_c": 25,
+        "apparent_temp_c": 28.8,
+        "cooling_degree": 3,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 6.8,
+        "temp_anomaly_7d": 4.079,
+        "temp_anomaly_doy": 3.355,
+        "temp_delta_24h": -4.2,
+        "cooling_delta_24h": -4.2,
+        "temp_delta_168h": 0.9,
+        "cooling_delta_168h": 0.9
+      }
+    },
+    {
+      "hour": 12,
+      "actualMw": 33210.0,
+      "modelForecastMw": 33993.3,
+      "tepcoForecastMw": 33510.0,
+      "modelErrorMw": 783.3,
+      "tepcoErrorMw": 300.0,
+      "modelAbsErrorMw": 783.3,
+      "tepcoAbsErrorMw": 300.0,
+      "calendarFeatures": {
+        "hour": 12,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 26510,
+        "lag_48h": 27320,
+        "lag_168h": 31040,
+        "lag_336h": 24910,
+        "lag_last_biz_hour": 30210,
+        "lag_last_nonhol_hour": 26510,
+        "recent_same_business_type_mean": 30791.25,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 3700,
+        "lag_24h_to_same_business_type_gap": 4281.25,
+        "lag_24h_gap_x_business_hour": 4281.25
+      },
+      "weatherFeatures": {
+        "temp_c": 26.8,
+        "apparent_temp_c": 30.3,
+        "cooling_degree": 4.8,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 8.3,
+        "temp_anomaly_7d": 5.879,
+        "temp_anomaly_doy": 4.484,
+        "temp_delta_24h": -3.3,
+        "cooling_delta_24h": -3.3,
+        "temp_delta_168h": 2,
+        "cooling_delta_168h": 2
+      }
+    },
+    {
+      "hour": 13,
+      "actualMw": 34380.0,
+      "modelForecastMw": 34971.4,
+      "tepcoForecastMw": 34960.0,
+      "modelErrorMw": 591.4,
+      "tepcoErrorMw": 580.0,
+      "modelAbsErrorMw": 591.4,
+      "tepcoAbsErrorMw": 580.0,
+      "calendarFeatures": {
+        "hour": 13,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 26440,
+        "lag_48h": 27080,
+        "lag_168h": 31790,
+        "lag_336h": 25120,
+        "lag_last_biz_hour": 31150,
+        "lag_last_nonhol_hour": 26440,
+        "recent_same_business_type_mean": 31392.5,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 4710,
+        "lag_24h_to_same_business_type_gap": 4952.5,
+        "lag_24h_gap_x_business_hour": 4952.5
+      },
+      "weatherFeatures": {
+        "temp_c": 27.4,
+        "apparent_temp_c": 30.5,
+        "cooling_degree": 5.4,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 8.5,
+        "temp_anomaly_7d": 6.479,
+        "temp_anomaly_doy": 4.838,
+        "temp_delta_24h": -3.2,
+        "cooling_delta_24h": -3.2,
+        "temp_delta_168h": 2.3,
+        "cooling_delta_168h": 2.3
+      }
+    },
+    {
+      "hour": 14,
+      "actualMw": 34500.0,
+      "modelForecastMw": 34266.7,
+      "tepcoForecastMw": 35420.0,
+      "modelErrorMw": -233.3,
+      "tepcoErrorMw": 920.0,
+      "modelAbsErrorMw": 233.3,
+      "tepcoAbsErrorMw": 920.0,
+      "calendarFeatures": {
+        "hour": 14,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 26450,
+        "lag_48h": 26820,
+        "lag_168h": 31370,
+        "lag_336h": 24870,
+        "lag_last_biz_hour": 30850,
+        "lag_last_nonhol_hour": 26450,
+        "recent_same_business_type_mean": 31098.75,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 4400,
+        "lag_24h_to_same_business_type_gap": 4648.75,
+        "lag_24h_gap_x_business_hour": 4648.75
+      },
+      "weatherFeatures": {
+        "temp_c": 27.2,
+        "apparent_temp_c": 29.7,
+        "cooling_degree": 5.2,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 7.7,
+        "temp_anomaly_7d": 6.279,
+        "temp_anomaly_doy": 4.612,
+        "temp_delta_24h": -3.4,
+        "cooling_delta_24h": -3.4,
+        "temp_delta_168h": 2.4,
+        "cooling_delta_168h": 2.4
+      }
+    },
+    {
+      "hour": 15,
+      "actualMw": 34240.0,
+      "modelForecastMw": 34315.7,
+      "tepcoForecastMw": 34820.0,
+      "modelErrorMw": 75.7,
+      "tepcoErrorMw": 580.0,
+      "modelAbsErrorMw": 75.7,
+      "tepcoAbsErrorMw": 580.0,
+      "calendarFeatures": {
+        "hour": 15,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 26650,
+        "lag_48h": 26700,
+        "lag_168h": 30820,
+        "lag_336h": 24000,
+        "lag_last_biz_hour": 30580,
+        "lag_last_nonhol_hour": 26650,
+        "recent_same_business_type_mean": 30715,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 3930,
+        "lag_24h_to_same_business_type_gap": 4065,
+        "lag_24h_gap_x_business_hour": 4065
+      },
+      "weatherFeatures": {
+        "temp_c": 26.9,
+        "apparent_temp_c": 28.4,
+        "cooling_degree": 4.9,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 6.4,
+        "temp_anomaly_7d": 5.979,
+        "temp_anomaly_doy": 4.485,
+        "temp_delta_24h": -4.2,
+        "cooling_delta_24h": -4.2,
+        "temp_delta_168h": 2.7,
+        "cooling_delta_168h": 2.7
+      }
+    },
+    {
+      "hour": 16,
+      "actualMw": 34110.0,
+      "modelForecastMw": 32716.6,
+      "tepcoForecastMw": 34720.0,
+      "modelErrorMw": -1393.4,
+      "tepcoErrorMw": 610.0,
+      "modelAbsErrorMw": 1393.4,
+      "tepcoAbsErrorMw": 610.0,
+      "calendarFeatures": {
+        "hour": 16,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 27110,
+        "lag_48h": 26800,
+        "lag_168h": 30720,
+        "lag_336h": 24230,
+        "lag_last_biz_hour": 30500,
+        "lag_last_nonhol_hour": 27110,
+        "recent_same_business_type_mean": 30691.25,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 3390,
+        "lag_24h_to_same_business_type_gap": 3581.25,
+        "lag_24h_gap_x_business_hour": 3581.25
+      },
+      "weatherFeatures": {
+        "temp_c": 25.9,
+        "apparent_temp_c": 26.8,
+        "cooling_degree": 3.9,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 4.8,
+        "temp_anomaly_7d": 4.979,
+        "temp_anomaly_doy": 4.107,
+        "temp_delta_24h": -4.2,
+        "cooling_delta_24h": -4.2,
+        "temp_delta_168h": 2.5,
+        "cooling_delta_168h": 2.5
+      }
+    },
+    {
+      "hour": 17,
+      "actualMw": 33110.0,
+      "modelForecastMw": 32201.3,
+      "tepcoForecastMw": 33610.0,
+      "modelErrorMw": -908.7,
+      "tepcoErrorMw": 500.0,
+      "modelAbsErrorMw": 908.7,
+      "tepcoAbsErrorMw": 500.0,
+      "calendarFeatures": {
+        "hour": 17,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 27490,
+        "lag_48h": 26840,
+        "lag_168h": 30210,
+        "lag_336h": 24640,
+        "lag_last_biz_hour": 30060,
+        "lag_last_nonhol_hour": 27490,
+        "recent_same_business_type_mean": 30078.75,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 2570,
+        "lag_24h_to_same_business_type_gap": 2588.75,
+        "lag_24h_gap_x_business_hour": 2588.75
+      },
+      "weatherFeatures": {
+        "temp_c": 24.4,
+        "apparent_temp_c": 25.2,
+        "cooling_degree": 2.4,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 3.2,
+        "temp_anomaly_7d": 3.479,
+        "temp_anomaly_doy": 3.515,
+        "temp_delta_24h": -4.4,
+        "cooling_delta_24h": -4.4,
+        "temp_delta_168h": 2,
+        "cooling_delta_168h": 2
+      }
+    },
+    {
+      "hour": 18,
+      "actualMw": 32330.0,
+      "modelForecastMw": 32023.5,
+      "tepcoForecastMw": 32770.0,
+      "modelErrorMw": -306.5,
+      "tepcoErrorMw": 440.0,
+      "modelAbsErrorMw": 306.5,
+      "tepcoAbsErrorMw": 440.0,
+      "calendarFeatures": {
+        "hour": 18,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 28030,
+        "lag_48h": 27080,
+        "lag_168h": 30080,
+        "lag_336h": 25660,
+        "lag_last_biz_hour": 30000,
+        "lag_last_nonhol_hour": 28030,
+        "recent_same_business_type_mean": 30105,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 1,
+        "lag_24h_to_last_biz_gap": 1970,
+        "lag_24h_to_same_business_type_gap": 2075,
+        "lag_24h_gap_x_business_hour": 2075
+      },
+      "weatherFeatures": {
+        "temp_c": 23,
+        "apparent_temp_c": 23,
+        "cooling_degree": 1,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 1,
+        "temp_anomaly_7d": 2.079,
+        "temp_anomaly_doy": 3.206,
+        "temp_delta_24h": -3.1,
+        "cooling_delta_24h": -3.1,
+        "temp_delta_168h": 1.7,
+        "cooling_delta_168h": 1
+      }
+    },
+    {
+      "hour": 19,
+      "actualMw": 31480.0,
+      "modelForecastMw": 30545.3,
+      "tepcoForecastMw": 32240.0,
+      "modelErrorMw": -934.7,
+      "tepcoErrorMw": 760.0,
+      "modelAbsErrorMw": 934.7,
+      "tepcoAbsErrorMw": 760.0,
+      "calendarFeatures": {
+        "hour": 19,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 28090,
+        "lag_48h": 27090,
+        "lag_168h": 29510,
+        "lag_336h": 25570,
+        "lag_last_biz_hour": 29470,
+        "lag_last_nonhol_hour": 28090,
+        "recent_same_business_type_mean": 29493.75,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 1380,
+        "lag_24h_to_same_business_type_gap": 1403.75,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 22.3,
+        "apparent_temp_c": 22.3,
+        "cooling_degree": 0.3,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0.3,
+        "temp_anomaly_7d": 1.379,
+        "temp_anomaly_doy": 3.587,
+        "temp_delta_24h": -2.5,
+        "cooling_delta_24h": -2.5,
+        "temp_delta_168h": 1.9,
+        "cooling_delta_168h": 0.3
+      }
+    },
+    {
+      "hour": 20,
+      "actualMw": 29810.0,
+      "modelForecastMw": 29860.8,
+      "tepcoForecastMw": 30420.0,
+      "modelErrorMw": 50.8,
+      "tepcoErrorMw": 610.0,
+      "modelAbsErrorMw": 50.8,
+      "tepcoAbsErrorMw": 610.0,
+      "calendarFeatures": {
+        "hour": 20,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 27020,
+        "lag_48h": 26140,
+        "lag_168h": 28170,
+        "lag_336h": 24540,
+        "lag_last_biz_hour": 28130,
+        "lag_last_nonhol_hour": 27020,
+        "recent_same_business_type_mean": 28172.5,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 1110,
+        "lag_24h_to_same_business_type_gap": 1152.5,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 21.7,
+        "apparent_temp_c": 21.7,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": 0.779,
+        "temp_anomaly_doy": 3.543,
+        "temp_delta_24h": -2.1,
+        "cooling_delta_24h": -1.8,
+        "temp_delta_168h": 1.8,
+        "cooling_delta_168h": 0
+      }
+    },
+    {
+      "hour": 21,
+      "actualMw": 28020.0,
+      "modelForecastMw": 28066.0,
+      "tepcoForecastMw": 28330.0,
+      "modelErrorMw": 46.0,
+      "tepcoErrorMw": 310.0,
+      "modelAbsErrorMw": 46.0,
+      "tepcoAbsErrorMw": 310.0,
+      "calendarFeatures": {
+        "hour": 21,
+        "dayofweek": 0,
+        "month": 5,
+        "is_holiday": 0,
+        "is_weekend": 0,
+        "is_non_business_day": 0,
+        "consec_holiday_len": 2,
+        "days_since_holiday_end": 1
+      },
+      "lagFeatures": {
+        "lag_24h": 25540,
+        "lag_48h": 24930,
+        "lag_168h": 26700,
+        "lag_336h": 23330,
+        "lag_last_biz_hour": 26650,
+        "lag_last_nonhol_hour": 25540,
+        "recent_same_business_type_mean": 26680,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h_mismatch_x_business_hour": 0,
+        "lag_24h_to_last_biz_gap": 1110,
+        "lag_24h_to_same_business_type_gap": 1140,
+        "lag_24h_gap_x_business_hour": 0
+      },
+      "weatherFeatures": {
+        "temp_c": 21,
+        "apparent_temp_c": 21,
+        "cooling_degree": 0,
+        "heating_degree": 0,
+        "apparent_cooling_degree": 0,
+        "temp_anomaly_7d": 0.079,
+        "temp_anomaly_doy": 3.268,
+        "temp_delta_24h": -2.2,
+        "cooling_delta_24h": -1.2,
+        "temp_delta_168h": 1.4,
+        "cooling_delta_168h": 0
+      }
+    }
+  ]
+}
