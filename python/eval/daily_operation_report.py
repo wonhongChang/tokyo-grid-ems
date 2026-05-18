@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 TIMEZONE = "Asia/Tokyo"
 
@@ -15,6 +16,46 @@ _TIME_BANDS = [
     ("evening", "19-23", 19, 23),
 ]
 
+_INTERNAL_CALENDAR_FEATURES = [
+    "hour",
+    "dayofweek",
+    "month",
+    "is_holiday",
+    "is_weekend",
+    "is_non_business_day",
+    "consec_holiday_len",
+    "days_since_holiday_end",
+]
+
+_INTERNAL_LAG_FEATURES = [
+    "lag_24h",
+    "lag_48h",
+    "lag_168h",
+    "lag_336h",
+    "lag_last_biz_hour",
+    "lag_last_nonhol_hour",
+    "recent_same_business_type_mean",
+    "lag_24h_business_type_mismatch",
+    "lag_24h_mismatch_x_business_hour",
+    "lag_24h_to_last_biz_gap",
+    "lag_24h_to_same_business_type_gap",
+    "lag_24h_gap_x_business_hour",
+]
+
+_INTERNAL_WEATHER_FEATURES = [
+    "temp_c",
+    "apparent_temp_c",
+    "cooling_degree",
+    "heating_degree",
+    "apparent_cooling_degree",
+    "temp_anomaly_7d",
+    "temp_anomaly_doy",
+    "temp_delta_24h",
+    "cooling_delta_24h",
+    "temp_delta_168h",
+    "cooling_delta_168h",
+]
+
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -24,6 +65,20 @@ def _mean(values: list[float]) -> float | None:
     if not values:
         return None
     return round(sum(values) / len(values), 1)
+
+
+def _clean_number(value: Any, digits: int = 3) -> int | float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number:
+        return None
+    if number.is_integer():
+        return int(number)
+    return round(number, digits)
 
 
 def _model_family(model_name: str) -> str:
@@ -376,3 +431,188 @@ def build_daily_operation_reports(
         "latest": reports[-1] if reports else None,
         "reports": [_index_summary(report) for report in reports],
     }, reports
+
+
+def _feature_rows_by_hour(
+    cache,
+    target_date: date,
+    config: dict | None,
+) -> tuple[dict[int, dict], str | None]:
+    try:
+        from python.forecast.feature_builder import build_inference_features
+        feature_cache = cache.copy()
+        if "ts" in feature_cache.columns and "actual_mw" in feature_cache.columns:
+            target_mask = feature_cache["ts"].dt.date == target_date
+            feature_cache.loc[target_mask, "actual_mw"] = float("nan")
+        features = build_inference_features(feature_cache, target_date, config)
+    except Exception as e:
+        return {}, str(e)
+
+    return {
+        int(row["hour"]): row.to_dict()
+        for _, row in features.iterrows()
+    }, None
+
+
+def _pick_feature_group(feature_row: dict | None, columns: list[str]) -> dict:
+    if not feature_row:
+        return {}
+    return {
+        column: _clean_number(feature_row.get(column))
+        for column in columns
+        if column in feature_row
+    }
+
+
+def _internal_diagnostic_rows(rows: list[dict], feature_rows: dict[int, dict]) -> list[dict]:
+    result = []
+    for row in rows:
+        feature_row = feature_rows.get(row["hour"])
+        result.append({
+            **row,
+            "calendarFeatures": _pick_feature_group(feature_row, _INTERNAL_CALENDAR_FEATURES),
+            "lagFeatures": _pick_feature_group(feature_row, _INTERNAL_LAG_FEATURES),
+            "weatherFeatures": _pick_feature_group(feature_row, _INTERNAL_WEATHER_FEATURES),
+        })
+    return result
+
+
+def _feature_band_means(rows: list[dict], group_name: str, feature_name: str) -> list[dict]:
+    result = []
+    for code, label, start_hour, end_hour in _TIME_BANDS:
+        values = [
+            row.get(group_name, {}).get(feature_name)
+            for row in rows
+            if start_hour <= row["hour"] <= end_hour
+        ]
+        numeric = [float(value) for value in values if value is not None]
+        if not numeric:
+            continue
+        result.append({
+            "code": code,
+            "label": label,
+            "mean": _mean(numeric),
+        })
+    return result
+
+
+def build_internal_daily_diagnostic(
+    public_dir: Path,
+    date_iso: str,
+    generated_at: str,
+    cache,
+    config: dict | None = None,
+    min_hours: int = 20,
+) -> dict:
+    rows, model_name = _comparable_rows_for_date(public_dir, date_iso)
+    model_family = _model_family(model_name)
+    target_date = date.fromisoformat(date_iso)
+    feature_rows, feature_error = _feature_rows_by_hour(cache, target_date, config)
+    diagnostic_rows = _internal_diagnostic_rows(rows, feature_rows)
+    public_report = build_daily_operation_report(
+        public_dir,
+        date_iso,
+        generated_at,
+        min_hours=min_hours,
+    )
+
+    return {
+        "schemaVersion": "1.0.0",
+        "timezone": TIMEZONE,
+        "generatedAt": generated_at,
+        "date": date_iso,
+        "availability": "ok" if len(rows) >= min_hours else "insufficient",
+        "visibility": {
+            "intendedUse": "internal_model_diagnostics",
+            "containsInternalFeatureNames": True,
+            "uiVisible": False,
+            "storedWithOperationalOutputs": True,
+        },
+        "model": {"name": model_name, "family": model_family},
+        "operationReport": public_report,
+        "featureBuildError": feature_error,
+        "diagnosticSummary": {
+            "lag24ToSameBusinessTypeGapByBand": _feature_band_means(
+                diagnostic_rows,
+                "lagFeatures",
+                "lag_24h_to_same_business_type_gap",
+            ),
+            "tempAnomaly7dByBand": _feature_band_means(
+                diagnostic_rows,
+                "weatherFeatures",
+                "temp_anomaly_7d",
+            ),
+            "tempDelta24hByBand": _feature_band_means(
+                diagnostic_rows,
+                "weatherFeatures",
+                "temp_delta_24h",
+            ),
+        },
+        "rows": diagnostic_rows,
+    }
+
+
+def build_internal_daily_diagnostics(
+    public_dir: Path,
+    generated_at: str,
+    cache,
+    config: dict | None = None,
+    max_days: int = 14,
+    min_hours: int = 20,
+) -> tuple[dict, list[dict]]:
+    actual_dir = public_dir / "actual"
+    if not actual_dir.exists():
+        dates: list[str] = []
+    else:
+        dates = sorted(path.stem for path in actual_dir.glob("*.json"))
+
+    cutoff_date = _report_cutoff_date(generated_at)
+    if cutoff_date is not None:
+        dates = [
+            date_iso for date_iso in dates
+            if date.fromisoformat(date_iso) < cutoff_date
+        ]
+
+    diagnostics = [
+        build_internal_daily_diagnostic(
+            public_dir,
+            date_iso,
+            generated_at,
+            cache,
+            config=config,
+            min_hours=min_hours,
+        )
+        for date_iso in dates[-max_days:]
+    ]
+    diagnostics = [
+        diagnostic for diagnostic in diagnostics
+        if diagnostic["availability"] == "ok"
+    ]
+
+    return {
+        "schemaVersion": "1.0.0",
+        "timezone": TIMEZONE,
+        "generatedAt": generated_at,
+        "availability": "ok" if diagnostics else "not_yet_available",
+        "visibility": {
+            "intendedUse": "internal_model_diagnostics",
+            "containsInternalFeatureNames": True,
+            "uiVisible": False,
+            "storedWithOperationalOutputs": True,
+        },
+        "latest": {
+            "date": diagnostics[-1]["date"],
+            "model": diagnostics[-1]["model"],
+            "operationSummary": diagnostics[-1]["operationReport"].get("summary"),
+        } if diagnostics else None,
+        "reports": [
+            {
+                "date": diagnostic["date"],
+                "model": diagnostic["model"],
+                "availability": diagnostic["availability"],
+                "operationSummary": diagnostic["operationReport"].get("summary"),
+                "featureBuildError": diagnostic.get("featureBuildError"),
+            }
+            for diagnostic in diagnostics
+        ],
+    }, diagnostics

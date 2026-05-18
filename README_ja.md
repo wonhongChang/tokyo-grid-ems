@@ -39,7 +39,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 
 - **ETL**: TEPCO月次ZIPを毎日ダウンロード → 確定済み履歴データをパース → JSON生成 → GitHub Pages へデプロイ
 - **Intraday**: 2時間ごとに当日のTEPCO intraday CSVを取得・更新
-- **検証**: モデルバックテストとTEPCO予測比較を `metrics/` JSONとして生成
+- **検証**: 前日運用レポート、TEPCO予測比較、LightGBMバックテスト、UIには表示しない内部診断JSONを生成
 
 ---
 
@@ -139,6 +139,8 @@ ETLが `web/public/` 以下に生成するファイルです。
 | `actual/YYYY-MM-DD.json` | 時間別実績値（当日リアルタイム含む） |
 | `metrics/forecast_accuracy.json` | TEPCO予測に対する運用精度 |
 | `metrics/model_backtest.json` | ベースラインに対するLightGBMバックテスト |
+| `reports/daily/*.json` | 検証タブに表示する前日運用サマリー |
+| `reports/internal/daily-diagnostics/*.json` | 運用出力と一緒に保存する内部向けlag/気温特徴量診断（UIからはリンクしない） |
 
 > タイムスタンプはすべて `Asia/Tokyo (+09:00)` 基準のISO 8601形式で出力します。
 

@@ -3,11 +3,18 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pandas as pd
 
 from python.eval.daily_operation_report import (
     build_daily_operation_report,
     build_daily_operation_reports,
+    build_internal_daily_diagnostic,
+    build_internal_daily_diagnostics,
 )
+
+JST = ZoneInfo("Asia/Tokyo")
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -38,6 +45,31 @@ def _write_day(tmp_path: Path, date_iso: str, model_values: list[float], actual_
                 "forecastMw": model_values[hour],
             }
             for hour in range(24)
+        ],
+    })
+
+
+def _make_feature_cache(start: str = "2026-04-01", days: int = 49) -> pd.DataFrame:
+    timestamps = pd.date_range(pd.Timestamp(start, tz=JST), periods=days * 24, freq="h")
+    return pd.DataFrame({
+        "ts": timestamps,
+        "actual_mw": [
+            25_000.0 + ts.hour * 100 + (2_000.0 if ts.weekday() < 5 else -2_000.0)
+            for ts in timestamps
+        ],
+        "forecast_mw": [
+            25_000.0 + ts.hour * 100
+            for ts in timestamps
+        ],
+        "usage_pct": [80.0] * len(timestamps),
+        "supply_mw": [40_000.0] * len(timestamps),
+        "temp_c": [
+            18.0 + ts.hour * 0.3
+            for ts in timestamps
+        ],
+        "apparent_temp_c": [
+            18.5 + ts.hour * 0.3
+            for ts in timestamps
         ],
     })
 
@@ -130,3 +162,47 @@ def test_daily_operation_report_index_excludes_generation_day(tmp_path):
 
     assert index["latest"]["date"] == "2026-05-18"
     assert [report["date"] for report in reports] == ["2026-05-18"]
+
+
+def test_internal_daily_diagnostic_includes_lag_and_weather_features(tmp_path):
+    date_iso = "2026-05-18"
+    actual_values = [27_000.0 + hour * 100 for hour in range(24)]
+    model_values = [value - 500.0 for value in actual_values]
+    _write_day(tmp_path, date_iso, model_values, actual_values)
+
+    diagnostic = build_internal_daily_diagnostic(
+        tmp_path,
+        date_iso,
+        generated_at="2026-05-19T08:20:00+09:00",
+        cache=_make_feature_cache(),
+        config={},
+    )
+
+    assert diagnostic["availability"] == "ok"
+    assert diagnostic["visibility"]["containsInternalFeatureNames"] is True
+    assert diagnostic["visibility"]["uiVisible"] is False
+    assert diagnostic["visibility"]["storedWithOperationalOutputs"] is True
+    assert diagnostic["featureBuildError"] is None
+    first_row = diagnostic["rows"][0]
+    assert "lag_24h" in first_row["lagFeatures"]
+    assert "lag_24h_to_same_business_type_gap" in first_row["lagFeatures"]
+    assert "temp_delta_24h" in first_row["weatherFeatures"]
+
+
+def test_internal_daily_diagnostics_index_points_to_latest_report(tmp_path):
+    actual_values = [20_000.0 + hour * 100 for hour in range(24)]
+    _write_day(tmp_path, "2026-05-17", actual_values, actual_values)
+    _write_day(tmp_path, "2026-05-18", actual_values, actual_values)
+
+    index, diagnostics = build_internal_daily_diagnostics(
+        tmp_path,
+        generated_at="2026-05-19T08:20:00+09:00",
+        cache=_make_feature_cache(),
+        config={},
+    )
+
+    assert index["availability"] == "ok"
+    assert index["visibility"]["uiVisible"] is False
+    assert index["visibility"]["storedWithOperationalOutputs"] is True
+    assert index["latest"]["date"] == "2026-05-18"
+    assert [diagnostic["date"] for diagnostic in diagnostics] == ["2026-05-17", "2026-05-18"]

@@ -1117,6 +1117,32 @@ def _write_daily_operation_reports(out_dir: Path) -> None:
         print(f"[WARN] Daily operation report failed: {e}", file=sys.stderr)
 
 
+def _write_internal_daily_diagnostics(
+    out_dir: Path,
+    cache: pd.DataFrame,
+    config: dict,
+    diagnostics_dir: Path,
+) -> None:
+    try:
+        from python.eval.daily_operation_report import build_internal_daily_diagnostics
+        index, diagnostics = build_internal_daily_diagnostics(
+            out_dir,
+            generated_at=ts_now(),
+            cache=cache,
+            config=config,
+        )
+        write_json(diagnostics_dir / "index.json", index)
+        for diagnostic in diagnostics:
+            write_json(diagnostics_dir / f"{diagnostic['date']}.json", diagnostic)
+        latest = index.get("latest") or {}
+        print(
+            "[INTERNAL] Daily diagnostics updated "
+            f"({len(diagnostics)} reports, latest={latest.get('date')}) -> {diagnostics_dir}"
+        )
+    except Exception as e:
+        print(f"[WARN] Internal daily diagnostics failed: {e}", file=sys.stderr)
+
+
 # ---------------------------------------------------------------------------
 # Status-only update (used by intraday workflow)
 # ---------------------------------------------------------------------------
@@ -1177,6 +1203,7 @@ def _run_status_only(
     out_dir: Path,
     config: dict,
     preserve_observed_forecast_hours: bool = True,
+    internal_diagnostics_out: Path | None = None,
 ) -> None:
     from python.etl.fetch_weather import enrich_cache_with_weather
     from python.etl.fetch_today import fetch_csv, parse_hourly, write_actual_json
@@ -1265,6 +1292,9 @@ def _run_status_only(
         display_cache=display_with_actuals,
     ))
     _write_forecast_accuracy_report(out_dir)
+    _write_daily_operation_reports(out_dir)
+    if internal_diagnostics_out is not None:
+        _write_internal_daily_diagnostics(out_dir, extended_with_actuals, config, internal_diagnostics_out)
     print(f"[STATUS] Updated: model={today_model} tomorrow={'enabled' if tomorrow_fc else 'disabled'}")
 
 
@@ -1283,18 +1313,26 @@ def main() -> None:
                     help="Skip CSV processing; only update status.json with today/tomorrow forecasts")
     ap.add_argument("--refresh-today-forecast", action="store_true",
                     help="Rebuild today's already-observed forecast hours instead of preserving published values")
+    ap.add_argument("--internal-diagnostics-out", default=None,
+                    help="Write internal lag/weather diagnostics JSON. Defaults under web/public/reports/internal/")
     args = ap.parse_args()
 
     input_dir = Path(args.input)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     config = load_config(Path(args.config))
+    internal_diagnostics_out = (
+        Path(args.internal_diagnostics_out)
+        if args.internal_diagnostics_out
+        else out_dir / "reports" / "internal" / "daily-diagnostics"
+    )
 
     if args.status_only:
         _run_status_only(
             out_dir,
             config,
             preserve_observed_forecast_hours=not args.refresh_today_forecast,
+            internal_diagnostics_out=internal_diagnostics_out,
         )
         return
 
@@ -1471,6 +1509,8 @@ def main() -> None:
     _write_forecast_accuracy_report(out_dir)
     _write_model_backtest_report(out_dir, hourly_cache)
     _write_daily_operation_reports(out_dir)
+    if internal_diagnostics_out is not None:
+        _write_internal_daily_diagnostics(out_dir, hourly_cache, config, internal_diagnostics_out)
 
     coverage_to = max(ok_set) if ok_set else None
     print(
