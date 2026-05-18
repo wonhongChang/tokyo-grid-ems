@@ -753,7 +753,7 @@ def test_freeze_observed_forecast_hours_does_not_freeze_tepco_fallback(tmp_path)
     assert result[0].forecast_mw == pytest.approx(29_000.0)
 
 
-def test_intraday_correction_uses_frozen_published_forecasts_for_observed_hours(tmp_path):
+def test_intraday_correction_uses_current_model_before_freezing_observed_hours(tmp_path):
     target = date(2024, 1, 2)
     forecast_dir = tmp_path / "forecast"
     actual_dir = tmp_path / "actual"
@@ -795,18 +795,11 @@ def test_intraday_correction_uses_frozen_published_forecasts_for_observed_hours(
         _forecast_point_at(target, 12, 32_000.0),
         _forecast_point_at(target, 13, 34_000.0),
     ]
-    frozen_forecasts, frozen_model = _freeze_observed_forecast_hours(
+    corrected, corrected_model = _apply_intraday_residual_correction(
         tmp_path,
         target,
         raw_forecasts,
         "lgbm_quantile_q50",
-    )
-
-    corrected, corrected_model = _apply_intraday_residual_correction(
-        tmp_path,
-        target,
-        frozen_forecasts,
-        frozen_model,
         {
             "intraday_correction": {
                 "lookback_hours": 3,
@@ -816,10 +809,16 @@ def test_intraday_correction_uses_frozen_published_forecasts_for_observed_hours(
             },
         },
     )
+    frozen_forecasts, frozen_model = _freeze_observed_forecast_hours(
+        tmp_path,
+        target,
+        corrected,
+        corrected_model,
+    )
 
-    assert corrected_model == "lgbm_quantile_q50_intraday_residual"
-    assert corrected[0].forecast_mw == pytest.approx(35_000.0)
-    assert corrected[3].forecast_mw == pytest.approx(33_000.0)
+    assert frozen_model == "lgbm_quantile_q50_intraday_residual"
+    assert frozen_forecasts[0].forecast_mw == pytest.approx(35_000.0)
+    assert frozen_forecasts[3].forecast_mw == pytest.approx(34_500.0)
 
 
 # ── compute_missing_days ──────────────────────────────────────────────────────
