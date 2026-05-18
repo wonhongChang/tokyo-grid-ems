@@ -1204,11 +1204,11 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     today_fc, today_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, today, n_weeks, min_samples, config, adjuster, guard
     )
-    today_fc, today_model = _apply_intraday_residual_correction(
-        out_dir, today, today_fc, today_model, config
-    )
     today_fc, today_model = _freeze_observed_forecast_hours(
         out_dir, today, today_fc, today_model
+    )
+    today_fc, today_model = _apply_intraday_residual_correction(
+        out_dir, today, today_fc, today_model, config
     )
 
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
@@ -1406,11 +1406,11 @@ def main() -> None:
     today_fc, today_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, today, n_weeks, min_samples, config, adjuster, guard
     )
-    today_fc, today_model = _apply_intraday_residual_correction(
-        out_dir, today, today_fc, today_model, config
-    )
     today_fc, today_model = _freeze_observed_forecast_hours(
         out_dir, today, today_fc, today_model
+    )
+    today_fc, today_model = _apply_intraday_residual_correction(
+        out_dir, today, today_fc, today_model, config
     )
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard

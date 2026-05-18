@@ -12,6 +12,7 @@ import pytest
 from python.forecast.baseline import HourlyForecast
 from python.etl.run_batch import (
     _apply_actual_json_latest_fallback,
+    _apply_intraday_residual_correction,
     _apply_weather_forecast_bias_correction,
     _extend_cache_with_forecast_weather,
     _freeze_observed_forecast_hours,
@@ -750,6 +751,75 @@ def test_freeze_observed_forecast_hours_does_not_freeze_tepco_fallback(tmp_path)
 
     assert model_name == "lgbm_quantile_q50"
     assert result[0].forecast_mw == pytest.approx(29_000.0)
+
+
+def test_intraday_correction_uses_frozen_published_forecasts_for_observed_hours(tmp_path):
+    target = date(2024, 1, 2)
+    forecast_dir = tmp_path / "forecast"
+    actual_dir = tmp_path / "actual"
+    forecast_dir.mkdir()
+    actual_dir.mkdir()
+    published_series = []
+    actual_series = []
+    for hour in range(10, 13):
+        published_series.append({
+            "ts": f"2024-01-02T{hour:02d}:00:00+09:00",
+            "forecastMw": 35_000.0,
+            "p95LowerMw": 34_500.0,
+            "p95UpperMw": 35_500.0,
+            "p99LowerMw": 34_200.0,
+            "p99UpperMw": 35_800.0,
+        })
+        actual_series.append({
+            "ts": f"2024-01-02T{hour:02d}:00:00+09:00",
+            "actualMw": 33_000.0,
+            "actualSource": "observed",
+        })
+    (forecast_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "model": {"name": "lgbm_quantile_q50_intraday_residual"},
+        "series": published_series,
+    }), encoding="utf-8")
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": actual_series,
+    }), encoding="utf-8")
+
+    raw_forecasts = [
+        _forecast_point_at(target, 10, 32_000.0),
+        _forecast_point_at(target, 11, 32_000.0),
+        _forecast_point_at(target, 12, 32_000.0),
+        _forecast_point_at(target, 13, 34_000.0),
+    ]
+    frozen_forecasts, frozen_model = _freeze_observed_forecast_hours(
+        tmp_path,
+        target,
+        raw_forecasts,
+        "lgbm_quantile_q50",
+    )
+
+    corrected, corrected_model = _apply_intraday_residual_correction(
+        tmp_path,
+        target,
+        frozen_forecasts,
+        frozen_model,
+        {
+            "intraday_correction": {
+                "lookback_hours": 3,
+                "min_observed_hours": 3,
+                "shrinkage": 0.5,
+                "decay_per_hour": 1.0,
+            },
+        },
+    )
+
+    assert corrected_model == "lgbm_quantile_q50_intraday_residual"
+    assert corrected[0].forecast_mw == pytest.approx(35_000.0)
+    assert corrected[3].forecast_mw == pytest.approx(33_000.0)
 
 
 # ── compute_missing_days ──────────────────────────────────────────────────────
