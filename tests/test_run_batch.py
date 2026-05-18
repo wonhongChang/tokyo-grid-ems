@@ -707,6 +707,53 @@ def test_freeze_observed_forecast_hours_keeps_published_observed_hours(tmp_path)
     assert result[1].forecast_mw == pytest.approx(30_000.0)
 
 
+def test_freeze_observed_forecast_hours_can_be_bypassed_for_manual_refresh(tmp_path):
+    target = date(2024, 1, 2)
+    forecast_dir = tmp_path / "forecast"
+    actual_dir = tmp_path / "actual"
+    forecast_dir.mkdir()
+    actual_dir.mkdir()
+    (forecast_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "model": {"name": "lgbm_quantile_q50_intraday_residual"},
+        "series": [
+            {
+                "ts": "2024-01-02T10:00:00+09:00",
+                "forecastMw": 31_000.0,
+                "p95LowerMw": 30_000.0,
+                "p95UpperMw": 32_000.0,
+                "p99LowerMw": 29_500.0,
+                "p99UpperMw": 32_500.0,
+            },
+        ],
+    }), encoding="utf-8")
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-02T10:00:00+09:00",
+                "actualMw": 31_500.0,
+                "actualSource": "observed",
+            },
+        ],
+    }), encoding="utf-8")
+
+    result, model_name = _freeze_observed_forecast_hours(
+        tmp_path,
+        target,
+        [_forecast_point_at(target, 10, 29_000.0)],
+        "lgbm_quantile_q50",
+        preserve_observed_hours=False,
+    )
+
+    assert model_name == "lgbm_quantile_q50"
+    assert result[0].forecast_mw == pytest.approx(29_000.0)
+
+
 def test_freeze_observed_forecast_hours_does_not_freeze_tepco_fallback(tmp_path):
     target = date(2024, 1, 2)
     forecast_dir = tmp_path / "forecast"

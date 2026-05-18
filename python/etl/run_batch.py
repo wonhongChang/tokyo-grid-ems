@@ -359,6 +359,7 @@ def _freeze_observed_forecast_hours(
     d: date,
     forecasts: list[HourlyForecast],
     model_name: str,
+    preserve_observed_hours: bool = True,
 ) -> tuple[list[HourlyForecast], str]:
     """Keep already-published forecasts for hours that now have actuals.
 
@@ -367,6 +368,10 @@ def _freeze_observed_forecast_hours(
     model is re-run without the intraday residual correction that was active
     before that hour was observed.
     """
+    if not preserve_observed_hours:
+        print(f"[FORECAST] Rebuilt observed forecast hours for {d.isoformat()}")
+        return forecasts, model_name
+
     observed_hours = _load_observed_actual_hours(out_dir, d)
     if not observed_hours:
         return forecasts, model_name
@@ -1151,7 +1156,11 @@ def _apply_actual_json_latest_fallback(
     return updated_ok, updated_summaries
 
 
-def _run_status_only(out_dir: Path, config: dict) -> None:
+def _run_status_only(
+    out_dir: Path,
+    config: dict,
+    preserve_observed_forecast_hours: bool = True,
+) -> None:
     from python.etl.fetch_weather import enrich_cache_with_weather
     from python.etl.fetch_today import fetch_csv, parse_hourly, write_actual_json
 
@@ -1208,7 +1217,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
         out_dir, today, today_fc, today_model, config
     )
     today_fc, today_model = _freeze_observed_forecast_hours(
-        out_dir, today, today_fc, today_model
+        out_dir, today, today_fc, today_model, preserve_observed_forecast_hours
     )
 
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
@@ -1255,6 +1264,8 @@ def main() -> None:
                     help="Ignore existing state; reprocess all dates")
     ap.add_argument("--status-only", action="store_true",
                     help="Skip CSV processing; only update status.json with today/tomorrow forecasts")
+    ap.add_argument("--refresh-today-forecast", action="store_true",
+                    help="Rebuild today's already-observed forecast hours instead of preserving published values")
     args = ap.parse_args()
 
     input_dir = Path(args.input)
@@ -1263,7 +1274,11 @@ def main() -> None:
     config = load_config(Path(args.config))
 
     if args.status_only:
-        _run_status_only(out_dir, config)
+        _run_status_only(
+            out_dir,
+            config,
+            preserve_observed_forecast_hours=not args.refresh_today_forecast,
+        )
         return
 
     if not input_dir.exists():
@@ -1410,7 +1425,8 @@ def main() -> None:
         out_dir, today, today_fc, today_model, config
     )
     today_fc, today_model = _freeze_observed_forecast_hours(
-        out_dir, today, today_fc, today_model
+        out_dir, today, today_fc, today_model,
+        preserve_observed_forecast_hours=not args.refresh_today_forecast,
     )
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard

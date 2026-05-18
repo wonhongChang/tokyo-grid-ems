@@ -12,10 +12,12 @@ import pytest
 
 from python.etl.fetch_weather import (
     _fetch_json,
+    _parse_jma_amedas_point,
     _parse_jma_official_timeseries,
     _parse_response,
     enrich_cache_with_weather,
     fetch_forecast_temps,
+    fetch_jma_observed_temps,
     fetch_past_temps,
 )
 
@@ -59,6 +61,24 @@ _JMA_OFFICIAL_TIMESERIES_RESPONSE = {
         "temperature": [18, 17, 17, 21, 27, 28, 23, 20, 19],
         "maxTemperature": ["", "", "", 29, 29, 29, 29, "", ""],
         "minTemperature": [16, 16, 16, 16, "", "", "", "", ""],
+    },
+}
+
+_JMA_AMEDAS_POINT_RESPONSE = {
+    "20260518090000": {
+        "prefNumber": 44,
+        "observationNumber": 132,
+        "temp": [24.6, 0],
+    },
+    "20260518091000": {
+        "prefNumber": 44,
+        "observationNumber": 132,
+        "temp": [24.9, 0],
+    },
+    "20260518100000": {
+        "prefNumber": 44,
+        "observationNumber": 132,
+        "temp": [25.6, 0],
     },
 }
 
@@ -137,6 +157,29 @@ def test_parse_jma_official_timeseries_keeps_official_min_max():
 
     assert df["temp_c"].min() == pytest.approx(16.0)
     assert df["temp_c"].max() == pytest.approx(29.0)
+
+
+# ---------------------------------------------------------------------------
+# _parse_jma_amedas_point / fetch_jma_observed_temps
+# ---------------------------------------------------------------------------
+
+def test_parse_jma_amedas_point_keeps_exact_hourly_observations():
+    df = _parse_jma_amedas_point(_JMA_AMEDAS_POINT_RESPONSE)
+
+    assert len(df) == 2
+    assert df["ts"].iloc[0] == pd.Timestamp("2026-05-18T09:00:00+09:00")
+    assert df["temp_c"].iloc[0] == pytest.approx(24.6)
+    assert df["apparent_temp_c"].iloc[1] == pytest.approx(25.6)
+
+
+def test_fetch_jma_observed_temps_fetches_three_hour_blocks():
+    with patch("python.etl.fetch_weather._fetch_json", return_value=_JMA_AMEDAS_POINT_RESPONSE) as mock:
+        result = fetch_jma_observed_temps(date(2026, 5, 18), date(2026, 5, 18))
+
+    assert mock.call_count == 8
+    assert len(result) == 2
+    first_url = mock.call_args_list[0][0][0]
+    assert first_url.endswith("/44132/20260518_00.json")
 
 
 # ---------------------------------------------------------------------------

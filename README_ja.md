@@ -165,6 +165,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [2026-05-16 営業タイプ遷移lag特徴量](docs/ja/model-improvements/model-improvement-2026-05-16-business-type-lag-features.md)
 - [2026-05-17 intraday気温予報bias補正と過去予測の固定](docs/ja/model-improvements/model-improvement-2026-05-17-intraday-weather-bias-correction.md)
 - [2026-05-18 気象庁公式予報入力](docs/ja/model-improvements/model-improvement-2026-05-18-official-jma-weather.md)
+- [2026-05-18 lag gap特徴量と観測気温補正](docs/ja/model-improvements/model-improvement-2026-05-18-lag-gap-and-observed-weather.md)
 
 ---
 

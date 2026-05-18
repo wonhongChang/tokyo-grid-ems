@@ -535,7 +535,7 @@ def test_inference_has_interaction_columns():
 def test_interaction_feature_cols_count():
     """FEATURE_COLS should include weather-delta features and lag context."""
     from python.forecast.feature_builder import FEATURE_COLS
-    assert len(FEATURE_COLS) == 37
+    assert len(FEATURE_COLS) == 40
 
 
 def test_holiday_x_heat_nonneg():
@@ -605,6 +605,9 @@ def test_training_has_lag_context_columns():
         "lag_24h_business_type_mismatch",
         "lag_24h_mismatch_x_business_hour",
         "recent_same_business_type_mean",
+        "lag_24h_to_last_biz_gap",
+        "lag_24h_to_same_business_type_gap",
+        "lag_24h_gap_x_business_hour",
     ]:
         assert col in X.columns
 
@@ -619,6 +622,9 @@ def test_inference_has_lag_context_columns():
         "lag_24h_business_type_mismatch",
         "lag_24h_mismatch_x_business_hour",
         "recent_same_business_type_mean",
+        "lag_24h_to_last_biz_gap",
+        "lag_24h_to_same_business_type_gap",
+        "lag_24h_gap_x_business_hour",
     ]:
         assert col in out.columns
 
@@ -663,6 +669,50 @@ def test_inference_recent_same_business_type_mean_uses_non_business_days():
         [10_000.0 + hour for hour in range(24)],
         atol=1e-6,
     )
+
+
+def test_inference_lag_gap_positive_on_monday_after_low_weekend():
+    start = pd.Timestamp("2025-01-01", tz=JST)
+    n = 30 * 24
+    timestamps = pd.date_range(start, periods=n, freq="h")
+    actual_mw = [
+        10_000.0 + ts.hour if _is_nonworking(ts.date()) else 30_000.0 + ts.hour
+        for ts in timestamps
+    ]
+    df = pd.DataFrame({
+        "ts": timestamps,
+        "actual_mw": actual_mw,
+        "temp_c": np.full(n, 20.0),
+    })
+
+    out = build_inference_features(df, date(2025, 1, 20))  # Monday after Sunday
+
+    daytime = out[out["hour"].between(6, 18)]
+    assert (daytime["lag_24h_to_same_business_type_gap"] > 0).all()
+    assert (daytime["lag_24h_gap_x_business_hour"] > 0).all()
+    overnight = out[~out["hour"].between(6, 18)]
+    assert (overnight["lag_24h_gap_x_business_hour"] == 0).all()
+
+
+def test_inference_lag_gap_negative_on_saturday_after_high_weekday():
+    start = pd.Timestamp("2025-01-01", tz=JST)
+    n = 30 * 24
+    timestamps = pd.date_range(start, periods=n, freq="h")
+    actual_mw = [
+        10_000.0 + ts.hour if _is_nonworking(ts.date()) else 30_000.0 + ts.hour
+        for ts in timestamps
+    ]
+    df = pd.DataFrame({
+        "ts": timestamps,
+        "actual_mw": actual_mw,
+        "temp_c": np.full(n, 20.0),
+    })
+
+    out = build_inference_features(df, date(2025, 1, 18))  # Saturday after Friday
+
+    daytime = out[out["hour"].between(6, 18)]
+    assert (daytime["lag_24h_to_same_business_type_gap"] < 0).all()
+    assert (daytime["lag_24h_gap_x_business_hour"] < 0).all()
 
 
 def test_lag_24h_consec_post_golden_week():

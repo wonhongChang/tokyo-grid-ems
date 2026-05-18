@@ -48,6 +48,9 @@ FEATURE_COLS: list[str] = [
     "lag_24h_business_type_mismatch",        # target and previous day differ in business/non-business type
     "lag_24h_mismatch_x_business_hour",      # mismatch focused on daytime demand hours
     "recent_same_business_type_mean",        # recent same-hour mean for business vs non-business days
+    "lag_24h_to_last_biz_gap",               # last business-day same-hour demand minus lag_24h
+    "lag_24h_to_same_business_type_gap",     # recent same business-type mean minus lag_24h
+    "lag_24h_gap_x_business_hour",           # mismatch gap focused on morning/daytime demand hours
 ]
 
 # Golden Week / Obon / New Year day-of-year zones (wider than the holiday itself
@@ -185,6 +188,20 @@ def _heating_degree(temp_c: float, heating_base_temp_c: float) -> float:
     return max(0.0, heating_base_temp_c - temp_c)
 
 
+def _add_lag_gap_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Expose how much the 24h lag differs from business-type demand anchors."""
+    df["lag_24h_to_last_biz_gap"] = df["lag_last_biz_hour"] - df["lag_24h"]
+    df["lag_24h_to_same_business_type_gap"] = (
+        df["recent_same_business_type_mean"] - df["lag_24h"]
+    )
+    df["lag_24h_gap_x_business_hour"] = (
+        df["lag_24h_business_type_mismatch"]
+        * df["hour"].between(6, 18).astype(float)
+        * df["lag_24h_to_same_business_type_gap"]
+    )
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Holiday lag columns (shared between training and inference)
 # ---------------------------------------------------------------------------
@@ -299,6 +316,7 @@ def build_training_features(
     ts_to_mw = dict(zip(df["ts"], df["actual_mw"]))
     date_feature_map = _date_features(sorted(set(df["ts"].dt.date)))
     df = _add_holiday_lag_cols(df, ts_to_mw, date_feature_map)
+    df = _add_lag_gap_cols(df)
 
     # Temperature features
     if "temp_c" in df.columns:
@@ -557,6 +575,14 @@ def build_inference_features(
         business_hour_post_holiday_heat_interaction = (
             int(9 <= hour <= 18) * is_recent_post_holiday * positive_temp_anomaly_7d
         )
+        recent_same_business_type_mean = (
+            float(recent_same_business_type["actual_mw"].mean())
+            if len(recent_same_business_type) > 0
+            else np.nan
+        )
+        lag_last_biz_hour = _lag_day("last_biz_day")
+        lag_last_nonhol_hour = _lag_day("last_nonhol_day")
+        lag_24h_to_same_business_type_gap = recent_same_business_type_mean - lag_24h
 
         rows.append({
             "hour":                   hour,
@@ -579,13 +605,9 @@ def build_inference_features(
                 if len(recent_same_hour_weekday) > 1
                 else 0.0
             ),
-            "recent_same_business_type_mean": (
-                float(recent_same_business_type["actual_mw"].mean())
-                if len(recent_same_business_type) > 0
-                else np.nan
-            ),
-            "lag_last_biz_hour":      _lag_day("last_biz_day"),
-            "lag_last_nonhol_hour":   _lag_day("last_nonhol_day"),
+            "recent_same_business_type_mean": recent_same_business_type_mean,
+            "lag_last_biz_hour":      lag_last_biz_hour,
+            "lag_last_nonhol_hour":   lag_last_nonhol_hour,
             "consec_holiday_len":     target_date_features["consec_holiday_len"],
             "days_since_holiday_end": target_date_features["days_since_holiday_end"],
             "major_holiday_season":   target_date_features["major_holiday_season"],
@@ -609,6 +631,13 @@ def build_inference_features(
             "lag_24h_business_type_mismatch": lag_24h_business_type_mismatch,
             "lag_24h_mismatch_x_business_hour": (
                 lag_24h_business_type_mismatch * int(8 <= hour <= 18)
+            ),
+            "lag_24h_to_last_biz_gap": lag_last_biz_hour - lag_24h,
+            "lag_24h_to_same_business_type_gap": lag_24h_to_same_business_type_gap,
+            "lag_24h_gap_x_business_hour": (
+                lag_24h_business_type_mismatch
+                * int(6 <= hour <= 18)
+                * lag_24h_to_same_business_type_gap
             ),
         })
 

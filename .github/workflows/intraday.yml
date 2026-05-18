@@ -12,6 +12,12 @@ on:
     # JST: 12:05
     - cron: '5 3 * * *'
   workflow_dispatch:
+    inputs:
+      refresh_today_forecast:
+        description: Rebuild today's observed forecast hours instead of preserving published values
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -54,7 +60,14 @@ jobs:
           fi
 
       - name: Update intraday actuals, forecasts, and status
-        run: python python/etl/run_batch.py --status-only
+        env:
+          REFRESH_TODAY_FORECAST: ${{ inputs.refresh_today_forecast || 'false' }}
+        run: |
+          if [ "$REFRESH_TODAY_FORECAST" = "true" ]; then
+            python python/etl/run_batch.py --status-only --refresh-today-forecast
+          else
+            python python/etl/run_batch.py --status-only
+          fi
 
       # ── Push web/public to data branch ────────────────────────────────────
       - name: Push web/public to data branch

@@ -8,8 +8,8 @@ weather_features:
 
 weather_forecast_bias_correction:
   # JMA official forecast is the source of truth for future hours.
-  # Avoid mixing Open-Meteo archive bias into the operational forecast input.
-  enabled: false
+  # Recent observed temperatures now prefer JMA AMeDAS before Open-Meteo fallback.
+  enabled: true
   lookback_hours: 4          # recent observed-vs-forecast temperature gap
   observation_lag_hours: 1   # avoid using the still-forming current hour
   horizon_hours: 4           # apply only to near-term same-day future hours

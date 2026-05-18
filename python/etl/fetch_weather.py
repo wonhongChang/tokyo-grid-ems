@@ -20,6 +20,8 @@ TOKYO_LON = 139.7066
 _ARCHIVE_URL  = "https://archive-api.open-meteo.com/v1/archive"
 _OPEN_METEO_JMA_FORECAST_URL = "https://api.open-meteo.com/v1/jma"
 _JMA_OFFICIAL_TIMESERIES_URL = "https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json"
+_JMA_AMEDAS_POINT_URL = "https://www.jma.go.jp/bosai/amedas/data/point/{station}/{block}.json"
+_JMA_TOKYO_AMEDAS_STATION = "44132"
 _TIMEOUT_SEC  = 30
 _MAX_RETRIES  = 3
 _RETRY_BACKOFF_SEC = 2.0
@@ -27,7 +29,8 @@ _HOURLY_WEATHER_VARS = "temperature_2m,apparent_temperature"
 
 
 def _fetch_json(url: str, params: dict) -> dict:
-    full_url = f"{url}?{urllib.parse.urlencode(params)}"
+    query = urllib.parse.urlencode(params)
+    full_url = f"{url}?{query}" if query else url
     last_error: Exception | None = None
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
@@ -179,6 +182,35 @@ def _parse_jma_official_timeseries(
     return hourly.reset_index()[["ts", "temp_c", "apparent_temp_c"]]
 
 
+def _parse_jma_amedas_point(data: dict) -> pd.DataFrame:
+    """Parse one JMA AMeDAS point block, keeping exact hourly observations."""
+    rows = []
+    for timestamp_key, point in data.items():
+        temp = point.get("temp")
+        if not isinstance(temp, list) or not temp:
+            continue
+        parsed_temp = _optional_float(temp[0])
+        if pd.isna(parsed_temp):
+            continue
+        ts = pd.to_datetime(timestamp_key, format="%Y%m%d%H%M%S").tz_localize(JST)
+        if ts.minute != 0:
+            continue
+        rows.append({
+            "ts": ts,
+            "temp_c": parsed_temp,
+            "apparent_temp_c": parsed_temp,
+        })
+
+    if not rows:
+        return pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
+    return (
+        pd.DataFrame(rows)
+          .drop_duplicates(subset=["ts"], keep="last")
+          .sort_values("ts")
+          .reset_index(drop=True)
+    )
+
+
 def _fetch_open_meteo_jma_forecast_temps(days: int = 3) -> pd.DataFrame:
     """Hourly temperature forecast from Open-Meteo JMA for Tokyo (fallback source)."""
     return _parse_response(_fetch_json(_OPEN_METEO_JMA_FORECAST_URL, {
@@ -193,6 +225,49 @@ def _fetch_open_meteo_jma_forecast_temps(days: int = 3) -> pd.DataFrame:
 def fetch_jma_official_forecast_temps(days: int = 3) -> pd.DataFrame:
     """Hourly Tokyo temperatures interpolated from JMA official 3-hour forecast."""
     return _parse_jma_official_timeseries(_fetch_json(_JMA_OFFICIAL_TIMESERIES_URL, {}), days=days)
+
+
+def fetch_jma_observed_temps(
+    start: date,
+    end: date,
+    station: str = _JMA_TOKYO_AMEDAS_STATION,
+) -> pd.DataFrame:
+    """Hourly observed temperature from JMA AMeDAS Tokyo station.
+
+    JMA publishes point observations in 3-hour blocks. Missing future blocks are
+    ignored so same-day intraday updates can use the observations that already
+    exist.
+    """
+    frames = []
+    for day_offset in range((end - start).days + 1):
+        target_date = start + timedelta(days=day_offset)
+        for hour in range(0, 24, 3):
+            block = f"{target_date:%Y%m%d}_{hour:02d}"
+            try:
+                payload = _fetch_json(
+                    _JMA_AMEDAS_POINT_URL.format(station=station, block=block),
+                    {},
+                )
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    continue
+                raise
+            frames.append(_parse_jma_amedas_point(payload))
+
+    frames = [frame for frame in frames if not frame.empty]
+    if not frames:
+        return pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
+
+    result = (
+        pd.concat(frames, ignore_index=True)
+          .drop_duplicates(subset=["ts"], keep="last")
+          .sort_values("ts")
+          .reset_index(drop=True)
+    )
+    return result[
+        (result["ts"].dt.date >= start)
+        & (result["ts"].dt.date <= end)
+    ].reset_index(drop=True)
 
 
 def _combine_official_and_fallback_weather(
@@ -221,8 +296,7 @@ def _combine_official_and_fallback_weather(
     return combined.sort_values("ts").reset_index(drop=True)
 
 
-def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
-    """Hourly temperature from Open-Meteo archive for Tokyo (JST-aware ts)."""
+def _fetch_open_meteo_archive_temps(start: date, end: date) -> pd.DataFrame:
     return _parse_response(_fetch_json(_ARCHIVE_URL, {
         "latitude":   TOKYO_LAT,
         "longitude":  TOKYO_LON,
@@ -231,6 +305,31 @@ def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
         "hourly":     _HOURLY_WEATHER_VARS,
         "timezone":   "Asia/Tokyo",
     }))
+
+
+def _should_prefer_jma_observed(start: date, end: date) -> bool:
+    today = pd.Timestamp.now(tz=JST).date()
+    return (end - start).days <= 3 and end >= today - timedelta(days=2)
+
+
+def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
+    """Hourly temperature for Tokyo, preferring JMA AMeDAS for recent observations."""
+    if _should_prefer_jma_observed(start, end):
+        observed = pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
+        try:
+            observed = fetch_jma_observed_temps(start, end)
+        except Exception as e:
+            print(f"[WARN] JMA observed weather fetch failed: {e}", file=sys.stderr)
+
+        if not observed.empty:
+            try:
+                fallback = _fetch_open_meteo_archive_temps(start, end)
+            except Exception as e:
+                print(f"[WARN] Open-Meteo archive fallback fetch failed: {e}", file=sys.stderr)
+                return observed
+            return _combine_official_and_fallback_weather(observed, fallback)
+
+    return _fetch_open_meteo_archive_temps(start, end)
 
 
 def fetch_forecast_temps(days: int = 3) -> pd.DataFrame:
