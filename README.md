@@ -59,7 +59,7 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 
 3. **Tomorrow** — Hourly forecast + forecast bands + peak prediction (time and value)
 
-4. **Validation** — Model-vs-TEPCO forecast comparison + LightGBM backtest
+4. **Validation** — Previous-day operation report + Model-vs-TEPCO comparison + LightGBM backtest
 
 ---
 

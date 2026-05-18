@@ -155,6 +155,67 @@ export interface ForecastAccuracyJSON {
   hourly: ForecastAccuracyHourly[]
 }
 
+export type DailyOperationVerdict = 'model_better' | 'tepco_better' | 'close' | 'insufficient'
+
+export interface DailyOperationInsight {
+  code: string
+  severity: Severity
+  title: string
+  evidence?: Record<string, string | number | null>
+}
+
+export interface DailyOperationTopMiss {
+  hour: number
+  actualMw: number
+  modelForecastMw: number
+  tepcoForecastMw: number
+  modelErrorMw: number
+  tepcoErrorMw: number
+  modelAbsErrorMw: number
+  tepcoAbsErrorMw: number
+}
+
+export interface DailyOperationReport {
+  schemaVersion: string
+  timezone: string
+  generatedAt: string
+  date: string
+  availability: Availability | 'insufficient'
+  model: { name: string; family: string }
+  summary: {
+    comparableHours: number
+    modelMaeMw?: number | null
+    tepcoMaeMw?: number | null
+    maeGapMw?: number | null
+    verdict?: DailyOperationVerdict
+    modelWins?: number
+    tepcoWins?: number
+    ties?: number
+  }
+  peak?: {
+    actual: { hour: number; actualMw: number }
+    model: { hour: number; forecastMw: number; errorAtActualPeakMw: number; timeErrorHours: number }
+    tepco: { hour: number; forecastMw: number; errorAtActualPeakMw: number; timeErrorHours: number }
+  } | null
+  topMisses?: DailyOperationTopMiss[]
+  insights: DailyOperationInsight[]
+}
+
+export interface DailyOperationReportIndex {
+  schemaVersion: string
+  timezone: string
+  generatedAt: string
+  availability: Availability
+  latest: DailyOperationReport | null
+  reports: Array<{
+    date: string
+    availability: Availability | 'insufficient'
+    model?: { name: string; family: string }
+    summary?: DailyOperationReport['summary']
+    insights: DailyOperationInsight[]
+  }>
+}
+
 export interface BacktestMetrics {
   rmse: number | null
   mae: number | null

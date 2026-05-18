@@ -1100,6 +1100,23 @@ def _write_model_backtest_report(out_dir: Path, cache: pd.DataFrame) -> None:
         print(f"[WARN] Model backtest report failed: {e}", file=sys.stderr)
 
 
+def _write_daily_operation_reports(out_dir: Path) -> None:
+    try:
+        from python.eval.daily_operation_report import build_daily_operation_reports
+        index, reports = build_daily_operation_reports(out_dir, generated_at=ts_now())
+        report_dir = out_dir / "reports" / "daily"
+        write_json(report_dir / "index.json", index)
+        for report in reports:
+            write_json(report_dir / f"{report['date']}.json", report)
+        latest = index.get("latest", {})
+        print(
+            "[METRICS] Daily operation reports updated "
+            f"({len(reports)} reports, latest={latest.get('date')})"
+        )
+    except Exception as e:
+        print(f"[WARN] Daily operation report failed: {e}", file=sys.stderr)
+
+
 # ---------------------------------------------------------------------------
 # Status-only update (used by intraday workflow)
 # ---------------------------------------------------------------------------
@@ -1453,6 +1470,7 @@ def main() -> None:
     ))
     _write_forecast_accuracy_report(out_dir)
     _write_model_backtest_report(out_dir, hourly_cache)
+    _write_daily_operation_reports(out_dir)
 
     coverage_to = max(ok_set) if ok_set else None
     print(

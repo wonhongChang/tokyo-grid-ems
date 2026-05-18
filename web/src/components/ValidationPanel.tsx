@@ -3,7 +3,14 @@ import {
 } from 'recharts'
 import { useFetch } from '../hooks/useFetch'
 import { useT, type Locale } from '../i18n'
-import type { BacktestMetrics, ForecastAccuracyDaily, ForecastAccuracyJSON, ModelBacktestJSON } from '../types'
+import type {
+  BacktestMetrics,
+  DailyOperationReport,
+  DailyOperationReportIndex,
+  ForecastAccuracyDaily,
+  ForecastAccuracyJSON,
+  ModelBacktestJSON,
+} from '../types'
 import { formatPower, formatPowerDisplayValue, powerDisplayValue, powerUnit } from '../units'
 
 interface Props {
@@ -139,6 +146,90 @@ const COPY = {
   },
 }
 
+const DAILY_REPORT_COPY = {
+  ko: {
+    title: '전날 운영 리포트',
+    subtitle: '확정 실측 기준으로 전날 예측 품질을 요약합니다.',
+    modelMae: '모델 MAE',
+    tepcoMae: 'TEPCO MAE',
+    winner: '우세',
+    peakError: '피크 오차',
+    largestMiss: '최대 오차',
+    insights: '주요 코멘트',
+    noInsight: '특별히 큰 패턴 이탈은 감지되지 않았습니다.',
+    model: '모델',
+    tepco: 'TEPCO',
+    close: '비슷함',
+    hourSuffix: '시',
+    insightText: {
+      model_closer_overall: '전날 전체 기준으로 모델이 TEPCO보다 실제에 가까웠습니다.',
+      tepco_closer_overall: '전날 전체 기준으로 TEPCO 예측이 더 가까웠습니다.',
+      morning_ramp_underestimated: '아침 수요 상승을 모델이 낮게 봤습니다.',
+      morning_ramp_overestimated: '아침 수요 상승을 모델이 높게 봤습니다.',
+      daytime_level_underestimated: '낮 시간대 수요 수준을 낮게 봤습니다.',
+      afternoon_plateau_underestimated: '늦은 오후 수요가 예상보다 오래 유지됐습니다.',
+      large_single_hour_miss: '특정 시간대에서 큰 오차가 발생했습니다.',
+      peak_timing_miss: '피크 발생 시간이 실제와 어긋났습니다.',
+      peak_level_underestimated: '실제 피크 수요가 모델 예상보다 높았습니다.',
+      peak_level_overestimated: '실제 피크 수요가 모델 예상보다 낮았습니다.',
+    } as Record<string, string>,
+  },
+  en: {
+    title: 'Previous Day Operation Report',
+    subtitle: 'Summarizes yesterday’s forecast quality after confirmed actuals arrive.',
+    modelMae: 'Model MAE',
+    tepcoMae: 'TEPCO MAE',
+    winner: 'Winner',
+    peakError: 'Peak error',
+    largestMiss: 'Largest miss',
+    insights: 'Key comments',
+    noInsight: 'No major recurring pattern was detected.',
+    model: 'Model',
+    tepco: 'TEPCO',
+    close: 'Close',
+    hourSuffix: ':00',
+    insightText: {
+      model_closer_overall: 'The model was closer than TEPCO overall.',
+      tepco_closer_overall: 'TEPCO was closer overall.',
+      morning_ramp_underestimated: 'The model underestimated the morning demand ramp.',
+      morning_ramp_overestimated: 'The model overestimated the morning demand ramp.',
+      daytime_level_underestimated: 'The model underestimated daytime demand level.',
+      afternoon_plateau_underestimated: 'Late afternoon demand stayed higher than expected.',
+      large_single_hour_miss: 'One hour had a large model error.',
+      peak_timing_miss: 'The model peak occurred at a different hour than the actual peak.',
+      peak_level_underestimated: 'The actual peak was higher than the model expected.',
+      peak_level_overestimated: 'The actual peak was lower than the model expected.',
+    } as Record<string, string>,
+  },
+  ja: {
+    title: '前日運用レポート',
+    subtitle: '確定実績を基準に、前日の予測品質を要約します。',
+    modelMae: 'モデル MAE',
+    tepcoMae: 'TEPCO MAE',
+    winner: '優勢',
+    peakError: 'ピーク誤差',
+    largestMiss: '最大誤差',
+    insights: '主なコメント',
+    noInsight: '大きな継続パターンのずれは検出されませんでした。',
+    model: 'モデル',
+    tepco: 'TEPCO',
+    close: '同程度',
+    hourSuffix: '時',
+    insightText: {
+      model_closer_overall: '前日全体ではモデルの方がTEPCOより実績に近くなりました。',
+      tepco_closer_overall: '前日全体ではTEPCO予測の方が近くなりました。',
+      morning_ramp_underestimated: '朝の需要上昇をモデルが低く見積もりました。',
+      morning_ramp_overestimated: '朝の需要上昇をモデルが高く見積もりました。',
+      daytime_level_underestimated: '日中の需要水準を低く見積もりました。',
+      afternoon_plateau_underestimated: '夕方前の需要が想定より高く維持されました。',
+      large_single_hour_miss: '特定時間帯で大きなモデル誤差が発生しました。',
+      peak_timing_miss: 'モデルのピーク時刻が実績ピークとずれました。',
+      peak_level_underestimated: '実績ピークがモデル想定より高くなりました。',
+      peak_level_overestimated: '実績ピークがモデル想定より低くなりました。',
+    } as Record<string, string>,
+  },
+}
+
 function fmtPct(value: number | null | undefined): string {
   if (value == null) return '-'
   return `${(value * 100).toFixed(1)}%`
@@ -248,13 +339,99 @@ function DailyTooltip({ active, payload, label, locale }: {
   )
 }
 
+function reportWinner(report: DailyOperationReport, labels: typeof DAILY_REPORT_COPY.ko): string {
+  const verdict = report.summary.verdict
+  if (verdict === 'model_better') return labels.model
+  if (verdict === 'tepco_better') return labels.tepco
+  if (verdict === 'close') return labels.close
+  return '-'
+}
+
+function reportWinnerBadge(report: DailyOperationReport): string {
+  const verdict = report.summary.verdict
+  if (verdict === 'model_better') return 'ok'
+  if (verdict === 'tepco_better') return 'warning'
+  if (verdict === 'close') return 'info'
+  return 'info'
+}
+
+function formatHour(hour: number | null | undefined, locale: Locale, suffix: string): string {
+  if (hour == null) return '-'
+  if (locale === 'en') return `${hour.toString().padStart(2, '0')}${suffix}`
+  return `${hour}${suffix}`
+}
+
+function insightText(code: string, labels: typeof DAILY_REPORT_COPY.ko): string {
+  return labels.insightText[code] ?? code
+}
+
+function OperationReportCard({
+  report,
+  locale,
+  fmtDate,
+}: {
+  report: DailyOperationReport
+  locale: Locale
+  fmtDate: (value: string) => string
+}) {
+  const labels = DAILY_REPORT_COPY[locale]
+  const largestMiss = report.topMisses?.[0]
+  const peakError = report.peak?.model.errorAtActualPeakMw
+  return (
+    <div className="card operation-report">
+      <div className="card-title">{labels.title}</div>
+      <p className="validation-note">{fmtDate(report.date)} · {labels.subtitle}</p>
+      <div className="validation-stat-grid compact">
+        <StatCard label={labels.modelMae} value={fmtPowerMaybe(report.summary.modelMaeMw, locale)} />
+        <StatCard label={labels.tepcoMae} value={fmtPowerMaybe(report.summary.tepcoMaeMw, locale)} />
+        <div className="validation-stat">
+          <div className="validation-stat-label">{labels.winner}</div>
+          <div className="validation-stat-value">
+            <span className={`badge ${reportWinnerBadge(report)}`}>
+              {reportWinner(report, labels)}
+            </span>
+          </div>
+          <div className="validation-stat-sub">
+            {report.summary.comparableHours}h · {report.summary.modelWins ?? 0}:{report.summary.tepcoWins ?? 0}
+          </div>
+        </div>
+        <StatCard
+          label={labels.peakError}
+          value={fmtPowerMaybe(peakError, locale)}
+          sub={formatHour(report.peak?.actual.hour, locale, labels.hourSuffix)}
+        />
+        <StatCard
+          label={labels.largestMiss}
+          value={fmtPowerMaybe(largestMiss?.modelAbsErrorMw, locale)}
+          sub={formatHour(largestMiss?.hour, locale, labels.hourSuffix)}
+        />
+      </div>
+      <div className="operation-insights">
+        <div className="operation-insights-title">{labels.insights}</div>
+        {report.insights.length === 0 ? (
+          <div className="operation-insight muted">{labels.noInsight}</div>
+        ) : (
+          report.insights.map(item => (
+            <div key={item.code} className="operation-insight">
+              <span className={`badge ${item.severity}`}>{item.severity}</span>
+              <span>{insightText(item.code, labels)}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function ValidationPanel({ baseUrl }: Props) {
   const { t, locale, fmtDate } = useT()
   const labels = COPY[locale]
   const accuracy = useFetch<ForecastAccuracyJSON>(`${baseUrl}metrics/forecast_accuracy.json`)
   const backtest = useFetch<ModelBacktestJSON>(`${baseUrl}metrics/model_backtest.json`)
+  const dailyReport = useFetch<DailyOperationReportIndex>(`${baseUrl}reports/daily/index.json`)
 
   const loading = accuracy.loading || backtest.loading
+  const latestReport = dailyReport.data?.latest
   const summary = accuracy.data?.summary
   const scopedDaily = accuracy.data?.daily.filter(row => row.includedInSummary ?? true) ?? []
   const daily = scopedDaily.slice(-14)
@@ -278,6 +455,10 @@ export function ValidationPanel({ baseUrl }: Props) {
 
       {!loading && !accuracy.data && (
         <div className="card empty-msg">{labels.unavailable}</div>
+      )}
+
+      {!loading && latestReport && (
+        <OperationReportCard report={latestReport} locale={locale} fmtDate={fmtDate} />
       )}
 
       {!loading && accuracy.data && summary && (
