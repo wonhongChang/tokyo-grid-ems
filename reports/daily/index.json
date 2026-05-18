@@ -1,0 +1,688 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-05-18T22:38:13+09:00",
+  "availability": "ok",
+  "latest": {
+    "schemaVersion": "1.0.0",
+    "timezone": "Asia/Tokyo",
+    "generatedAt": "2026-05-18T22:38:13+09:00",
+    "date": "2026-05-17",
+    "availability": "ok",
+    "model": {
+      "name": "lgbm_quantile_q50",
+      "family": "lgbm_quantile_q50"
+    },
+    "summary": {
+      "comparableHours": 24,
+      "modelMaeMw": 467.5,
+      "tepcoMaeMw": 311.7,
+      "maeGapMw": 155.8,
+      "verdict": "tepco_better",
+      "modelWins": 9,
+      "tepcoWins": 15,
+      "ties": 0
+    },
+    "peak": {
+      "actual": {
+        "hour": 19,
+        "actualMw": 28090.0
+      },
+      "model": {
+        "hour": 18,
+        "forecastMw": 27260.4,
+        "errorAtActualPeakMw": -920.2,
+        "timeErrorHours": -1
+      },
+      "tepco": {
+        "hour": 19,
+        "forecastMw": 27600.0,
+        "errorAtActualPeakMw": -490.0,
+        "timeErrorHours": 0
+      }
+    },
+    "timeBands": [
+      {
+        "code": "overnight",
+        "label": "00-05",
+        "hours": 6,
+        "modelMaeMw": 102.9,
+        "tepcoMaeMw": 88.3,
+        "modelBiasMw": -2.5,
+        "verdict": "close"
+      },
+      {
+        "code": "morning_ramp",
+        "label": "06-10",
+        "hours": 5,
+        "modelMaeMw": 458.2,
+        "tepcoMaeMw": 188.0,
+        "modelBiasMw": -438.1,
+        "verdict": "tepco_better"
+      },
+      {
+        "code": "daytime",
+        "label": "11-15",
+        "hours": 5,
+        "modelMaeMw": 195.4,
+        "tepcoMaeMw": 548.0,
+        "modelBiasMw": -126.5,
+        "verdict": "model_better"
+      },
+      {
+        "code": "late_afternoon",
+        "label": "16-18",
+        "hours": 3,
+        "modelMaeMw": 792.2,
+        "tepcoMaeMw": 696.7,
+        "modelBiasMw": -792.2,
+        "verdict": "tepco_better"
+      },
+      {
+        "code": "evening",
+        "label": "19-23",
+        "hours": 5,
+        "modelMaeMw": 991.7,
+        "tepcoMaeMw": 236.0,
+        "modelBiasMw": -991.7,
+        "verdict": "tepco_better"
+      }
+    ],
+    "topMisses": [
+      {
+        "hour": 20,
+        "actualMw": 27020.0,
+        "modelForecastMw": 25663.6,
+        "tepcoForecastMw": 26680.0,
+        "modelErrorMw": -1356.4,
+        "tepcoErrorMw": -340.0,
+        "modelAbsErrorMw": 1356.4,
+        "tepcoAbsErrorMw": 340.0
+      },
+      {
+        "hour": 22,
+        "actualMw": 24230.0,
+        "modelForecastMw": 23255.3,
+        "tepcoForecastMw": 24120.0,
+        "modelErrorMw": -974.7,
+        "tepcoErrorMw": -110.0,
+        "modelAbsErrorMw": 974.7,
+        "tepcoAbsErrorMw": 110.0
+      },
+      {
+        "hour": 21,
+        "actualMw": 25540.0,
+        "modelForecastMw": 24617.3,
+        "tepcoForecastMw": 25410.0,
+        "modelErrorMw": -922.7,
+        "tepcoErrorMw": -130.0,
+        "modelAbsErrorMw": 922.7,
+        "tepcoAbsErrorMw": 130.0
+      }
+    ],
+    "insights": [
+      {
+        "code": "tepco_closer_overall",
+        "severity": "warning",
+        "title": "TEPCO was closer overall.",
+        "evidence": {
+          "maeGapMw": 155.8
+        }
+      },
+      {
+        "code": "afternoon_plateau_underestimated",
+        "severity": "warning",
+        "title": "Late afternoon demand stayed higher than the model expected.",
+        "evidence": {
+          "band": "16-18",
+          "modelBiasMw": -792.2
+        }
+      },
+      {
+        "code": "large_single_hour_miss",
+        "severity": "warning",
+        "title": "One or more hours had a large model error.",
+        "evidence": {
+          "hour": 20,
+          "modelAbsErrorMw": 1356.4
+        }
+      },
+      {
+        "code": "peak_level_underestimated",
+        "severity": "warning",
+        "title": "The actual peak level was higher than the model expected.",
+        "evidence": {
+          "errorAtActualPeakMw": -920.2
+        }
+      }
+    ]
+  },
+  "reports": [
+    {
+      "date": "2026-05-04",
+      "availability": "ok",
+      "model": {
+        "name": "baseline_dow_hour_mean",
+        "family": "baseline_dow_hour_mean"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 461.0,
+        "tepcoMaeMw": 727.5,
+        "maeGapMw": -266.5,
+        "verdict": "model_better",
+        "modelWins": 11,
+        "tepcoWins": 13,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "model_closer_overall",
+          "severity": "info",
+          "title": "The model was closer than TEPCO overall.",
+          "evidence": {
+            "maeGapMw": -266.5
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-05",
+      "availability": "ok",
+      "model": {
+        "name": "baseline_dow_hour_mean",
+        "family": "baseline_dow_hour_mean"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 899.9,
+        "tepcoMaeMw": 480.8,
+        "maeGapMw": 419.1,
+        "verdict": "tepco_better",
+        "modelWins": 2,
+        "tepcoWins": 22,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "tepco_closer_overall",
+          "severity": "warning",
+          "title": "TEPCO was closer overall.",
+          "evidence": {
+            "maeGapMw": 419.1
+          }
+        },
+        {
+          "code": "morning_ramp_overestimated",
+          "severity": "info",
+          "title": "Morning demand was lower than the model expected.",
+          "evidence": {
+            "band": "06-10",
+            "modelBiasMw": 1007.7
+          }
+        },
+        {
+          "code": "large_single_hour_miss",
+          "severity": "warning",
+          "title": "One or more hours had a large model error.",
+          "evidence": {
+            "hour": 15,
+            "modelAbsErrorMw": 1649.3
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-06",
+      "availability": "ok",
+      "model": {
+        "name": "baseline_dow_hour_mean",
+        "family": "baseline_dow_hour_mean"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 465.8,
+        "tepcoMaeMw": 468.3,
+        "maeGapMw": -2.5,
+        "verdict": "close",
+        "modelWins": 11,
+        "tepcoWins": 13,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "afternoon_plateau_underestimated",
+          "severity": "warning",
+          "title": "Late afternoon demand stayed higher than the model expected.",
+          "evidence": {
+            "band": "16-18",
+            "modelBiasMw": -602.1
+          }
+        },
+        {
+          "code": "peak_level_underestimated",
+          "severity": "warning",
+          "title": "The actual peak level was higher than the model expected.",
+          "evidence": {
+            "errorAtActualPeakMw": -815.0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-07",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 291.2,
+        "tepcoMaeMw": 267.9,
+        "maeGapMw": 23.3,
+        "verdict": "close",
+        "modelWins": 11,
+        "tepcoWins": 13,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "peak_timing_miss",
+          "severity": "warning",
+          "title": "The model peak occurred at a different hour than the actual peak.",
+          "evidence": {
+            "timeErrorHours": 2
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-08",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 387.6,
+        "tepcoMaeMw": 266.7,
+        "maeGapMw": 120.9,
+        "verdict": "tepco_better",
+        "modelWins": 10,
+        "tepcoWins": 14,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "tepco_closer_overall",
+          "severity": "warning",
+          "title": "TEPCO was closer overall.",
+          "evidence": {
+            "maeGapMw": 120.9
+          }
+        },
+        {
+          "code": "morning_ramp_underestimated",
+          "severity": "warning",
+          "title": "Morning demand rose faster than the model expected.",
+          "evidence": {
+            "band": "06-10",
+            "modelBiasMw": -682.9
+          }
+        },
+        {
+          "code": "large_single_hour_miss",
+          "severity": "warning",
+          "title": "One or more hours had a large model error.",
+          "evidence": {
+            "hour": 9,
+            "modelAbsErrorMw": 2187.1
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-09",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 445.4,
+        "tepcoMaeMw": 652.1,
+        "maeGapMw": -206.7,
+        "verdict": "model_better",
+        "modelWins": 16,
+        "tepcoWins": 8,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "model_closer_overall",
+          "severity": "info",
+          "title": "The model was closer than TEPCO overall.",
+          "evidence": {
+            "maeGapMw": -206.7
+          }
+        },
+        {
+          "code": "large_single_hour_miss",
+          "severity": "warning",
+          "title": "One or more hours had a large model error.",
+          "evidence": {
+            "hour": 15,
+            "modelAbsErrorMw": 1316.5
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-10",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 280.7,
+        "tepcoMaeMw": 645.0,
+        "maeGapMw": -364.3,
+        "verdict": "model_better",
+        "modelWins": 21,
+        "tepcoWins": 3,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "model_closer_overall",
+          "severity": "info",
+          "title": "The model was closer than TEPCO overall.",
+          "evidence": {
+            "maeGapMw": -364.3
+          }
+        },
+        {
+          "code": "morning_ramp_underestimated",
+          "severity": "warning",
+          "title": "Morning demand rose faster than the model expected.",
+          "evidence": {
+            "band": "06-10",
+            "modelBiasMw": -553.5
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-11",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 762.4,
+        "tepcoMaeMw": 195.8,
+        "maeGapMw": 566.6,
+        "verdict": "tepco_better",
+        "modelWins": 3,
+        "tepcoWins": 21,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "tepco_closer_overall",
+          "severity": "warning",
+          "title": "TEPCO was closer overall.",
+          "evidence": {
+            "maeGapMw": 566.6
+          }
+        },
+        {
+          "code": "morning_ramp_underestimated",
+          "severity": "warning",
+          "title": "Morning demand rose faster than the model expected.",
+          "evidence": {
+            "band": "06-10",
+            "modelBiasMw": -1231.5
+          }
+        },
+        {
+          "code": "daytime_level_underestimated",
+          "severity": "warning",
+          "title": "Daytime demand level was underestimated.",
+          "evidence": {
+            "band": "11-15",
+            "modelBiasMw": -1532.6
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-12",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 286.6,
+        "tepcoMaeMw": 151.2,
+        "maeGapMw": 135.4,
+        "verdict": "tepco_better",
+        "modelWins": 8,
+        "tepcoWins": 16,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "tepco_closer_overall",
+          "severity": "warning",
+          "title": "TEPCO was closer overall.",
+          "evidence": {
+            "maeGapMw": 135.4
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-13",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 401.7,
+        "tepcoMaeMw": 332.5,
+        "maeGapMw": 69.2,
+        "verdict": "tepco_better",
+        "modelWins": 7,
+        "tepcoWins": 17,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "tepco_closer_overall",
+          "severity": "warning",
+          "title": "TEPCO was closer overall.",
+          "evidence": {
+            "maeGapMw": 69.2
+          }
+        },
+        {
+          "code": "daytime_level_underestimated",
+          "severity": "warning",
+          "title": "Daytime demand level was underestimated.",
+          "evidence": {
+            "band": "11-15",
+            "modelBiasMw": -996.1
+          }
+        },
+        {
+          "code": "afternoon_plateau_underestimated",
+          "severity": "warning",
+          "title": "Late afternoon demand stayed higher than the model expected.",
+          "evidence": {
+            "band": "16-18",
+            "modelBiasMw": -610.1
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-14",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 214.0,
+        "tepcoMaeMw": 187.9,
+        "maeGapMw": 26.1,
+        "verdict": "close",
+        "modelWins": 12,
+        "tepcoWins": 12,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "peak_timing_miss",
+          "severity": "warning",
+          "title": "The model peak occurred at a different hour than the actual peak.",
+          "evidence": {
+            "timeErrorHours": 2
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-15",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 250.0,
+        "tepcoMaeMw": 331.7,
+        "maeGapMw": -81.7,
+        "verdict": "model_better",
+        "modelWins": 16,
+        "tepcoWins": 8,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "model_closer_overall",
+          "severity": "info",
+          "title": "The model was closer than TEPCO overall.",
+          "evidence": {
+            "maeGapMw": -81.7
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-16",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 325.6,
+        "tepcoMaeMw": 557.1,
+        "maeGapMw": -231.5,
+        "verdict": "model_better",
+        "modelWins": 19,
+        "tepcoWins": 5,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "model_closer_overall",
+          "severity": "info",
+          "title": "The model was closer than TEPCO overall.",
+          "evidence": {
+            "maeGapMw": -231.5
+          }
+        },
+        {
+          "code": "large_single_hour_miss",
+          "severity": "warning",
+          "title": "One or more hours had a large model error.",
+          "evidence": {
+            "hour": 10,
+            "modelAbsErrorMw": 1303.2
+          }
+        },
+        {
+          "code": "peak_timing_miss",
+          "severity": "warning",
+          "title": "The model peak occurred at a different hour than the actual peak.",
+          "evidence": {
+            "timeErrorHours": 7
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-17",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 24,
+        "modelMaeMw": 467.5,
+        "tepcoMaeMw": 311.7,
+        "maeGapMw": 155.8,
+        "verdict": "tepco_better",
+        "modelWins": 9,
+        "tepcoWins": 15,
+        "ties": 0
+      },
+      "insights": [
+        {
+          "code": "tepco_closer_overall",
+          "severity": "warning",
+          "title": "TEPCO was closer overall.",
+          "evidence": {
+            "maeGapMw": 155.8
+          }
+        },
+        {
+          "code": "afternoon_plateau_underestimated",
+          "severity": "warning",
+          "title": "Late afternoon demand stayed higher than the model expected.",
+          "evidence": {
+            "band": "16-18",
+            "modelBiasMw": -792.2
+          }
+        },
+        {
+          "code": "large_single_hour_miss",
+          "severity": "warning",
+          "title": "One or more hours had a large model error.",
+          "evidence": {
+            "hour": 20,
+            "modelAbsErrorMw": 1356.4
+          }
+        }
+      ]
+    }
+  ]
+}
