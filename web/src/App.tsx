@@ -25,6 +25,10 @@ function fmtPct(value: number): string {
   return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)
 }
 
+function WeatherSourceLabel() {
+  return <div className="peak-stat-sub peak-stat-source">JMA</div>
+}
+
 type UsageMetricSource = 'reported' | 'model_forecast'
 
 interface UsageMetric {
@@ -158,7 +162,7 @@ function ActualPeakCard({ s }: { s: LatestSummary }) {
               <span className="peak-stat-value">{s.peakTempC}</span>
               <span className="peak-stat-unit"> °C</span>
             </div>
-            <div className="peak-stat-sub peak-stat-source">Open-Meteo</div>
+            <WeatherSourceLabel />
           </div>
         )}
       </div>
@@ -194,7 +198,7 @@ function ForecastPeakCard({ s, forecast, actual }: {
               <span className="peak-stat-value">{s.peakTempC}</span>
               <span className="peak-stat-unit"> °C</span>
             </div>
-            <div className="peak-stat-sub peak-stat-source">Open-Meteo</div>
+            <WeatherSourceLabel />
           </div>
         )}
       </div>
@@ -248,7 +252,7 @@ function TodayPeakCard({ actual, forecast, severity, peakTempC }: {
               <span className="peak-stat-value">{peakTempC}</span>
               <span className="peak-stat-unit"> °C</span>
             </div>
-            <div className="peak-stat-sub peak-stat-source">Open-Meteo</div>
+            <WeatherSourceLabel />
           </div>
         )}
       </div>

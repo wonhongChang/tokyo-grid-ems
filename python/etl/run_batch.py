@@ -64,7 +64,7 @@ def load_config(config_path: Path) -> dict:
     return {
         "forecast": {"n_weeks": 12, "min_samples_per_slot": 4},
         "weather_forecast_bias_correction": {
-            "enabled": True,
+            "enabled": False,
             "lookback_hours": 4,
             "observation_lag_hours": 1,
             "horizon_hours": 4,
@@ -662,6 +662,7 @@ def build_status_json(
     config: dict,
     today_severity: str | None = None,
     extended_cache: pd.DataFrame | None = None,
+    display_cache: pd.DataFrame | None = None,
 ) -> dict:
     coverage_to = max(ok_set) if ok_set else None
     latest = summaries.get(coverage_to.isoformat()) if coverage_to else None
@@ -690,7 +691,10 @@ def build_status_json(
         }
         if peak and extended_cache is not None and "temp_c" in extended_cache.columns:
             peak_ts = pd.Timestamp(peak["at"]).tz_convert("Asia/Tokyo")
-            temp_row = extended_cache.loc[extended_cache["ts"] == peak_ts, "temp_c"]
+            temp_source = display_cache if display_cache is not None else extended_cache
+            if "ts" not in temp_source.columns or "temp_c" not in temp_source.columns:
+                return result
+            temp_row = temp_source.loc[temp_source["ts"] == peak_ts, "temp_c"]
             if not temp_row.empty and pd.notna(temp_row.iloc[0]):
                 result["peakTempC"] = round(float(temp_row.iloc[0]), 1)
         return result
@@ -1178,11 +1182,13 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
     # If yesterday's CSV hasn't been processed yet, derive latest from actual/{yesterday}.json
     ok_set, summaries = _apply_actual_json_latest_fallback(out_dir, today, ok_set, summaries)
 
-    # Fill any missing temp_c in recent cache rows, then extend with forecast weather
-    hourly_cache   = enrich_cache_with_weather(hourly_cache)
-    extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
-    extended_cache = _apply_weather_forecast_bias_correction(extended_cache, config)
-    save_hourly_cache(out_dir, extended_cache)
+    # Fill any missing temp_c in recent cache rows, then extend with forecast weather.
+    # Keep the raw forecast-weather cache for display/persistence; use the bias-corrected
+    # copy only as model input so operational UI temperatures remain source temperatures.
+    hourly_cache = enrich_cache_with_weather(hourly_cache)
+    forecast_weather_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
+    extended_cache = _apply_weather_forecast_bias_correction(forecast_weather_cache, config)
+    save_hourly_cache(out_dir, forecast_weather_cache)
 
     forecaster = _try_load_lgbm(out_dir)
     adjuster   = _make_adjuster(config)
@@ -1190,6 +1196,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
 
     # Inject recent missing actuals (yesterday + today) for both forecasts
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
+    display_with_actuals = _inject_today_actuals(out_dir, today, forecast_weather_cache)
     if forecaster is None:
         forecaster = _try_train_lgbm(extended_with_actuals, out_dir, config)
 
@@ -1229,6 +1236,7 @@ def _run_status_only(out_dir: Path, config: dict) -> None:
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
         today_severity=today_severity,
         extended_cache=extended_with_actuals,
+        display_cache=display_with_actuals,
     ))
     _write_forecast_accuracy_report(out_dir)
     print(f"[STATUS] Updated: model={today_model} tomorrow={'enabled' if tomorrow_fc else 'disabled'}")
@@ -1380,10 +1388,11 @@ def main() -> None:
             except Exception as e:
                 print(f"[WARN] LightGBM re-forecast {d}: {e}", file=sys.stderr)
 
-    # Extend cache with forecast weather for today/tomorrow inference
-    extended_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
-    extended_cache = _apply_weather_forecast_bias_correction(extended_cache, config)
-    save_hourly_cache(out_dir, extended_cache)
+    # Extend cache with forecast weather for today/tomorrow inference. Persist the
+    # unadjusted forecast-weather cache; the bias-corrected copy is model input only.
+    forecast_weather_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
+    extended_cache = _apply_weather_forecast_bias_correction(forecast_weather_cache, config)
+    save_hourly_cache(out_dir, forecast_weather_cache)
 
     # Today / tomorrow forecasts
     today    = datetime.now(tz=JST).date()
@@ -1393,6 +1402,7 @@ def main() -> None:
     )
 
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
+    display_with_actuals = _inject_today_actuals(out_dir, today, forecast_weather_cache)
     today_fc, today_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, today, n_weeks, min_samples, config, adjuster, guard
     )
@@ -1423,6 +1433,7 @@ def main() -> None:
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
         today_severity=_severity_from_alerts_summary(today_alerts_summary),
         extended_cache=extended_with_actuals,
+        display_cache=display_with_actuals,
     ))
     _write_forecast_accuracy_report(out_dir)
     _write_model_backtest_report(out_dir, hourly_cache)

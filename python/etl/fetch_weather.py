@@ -208,15 +208,8 @@ def _combine_official_and_fallback_weather(
     official_temp = official[["ts", "temp_c"]].rename(columns={"temp_c": "_official_temp_c"})
     combined = combined.merge(official_temp, on="ts", how="left")
     has_official = combined["_official_temp_c"].notna()
-    temp_delta = combined["_official_temp_c"] - combined["temp_c"]
     combined.loc[has_official, "temp_c"] = combined.loc[has_official, "_official_temp_c"]
-    combined.loc[has_official & combined["apparent_temp_c"].notna(), "apparent_temp_c"] = (
-        combined.loc[has_official & combined["apparent_temp_c"].notna(), "apparent_temp_c"]
-        + temp_delta.loc[has_official & combined["apparent_temp_c"].notna()]
-    )
-    combined.loc[has_official & combined["apparent_temp_c"].isna(), "apparent_temp_c"] = (
-        combined.loc[has_official & combined["apparent_temp_c"].isna(), "temp_c"]
-    )
+    combined.loc[has_official, "apparent_temp_c"] = combined.loc[has_official, "temp_c"]
     combined = combined.drop(columns=["_official_temp_c"])
 
     missing_official = official[~official["ts"].isin(set(combined["ts"]))].copy()

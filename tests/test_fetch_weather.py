@@ -269,7 +269,7 @@ def test_fetch_forecast_temps_prefers_official_jma_temperature():
     assert result["temp_c"].max() == pytest.approx(29.0)
     assert result["temp_c"].min() == pytest.approx(16.0)
     peak = result.loc[result["temp_c"].idxmax()]
-    assert peak["apparent_temp_c"] == pytest.approx(30.0)
+    assert peak["apparent_temp_c"] == pytest.approx(29.0)
 
 
 def test_fetch_forecast_temps_falls_back_to_open_meteo_when_official_fails():

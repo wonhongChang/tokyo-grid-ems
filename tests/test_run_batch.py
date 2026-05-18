@@ -557,6 +557,39 @@ def test_build_status_json_uses_same_day_supply_for_forecast_severity():
     assert result["today"]["severity"] == "info"
 
 
+def test_build_status_json_uses_display_cache_for_peak_temperature():
+    today = date(2024, 1, 22)
+    yesterday = date(2024, 1, 21)
+    peak_ts = pd.Timestamp("2024-01-22T11:00:00+09:00")
+    model_cache = pd.DataFrame({
+        "ts": [peak_ts],
+        "supply_mw": [40_000.0],
+        "temp_c": [31.5],
+    })
+    display_cache = pd.DataFrame({
+        "ts": [peak_ts],
+        "supply_mw": [40_000.0],
+        "temp_c": [28.0],
+    })
+
+    result = build_status_json(
+        ok_set={yesterday},
+        fail_set=set(),
+        summaries={},
+        csv_dates={yesterday},
+        today=today,
+        today_fc=[_forecast_point(today, 34_000.0)],
+        tomorrow=date(2024, 1, 23),
+        tomorrow_fc=[],
+        cache=_recent_supply_cache(),
+        config=_reserve_risk_config(),
+        extended_cache=model_cache,
+        display_cache=display_cache,
+    )
+
+    assert result["today"]["peakTempC"] == pytest.approx(28.0)
+
+
 def test_build_status_json_caps_tomorrow_forecast_severity_at_warning():
     today = date(2024, 1, 22)
     yesterday = date(2024, 1, 21)
