@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 1,
+    "warning": 2,
     "info": 0
   },
   "events": [
@@ -16,14 +16,34 @@
       "endAt": "2026-05-19T01:00:00+09:00",
       "metric": "actual_mw",
       "actualMw": 23420.0,
-      "expectedMw": 23024.8,
+      "expectedMw": 23003.7,
       "interval": {
-        "p95Lower": 22052.1,
-        "p95Upper": 23206.8,
-        "p99Lower": 21079.4,
-        "p99Upper": 23388.8
+        "p95Lower": 21958.6,
+        "p95Upper": 23123.1,
+        "p99Lower": 20913.5,
+        "p99Upper": 23242.5
       },
-      "reason": "Actual 23420 MW exceeded p99 upper 23389 MW by 31 MW (0.13%)",
+      "reason": "Actual 23420 MW exceeded p99 upper 23242 MW by 178 MW (0.76%)",
+      "tags": [
+        "interval"
+      ]
+    },
+    {
+      "id": "2026-05-19T06:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "warning",
+      "startAt": "2026-05-19T06:00:00+09:00",
+      "endAt": "2026-05-19T07:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 23110.0,
+      "expectedMw": 22131.8,
+      "interval": {
+        "p95Lower": 21687.9,
+        "p95Upper": 22909.2,
+        "p99Lower": 21244.0,
+        "p99Upper": 23686.6
+      },
+      "reason": "Actual 23110 MW exceeded p95 upper 22909 MW by 201 MW (0.87%)",
       "tags": [
         "interval"
       ]
