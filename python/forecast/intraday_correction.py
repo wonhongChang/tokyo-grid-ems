@@ -17,6 +17,7 @@ class IntradayCorrectionResult:
     last_observed_hour: int | None
     base_adjustment_mw: float
     ramp_guard_applied: bool = False
+    negative_adjustment_damped: bool = False
 
 
 class IntradayResidualCorrector:
@@ -30,6 +31,13 @@ class IntradayResidualCorrector:
         self._shrinkage = float(correction_config.get("shrinkage", 0.6))
         self._max_abs_adjustment_mw = float(correction_config.get("max_abs_adjustment_mw", 1200.0))
         self._decay_per_hour = float(correction_config.get("decay_per_hour", 0.92))
+        negative_damping_config = correction_config.get("negative_residual_damping", {})
+        self._negative_damping_enabled = bool(negative_damping_config.get("enabled", False))
+        self._negative_damping_min_reference_hour = int(
+            negative_damping_config.get("min_reference_hour", 12)
+        )
+        negative_damping_multiplier = float(negative_damping_config.get("multiplier", 1.0))
+        self._negative_damping_multiplier = min(max(negative_damping_multiplier, 0.0), 1.0)
         ramp_guard_config = correction_config.get("ramp_guard", {})
         self._ramp_guard_enabled = bool(ramp_guard_config.get("enabled", False))
         self._ramp_guard_min_reference_hour = int(ramp_guard_config.get("min_reference_hour", 10))
@@ -160,6 +168,13 @@ class IntradayResidualCorrector:
 
         base_adjustment_mw = float(np.mean([residual for _, residual in recent_residuals]))
         base_adjustment_mw *= self._shrinkage
+        negative_adjustment_damped = (
+            self._negative_damping_enabled
+            and base_adjustment_mw < 0.0
+            and last_observed_hour >= self._negative_damping_min_reference_hour
+        )
+        if negative_adjustment_damped:
+            base_adjustment_mw *= self._negative_damping_multiplier
         base_adjustment_mw = float(np.clip(
             base_adjustment_mw,
             -self._max_abs_adjustment_mw,
@@ -200,4 +215,5 @@ class IntradayResidualCorrector:
             last_observed_hour,
             round(base_adjustment_mw, 1),
             ramp_guard_applied,
+            negative_adjustment_damped,
         )

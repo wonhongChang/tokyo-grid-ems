@@ -18,6 +18,7 @@ from python.etl.run_batch import (
     _freeze_observed_forecast_hours,
     _inject_today_actuals,
     _load_existing_forecast,
+    _write_forecast_snapshot,
     build_actual_json,
     build_alerts_json,
     build_forecast_json,
@@ -490,6 +491,68 @@ def _forecast_point_at(d: date, hour: int, forecast_mw: float) -> HourlyForecast
         p99_lower_mw=forecast_mw - 800.0,
         p99_upper_mw=forecast_mw + 800.0,
     )
+
+
+def test_write_forecast_snapshot_retains_recent_files_and_indexes(tmp_path):
+    target = date(2024, 1, 2)
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-02T10:00:00+09:00",
+                "actualMw": 31_000.0,
+                "actualSource": "observed",
+            },
+            {
+                "ts": "2024-01-02T23:00:00+09:00",
+                "actualMw": 32_000.0,
+                "actualSource": "tepco_forecast_fallback",
+            },
+        ],
+    }), encoding="utf-8")
+    forecasts = [_forecast_point_at(target, hour, 30_000.0 + hour) for hour in range(24)]
+    config = {
+        "forecast": {"n_weeks": 12},
+        "forecast_snapshots": {
+            "enabled": True,
+            "retention_days": 2,
+            "max_per_day": 2,
+        },
+    }
+
+    _write_forecast_snapshot(
+        tmp_path, target, forecasts, config, "lgbm_quantile_q50",
+        "2024-01-03T00:00:00+09:00", "intraday", True,
+    )
+    _write_forecast_snapshot(
+        tmp_path, target, forecasts, config, "lgbm_quantile_q50",
+        "2024-01-03T01:00:00+09:00", "intraday", True,
+    )
+    _write_forecast_snapshot(
+        tmp_path, target, forecasts, config, "lgbm_quantile_q50",
+        "2024-01-03T02:00:00+09:00", "intraday", True,
+    )
+    _write_forecast_snapshot(
+        tmp_path, date(2024, 1, 1), forecasts, config, "lgbm_quantile_q50",
+        "2024-01-03T02:30:00+09:00", "intraday", True,
+    )
+
+    target_dir = tmp_path / "forecast_snapshots" / "2024-01-02"
+    snapshot_files = sorted(path.name for path in target_dir.glob("*.json") if path.name != "index.json")
+    assert len(snapshot_files) == 2
+    assert not (tmp_path / "forecast_snapshots" / "2024-01-01").exists()
+
+    root_index = json.loads((tmp_path / "forecast_snapshots" / "index.json").read_text(encoding="utf-8"))
+    assert root_index["retentionDays"] == 2
+    assert root_index["maxPerDay"] == 2
+    assert root_index["dates"][0]["date"] == "2024-01-02"
+    assert root_index["dates"][0]["snapshotCount"] == 2
+    assert root_index["dates"][0]["latest"]["observedActualHoursAtGeneration"] == 1
+    assert root_index["dates"][0]["latest"]["fallbackActualHoursAtGeneration"] == 1
 
 
 def _recent_supply_cache(supply_mw: float = 34_000.0) -> pd.DataFrame:

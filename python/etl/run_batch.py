@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -52,6 +53,7 @@ JST = ZoneInfo("Asia/Tokyo")
 _LGBM_MODEL_NAME = ".lgbm_model.pkl"
 _LGBM_MIN_ROWS   = 90 * 24
 _TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
+_FORECAST_SNAPSHOT_PATH_NAME = "forecast_snapshots"
 
 # ---------------------------------------------------------------------------
 # Config
@@ -71,6 +73,18 @@ def load_config(config_path: Path) -> dict:
             "min_abs_bias_c": 0.8,
             "max_abs_bias_c": 2.5,
             "decay_per_hour": 0.75,
+        },
+        "intraday_correction": {
+            "negative_residual_damping": {
+                "enabled": True,
+                "min_reference_hour": 12,
+                "multiplier": 0.5,
+            },
+        },
+        "forecast_snapshots": {
+            "enabled": True,
+            "retention_days": 21,
+            "max_per_day": 16,
         },
         "anomaly": {
             "reserve_risk": {
@@ -1044,6 +1058,232 @@ def _load_actual_series(out_dir: Path, target_date: date) -> list[dict]:
         return []
 
 
+def _forecast_snapshot_config(config: dict) -> dict:
+    snapshot_config = config.get("forecast_snapshots", {})
+    return {
+        "enabled": bool(snapshot_config.get("enabled", True)),
+        "retention_days": max(int(snapshot_config.get("retention_days", 21)), 1),
+        "max_per_day": max(int(snapshot_config.get("max_per_day", 16)), 1),
+    }
+
+
+def _snapshot_filename(generated_at: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "-" for ch in generated_at)
+    safe = "-".join(part for part in safe.split("-") if part)
+    return safe or "snapshot"
+
+
+def _actual_observation_summary(actual_series: list[dict]) -> dict:
+    actual_hours: set[int] = set()
+    observed_hours: set[int] = set()
+    fallback_hours: set[int] = set()
+    for point in actual_series:
+        if point.get("actualMw") is None:
+            continue
+        try:
+            hour = int(str(point.get("ts", ""))[11:13])
+        except ValueError:
+            continue
+        actual_hours.add(hour)
+        if point.get("actualSource") == _TEPCO_FORECAST_FALLBACK_SOURCE:
+            fallback_hours.add(hour)
+        else:
+            observed_hours.add(hour)
+
+    return {
+        "actualHoursAtGeneration": len(actual_hours),
+        "observedActualHoursAtGeneration": len(observed_hours),
+        "fallbackActualHoursAtGeneration": len(fallback_hours),
+        "lastActualHour": max(actual_hours) if actual_hours else None,
+        "lastObservedActualHour": max(observed_hours) if observed_hours else None,
+        "lastFallbackActualHour": max(fallback_hours) if fallback_hours else None,
+    }
+
+
+def _snapshot_sort_key(path: Path) -> tuple[str, str]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        generated_at = str(payload.get("generatedAt") or "")
+    except Exception:
+        generated_at = ""
+    return generated_at, path.name
+
+
+def _snapshot_index_entry(path: Path, out_dir: Path) -> dict | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[WARN] Failed to read forecast snapshot {path}: {e}", file=sys.stderr)
+        return None
+
+    observation_summary = payload.get("observationSummary", {})
+    return {
+        "targetDate": payload.get("targetDate"),
+        "generatedAt": payload.get("generatedAt"),
+        "runType": payload.get("runType"),
+        "path": path.relative_to(out_dir).as_posix(),
+        "model": payload.get("model"),
+        "peak": payload.get("peak"),
+        "observedActualHoursAtGeneration": observation_summary.get("observedActualHoursAtGeneration"),
+        "fallbackActualHoursAtGeneration": observation_summary.get("fallbackActualHoursAtGeneration"),
+        "lastObservedActualHour": observation_summary.get("lastObservedActualHour"),
+    }
+
+
+def _prune_forecast_snapshots(
+    out_dir: Path,
+    current_date: date,
+    retention_days: int,
+    max_per_day: int,
+) -> None:
+    snapshot_root = out_dir / _FORECAST_SNAPSHOT_PATH_NAME
+    if not snapshot_root.exists():
+        return
+
+    cutoff_date = current_date - timedelta(days=retention_days - 1)
+    for date_dir in snapshot_root.iterdir():
+        if not date_dir.is_dir():
+            continue
+        try:
+            target_date = date.fromisoformat(date_dir.name)
+        except ValueError:
+            continue
+        if target_date < cutoff_date:
+            shutil.rmtree(date_dir)
+            continue
+
+        snapshot_files = sorted(
+            [
+                path for path in date_dir.glob("*.json")
+                if path.name != "index.json"
+            ],
+            key=_snapshot_sort_key,
+        )
+        for stale_file in snapshot_files[:-max_per_day]:
+            stale_file.unlink()
+
+
+def _write_forecast_snapshot_indexes(out_dir: Path, generated_at: str, config: dict) -> None:
+    snapshot_root = out_dir / _FORECAST_SNAPSHOT_PATH_NAME
+    if not snapshot_root.exists():
+        return
+
+    snapshot_config = _forecast_snapshot_config(config)
+    dates: list[dict] = []
+    for date_dir in sorted(path for path in snapshot_root.iterdir() if path.is_dir()):
+        snapshot_files = sorted(
+            [
+                path for path in date_dir.glob("*.json")
+                if path.name != "index.json"
+            ],
+            key=_snapshot_sort_key,
+        )
+        entries = [
+            entry for entry in (
+                _snapshot_index_entry(path, out_dir)
+                for path in snapshot_files
+            )
+            if entry is not None
+        ]
+        if not entries:
+            continue
+
+        date_index = {
+            "schemaVersion": "1.0.0",
+            "timezone": "Asia/Tokyo",
+            "generatedAt": generated_at,
+            "targetDate": date_dir.name,
+            "snapshots": entries,
+        }
+        write_json(date_dir / "index.json", date_index)
+        dates.append({
+            "date": date_dir.name,
+            "path": (date_dir / "index.json").relative_to(out_dir).as_posix(),
+            "snapshotCount": len(entries),
+            "latest": entries[-1],
+        })
+
+    write_json(snapshot_root / "index.json", {
+        "schemaVersion": "1.0.0",
+        "timezone": "Asia/Tokyo",
+        "generatedAt": generated_at,
+        "retentionDays": snapshot_config["retention_days"],
+        "maxPerDay": snapshot_config["max_per_day"],
+        "dates": dates,
+    })
+
+
+def _write_forecast_snapshot(
+    out_dir: Path,
+    target_date: date,
+    forecasts: list[HourlyForecast],
+    config: dict,
+    model_name: str,
+    generated_at: str,
+    run_type: str,
+    preserve_observed_forecast_hours: bool,
+) -> Path | None:
+    snapshot_config = _forecast_snapshot_config(config)
+    if not snapshot_config["enabled"] or not forecasts:
+        return None
+
+    forecast_json = build_forecast_json(target_date, forecasts, config, model_name)
+    if forecast_json.get("availability") != "ok":
+        return None
+
+    try:
+        current_date = datetime.fromisoformat(generated_at).date()
+    except ValueError:
+        current_date = datetime.now(tz=JST).date()
+    cutoff_date = current_date - timedelta(days=snapshot_config["retention_days"] - 1)
+    if target_date < cutoff_date:
+        _prune_forecast_snapshots(
+            out_dir,
+            current_date,
+            snapshot_config["retention_days"],
+            snapshot_config["max_per_day"],
+        )
+        _write_forecast_snapshot_indexes(out_dir, generated_at, config)
+        return None
+
+    actual_series = _load_actual_series(out_dir, target_date)
+    snapshot = {
+        "schemaVersion": "1.0.0",
+        "timezone": "Asia/Tokyo",
+        "targetDate": target_date.isoformat(),
+        "generatedAt": generated_at,
+        "runType": run_type,
+        "preserveObservedForecastHours": preserve_observed_forecast_hours,
+        "model": forecast_json.get("model"),
+        "peak": forecast_json.get("peak"),
+        "observationSummary": _actual_observation_summary(actual_series),
+        "series": forecast_json.get("series", []),
+    }
+
+    snapshot_dir = out_dir / _FORECAST_SNAPSHOT_PATH_NAME / target_date.isoformat()
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    base_name = _snapshot_filename(generated_at)
+    snapshot_path = snapshot_dir / f"{base_name}.json"
+    suffix = 2
+    while snapshot_path.exists():
+        snapshot_path = snapshot_dir / f"{base_name}-{suffix}.json"
+        suffix += 1
+
+    write_json(snapshot_path, snapshot)
+    _prune_forecast_snapshots(
+        out_dir,
+        current_date,
+        snapshot_config["retention_days"],
+        snapshot_config["max_per_day"],
+    )
+    _write_forecast_snapshot_indexes(out_dir, generated_at, config)
+    print(
+        "[SNAPSHOT] Forecast snapshot "
+        f"{target_date.isoformat()} {run_type} -> {snapshot_path.relative_to(out_dir)}"
+    )
+    return snapshot_path
+
+
 def _apply_intraday_residual_correction(
     out_dir: Path,
     target_date: date,
@@ -1067,12 +1307,18 @@ def _apply_intraday_residual_correction(
 
     corrected_model_name = f"{model_name}_intraday_residual"
     ramp_guard_note = " ramp_guard=applied" if correction.ramp_guard_applied else ""
+    negative_damping_note = (
+        " negative_residual_damping=applied"
+        if getattr(correction, "negative_adjustment_damped", False)
+        else ""
+    )
     print(
         "[INTRADAY] Residual correction "
         f"{target_date}: base={correction.base_adjustment_mw:+.1f} MW "
         f"after hour={correction.last_observed_hour:02d} "
         f"(observed={correction.observed_hours})"
         f"{ramp_guard_note}"
+        f"{negative_damping_note}"
     )
     return correction.forecasts, corrected_model_name
 
@@ -1271,10 +1517,36 @@ def _run_status_only(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard
     )
 
+    snapshot_generated_at = ts_now()
+    snapshot_run_type = (
+        "intraday_refresh"
+        if not preserve_observed_forecast_hours
+        else "intraday"
+    )
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
                build_forecast_json(today, today_fc, config, today_model))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
                build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
+    _write_forecast_snapshot(
+        out_dir,
+        today,
+        today_fc,
+        config,
+        today_model,
+        snapshot_generated_at,
+        snapshot_run_type,
+        preserve_observed_forecast_hours,
+    )
+    _write_forecast_snapshot(
+        out_dir,
+        tomorrow,
+        tomorrow_fc,
+        config,
+        tomorrow_model,
+        snapshot_generated_at,
+        snapshot_run_type,
+        preserve_observed_forecast_hours,
+    )
 
     # Rebuild recent actual alerts with the current config. This keeps yesterday's
     # alert file in sync after threshold/config changes even when the daily CSV
@@ -1489,10 +1761,32 @@ def main() -> None:
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard
     )
 
+    snapshot_generated_at = ts_now()
+    snapshot_run_type = "etl_refresh" if args.refresh_today_forecast else "etl"
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
                build_forecast_json(today, today_fc, config, today_model))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
                build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
+    _write_forecast_snapshot(
+        out_dir,
+        today,
+        today_fc,
+        config,
+        today_model,
+        snapshot_generated_at,
+        snapshot_run_type,
+        not args.refresh_today_forecast,
+    )
+    _write_forecast_snapshot(
+        out_dir,
+        tomorrow,
+        tomorrow_fc,
+        config,
+        tomorrow_model,
+        snapshot_generated_at,
+        snapshot_run_type,
+        not args.refresh_today_forecast,
+    )
 
     # Keep recent alert files aligned with the current anomaly thresholds, even
     # if their daily CSVs were processed by an older config.

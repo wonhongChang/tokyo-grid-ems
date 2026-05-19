@@ -16,6 +16,8 @@ The ETL/batch pipeline generates files under `web/public/` conforming to this sc
 - `web/public/status.json`
 - `web/public/alerts/YYYY-MM-DD.json`
 - `web/public/forecast/YYYY-MM-DD.json`
+- `web/public/forecast_snapshots/YYYY-MM-DD/index.json`
+- `web/public/forecast_snapshots/YYYY-MM-DD/*.json`
 - `web/public/actual/YYYY-MM-DD.json`
 - `web/public/metrics/forecast_accuracy.json`
 - `web/public/metrics/model_backtest.json`
@@ -233,6 +235,51 @@ Provides **hourly demand forecast for a specific date** (today or tomorrow).
 - `model.nWeeks`: number of rolling weeks used for training
 - `series[]`: 24-point forecast + prediction intervals (95/99%)
 - When data is insufficient: `availability: "not_yet_available"`, `series: []`
+
+---
+
+# 3.5) forecast_snapshots/YYYY-MM-DD/*.json
+
+## Purpose
+Preserves bounded lead-time forecast snapshots for operational review. These files are stored with Pages outputs but are not directly linked from the dashboard UI.
+
+## Path Example
+- `web/public/forecast_snapshots/2025-12-02/index.json`
+- `web/public/forecast_snapshots/2025-12-02/2025-12-01T21-20-00-09-00.json`
+
+## Snapshot Schema
+```json
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "targetDate": "2025-12-02",
+  "generatedAt": "2025-12-01T21:20:00+09:00",
+  "runType": "intraday",
+  "preserveObservedForecastHours": true,
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "version": "mvp-1",
+    "nWeeks": 12
+  },
+  "peak": {
+    "forecastMw": 57500.0,
+    "at": "2025-12-02T18:00:00+09:00"
+  },
+  "observationSummary": {
+    "actualHoursAtGeneration": 12,
+    "observedActualHoursAtGeneration": 12,
+    "fallbackActualHoursAtGeneration": 0,
+    "lastActualHour": 11,
+    "lastObservedActualHour": 11,
+    "lastFallbackActualHour": null
+  },
+  "series": []
+}
+```
+
+## Retention
+- `config.yaml` controls `forecast_snapshots.retention_days` and `forecast_snapshots.max_per_day`.
+- Current default: 21 target dates, maximum 16 snapshots per target date.
 
 ---
 

@@ -150,6 +150,66 @@ def test_intraday_correction_clips_large_adjustment():
     assert result.forecasts[11].forecast_mw == pytest.approx(21_200.0)
 
 
+def test_intraday_correction_damps_afternoon_negative_residual():
+    target = date(2026, 5, 11)
+    forecasts = _make_forecasts(target, 20_000.0)
+    actual_series = [
+        _actual_point(target, 12, 19_000.0),
+        _actual_point(target, 13, 19_000.0),
+        _actual_point(target, 14, 19_000.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "decay_per_hour": 1.0,
+            "negative_residual_damping": {
+                "enabled": True,
+                "min_reference_hour": 12,
+                "multiplier": 0.5,
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.applied is True
+    assert result.negative_adjustment_damped is True
+    assert result.base_adjustment_mw == pytest.approx(-500.0)
+    assert result.forecasts[15].forecast_mw == pytest.approx(19_500.0)
+
+
+def test_intraday_correction_keeps_morning_negative_residual():
+    target = date(2026, 5, 11)
+    forecasts = _make_forecasts(target, 20_000.0)
+    actual_series = [
+        _actual_point(target, 7, 19_000.0),
+        _actual_point(target, 8, 19_000.0),
+        _actual_point(target, 9, 19_000.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "decay_per_hour": 1.0,
+            "negative_residual_damping": {
+                "enabled": True,
+                "min_reference_hour": 12,
+                "multiplier": 0.5,
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.applied is True
+    assert result.negative_adjustment_damped is False
+    assert result.base_adjustment_mw == pytest.approx(-1_000.0)
+    assert result.forecasts[10].forecast_mw == pytest.approx(19_000.0)
+
+
 def test_intraday_ramp_guard_caps_near_term_jump_after_late_morning_actual():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)

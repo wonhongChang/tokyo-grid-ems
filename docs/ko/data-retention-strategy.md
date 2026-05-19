@@ -8,7 +8,7 @@
 
 ## 배경
 
-TokyoGridEMS는 GitHub Pages를 통해 정적 JSON 파일을 공개합니다. GitHub Actions가 TEPCO/Open-Meteo 데이터를 수집하고, JSON/parquet/model 산출물을 만든 뒤, GitHub Pages가 별도 백엔드 없이 이를 서빙합니다.
+TokyoGridEMS는 GitHub Pages를 통해 정적 JSON 파일을 공개합니다. GitHub Actions가 TEPCO/JMA 기상 데이터를 수집하고, JSON/parquet/model 산출물을 만든 뒤, GitHub Pages가 별도 백엔드 없이 이를 서빙합니다.
 
 이 단순한 구조는 공개 포트폴리오 프로젝트에 잘 맞습니다. 하지만 Git은 장기 데이터베이스가 아니므로, 모든 일별 JSON, 모델 pickle, cache snapshot을 영구 커밋하면 clone 크기와 Actions checkout 시간이 점점 늘어날 수 있습니다.
 
@@ -28,6 +28,7 @@ repository는 영구 데이터 저장소가 아니라 공개 서빙 계층으로
 | `status.json` | 현재만 | 없음 | 최신 대시보드 요약 |
 | `actual/YYYY-MM-DD.json` | 최근 180-365일 | 월별 archive JSON | 과거 실측은 TEPCO CSV/ZIP로 재구성 가능 |
 | `forecast/YYYY-MM-DD.json` | 최근 180-365일 | 월별 archive 또는 일별 metrics | 과거 예측은 주로 평가용 |
+| `forecast_snapshots/YYYY-MM-DD/*.json` | 최근 21일, 날짜별 최대 16개 | 추후 compact lead-time metrics | 각 갱신 시점의 모델 판단을 분석하기 위한 자료 |
 | `alerts/YYYY-MM-DD.json` | 최근 180-365일 | 월별 archive 또는 요약 metrics | UI 응답성 유지 |
 | `metrics/*.json` | 유지 | rolling/monthly metrics | 작고 포트폴리오 가치가 높음 |
 | `.hourly_cache.parquet` | 현재 snapshot만 | 원천 데이터에서 재생성 가능 | Actions에는 유용하지만 Git history 비대화 위험 |
@@ -40,6 +41,8 @@ web/public/
   status.json
   actual/YYYY-MM-DD.json
   forecast/YYYY-MM-DD.json
+  forecast_snapshots/YYYY-MM-DD/index.json
+  forecast_snapshots/YYYY-MM-DD/YYYY-MM-DDTHH-MM-SS-09-00.json
   alerts/YYYY-MM-DD.json
 
   archive/
@@ -72,11 +75,20 @@ S3, R2, Supabase, managed database 같은 외부 저장소를 쓰면 repository 
 
 이 경계 덕분에 모델이 자기 자신의 예측값을 미래 학습 데이터로 다시 먹는 순환을 피할 수 있습니다.
 
+## 현재 스냅샷 정책
+
+lead-time 예측 스냅샷은 ETL과 intraday 실행 시 `forecast_snapshots/` 아래에 저장합니다.
+
+- 최근 21개 target date를 유지합니다.
+- target date별 최대 16개 스냅샷만 유지합니다.
+- 생성 시점의 실측/TEPCO fallback 관측 개수를 함께 기록합니다.
+- 예측 series와 peak 요약을 저장해 나중에 운영 관점에서 원인을 분석할 수 있게 합니다.
+- 공개 UI에는 직접 연결하지 않고, 모델 검토와 사고 분석용으로만 사용합니다.
+
 ## 향후 구현 작업
 
-1. `config.yaml`에 `retention_days` 설정을 추가합니다.
-2. ETL 마지막 단계에 오래된 일별 JSON을 `archive/{actual,forecast,alerts}/YYYY-MM.json`으로 압축하는 cleanup을 추가합니다.
-3. archive 생성 후 최근 일별 JSON만 남깁니다.
-4. UI에서 과거 월을 탐색할 필요가 생기면 archive month index 파일을 추가합니다.
+1. ETL 마지막 단계에 오래된 `actual`, `forecast`, `alerts` 일별 JSON을 `archive/{actual,forecast,alerts}/YYYY-MM.json`으로 압축하는 cleanup을 추가합니다.
+2. archive 생성 후 최근 일별 JSON만 남깁니다.
+3. UI에서 과거 월을 탐색할 필요가 생기면 archive month index 파일을 추가합니다.
+4. forecast snapshot 이력이 커지면 오래된 스냅샷을 compact lead-time metrics로 변환합니다.
 5. repository 크기가 문제가 되면 `.hourly_cache.parquet`, `.lgbm_model.pkl`을 재생성 가능하게 하거나 장기 Git history 밖으로 분리하는 방안을 검토합니다.
-

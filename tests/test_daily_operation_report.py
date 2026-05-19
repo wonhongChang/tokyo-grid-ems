@@ -6,6 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from python.eval.daily_operation_report import (
     build_daily_operation_report,
@@ -99,9 +100,34 @@ def test_daily_operation_report_summarizes_previous_day_accuracy(tmp_path):
     assert report["summary"]["verdict"] == "tepco_better"
     assert report["model"]["family"] == "lgbm_quantile_q50"
     assert report["topMisses"][0]["modelAbsErrorMw"] == 1300.0
+    assert report["shape"]["transitionHours"] == 23
     insight_codes = {insight["code"] for insight in report["insights"]}
     assert "morning_ramp_underestimated" in insight_codes
     assert "afternoon_plateau_underestimated" in insight_codes
+
+
+def test_daily_operation_report_flags_implausible_shape_drop(tmp_path):
+    date_iso = "2026-05-18"
+    actual_values = [30_000.0 for _ in range(24)]
+    actual_values[16] = 29_900.0
+    model_values = actual_values.copy()
+    model_values[15] = 31_000.0
+    model_values[16] = 27_000.0
+
+    _write_day(tmp_path, date_iso, model_values, actual_values)
+
+    report = build_daily_operation_report(
+        tmp_path,
+        date_iso,
+        generated_at="2026-05-19T08:20:00+09:00",
+    )
+
+    shape = report["shape"]
+    assert shape["maxModelDropMw"] == pytest.approx(-4_000.0)
+    assert shape["largeShapeBreaks"][0]["fromHour"] == 15
+    assert shape["largeShapeBreaks"][0]["toHour"] == 16
+    insight_codes = {insight["code"] for insight in report["insights"]}
+    assert "sharp_model_drop_mismatch" in insight_codes
 
 
 def test_daily_operation_report_skips_tepco_fallback_actuals(tmp_path):
@@ -187,6 +213,9 @@ def test_internal_daily_diagnostic_includes_lag_and_weather_features(tmp_path):
     assert "lag_24h" in first_row["lagFeatures"]
     assert "lag_24h_to_same_business_type_gap" in first_row["lagFeatures"]
     assert "temp_delta_24h" in first_row["weatherFeatures"]
+    summary = diagnostic["diagnosticSummary"]
+    assert summary["coolingDelta24hByBand"]
+    assert summary["weatherDeltaRiskByBand"]
 
 
 def test_internal_daily_diagnostics_index_points_to_latest_report(tmp_path):

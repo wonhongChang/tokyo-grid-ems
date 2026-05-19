@@ -137,10 +137,11 @@ ETLが `web/public/` 以下に生成するファイルです。
 | `alerts/YYYY-MM-DD.json` | 異常検知イベント一覧 |
 | `forecast/YYYY-MM-DD.json` | 時間別予測値 + 予測区間（95/99%） |
 | `actual/YYYY-MM-DD.json` | 時間別実績値（当日リアルタイム含む） |
+| `forecast_snapshots/YYYY-MM-DD/*.json` | 運用分析用のlead-time予測スナップショット（UIからは直接リンクしない） |
 | `metrics/forecast_accuracy.json` | TEPCO予測に対する運用精度 |
 | `metrics/model_backtest.json` | ベースラインに対するLightGBMバックテスト |
 | `reports/daily/*.json` | 検証タブに表示する前日運用サマリー |
-| `reports/internal/daily-diagnostics/*.json` | 運用出力と一緒に保存する内部向けlag/気温特徴量診断（UIからはリンクしない） |
+| `reports/internal/daily-diagnostics/*.json` | 運用出力と一緒に保存する内部向けlag/気温/shape診断（UIからはリンクしない） |
 
 > タイムスタンプはすべて `Asia/Tokyo (+09:00)` 基準のISO 8601形式で出力します。
 
@@ -170,6 +171,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [2026-05-18 lag gap特徴量と観測気温補正](docs/ja/model-improvements/model-improvement-2026-05-18-lag-gap-and-observed-weather.md)
 - [2026-05-19 気温バイアスと当日ランプガード](docs/ja/model-improvements/model-improvement-2026-05-19-weather-bias-and-ramp-guards.md)
 - [2026-05-19 運用向け intraday 下落ガード](docs/ja/model-improvements/model-improvement-2026-05-19-operational-intraday-drop-guard.md)
+- [2026-05-19 予測スナップショットとshape診断](docs/ja/model-improvements/model-improvement-2026-05-19-operational-snapshots-and-shape-diagnostics.md)
 
 ---
 

@@ -8,7 +8,7 @@ Languages: [한국어](../ko/data-retention-strategy.md) · [日本語](../ja/da
 
 ## Context
 
-TokyoGridEMS publishes static JSON files through GitHub Pages. This keeps the system simple: GitHub Actions collects TEPCO/Open-Meteo data, writes JSON/parquet/model outputs, and GitHub Pages serves them without a backend server.
+TokyoGridEMS publishes static JSON files through GitHub Pages. This keeps the system simple: GitHub Actions collects TEPCO/JMA weather data, writes JSON/parquet/model outputs, and GitHub Pages serves them without a backend server.
 
 That simplicity is useful for a public portfolio project, but Git should not become a long-term database. If every daily JSON, model pickle, and cache snapshot is committed forever, clone size and Actions checkout time will gradually grow.
 
@@ -28,6 +28,7 @@ Use the repository as a public serving layer, not as the permanent data warehous
 | `status.json` | current only | none | latest dashboard summary |
 | `actual/YYYY-MM-DD.json` | recent 180-365 days | monthly archive JSON | historical actuals are reproducible from TEPCO CSV/ZIP |
 | `forecast/YYYY-MM-DD.json` | recent 180-365 days | monthly archive or daily metrics | old forecasts matter mainly for evaluation |
+| `forecast_snapshots/YYYY-MM-DD/*.json` | recent 21 days, max 16 per day | compact lead-time metrics later | used to inspect what the model believed at each update time |
 | `alerts/YYYY-MM-DD.json` | recent 180-365 days | monthly archive or summary metrics | keeps UI responsive |
 | `metrics/*.json` | keep | compact rolling/monthly metrics | small and portfolio-relevant |
 | `.hourly_cache.parquet` | current snapshot only | rebuildable from sources | useful for Actions, risky if committed forever with history |
@@ -40,6 +41,8 @@ web/public/
   status.json
   actual/YYYY-MM-DD.json
   forecast/YYYY-MM-DD.json
+  forecast_snapshots/YYYY-MM-DD/index.json
+  forecast_snapshots/YYYY-MM-DD/YYYY-MM-DDTHH-MM-SS-09-00.json
   alerts/YYYY-MM-DD.json
 
   archive/
@@ -72,11 +75,20 @@ Past model forecast JSON should not be used as training actuals. Training and la
 
 This prevents the model from feeding its own forecasts back into future training data.
 
+## Current Snapshot Policy
+
+Lead-time forecast snapshots are now written under `forecast_snapshots/` for both ETL and intraday runs.
+
+- Keep the latest 21 target dates.
+- Keep at most 16 snapshots per target date.
+- Store actual/fallback observation counts at generation time.
+- Store the forecast series and peak summary for later operational diagnosis.
+- Do not link these files directly from the public UI; they are for model review and incident analysis.
+
 ## Future Implementation Tasks
 
-1. Add a `retention_days` setting to `config.yaml`.
-2. Add an ETL cleanup step that compacts old daily JSON into `archive/{actual,forecast,alerts}/YYYY-MM.json`.
-3. Keep only recent daily JSON files after archive creation.
-4. Add a link/index file for archive months if the UI needs historical browsing.
+1. Add an ETL cleanup step that compacts old daily `actual`, `forecast`, and `alerts` JSON into `archive/{actual,forecast,alerts}/YYYY-MM.json`.
+2. Keep only recent daily JSON files after archive creation.
+3. Add a link/index file for archive months if the UI needs historical browsing.
+4. Convert old forecast snapshots into compact lead-time metrics if snapshot history becomes large.
 5. Consider making `.hourly_cache.parquet` and `.lgbm_model.pkl` rebuildable or stored outside long-term Git history if repository size becomes a problem.
-

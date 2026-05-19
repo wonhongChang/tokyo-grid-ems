@@ -205,6 +205,74 @@ def _band_summary(rows: list[dict]) -> list[dict]:
     return result
 
 
+def _shape_transitions(rows: list[dict]) -> list[dict]:
+    result = []
+    previous: dict | None = None
+    for row in sorted(rows, key=lambda item: item["hour"]):
+        if previous is None:
+            previous = row
+            continue
+        if row["hour"] != previous["hour"] + 1:
+            previous = row
+            continue
+
+        actual_delta = row["actualMw"] - previous["actualMw"]
+        model_delta = row["modelForecastMw"] - previous["modelForecastMw"]
+        tepco_delta = row["tepcoForecastMw"] - previous["tepcoForecastMw"]
+        model_delta_error = model_delta - actual_delta
+        tepco_delta_error = tepco_delta - actual_delta
+        result.append({
+            "fromHour": previous["hour"],
+            "toHour": row["hour"],
+            "actualDeltaMw": round(actual_delta, 1),
+            "modelDeltaMw": round(model_delta, 1),
+            "tepcoDeltaMw": round(tepco_delta, 1),
+            "modelDeltaErrorMw": round(model_delta_error, 1),
+            "tepcoDeltaErrorMw": round(tepco_delta_error, 1),
+            "modelAbsDeltaErrorMw": round(abs(model_delta_error), 1),
+            "tepcoAbsDeltaErrorMw": round(abs(tepco_delta_error), 1),
+        })
+        previous = row
+    return result
+
+
+def _shape_summary(rows: list[dict]) -> dict:
+    transitions = _shape_transitions(rows)
+    if not transitions:
+        return {
+            "transitionHours": 0,
+            "largeShapeBreaks": [],
+        }
+
+    large_breaks = sorted(
+        [
+            transition for transition in transitions
+            if transition["modelAbsDeltaErrorMw"] >= 1500.0
+        ],
+        key=lambda transition: transition["modelAbsDeltaErrorMw"],
+        reverse=True,
+    )[:5]
+
+    return {
+        "transitionHours": len(transitions),
+        "modelDeltaMaeMw": _mean([
+            transition["modelAbsDeltaErrorMw"] for transition in transitions
+        ]),
+        "tepcoDeltaMaeMw": _mean([
+            transition["tepcoAbsDeltaErrorMw"] for transition in transitions
+        ]),
+        "maxActualRiseMw": max(transition["actualDeltaMw"] for transition in transitions),
+        "maxActualDropMw": min(transition["actualDeltaMw"] for transition in transitions),
+        "maxModelRiseMw": max(transition["modelDeltaMw"] for transition in transitions),
+        "maxModelDropMw": min(transition["modelDeltaMw"] for transition in transitions),
+        "largestDeltaMiss": max(
+            transitions,
+            key=lambda transition: transition["modelAbsDeltaErrorMw"],
+        ),
+        "largeShapeBreaks": large_breaks,
+    }
+
+
 def _add_insight(insights: list[dict], code: str, severity: str, title: str, evidence: dict) -> None:
     if any(insight["code"] == code for insight in insights):
         return
@@ -216,7 +284,13 @@ def _add_insight(insights: list[dict], code: str, severity: str, title: str, evi
     })
 
 
-def _build_insights(summary: dict, peak: dict | None, bands: list[dict], top_misses: list[dict]) -> list[dict]:
+def _build_insights(
+    summary: dict,
+    peak: dict | None,
+    bands: list[dict],
+    top_misses: list[dict],
+    shape: dict | None = None,
+) -> list[dict]:
     insights: list[dict] = []
 
     if summary["verdict"] == "model_better":
@@ -284,6 +358,35 @@ def _build_insights(summary: dict, peak: dict | None, bands: list[dict], top_mis
                 "modelAbsErrorMw": top_misses[0]["modelAbsErrorMw"],
             },
         )
+
+    if shape and shape.get("largeShapeBreaks"):
+        largest_break = shape["largeShapeBreaks"][0]
+        if largest_break["modelDeltaErrorMw"] <= -1500.0:
+            _add_insight(
+                insights,
+                "sharp_model_drop_mismatch",
+                "warning",
+                "The model line dropped faster than actual demand.",
+                {
+                    "fromHour": largest_break["fromHour"],
+                    "toHour": largest_break["toHour"],
+                    "modelDeltaMw": largest_break["modelDeltaMw"],
+                    "actualDeltaMw": largest_break["actualDeltaMw"],
+                },
+            )
+        elif largest_break["modelDeltaErrorMw"] >= 1500.0:
+            _add_insight(
+                insights,
+                "sharp_model_rise_mismatch",
+                "warning",
+                "The model line rose faster than actual demand.",
+                {
+                    "fromHour": largest_break["fromHour"],
+                    "toHour": largest_break["toHour"],
+                    "modelDeltaMw": largest_break["modelDeltaMw"],
+                    "actualDeltaMw": largest_break["actualDeltaMw"],
+                },
+            )
 
     if peak:
         model_peak = peak["model"]
@@ -354,12 +457,13 @@ def build_daily_operation_report(
     }
     peak = _peak_summary(rows)
     time_bands = _band_summary(rows)
+    shape = _shape_summary(rows)
     top_misses = sorted(
         rows,
         key=lambda row: row["modelAbsErrorMw"],
         reverse=True,
     )[:3]
-    insights = _build_insights(summary, peak, time_bands, top_misses)
+    insights = _build_insights(summary, peak, time_bands, top_misses, shape)
 
     return {
         "schemaVersion": "1.0.0",
@@ -371,6 +475,7 @@ def build_daily_operation_report(
         "summary": summary,
         "peak": peak,
         "timeBands": time_bands,
+        "shape": shape,
         "topMisses": top_misses,
         "insights": insights,
     }
@@ -496,6 +601,54 @@ def _feature_band_means(rows: list[dict], group_name: str, feature_name: str) ->
     return result
 
 
+def _weather_delta_risk_by_band(rows: list[dict]) -> list[dict]:
+    result = []
+    for code, label, start_hour, end_hour in _TIME_BANDS:
+        band_rows = [
+            row for row in rows
+            if start_hour <= row["hour"] <= end_hour
+        ]
+        cooling_values = [
+            row.get("weatherFeatures", {}).get("cooling_delta_24h")
+            for row in band_rows
+        ]
+        temp_values = [
+            row.get("weatherFeatures", {}).get("temp_delta_24h")
+            for row in band_rows
+        ]
+        cooling_numeric = [float(value) for value in cooling_values if value is not None]
+        temp_numeric = [float(value) for value in temp_values if value is not None]
+        if not cooling_numeric and not temp_numeric:
+            continue
+
+        model_bias = _mean([row["modelErrorMw"] for row in band_rows])
+        model_mae = _mean([row["modelAbsErrorMw"] for row in band_rows])
+        cooling_mean = _mean(cooling_numeric)
+        temp_mean = _mean(temp_numeric)
+        assessment = "neutral"
+        if cooling_mean is not None and model_bias is not None:
+            if cooling_mean >= 1.0 and model_bias <= -500.0:
+                assessment = "warming_underpredicted"
+            elif cooling_mean >= 1.0 and model_bias >= 500.0:
+                assessment = "warming_overweighted"
+            elif cooling_mean <= -1.0 and model_bias <= -500.0:
+                assessment = "cooling_drop_underweighted"
+            elif cooling_mean <= -1.0 and model_bias >= 500.0:
+                assessment = "cooling_drop_overweighted"
+
+        result.append({
+            "code": code,
+            "label": label,
+            "hours": len(band_rows),
+            "tempDelta24hMean": temp_mean,
+            "coolingDelta24hMean": cooling_mean,
+            "modelBiasMw": model_bias,
+            "modelMaeMw": model_mae,
+            "assessment": assessment,
+        })
+    return result
+
+
 def build_internal_daily_diagnostic(
     public_dir: Path,
     date_iso: str,
@@ -547,6 +700,12 @@ def build_internal_daily_diagnostic(
                 "weatherFeatures",
                 "temp_delta_24h",
             ),
+            "coolingDelta24hByBand": _feature_band_means(
+                diagnostic_rows,
+                "weatherFeatures",
+                "cooling_delta_24h",
+            ),
+            "weatherDeltaRiskByBand": _weather_delta_risk_by_band(diagnostic_rows),
         },
         "rows": diagnostic_rows,
     }

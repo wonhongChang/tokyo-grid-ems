@@ -160,10 +160,11 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 | `alerts/YYYY-MM-DD.json` | 이상 탐지 이벤트 목록 |
 | `forecast/YYYY-MM-DD.json` | 시간별 예측값 + 예측 구간(95/99%) |
 | `actual/YYYY-MM-DD.json` | 시간별 실적값 (당일 실시간 포함) |
+| `forecast_snapshots/YYYY-MM-DD/*.json` | 운영 분석용 lead-time 예측 스냅샷 (UI에는 직접 연결하지 않음) |
 | `metrics/forecast_accuracy.json` | TEPCO 예측 대비 자체 모델 운영 성능 |
 | `metrics/model_backtest.json` | 베이스라인 대비 LightGBM 백테스트 |
 | `reports/daily/*.json` | 검증 탭에 표시하는 전날 운영 리포트 |
-| `reports/internal/daily-diagnostics/*.json` | 운영 산출물과 함께 저장하는 내부 분석용 lag/기온 피처 진단 JSON (UI에는 연결하지 않음) |
+| `reports/internal/daily-diagnostics/*.json` | 운영 산출물과 함께 저장하는 내부 분석용 lag/기온/shape 진단 JSON (UI에는 연결하지 않음) |
 
 > 타임스탬프는 전 산출물에서 `Asia/Tokyo (+09:00)` 기준 ISO 8601로 출력합니다.
 
@@ -193,6 +194,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 - [2026-05-18 lag gap 피처와 관측 기온 보정](docs/ko/model-improvements/model-improvement-2026-05-18-lag-gap-and-observed-weather.md)
 - [2026-05-19 기온 바이어스와 당일 램프 가드](docs/ko/model-improvements/model-improvement-2026-05-19-weather-bias-and-ramp-guards.md)
 - [2026-05-19 운영용 intraday 하락 가드](docs/ko/model-improvements/model-improvement-2026-05-19-operational-intraday-drop-guard.md)
+- [2026-05-19 예측 스냅샷과 shape 진단](docs/ko/model-improvements/model-improvement-2026-05-19-operational-snapshots-and-shape-diagnostics.md)
 
 ---
 
