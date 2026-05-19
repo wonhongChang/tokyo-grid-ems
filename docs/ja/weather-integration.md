@@ -94,6 +94,9 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
 'cooling_delta_24h'   # 現在の冷房degree - 前日同時刻の冷房degree
 'temp_delta_168h'     # 現在同時刻の気温 - 168時間前の気温
 'cooling_delta_168h'  # 現在の冷房degree - 168時間前の冷房degree
+'temp_72h_mean'       # 直近3日間の平均気温
+'cooling_degree_72h_mean'  # 直近3日間の冷房負荷の持続性
+'heating_degree_72h_mean'  # 直近3日間の暖房負荷の持続性
 
 # 連休明け需要と暑さの交互作用
 'holiday_x_heat'
@@ -106,7 +109,7 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
 ```yaml
 weather_features:
   cooling_base_temp_c: 22.0
-  heating_base_temp_c: 10.0
+  heating_base_temp_c: 18.0
 ```
 
 > **degree値と気象変化量を使う理由**: degree値は冷暖房需要の非線形効果を扱いやすくします。24時間変化量は、今日の天候が前日と違い、前日同時刻の需要を信頼しすぎない方がよい状況を伝えます。168時間変化量は前週同時刻の需要に対して同じ役割を持ちます。
@@ -242,7 +245,7 @@ MAE  (MW)   測定予定      測定予定
 1. `fetch_weather.py` はOpen-Meteo archive/forecastエンドポイントをretry/backoff付きで使用します。
 2. `run_batch.py` は過去 `temp_c` と `apparent_temp_c` を `.hourly_cache.parquet` に補完します。
 3. 将来予測気象は `actual_mw = NaN` の仮想cache行として追加し、intraday実行ごとに更新します。
-4. `feature_builder.py` はdegree値、体感温度、気温偏差、24時間/168時間気象変化量、営業タイプlag文脈を含む37個のLightGBM特徴量を生成します。
+4. `feature_builder.py` はdegree値、体感温度、気温偏差、24時間/168時間気象変化量、72時間の熱慣性、営業タイプlag文脈を含む50個のLightGBM特徴量を生成します。
 5. `LGBMForecaster(config=config)` は学習と推論で同じweather feature設定を使用します。
 6. 特徴量バージョンが変わった場合、既存保存モデルはstale扱いとなり次回実行で再学習されます。
 

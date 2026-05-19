@@ -24,7 +24,7 @@ LightGBM特徴量に次の値を追加しました。
 ```yaml
 weather_features:
   cooling_base_temp_c: 22.0
-  heating_base_temp_c: 10.0
+  heating_base_temp_c: 18.0
 ```
 
 特徴量カラムが変わったため、LightGBMモデル互換バージョンも上げました。既存の保存モデルはstaleとして扱い、次回のETL/intraday実行で再学習します。

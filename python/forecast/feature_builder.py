@@ -41,6 +41,12 @@ FEATURE_COLS: list[str] = [
     "cooling_degree_6h_mean",
     "heating_degree_3h_mean",  # recent heating load inertia, including current hour
     "heating_degree_6h_mean",
+    "temp_72h_mean",           # 3-day thermal memory
+    "cooling_degree_72h_mean", # 3-day cooling load persistence
+    "heating_degree_72h_mean", # 3-day heating load persistence
+    "business_morning_x_temp_delta_24h",   # weekday morning ramp x same-hour temp change vs yesterday
+    "business_morning_x_temp_anomaly_7d",  # weekday morning ramp x temp anomaly vs recent week
+    "business_morning_x_temp_anomaly_doy", # weekday morning ramp x seasonal same-hour temp anomaly
     # Interaction: holiday × heat surplus (captures post-holiday demand spike on hot days)
     "holiday_x_heat",                    # consec_holiday_len × max(0, temp_anomaly_7d)
     "post_holiday_x_heat",               # int(1 ≤ days_since_holiday_end ≤ 2) × max(0, temp_anomaly_7d)
@@ -67,7 +73,7 @@ _SEASON_RANGES = [
 ]
 
 _DEFAULT_COOLING_BASE_TEMP_C = 22.0
-_DEFAULT_HEATING_BASE_TEMP_C = 10.0
+_DEFAULT_HEATING_BASE_TEMP_C = 18.0
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +209,18 @@ def _add_lag_gap_cols(df: pd.DataFrame) -> pd.DataFrame:
         * df["hour"].between(6, 18).astype(float)
         * df["lag_24h_to_same_business_type_gap"]
     )
+    return df
+
+
+def _add_relative_weather_interactions(df: pd.DataFrame) -> pd.DataFrame:
+    """Add relative weather interactions without fixed temperature cutoffs."""
+    business_morning = (
+        (df["is_non_business_day"] == 0)
+        & df["hour"].between(5, 11)
+    ).astype(float)
+    df["business_morning_x_temp_delta_24h"] = business_morning * df["temp_delta_24h"]
+    df["business_morning_x_temp_anomaly_7d"] = business_morning * df["temp_anomaly_7d"]
+    df["business_morning_x_temp_anomaly_doy"] = business_morning * df["temp_anomaly_doy"]
     return df
 
 
@@ -344,6 +362,13 @@ def build_training_features(
         df["heating_degree_6h_mean"] = (
             df["heating_degree"].rolling(6, min_periods=1).mean()
         )
+        df["temp_72h_mean"] = df["temp_c"].rolling(72, min_periods=24).mean()
+        df["cooling_degree_72h_mean"] = (
+            df["cooling_degree"].rolling(72, min_periods=24).mean()
+        )
+        df["heating_degree_72h_mean"] = (
+            df["heating_degree"].rolling(72, min_periods=24).mean()
+        )
         # How abnormal vs recent 7 days (shift 1h to prevent self-inclusion)
         trailing_7d_temp_mean = df["temp_c"].shift(1).rolling(168, min_periods=24).mean()
         df["temp_anomaly_7d"] = df["temp_c"] - trailing_7d_temp_mean
@@ -387,6 +412,11 @@ def build_training_features(
         df["cooling_degree_6h_mean"] = np.nan
         df["heating_degree_3h_mean"] = np.nan
         df["heating_degree_6h_mean"] = np.nan
+        df["temp_72h_mean"] = np.nan
+        df["cooling_degree_72h_mean"] = np.nan
+        df["heating_degree_72h_mean"] = np.nan
+
+    df = _add_relative_weather_interactions(df)
 
     # Interaction features: holiday × heat surplus
     positive_temp_anomaly_7d = df["temp_anomaly_7d"].clip(lower=0.0)
@@ -571,6 +601,17 @@ def build_inference_features(
             6,
             lambda temp: _heating_degree(temp, heating_base_temp_c),
         )
+        temp_72h_mean = _degree_window_mean(ts, 72, lambda temp: temp)
+        cooling_72h_mean = _degree_window_mean(
+            ts,
+            72,
+            lambda temp: _cooling_degree(temp, cooling_base_temp_c),
+        )
+        heating_72h_mean = _degree_window_mean(
+            ts,
+            72,
+            lambda temp: _heating_degree(temp, heating_base_temp_c),
+        )
         temp_24h = temp_by_ts.get(ts - pd.Timedelta(hours=24), float("nan"))
         has_temp_24h = not np.isnan(temp_24h)
         cooling_24h = (
@@ -632,6 +673,7 @@ def build_inference_features(
         business_hour_post_holiday_heat_interaction = (
             int(9 <= hour <= 18) * is_recent_post_holiday * positive_temp_anomaly_7d
         )
+        business_morning = int(is_target_non_business_day == 0 and 5 <= hour <= 11)
         recent_same_business_type_mean = (
             float(recent_same_business_type["actual_mw"].mean())
             if len(recent_same_business_type) > 0
@@ -683,6 +725,18 @@ def build_inference_features(
             "cooling_degree_6h_mean": cooling_6h_mean,
             "heating_degree_3h_mean": heating_3h_mean,
             "heating_degree_6h_mean": heating_6h_mean,
+            "temp_72h_mean": temp_72h_mean,
+            "cooling_degree_72h_mean": cooling_72h_mean,
+            "heating_degree_72h_mean": heating_72h_mean,
+            "business_morning_x_temp_delta_24h": (
+                business_morning * temp_delta_24h
+            ),
+            "business_morning_x_temp_anomaly_7d": (
+                business_morning * temp_anomaly_vs_7d_mean
+            ),
+            "business_morning_x_temp_anomaly_doy": (
+                business_morning * temp_anomaly_vs_month_hour_mean
+            ),
             "holiday_x_heat":                    holiday_heat_interaction,
             "post_holiday_x_heat":               post_holiday_heat_interaction,
             "business_hour_x_post_holiday_heat": business_hour_post_holiday_heat_interaction,

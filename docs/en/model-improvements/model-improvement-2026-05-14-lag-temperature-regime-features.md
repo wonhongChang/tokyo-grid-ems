@@ -24,7 +24,7 @@ The cooling and heating balance points are no longer hard-coded inside feature e
 ```yaml
 weather_features:
   cooling_base_temp_c: 22.0
-  heating_base_temp_c: 10.0
+  heating_base_temp_c: 18.0
 ```
 
 Because the feature columns changed, the LightGBM model compatibility version was bumped. Existing saved models are treated as stale and will be retrained by the next ETL/intraday run.

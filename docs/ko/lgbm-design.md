@@ -51,21 +51,21 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | 래그 | 24h, 48h, 168h, 336h | 전력 수요의 관성 반영 |
 | 롤링 통계 | 최근 4주 같은 요일/시간 평균과 표준편차 | 안정적인 과거 기준 제공 |
 | 공휴일 보정 | 직전 평일, 연속 휴일 수, 휴일 종료 후 경과일 | 연휴 직후 과소예측 완화 |
-| 기온 | 기온, 체감온도, 설정 가능한 냉방/난방 degree, 기온 이상치, 24시간/168시간 기온·냉방 변화량 | 냉난방 수요와 전일/전주 대비 계절 변화 반영 |
+| 기온 | 기온, 체감온도, 설정 가능한 냉방/난방 degree, 기온 이상치, 24시간/168시간 기온·냉방 변화량, 72시간 열 관성 | 냉난방 수요와 전일/전주 대비 계절 변화 반영 |
 | 교호작용 | holiday x heat, post-holiday x heat | 골든위크 이후 복귀 수요 보정 |
 | 래그 컨텍스트 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h 영업/비영업 mismatch, 최근 같은 영업타입 평균 | 래그값이 휴일 수요에 오염됐거나 영업/비영업 경계를 건넜는지 알려줌 |
 
-현재 명시적 피처 수는 37개입니다.
+현재 명시적 피처 수는 50개입니다.
 
 냉방/난방 degree의 기준온도는 `config.yaml`에서 설정합니다.
 
 ```yaml
 weather_features:
   cooling_base_temp_c: 22.0
-  heating_base_temp_c: 10.0
+  heating_base_temp_c: 18.0
 ```
 
-`temp_delta_24h`와 `cooling_delta_24h`는 오늘 날씨가 어제 같은 시간과 달라졌을 때, 전날 수요 lag를 얼마나 믿을지 모델에 알려주는 피처입니다. `temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요에 대해 같은 역할을 합니다. `apparent_temp_c`와 `apparent_cooling_degree`는 습도, 바람, 일사 등으로 실제 체감이 기온만으로 부족할 때를 보완하는 신호입니다.
+`temp_delta_24h`와 `cooling_delta_24h`는 오늘 날씨가 어제 같은 시간과 달라졌을 때, 전날 수요 lag를 얼마나 믿을지 모델에 알려주는 피처입니다. `temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요에 대해 같은 역할을 합니다. `temp_72h_mean`, `cooling_degree_72h_mean`, `heating_degree_72h_mean`은 지속적인 더위나 추위의 누적 효과를 반영합니다. `apparent_temp_c`와 `apparent_cooling_degree`는 데이터 소스가 체감온도를 제공할 때 이를 보완 신호로 사용합니다.
 
 `lag_24h_business_type_mismatch`와 `lag_24h_mismatch_x_business_hour`는 금요일→토요일, 일요일→월요일처럼 전날 lag가 영업/비영업 경계를 건너는 경우를 모델에 알려줍니다. 특히 낮 시간대 업무 수요 차이를 조심해서 보게 하는 신호입니다. `recent_same_business_type_mean`은 최근 같은 영업 타입의 같은 시간대 평균을 추가 기준선으로 제공합니다.
 

@@ -24,7 +24,7 @@ LightGBM 피처에 다음 값을 추가했습니다.
 ```yaml
 weather_features:
   cooling_base_temp_c: 22.0
-  heating_base_temp_c: 10.0
+  heating_base_temp_c: 18.0
 ```
 
 피처 컬럼이 바뀌었기 때문에 LightGBM 모델 호환 버전도 올렸습니다. 기존 저장 모델은 stale로 보고 다음 ETL/intraday 실행에서 재학습됩니다.

@@ -94,6 +94,9 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
 'cooling_delta_24h'   # current cooling degree minus previous-day cooling degree
 'temp_delta_168h'     # current same-hour temp minus 168h-ago temp
 'cooling_delta_168h'  # current cooling degree minus 168h-ago cooling degree
+'temp_72h_mean'       # recent 3-day mean temperature
+'cooling_degree_72h_mean'  # recent 3-day cooling persistence
+'heating_degree_72h_mean'  # recent 3-day heating persistence
 
 # Heat interactions around holiday return-to-work periods
 'holiday_x_heat'
@@ -106,10 +109,10 @@ Cooling/heating balance points are configurable:
 ```yaml
 weather_features:
   cooling_base_temp_c: 22.0
-  heating_base_temp_c: 10.0
+  heating_base_temp_c: 18.0
 ```
 
-> **Why degree values and weather deltas**: degree values linearize HVAC-driven demand. The 24h deltas tell the model when yesterday's same-hour demand should be trusted less because today's weather is different. The 168h deltas do the same for last week's same-hour demand.
+> **Why degree values and weather deltas**: degree values linearize HVAC-driven demand. The 24h deltas tell the model when yesterday's same-hour demand should be trusted less because today's weather is different. The 168h deltas do the same for last week's same-hour demand. The 72h means capture building-scale thermal memory during sustained hot or cold spells.
 
 ---
 
@@ -242,7 +245,7 @@ Results saved to `web/public/model_eval.json`:
 1. `fetch_weather.py` uses Open-Meteo archive and forecast endpoints with retry/backoff.
 2. `run_batch.py` fills historical `temp_c` and `apparent_temp_c` into `.hourly_cache.parquet`.
 3. Future forecast weather is appended and refreshed as virtual cache rows with `actual_mw = NaN`.
-4. `feature_builder.py` creates 37 LightGBM features, including degree values, apparent temperature, temperature anomalies, 24h/168h weather deltas, and business-type lag context.
+4. `feature_builder.py` creates 50 LightGBM features, including degree values, apparent temperature, temperature anomalies, 24h/168h weather deltas, 72h thermal memory, and business-type lag context.
 5. `LGBMForecaster(config=config)` uses the same weather feature settings for training and inference.
 6. Feature versioning marks older saved models as stale so the next run retrains them.
 

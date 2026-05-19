@@ -258,7 +258,8 @@ class PostHolidayTimeBandGuard:
     The daytime guard also applies when the same-hour 168h lag comes from a holiday or
     weekend, because that lag can pull a warm business-afternoon forecast too low.
     It can also apply a smaller ordinary warm-day offset when current temperature is
-    high for the season, covering hot business days without holiday-lag contamination.
+    high relative to recent/seasonal references, covering hot business days without
+    holiday-lag contamination.
 
     Offset values are 0 by default (block-only).  Set downward_offset_mw /
     upward_offset_mw in config when empirical calibration warrants it.
@@ -287,10 +288,6 @@ class PostHolidayTimeBandGuard:
         self._dt_max_offset  = float(daytime_config.get("max_upward_offset_mw", 900.0))
         self._activate_on_holiday_lag = bool(daytime_config.get("activate_on_holiday_lag", True))
         self._activate_on_warm_day = bool(daytime_config.get("activate_on_warm_day", False))
-        warm_day_min_temp_c = daytime_config.get("warm_day_min_temp_c")
-        self._warm_day_min_temp_c = (
-            float(warm_day_min_temp_c) if warm_day_min_temp_c is not None else None
-        )
         self._warm_day_min_anomaly_doy = float(
             daytime_config.get("warm_day_min_temp_anomaly_doy", 1.0)
         )
@@ -395,20 +392,14 @@ class PostHolidayTimeBandGuard:
                     and not np.isnan(temp_anomaly_7d)
                     and temp_anomaly_7d >= self._dt_min_anomaly
                 )
-                temp_c = float(row["temp_c"]) if pd.notna(row.get("temp_c")) else np.nan
                 temp_anomaly_doy = (
                     float(row["temp_anomaly_doy"])
                     if pd.notna(row.get("temp_anomaly_doy"))
                     else np.nan
                 )
-                meets_optional_temp_floor = (
-                    self._warm_day_min_temp_c is None
-                    or (not np.isnan(temp_c) and temp_c >= self._warm_day_min_temp_c)
-                )
                 warm_day_active = (
                     self._activate_on_warm_day
                     and target_is_business_day
-                    and meets_optional_temp_floor
                     and not np.isnan(temp_anomaly_doy)
                     and temp_anomaly_doy >= self._warm_day_min_anomaly_doy
                 )

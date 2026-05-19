@@ -782,41 +782,6 @@ def test_guard_does_not_add_warm_day_offset_when_adjuster_already_raises():
             assert fc_res.forecast_mw == pytest.approx(fc_a.forecast_mw)
 
 
-def test_guard_can_still_use_optional_absolute_temp_floor():
-    """Absolute temp floor remains available as an optional safety switch."""
-    config = _guard_config(
-        warm_day=True,
-        warm_day_offset=250.0,
-    )
-    config["adjustment"]["post_holiday_timeband_guard"]["daytime"]["warm_day_min_temp_c"] = 24.0
-    guard = PostHolidayTimeBandGuard(config)
-    target = date(2026, 5, 14)
-    raw = _make_raw_forecasts(target, 28_000.0)
-    adj = []
-    for fc in raw:
-        h = pd.Timestamp(fc.ts).hour
-        bump = -300.0 if 10 <= h <= 18 else 0.0
-        from python.forecast.baseline import HourlyForecast
-        adj.append(HourlyForecast(
-            ts=fc.ts,
-            forecast_mw=fc.forecast_mw + bump,
-            p95_lower_mw=fc.p95_lower_mw + bump,
-            p95_upper_mw=fc.p95_upper_mw + bump,
-            p99_lower_mw=fc.p99_lower_mw + bump,
-            p99_upper_mw=fc.p99_upper_mw + bump,
-        ))
-    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
-    inf.loc[inf["hour"].between(10, 18), "temp_c"] = 22.5
-    inf.loc[inf["hour"].between(10, 18), "temp_anomaly_doy"] = 1.5
-
-    result = guard.apply(raw, adj, inf)
-
-    for fc_a, fc_res in zip(adj, result):
-        h = pd.Timestamp(fc_a.ts).hour
-        if 10 <= h <= 18:
-            assert fc_res.forecast_mw == pytest.approx(fc_a.forecast_mw)
-
-
 def test_guard_caps_warm_day_forecast_too_far_above_lag24():
     """Warm-day guard can prevent hot-day adjustments from drifting far above yesterday."""
     config = _guard_config(warm_day=True)

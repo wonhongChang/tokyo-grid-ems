@@ -58,6 +58,9 @@ _INTERNAL_WEATHER_FEATURES = [
     "cooling_degree_6h_mean",
     "heating_degree_3h_mean",
     "heating_degree_6h_mean",
+    "temp_72h_mean",
+    "cooling_degree_72h_mean",
+    "heating_degree_72h_mean",
 ]
 
 

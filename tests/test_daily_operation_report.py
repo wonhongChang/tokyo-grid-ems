@@ -213,6 +213,7 @@ def test_internal_daily_diagnostic_includes_lag_and_weather_features(tmp_path):
     assert "lag_24h" in first_row["lagFeatures"]
     assert "lag_24h_to_same_business_type_gap" in first_row["lagFeatures"]
     assert "temp_delta_24h" in first_row["weatherFeatures"]
+    assert "temp_72h_mean" in first_row["weatherFeatures"]
     summary = diagnostic["diagnosticSummary"]
     assert summary["coolingDelta24hByBand"]
     assert summary["coolingDegree3hMeanByBand"]
