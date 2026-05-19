@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-05-19T23:58:23+09:00",
+  "generatedAt": "2026-05-20T00:32:01+09:00",
   "availability": "ok",
   "visibility": {
     "intendedUse": "internal_model_diagnostics",
@@ -10,42 +10,23 @@
     "storedWithOperationalOutputs": true
   },
   "latest": {
-    "date": "2026-05-18",
+    "date": "2026-05-19",
     "model": {
-      "name": "lgbm_quantile_q50_intraday_residual",
+      "name": "lgbm_quantile_q50",
       "family": "lgbm_quantile_q50"
     },
     "operationSummary": {
-      "comparableHours": 24,
-      "modelMaeMw": 476.6,
-      "tepcoMaeMw": 401.2,
-      "maeGapMw": 75.4,
-      "verdict": "tepco_better",
+      "comparableHours": 23,
+      "modelMaeMw": 389.8,
+      "tepcoMaeMw": 491.7,
+      "maeGapMw": -101.9,
+      "verdict": "model_better",
       "modelWins": 12,
-      "tepcoWins": 12,
+      "tepcoWins": 11,
       "ties": 0
     }
   },
   "reports": [
-    {
-      "date": "2026-05-05",
-      "model": {
-        "name": "baseline_dow_hour_mean",
-        "family": "baseline_dow_hour_mean"
-      },
-      "availability": "ok",
-      "operationSummary": {
-        "comparableHours": 24,
-        "modelMaeMw": 899.9,
-        "tepcoMaeMw": 480.8,
-        "maeGapMw": 419.1,
-        "verdict": "tepco_better",
-        "modelWins": 2,
-        "tepcoWins": 22,
-        "ties": 0
-      },
-      "featureBuildError": null
-    },
     {
       "date": "2026-05-06",
       "model": {
@@ -289,6 +270,25 @@
         "verdict": "tepco_better",
         "modelWins": 12,
         "tepcoWins": 12,
+        "ties": 0
+      },
+      "featureBuildError": null
+    },
+    {
+      "date": "2026-05-19",
+      "model": {
+        "name": "lgbm_quantile_q50",
+        "family": "lgbm_quantile_q50"
+      },
+      "availability": "ok",
+      "operationSummary": {
+        "comparableHours": 23,
+        "modelMaeMw": 389.8,
+        "tepcoMaeMw": 491.7,
+        "maeGapMw": -101.9,
+        "verdict": "model_better",
+        "modelWins": 12,
+        "tepcoWins": 11,
         "ties": 0
       },
       "featureBuildError": null
