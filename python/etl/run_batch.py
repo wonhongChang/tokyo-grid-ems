@@ -1481,7 +1481,7 @@ def main() -> None:
     )
     today_fc, today_model = _freeze_observed_forecast_hours(
         out_dir, today, today_fc, today_model,
-        preserve_observed_forecast_hours=not args.refresh_today_forecast,
+        preserve_observed_hours=not args.refresh_today_forecast,
     )
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard
