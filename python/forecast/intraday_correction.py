@@ -19,6 +19,7 @@ class IntradayCorrectionResult:
     ramp_guard_applied: bool = False
     negative_adjustment_damped: bool = False
     shape_guard_applied: bool = False
+    observed_drop_relaxation_active: bool = False
 
 
 class IntradayResidualCorrector:
@@ -60,14 +61,63 @@ class IntradayResidualCorrector:
         self._ramp_guard_decrease_caps = [
             float(value) for value in decrease_caps
         ] or [1000.0, 1800.0, 2400.0]
+        observed_drop_config = ramp_guard_config.get("observed_drop_relaxation", {})
+        self._observed_drop_relaxation_enabled = bool(
+            observed_drop_config.get("enabled", False)
+        )
+        self._observed_drop_threshold_mw = float(
+            observed_drop_config.get("min_recent_drop_mw", 700.0)
+        )
+        self._observed_drop_lookback_hours = int(
+            observed_drop_config.get("lookback_hours", 2)
+        )
+        self._observed_drop_skip_shape_guard = bool(
+            observed_drop_config.get("skip_shape_guard", True)
+        )
+        observed_drop_caps = observed_drop_config.get(
+            "max_decrease_mw_by_lead_hour",
+            [2000, 3600, 5000],
+        )
+        self._observed_drop_decrease_caps = [
+            float(value) for value in observed_drop_caps
+        ] or [2000.0, 3600.0, 5000.0]
 
     def _ramp_guard_cap_for_lead(self, lead_hours: int) -> float:
         cap_index = min(max(lead_hours, 1), len(self._ramp_guard_increase_caps)) - 1
         return self._ramp_guard_increase_caps[cap_index]
 
-    def _ramp_guard_drop_cap_for_lead(self, lead_hours: int) -> float:
-        cap_index = min(max(lead_hours, 1), len(self._ramp_guard_decrease_caps)) - 1
-        return self._ramp_guard_decrease_caps[cap_index]
+    def _ramp_guard_drop_cap_for_lead(
+        self,
+        lead_hours: int,
+        observed_drop_relaxation_active: bool,
+    ) -> float:
+        caps = self._ramp_guard_decrease_caps
+        if observed_drop_relaxation_active:
+            caps = self._observed_drop_decrease_caps
+        cap_index = min(max(lead_hours, 1), len(caps)) - 1
+        return caps[cap_index]
+
+    def _is_observed_drop_relaxation_active(
+        self,
+        actual_mw_by_hour: dict[int, float],
+        last_observed_hour: int | None,
+    ) -> bool:
+        if (
+            not self._observed_drop_relaxation_enabled
+            or last_observed_hour is None
+            or self._observed_drop_threshold_mw <= 0.0
+        ):
+            return False
+
+        for offset in range(self._observed_drop_lookback_hours):
+            hour = last_observed_hour - offset
+            previous_hour = hour - 1
+            if hour not in actual_mw_by_hour or previous_hour not in actual_mw_by_hour:
+                continue
+            observed_drop_mw = actual_mw_by_hour[previous_hour] - actual_mw_by_hour[hour]
+            if observed_drop_mw >= self._observed_drop_threshold_mw:
+                return True
+        return False
 
     @staticmethod
     def _shift_forecast(forecast: HourlyForecast, shift_mw: float) -> HourlyForecast:
@@ -84,12 +134,14 @@ class IntradayResidualCorrector:
         self,
         forecasts: list[HourlyForecast],
         last_observed_hour: int | None,
+        observed_drop_relaxation_active: bool,
     ) -> tuple[list[HourlyForecast], bool]:
         if (
             not self._shape_guard_enabled
             or last_observed_hour is None
             or last_observed_hour < self._shape_guard_min_reference_hour
             or self._shape_guard_max_drop_mw <= 0.0
+            or (observed_drop_relaxation_active and self._observed_drop_skip_shape_guard)
         ):
             return forecasts, False
 
@@ -125,6 +177,7 @@ class IntradayResidualCorrector:
         forecasts: list[HourlyForecast],
         last_observed_hour: int | None,
         last_observed_mw: float | None,
+        observed_drop_relaxation_active: bool,
     ) -> tuple[list[HourlyForecast], bool]:
         if (
             not self._ramp_guard_enabled
@@ -144,7 +197,10 @@ class IntradayResidualCorrector:
                 continue
 
             max_forecast_mw = last_observed_mw + self._ramp_guard_cap_for_lead(lead_hours)
-            min_forecast_mw = last_observed_mw - self._ramp_guard_drop_cap_for_lead(lead_hours)
+            min_forecast_mw = last_observed_mw - self._ramp_guard_drop_cap_for_lead(
+                lead_hours,
+                observed_drop_relaxation_active,
+            )
             if min_forecast_mw <= forecast.forecast_mw <= max_forecast_mw:
                 guarded.append(forecast)
                 continue
@@ -190,15 +246,21 @@ class IntradayResidualCorrector:
             else None
         )
         recent_residuals = residuals_by_hour[-self._lookback_hours:]
+        observed_drop_relaxation_active = self._is_observed_drop_relaxation_active(
+            actual_mw_by_hour,
+            last_observed_hour,
+        )
         if len(recent_residuals) < self._min_observed_hours:
             shape_guarded_forecasts, shape_guard_applied = self._apply_shape_guard(
                 forecasts,
                 last_observed_hour,
+                observed_drop_relaxation_active,
             )
             ramp_guarded_forecasts, ramp_guard_applied = self._apply_ramp_guard(
                 shape_guarded_forecasts,
                 last_observed_hour,
                 last_observed_mw,
+                observed_drop_relaxation_active,
             )
             return IntradayCorrectionResult(
                 ramp_guarded_forecasts,
@@ -209,6 +271,7 @@ class IntradayResidualCorrector:
                 ramp_guard_applied,
                 False,
                 shape_guard_applied,
+                observed_drop_relaxation_active,
             )
 
         max_forecast_hour = max(forecast_by_hour)
@@ -261,12 +324,14 @@ class IntradayResidualCorrector:
         adjusted_forecasts, shape_guard_applied = self._apply_shape_guard(
             adjusted_forecasts,
             last_observed_hour,
+            observed_drop_relaxation_active,
         )
 
         adjusted_forecasts, ramp_guard_applied = self._apply_ramp_guard(
             adjusted_forecasts,
             last_observed_hour,
             last_observed_mw,
+            observed_drop_relaxation_active,
         )
 
         return IntradayCorrectionResult(
@@ -278,4 +343,5 @@ class IntradayResidualCorrector:
             ramp_guard_applied,
             negative_adjustment_damped,
             shape_guard_applied,
+            observed_drop_relaxation_active,
         )

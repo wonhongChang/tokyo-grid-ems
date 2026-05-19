@@ -86,6 +86,20 @@ def load_config(config_path: Path) -> dict:
                 "hours": [15, 16, 17, 18, 19],
                 "max_drop_mw": 1000,
             },
+            "ramp_guard": {
+                "enabled": True,
+                "min_reference_hour": 10,
+                "max_lead_hours": 3,
+                "max_increase_mw_by_lead_hour": [1200, 1500, 2000],
+                "max_decrease_mw_by_lead_hour": [1000, 1800, 2400],
+                "observed_drop_relaxation": {
+                    "enabled": True,
+                    "min_recent_drop_mw": 700,
+                    "lookback_hours": 2,
+                    "skip_shape_guard": True,
+                    "max_decrease_mw_by_lead_hour": [2000, 3600, 5000],
+                },
+            },
         },
         "forecast_snapshots": {
             "enabled": True,
@@ -1323,6 +1337,11 @@ def _apply_intraday_residual_correction(
         if getattr(correction, "shape_guard_applied", False)
         else ""
     )
+    observed_drop_note = (
+        " observed_drop_relaxation=active"
+        if getattr(correction, "observed_drop_relaxation_active", False)
+        else ""
+    )
     print(
         "[INTRADAY] Residual correction "
         f"{target_date}: base={correction.base_adjustment_mw:+.1f} MW "
@@ -1331,6 +1350,7 @@ def _apply_intraday_residual_correction(
         f"{ramp_guard_note}"
         f"{negative_damping_note}"
         f"{shape_guard_note}"
+        f"{observed_drop_note}"
     )
     return correction.forecasts, corrected_model_name
 

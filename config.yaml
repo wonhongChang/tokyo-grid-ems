@@ -39,6 +39,12 @@ intraday_correction:
     max_lead_hours: 3        # guard only the nearest future hours
     max_increase_mw_by_lead_hour: [1200, 1500, 2000]
     max_decrease_mw_by_lead_hour: [1000, 1800, 2400]
+    observed_drop_relaxation:
+      enabled: true
+      min_recent_drop_mw: 700 # relax when actual demand is already falling quickly
+      lookback_hours: 2
+      skip_shape_guard: true
+      max_decrease_mw_by_lead_hour: [2000, 3600, 5000]
 
 forecast_snapshots:
   enabled: true

@@ -196,6 +196,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 - [2026-05-19 운영용 intraday 하락 가드](docs/ko/model-improvements/model-improvement-2026-05-19-operational-intraday-drop-guard.md)
 - [2026-05-19 예측 스냅샷과 shape 진단](docs/ko/model-improvements/model-improvement-2026-05-19-operational-snapshots-and-shape-diagnostics.md)
 - [2026-05-19 오후 thermal inertia와 shape guard](docs/ko/model-improvements/model-improvement-2026-05-19-afternoon-thermal-inertia-shape-guard.md)
+- [2026-05-19 실측 수요 하락 기반 완화](docs/ko/model-improvements/model-improvement-2026-05-19-observed-demand-drop-relaxation.md)
 
 ---
 
