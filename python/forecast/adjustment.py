@@ -295,6 +295,36 @@ class PostHolidayTimeBandGuard:
             daytime_config.get("warm_day_min_temp_anomaly_doy", 1.0)
         )
         self._warm_day_offset = float(daytime_config.get("warm_day_upward_offset_mw", 0.0))
+        self._lag24_warm_day_cap_enabled = bool(
+            daytime_config.get("lag24_warm_day_cap_enabled", False)
+        )
+        self._lag24_warm_day_max_increase_mw = float(
+            daytime_config.get("lag24_warm_day_max_increase_mw", 2500.0)
+        )
+
+    @staticmethod
+    def _shift_forecast(forecast, shift_mw: float):
+        from python.forecast.baseline import HourlyForecast
+
+        return HourlyForecast(
+            ts=forecast.ts,
+            forecast_mw=round(forecast.forecast_mw + shift_mw, 1),
+            p95_lower_mw=round(forecast.p95_lower_mw + shift_mw, 1),
+            p95_upper_mw=round(forecast.p95_upper_mw + shift_mw, 1),
+            p99_lower_mw=round(forecast.p99_lower_mw + shift_mw, 1),
+            p99_upper_mw=round(forecast.p99_upper_mw + shift_mw, 1),
+        )
+
+    def _cap_warm_day_lag24_increase(self, forecast, row, active: bool):
+        if not (self._lag24_warm_day_cap_enabled and active):
+            return forecast
+        lag_24h = float(row["lag_24h"]) if pd.notna(row.get("lag_24h")) else np.nan
+        if np.isnan(lag_24h):
+            return forecast
+        max_forecast_mw = lag_24h + self._lag24_warm_day_max_increase_mw
+        if forecast.forecast_mw <= max_forecast_mw:
+            return forecast
+        return self._shift_forecast(forecast, max_forecast_mw - forecast.forecast_mw)
 
     def apply(
         self,
@@ -398,16 +428,20 @@ class PostHolidayTimeBandGuard:
                         offset_candidates.append(self._warm_day_offset)
                     dt_offset = min(max(offset_candidates or [0.0]), self._dt_max_offset)
                     if dt_offset == 0.0:
-                        result.append(base)
+                        capped = self._cap_warm_day_lag24_increase(
+                            base,
+                            row,
+                            holiday_heat_active or warm_day_active,
+                        )
+                        result.append(capped)
                     else:
-                        result.append(HourlyForecast(
-                            ts=base.ts,
-                            forecast_mw=round(base.forecast_mw + dt_offset, 1),
-                            p95_lower_mw=round(base.p95_lower_mw + dt_offset, 1),
-                            p95_upper_mw=round(base.p95_upper_mw + dt_offset, 1),
-                            p99_lower_mw=round(base.p99_lower_mw + dt_offset, 1),
-                            p99_upper_mw=round(base.p99_upper_mw + dt_offset, 1),
-                        ))
+                        shifted = self._shift_forecast(base, dt_offset)
+                        capped = self._cap_warm_day_lag24_increase(
+                            shifted,
+                            row,
+                            holiday_heat_active or warm_day_active,
+                        )
+                        result.append(capped)
                     continue
 
             result.append(adjusted_forecast)

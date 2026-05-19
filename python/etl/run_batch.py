@@ -877,10 +877,10 @@ def _apply_weather_forecast_bias_correction(
 
     lookback_hours = _bounded_float(cfg.get("lookback_hours"), 4.0, min_value=1.0)
     observation_lag_hours = _bounded_float(cfg.get("observation_lag_hours"), 1.0, min_value=0.0)
-    horizon_hours = int(_bounded_float(cfg.get("horizon_hours"), 4.0, min_value=1.0))
-    min_abs_bias_c = _bounded_float(cfg.get("min_abs_bias_c"), 0.8, min_value=0.0)
-    max_abs_bias_c = _bounded_float(cfg.get("max_abs_bias_c"), 2.5, min_value=0.1)
-    decay_per_hour = min(1.0, _bounded_float(cfg.get("decay_per_hour"), 0.75, min_value=0.0))
+    horizon_hours = int(_bounded_float(cfg.get("horizon_hours"), 3.0, min_value=1.0))
+    min_abs_bias_c = _bounded_float(cfg.get("min_abs_bias_c"), 1.5, min_value=0.0)
+    max_abs_bias_c = _bounded_float(cfg.get("max_abs_bias_c"), 1.5, min_value=0.1)
+    decay_per_hour = min(1.0, _bounded_float(cfg.get("decay_per_hour"), 0.6, min_value=0.0))
 
     now_ts = _to_jst_timestamp(now or datetime.now(tz=JST))
     observed_cutoff = now_ts - pd.Timedelta(hours=observation_lag_hours)
@@ -1066,11 +1066,13 @@ def _apply_intraday_residual_correction(
         return forecasts, model_name
 
     corrected_model_name = f"{model_name}_intraday_residual"
+    ramp_guard_note = " ramp_guard=applied" if correction.ramp_guard_applied else ""
     print(
         "[INTRADAY] Residual correction "
         f"{target_date}: base={correction.base_adjustment_mw:+.1f} MW "
         f"after hour={correction.last_observed_hour:02d} "
         f"(observed={correction.observed_hours})"
+        f"{ramp_guard_note}"
     )
     return correction.forecasts, corrected_model_name
 
