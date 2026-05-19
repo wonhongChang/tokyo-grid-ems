@@ -20,7 +20,7 @@ interface ChartRow {
   tepcoForecast: number | null
   supply: number | null
   usagePct: number | null
-  usageSource: 'reported' | 'model_forecast' | null
+  usageSource: 'reported' | 'tepco_forecast' | 'model_forecast' | null
   p95Base: number
   p95Fill: number
 }
@@ -31,10 +31,24 @@ function buildChartData(forecast: ForecastPoint[], locale: Locale, actual?: Actu
     const act = actual?.find(a => a.ts.substring(11, 13) === h)
     const p95Lower = Math.min(f.p95LowerMw, f.p95UpperMw, f.forecastMw)
     const p95Upper = Math.max(f.p95LowerMw, f.p95UpperMw, f.forecastMw)
-    const estimatedUsagePct = act?.supplyMw != null && act.supplyMw > 0
-      ? ((act.actualMw ?? f.forecastMw) / act.supplyMw) * 100
+    const isObservedActual = act?.actualMw != null && act.actualSource !== 'tepco_forecast_fallback'
+    const observedUsagePct = act?.supplyMw != null && act.supplyMw > 0 && isObservedActual
+      ? act.usagePct ?? (act.actualMw! / act.supplyMw) * 100
       : null
-    const usagePct = act?.usagePct ?? estimatedUsagePct
+    const tepcoUsagePct = act?.supplyMw != null && act.supplyMw > 0 && act.tepcoForecastMw != null
+      ? (act.tepcoForecastMw / act.supplyMw) * 100
+      : null
+    const modelUsagePct = act?.supplyMw != null && act.supplyMw > 0
+      ? (f.forecastMw / act.supplyMw) * 100
+      : null
+    const usagePct = observedUsagePct ?? tepcoUsagePct ?? modelUsagePct
+    const usageSource = observedUsagePct != null
+      ? 'reported'
+      : tepcoUsagePct != null
+        ? 'tepco_forecast'
+        : usagePct != null
+          ? 'model_forecast'
+          : null
     return {
       hour: `${h}:00`,
       forecast: powerDisplayValue(f.forecastMw, locale),
@@ -42,7 +56,7 @@ function buildChartData(forecast: ForecastPoint[], locale: Locale, actual?: Actu
       tepcoForecast: act?.tepcoForecastMw != null ? powerDisplayValue(act.tepcoForecastMw, locale) : null,
       supply: act?.supplyMw != null ? powerDisplayValue(act.supplyMw, locale) : null,
       usagePct,
-      usageSource: act?.usagePct != null ? 'reported' : usagePct != null ? 'model_forecast' : null,
+      usageSource,
       p95Base: powerDisplayValue(p95Lower, locale),
       p95Fill: powerDisplayValue(p95Upper, locale) - powerDisplayValue(p95Lower, locale),
     }
@@ -78,16 +92,19 @@ function fmtPct(value: number): string {
 function metricLabels(locale: Locale) {
   if (locale === 'en') {
     return {
-      estimatedUsage: 'Estimated usage rate',
+      tepcoEstimatedUsage: 'TEPCO estimated usage rate',
+      modelEstimatedUsage: 'Model estimated usage rate',
     }
   }
   if (locale === 'ja') {
     return {
-      estimatedUsage: '予測使用率',
+      tepcoEstimatedUsage: 'TEPCO予測使用率',
+      modelEstimatedUsage: 'モデル予測使用率',
     }
   }
   return {
-    estimatedUsage: '예상 사용률',
+    tepcoEstimatedUsage: 'TEPCO 예상 사용률',
+    modelEstimatedUsage: '모델 예상 사용률',
   }
 }
 
@@ -102,7 +119,8 @@ function CustomTooltip({ active, payload, label, labels, locale }: {
     forecastRange: string
     supply: string
     usageRate: string
-    estimatedUsageRate: string
+    tepcoEstimatedUsageRate: string
+    modelEstimatedUsageRate: string
   }
   locale: Locale
 }) {
@@ -127,7 +145,11 @@ function CustomTooltip({ active, payload, label, labels, locale }: {
       )}
       {point?.usagePct != null && (
         <div style={{ color: '#dc2626' }}>
-          {point.usageSource === 'reported' ? labels.usageRate : labels.estimatedUsageRate}: {fmtPct(point.usagePct)}
+          {point.usageSource === 'reported'
+            ? labels.usageRate
+            : point.usageSource === 'tepco_forecast'
+              ? labels.tepcoEstimatedUsageRate
+              : labels.modelEstimatedUsageRate}: {fmtPct(point.usagePct)}
         </div>
       )}
       {row.forecast != null && (
@@ -161,7 +183,8 @@ export function ForecastChart({ forecast, actual, showBands = true }: Props) {
     forecastRange: t.forecastRange,
     supply: t.supply,
     usageRate: t.metricUsagePct,
-    estimatedUsageRate: labels.estimatedUsage,
+    tepcoEstimatedUsageRate: labels.tepcoEstimatedUsage,
+    modelEstimatedUsageRate: labels.modelEstimatedUsage,
   }
 
   return (
