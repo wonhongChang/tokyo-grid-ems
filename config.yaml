@@ -28,6 +28,11 @@ intraday_correction:
     enabled: true
     min_reference_hour: 12   # after midday, avoid over-chasing negative residuals
     multiplier: 0.5          # retain half of the downward residual correction
+  shape_guard:
+    enabled: true
+    min_reference_hour: 12   # only after enough same-day context exists
+    hours: [15, 16, 17, 18, 19]
+    max_drop_mw: 1000        # avoid implausibly steep warm-afternoon line drops
   ramp_guard:
     enabled: true
     min_reference_hour: 10   # avoid suppressing the real morning ramp

@@ -32,7 +32,7 @@ _LGBM_PARAMS = {
 
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
-    INTERVAL_VERSION = "q025_q50_q975_p95_v5_business_type_lag_gap"
+    INTERVAL_VERSION = "q025_q50_q975_p95_v6_thermal_inertia"
 
     def __init__(
         self,

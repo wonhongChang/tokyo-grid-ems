@@ -54,6 +54,10 @@ _INTERNAL_WEATHER_FEATURES = [
     "cooling_delta_24h",
     "temp_delta_168h",
     "cooling_delta_168h",
+    "cooling_degree_3h_mean",
+    "cooling_degree_6h_mean",
+    "heating_degree_3h_mean",
+    "heating_degree_6h_mean",
 ]
 
 
@@ -704,6 +708,11 @@ def build_internal_daily_diagnostic(
                 diagnostic_rows,
                 "weatherFeatures",
                 "cooling_delta_24h",
+            ),
+            "coolingDegree3hMeanByBand": _feature_band_means(
+                diagnostic_rows,
+                "weatherFeatures",
+                "cooling_degree_3h_mean",
             ),
             "weatherDeltaRiskByBand": _weather_delta_risk_by_band(diagnostic_rows),
         },

@@ -37,6 +37,10 @@ FEATURE_COLS: list[str] = [
     "cooling_delta_24h",    # current cooling_degree minus previous-day same-hour cooling_degree
     "temp_delta_168h",      # current temp_c minus 7-day-ago same-hour temp_c
     "cooling_delta_168h",   # current cooling_degree minus 7-day-ago same-hour cooling_degree
+    "cooling_degree_3h_mean",  # recent cooling load inertia, including current hour
+    "cooling_degree_6h_mean",
+    "heating_degree_3h_mean",  # recent heating load inertia, including current hour
+    "heating_degree_6h_mean",
     # Interaction: holiday × heat surplus (captures post-holiday demand spike on hot days)
     "holiday_x_heat",                    # consec_holiday_len × max(0, temp_anomaly_7d)
     "post_holiday_x_heat",               # int(1 ≤ days_since_holiday_end ≤ 2) × max(0, temp_anomaly_7d)
@@ -328,6 +332,18 @@ def build_training_features(
         df["apparent_cooling_degree"] = (
             df["apparent_temp_c"] - cooling_base_temp_c
         ).clip(lower=0.0)
+        df["cooling_degree_3h_mean"] = (
+            df["cooling_degree"].rolling(3, min_periods=1).mean()
+        )
+        df["cooling_degree_6h_mean"] = (
+            df["cooling_degree"].rolling(6, min_periods=1).mean()
+        )
+        df["heating_degree_3h_mean"] = (
+            df["heating_degree"].rolling(3, min_periods=1).mean()
+        )
+        df["heating_degree_6h_mean"] = (
+            df["heating_degree"].rolling(6, min_periods=1).mean()
+        )
         # How abnormal vs recent 7 days (shift 1h to prevent self-inclusion)
         trailing_7d_temp_mean = df["temp_c"].shift(1).rolling(168, min_periods=24).mean()
         df["temp_anomaly_7d"] = df["temp_c"] - trailing_7d_temp_mean
@@ -367,6 +383,10 @@ def build_training_features(
         df["cooling_delta_24h"] = np.nan
         df["temp_delta_168h"] = np.nan
         df["cooling_delta_168h"] = np.nan
+        df["cooling_degree_3h_mean"] = np.nan
+        df["cooling_degree_6h_mean"] = np.nan
+        df["heating_degree_3h_mean"] = np.nan
+        df["heating_degree_6h_mean"] = np.nan
 
     # Interaction features: holiday × heat surplus
     positive_temp_anomaly_7d = df["temp_anomaly_7d"].clip(lower=0.0)
@@ -469,6 +489,23 @@ def build_inference_features(
         month_hour_temp_mean = {}
     target_month = target_date.month
 
+    def _temp_at(lookup_ts: pd.Timestamp) -> float:
+        if lookup_ts.date() == target_date:
+            return hour_to_temp.get(int(lookup_ts.hour), float("nan"))
+        return temp_by_ts.get(lookup_ts, float("nan"))
+
+    def _degree_window_mean(
+        lookup_ts: pd.Timestamp,
+        window_hours: int,
+        degree_fn,
+    ) -> float:
+        values = []
+        for offset_hour in range(window_hours):
+            temp_value = _temp_at(lookup_ts - pd.Timedelta(hours=offset_hour))
+            if not np.isnan(temp_value):
+                values.append(float(degree_fn(temp_value)))
+        return float(np.mean(values)) if values else float("nan")
+
     rows = []
     for hour in range(24):
         ts = pd.Timestamp(
@@ -513,6 +550,26 @@ def build_inference_features(
             _cooling_degree(hour_apparent_temp_c, cooling_base_temp_c)
             if has_hour_apparent_temp
             else np.nan
+        )
+        cooling_3h_mean = _degree_window_mean(
+            ts,
+            3,
+            lambda temp: _cooling_degree(temp, cooling_base_temp_c),
+        )
+        cooling_6h_mean = _degree_window_mean(
+            ts,
+            6,
+            lambda temp: _cooling_degree(temp, cooling_base_temp_c),
+        )
+        heating_3h_mean = _degree_window_mean(
+            ts,
+            3,
+            lambda temp: _heating_degree(temp, heating_base_temp_c),
+        )
+        heating_6h_mean = _degree_window_mean(
+            ts,
+            6,
+            lambda temp: _heating_degree(temp, heating_base_temp_c),
         )
         temp_24h = temp_by_ts.get(ts - pd.Timedelta(hours=24), float("nan"))
         has_temp_24h = not np.isnan(temp_24h)
@@ -622,6 +679,10 @@ def build_inference_features(
             "cooling_delta_24h":    cooling_delta_24h,
             "temp_delta_168h":      temp_delta_168h,
             "cooling_delta_168h":   cooling_delta_168h,
+            "cooling_degree_3h_mean": cooling_3h_mean,
+            "cooling_degree_6h_mean": cooling_6h_mean,
+            "heating_degree_3h_mean": heating_3h_mean,
+            "heating_degree_6h_mean": heating_6h_mean,
             "holiday_x_heat":                    holiday_heat_interaction,
             "post_holiday_x_heat":               post_holiday_heat_interaction,
             "business_hour_x_post_holiday_heat": business_hour_post_holiday_heat_interaction,

@@ -229,6 +229,10 @@ def test_training_has_temp_anomaly_columns():
     assert "cooling_delta_24h" in X.columns
     assert "temp_delta_168h" in X.columns
     assert "cooling_delta_168h" in X.columns
+    assert "cooling_degree_3h_mean" in X.columns
+    assert "cooling_degree_6h_mean" in X.columns
+    assert "heating_degree_3h_mean" in X.columns
+    assert "heating_degree_6h_mean" in X.columns
 
 
 def test_temp_anomaly_7d_sign_on_hot_spike():
@@ -375,6 +379,31 @@ def test_inference_has_temp_anomaly_columns():
     assert "cooling_delta_24h" in out.columns
     assert "temp_delta_168h" in out.columns
     assert "cooling_delta_168h" in out.columns
+    assert "cooling_degree_3h_mean" in out.columns
+    assert "cooling_degree_6h_mean" in out.columns
+    assert "heating_degree_3h_mean" in out.columns
+    assert "heating_degree_6h_mean" in out.columns
+
+
+def test_inference_cooling_inertia_uses_recent_same_day_hours():
+    cache = _make_cache(400)
+    target = date(2025, 1, 15)
+    target_mask = cache["ts"].dt.date == target
+    cache.loc[target_mask, "temp_c"] = 22.0
+    cache.loc[
+        cache["ts"] == pd.Timestamp("2025-01-15T11:00:00+09:00"),
+        "temp_c",
+    ] = 28.0
+    cache.loc[
+        cache["ts"] == pd.Timestamp("2025-01-15T12:00:00+09:00"),
+        "temp_c",
+    ] = 34.0
+
+    out = build_inference_features(cache, target)
+
+    assert out["cooling_degree"].iloc[12] == pytest.approx(12.0)
+    assert out["cooling_degree_3h_mean"].iloc[12] == pytest.approx(6.0)
+    assert out["cooling_degree_6h_mean"].iloc[12] == pytest.approx(3.0)
 
 
 def test_inference_delta_24h_compares_same_hour_yesterday():
@@ -533,9 +562,9 @@ def test_inference_has_interaction_columns():
 
 
 def test_interaction_feature_cols_count():
-    """FEATURE_COLS should include weather-delta features and lag context."""
+    """FEATURE_COLS should include weather-delta, inertia, and lag context."""
     from python.forecast.feature_builder import FEATURE_COLS
-    assert len(FEATURE_COLS) == 40
+    assert len(FEATURE_COLS) == 44
 
 
 def test_holiday_x_heat_nonneg():

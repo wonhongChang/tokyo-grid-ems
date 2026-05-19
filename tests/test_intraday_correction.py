@@ -210,6 +210,97 @@ def test_intraday_correction_keeps_morning_negative_residual():
     assert result.forecasts[10].forecast_mw == pytest.approx(19_000.0)
 
 
+def test_intraday_shape_guard_caps_afternoon_drop():
+    target = date(2026, 5, 11)
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[14] = HourlyForecast(
+        ts=f"{target.isoformat()}T14:00:00+09:00",
+        forecast_mw=35_000.0,
+        p95_lower_mw=34_500.0,
+        p95_upper_mw=35_500.0,
+        p99_lower_mw=34_200.0,
+        p99_upper_mw=35_800.0,
+    )
+    forecasts[15] = HourlyForecast(
+        ts=f"{target.isoformat()}T15:00:00+09:00",
+        forecast_mw=33_000.0,
+        p95_lower_mw=32_500.0,
+        p95_upper_mw=33_500.0,
+        p99_lower_mw=32_200.0,
+        p99_upper_mw=33_800.0,
+    )
+    forecasts[16] = HourlyForecast(
+        ts=f"{target.isoformat()}T16:00:00+09:00",
+        forecast_mw=31_500.0,
+        p95_lower_mw=31_000.0,
+        p95_upper_mw=32_000.0,
+        p99_lower_mw=30_700.0,
+        p99_upper_mw=32_300.0,
+    )
+    actual_series = [
+        _actual_point(target, 11, 20_000.0),
+        _actual_point(target, 12, 20_000.0),
+        _actual_point(target, 13, 20_000.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "decay_per_hour": 1.0,
+            "shape_guard": {
+                "enabled": True,
+                "min_reference_hour": 12,
+                "hours": [15, 16],
+                "max_drop_mw": 1_000.0,
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.shape_guard_applied is True
+    assert result.forecasts[14].forecast_mw == pytest.approx(35_000.0)
+    assert result.forecasts[15].forecast_mw == pytest.approx(34_000.0)
+    assert result.forecasts[16].forecast_mw == pytest.approx(33_000.0)
+
+
+def test_intraday_shape_guard_waits_for_reference_hour():
+    target = date(2026, 5, 11)
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[15] = HourlyForecast(
+        ts=f"{target.isoformat()}T15:00:00+09:00",
+        forecast_mw=17_000.0,
+        p95_lower_mw=16_500.0,
+        p95_upper_mw=17_500.0,
+        p99_lower_mw=16_200.0,
+        p99_upper_mw=17_800.0,
+    )
+    actual_series = [
+        _actual_point(target, 8, 20_000.0),
+        _actual_point(target, 9, 20_000.0),
+        _actual_point(target, 10, 20_000.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "shape_guard": {
+                "enabled": True,
+                "min_reference_hour": 12,
+                "hours": [15],
+                "max_drop_mw": 1_000.0,
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.shape_guard_applied is False
+    assert result.forecasts[15].forecast_mw == pytest.approx(17_000.0)
+
+
 def test_intraday_ramp_guard_caps_near_term_jump_after_late_morning_actual():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)

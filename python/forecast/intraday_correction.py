@@ -18,6 +18,7 @@ class IntradayCorrectionResult:
     base_adjustment_mw: float
     ramp_guard_applied: bool = False
     negative_adjustment_damped: bool = False
+    shape_guard_applied: bool = False
 
 
 class IntradayResidualCorrector:
@@ -38,6 +39,15 @@ class IntradayResidualCorrector:
         )
         negative_damping_multiplier = float(negative_damping_config.get("multiplier", 1.0))
         self._negative_damping_multiplier = min(max(negative_damping_multiplier, 0.0), 1.0)
+        shape_guard_config = correction_config.get("shape_guard", {})
+        self._shape_guard_enabled = bool(shape_guard_config.get("enabled", False))
+        self._shape_guard_min_reference_hour = int(
+            shape_guard_config.get("min_reference_hour", 12)
+        )
+        self._shape_guard_hours = {
+            int(hour) for hour in shape_guard_config.get("hours", [15, 16, 17, 18, 19])
+        }
+        self._shape_guard_max_drop_mw = float(shape_guard_config.get("max_drop_mw", 1000.0))
         ramp_guard_config = correction_config.get("ramp_guard", {})
         self._ramp_guard_enabled = bool(ramp_guard_config.get("enabled", False))
         self._ramp_guard_min_reference_hour = int(ramp_guard_config.get("min_reference_hour", 10))
@@ -69,6 +79,46 @@ class IntradayResidualCorrector:
             p99_lower_mw=round(forecast.p99_lower_mw + shift_mw, 1),
             p99_upper_mw=round(forecast.p99_upper_mw + shift_mw, 1),
         )
+
+    def _apply_shape_guard(
+        self,
+        forecasts: list[HourlyForecast],
+        last_observed_hour: int | None,
+    ) -> tuple[list[HourlyForecast], bool]:
+        if (
+            not self._shape_guard_enabled
+            or last_observed_hour is None
+            or last_observed_hour < self._shape_guard_min_reference_hour
+            or self._shape_guard_max_drop_mw <= 0.0
+        ):
+            return forecasts, False
+
+        guarded: list[HourlyForecast] = []
+        changed = False
+        previous: HourlyForecast | None = None
+        for forecast in forecasts:
+            forecast_ts = pd.Timestamp(forecast.ts)
+            forecast_hour = forecast_ts.hour
+            guarded_forecast = forecast
+            if previous is not None:
+                previous_ts = pd.Timestamp(previous.ts)
+                is_consecutive_same_day = (
+                    forecast_ts.date() == previous_ts.date()
+                    and forecast_hour == previous_ts.hour + 1
+                )
+                if is_consecutive_same_day and forecast_hour in self._shape_guard_hours:
+                    min_forecast_mw = previous.forecast_mw - self._shape_guard_max_drop_mw
+                    if forecast.forecast_mw < min_forecast_mw:
+                        guarded_forecast = self._shift_forecast(
+                            forecast,
+                            min_forecast_mw - forecast.forecast_mw,
+                        )
+                        changed = True
+
+            guarded.append(guarded_forecast)
+            previous = guarded_forecast
+
+        return guarded, changed
 
     def _apply_ramp_guard(
         self,
@@ -141,18 +191,24 @@ class IntradayResidualCorrector:
         )
         recent_residuals = residuals_by_hour[-self._lookback_hours:]
         if len(recent_residuals) < self._min_observed_hours:
-            ramp_guarded_forecasts, ramp_guard_applied = self._apply_ramp_guard(
+            shape_guarded_forecasts, shape_guard_applied = self._apply_shape_guard(
                 forecasts,
+                last_observed_hour,
+            )
+            ramp_guarded_forecasts, ramp_guard_applied = self._apply_ramp_guard(
+                shape_guarded_forecasts,
                 last_observed_hour,
                 last_observed_mw,
             )
             return IntradayCorrectionResult(
                 ramp_guarded_forecasts,
-                ramp_guard_applied,
+                ramp_guard_applied or shape_guard_applied,
                 len(residuals_by_hour),
                 last_observed_hour,
                 0.0,
                 ramp_guard_applied,
+                False,
+                shape_guard_applied,
             )
 
         max_forecast_hour = max(forecast_by_hour)
@@ -202,6 +258,11 @@ class IntradayResidualCorrector:
                 p99_upper_mw=round(forecast.p99_upper_mw + decayed_adjustment_mw, 1),
             ))
 
+        adjusted_forecasts, shape_guard_applied = self._apply_shape_guard(
+            adjusted_forecasts,
+            last_observed_hour,
+        )
+
         adjusted_forecasts, ramp_guard_applied = self._apply_ramp_guard(
             adjusted_forecasts,
             last_observed_hour,
@@ -216,4 +277,5 @@ class IntradayResidualCorrector:
             round(base_adjustment_mw, 1),
             ramp_guard_applied,
             negative_adjustment_damped,
+            shape_guard_applied,
         )

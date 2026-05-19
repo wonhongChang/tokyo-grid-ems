@@ -172,6 +172,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [2026-05-19 気温バイアスと当日ランプガード](docs/ja/model-improvements/model-improvement-2026-05-19-weather-bias-and-ramp-guards.md)
 - [2026-05-19 運用向け intraday 下落ガード](docs/ja/model-improvements/model-improvement-2026-05-19-operational-intraday-drop-guard.md)
 - [2026-05-19 予測スナップショットとshape診断](docs/ja/model-improvements/model-improvement-2026-05-19-operational-snapshots-and-shape-diagnostics.md)
+- [2026-05-19 午後のthermal inertiaとshape guard](docs/ja/model-improvements/model-improvement-2026-05-19-afternoon-thermal-inertia-shape-guard.md)
 
 ---
 
