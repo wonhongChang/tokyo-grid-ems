@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-05-19T18:33:40+09:00",
+  "generatedAt": "2026-05-19T18:43:24+09:00",
   "date": "2026-05-05",
   "availability": "ok",
   "visibility": {
@@ -17,7 +17,7 @@
   "operationReport": {
     "schemaVersion": "1.0.0",
     "timezone": "Asia/Tokyo",
-    "generatedAt": "2026-05-19T18:33:40+09:00",
+    "generatedAt": "2026-05-19T18:43:24+09:00",
     "date": "2026-05-05",
     "availability": "ok",
     "model": {
@@ -99,6 +99,27 @@
         "verdict": "tepco_better"
       }
     ],
+    "shape": {
+      "transitionHours": 23,
+      "modelDeltaMaeMw": 188.9,
+      "tepcoDeltaMaeMw": 188.7,
+      "maxActualRiseMw": 1440.0,
+      "maxActualDropMw": -1130.0,
+      "maxModelRiseMw": 1633.6,
+      "maxModelDropMw": -1235.0,
+      "largestDeltaMiss": {
+        "fromHour": 7,
+        "toHour": 8,
+        "actualDeltaMw": 760.0,
+        "modelDeltaMw": 1630.7,
+        "tepcoDeltaMw": 950.0,
+        "modelDeltaErrorMw": 870.7,
+        "tepcoDeltaErrorMw": 190.0,
+        "modelAbsDeltaErrorMw": 870.7,
+        "tepcoAbsDeltaErrorMw": 190.0
+      },
+      "largeShapeBreaks": []
+    },
     "topMisses": [
       {
         "hour": 15,
@@ -249,6 +270,85 @@
         "code": "evening",
         "label": "19-23",
         "mean": -1.6
+      }
+    ],
+    "coolingDelta24hByBand": [
+      {
+        "code": "overnight",
+        "label": "00-05",
+        "mean": 0.0
+      },
+      {
+        "code": "morning_ramp",
+        "label": "06-10",
+        "mean": -0.4
+      },
+      {
+        "code": "daytime",
+        "label": "11-15",
+        "mean": -3.4
+      },
+      {
+        "code": "late_afternoon",
+        "label": "16-18",
+        "mean": -0.7
+      },
+      {
+        "code": "evening",
+        "label": "19-23",
+        "mean": 0.0
+      }
+    ],
+    "weatherDeltaRiskByBand": [
+      {
+        "code": "overnight",
+        "label": "00-05",
+        "hours": 6,
+        "tempDelta24hMean": -7.2,
+        "coolingDelta24hMean": 0.0,
+        "modelBiasMw": 455.5,
+        "modelMaeMw": 455.5,
+        "assessment": "neutral"
+      },
+      {
+        "code": "morning_ramp",
+        "label": "06-10",
+        "hours": 5,
+        "tempDelta24hMean": -7.3,
+        "coolingDelta24hMean": -0.4,
+        "modelBiasMw": 1007.7,
+        "modelMaeMw": 1007.7,
+        "assessment": "neutral"
+      },
+      {
+        "code": "daytime",
+        "label": "11-15",
+        "hours": 5,
+        "tempDelta24hMean": -4.7,
+        "coolingDelta24hMean": -3.4,
+        "modelBiasMw": 1498.7,
+        "modelMaeMw": 1498.7,
+        "assessment": "cooling_drop_overweighted"
+      },
+      {
+        "code": "late_afternoon",
+        "label": "16-18",
+        "hours": 3,
+        "tempDelta24hMean": -3.5,
+        "coolingDelta24hMean": -0.7,
+        "modelBiasMw": 1181.2,
+        "modelMaeMw": 1181.2,
+        "assessment": "neutral"
+      },
+      {
+        "code": "evening",
+        "label": "19-23",
+        "hours": 5,
+        "tempDelta24hMean": -1.6,
+        "coolingDelta24hMean": 0.0,
+        "modelBiasMw": 558.0,
+        "modelMaeMw": 558.0,
+        "assessment": "neutral"
       }
     ]
   },

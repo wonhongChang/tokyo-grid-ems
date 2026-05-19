@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-05-19T18:33:40+09:00",
+  "generatedAt": "2026-05-19T18:43:24+09:00",
   "date": "2026-05-08",
   "availability": "ok",
   "model": {
@@ -83,6 +83,39 @@
       "verdict": "tepco_better"
     }
   ],
+  "shape": {
+    "transitionHours": 23,
+    "modelDeltaMaeMw": 429.4,
+    "tepcoDeltaMaeMw": 318.3,
+    "maxActualRiseMw": 3570.0,
+    "maxActualDropMw": -1610.0,
+    "maxModelRiseMw": 2714.2,
+    "maxModelDropMw": -2004.5,
+    "largestDeltaMiss": {
+      "fromHour": 9,
+      "toHour": 10,
+      "actualDeltaMw": -40.0,
+      "modelDeltaMw": 2050.3,
+      "tepcoDeltaMw": 1250.0,
+      "modelDeltaErrorMw": 2090.3,
+      "tepcoDeltaErrorMw": 1290.0,
+      "modelAbsDeltaErrorMw": 2090.3,
+      "tepcoAbsDeltaErrorMw": 1290.0
+    },
+    "largeShapeBreaks": [
+      {
+        "fromHour": 9,
+        "toHour": 10,
+        "actualDeltaMw": -40.0,
+        "modelDeltaMw": 2050.3,
+        "tepcoDeltaMw": 1250.0,
+        "modelDeltaErrorMw": 2090.3,
+        "tepcoDeltaErrorMw": 1290.0,
+        "modelAbsDeltaErrorMw": 2090.3,
+        "tepcoAbsDeltaErrorMw": 1290.0
+      }
+    ]
+  },
   "topMisses": [
     {
       "hour": 9,
@@ -140,6 +173,17 @@
       "evidence": {
         "hour": 9,
         "modelAbsErrorMw": 2187.1
+      }
+    },
+    {
+      "code": "sharp_model_rise_mismatch",
+      "severity": "warning",
+      "title": "The model line rose faster than actual demand.",
+      "evidence": {
+        "fromHour": 9,
+        "toHour": 10,
+        "modelDeltaMw": 2050.3,
+        "actualDeltaMw": -40.0
       }
     }
   ]
