@@ -185,6 +185,7 @@ def test_intraday_ramp_guard_caps_near_term_jump_after_late_morning_actual():
                 "min_reference_hour": 10,
                 "max_lead_hours": 2,
                 "max_increase_mw_by_lead_hour": [1200, 1500],
+                "max_decrease_mw_by_lead_hour": [1200, 1500],
             },
         }
     })
@@ -224,6 +225,7 @@ def test_intraday_ramp_guard_does_not_limit_real_morning_ramp():
                 "min_reference_hour": 10,
                 "max_lead_hours": 2,
                 "max_increase_mw_by_lead_hour": [1200, 1500],
+                "max_decrease_mw_by_lead_hour": [1200, 1500],
             },
         }
     })
@@ -232,6 +234,92 @@ def test_intraday_ramp_guard_does_not_limit_real_morning_ramp():
 
     assert result.ramp_guard_applied is False
     assert result.forecasts[9].forecast_mw == pytest.approx(23_500.0)
+
+
+def test_intraday_ramp_guard_caps_near_term_drop_after_afternoon_actual():
+    target = date(2026, 5, 11)
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[16] = HourlyForecast(
+        ts=f"{target.isoformat()}T16:00:00+09:00",
+        forecast_mw=16_000.0,
+        p95_lower_mw=15_500.0,
+        p95_upper_mw=16_500.0,
+        p99_lower_mw=15_200.0,
+        p99_upper_mw=16_800.0,
+    )
+    forecasts[17] = HourlyForecast(
+        ts=f"{target.isoformat()}T17:00:00+09:00",
+        forecast_mw=15_000.0,
+        p95_lower_mw=14_500.0,
+        p95_upper_mw=15_500.0,
+        p99_lower_mw=14_200.0,
+        p99_upper_mw=15_800.0,
+    )
+    actual_series = [
+        _actual_point(target, 13, 20_000.0),
+        _actual_point(target, 14, 20_000.0),
+        _actual_point(target, 15, 20_000.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "decay_per_hour": 1.0,
+            "ramp_guard": {
+                "enabled": True,
+                "min_reference_hour": 10,
+                "max_lead_hours": 2,
+                "max_increase_mw_by_lead_hour": [1200, 1500],
+                "max_decrease_mw_by_lead_hour": [1000, 1800],
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.applied is True
+    assert result.ramp_guard_applied is True
+    assert result.forecasts[16].forecast_mw == pytest.approx(19_000.0)
+    assert result.forecasts[16].p95_lower_mw == pytest.approx(18_500.0)
+    assert result.forecasts[17].forecast_mw == pytest.approx(18_200.0)
+
+
+def test_intraday_ramp_guard_allows_plausible_near_term_drop():
+    target = date(2026, 5, 11)
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[16] = HourlyForecast(
+        ts=f"{target.isoformat()}T16:00:00+09:00",
+        forecast_mw=19_200.0,
+        p95_lower_mw=18_700.0,
+        p95_upper_mw=19_700.0,
+        p99_lower_mw=18_400.0,
+        p99_upper_mw=20_000.0,
+    )
+    actual_series = [
+        _actual_point(target, 13, 20_000.0),
+        _actual_point(target, 14, 20_000.0),
+        _actual_point(target, 15, 20_000.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "ramp_guard": {
+                "enabled": True,
+                "min_reference_hour": 10,
+                "max_lead_hours": 1,
+                "max_increase_mw_by_lead_hour": [1200],
+                "max_decrease_mw_by_lead_hour": [1000],
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.ramp_guard_applied is False
+    assert result.forecasts[16].forecast_mw == pytest.approx(19_200.0)
 
 
 def test_intraday_correction_does_not_mark_applied_after_final_hour():

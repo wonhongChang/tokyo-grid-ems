@@ -38,10 +38,18 @@ class IntradayResidualCorrector:
         self._ramp_guard_increase_caps = [
             float(value) for value in caps
         ] or [1200.0, 1500.0, 2000.0]
+        decrease_caps = ramp_guard_config.get("max_decrease_mw_by_lead_hour", [1000, 1800, 2400])
+        self._ramp_guard_decrease_caps = [
+            float(value) for value in decrease_caps
+        ] or [1000.0, 1800.0, 2400.0]
 
     def _ramp_guard_cap_for_lead(self, lead_hours: int) -> float:
         cap_index = min(max(lead_hours, 1), len(self._ramp_guard_increase_caps)) - 1
         return self._ramp_guard_increase_caps[cap_index]
+
+    def _ramp_guard_drop_cap_for_lead(self, lead_hours: int) -> float:
+        cap_index = min(max(lead_hours, 1), len(self._ramp_guard_decrease_caps)) - 1
+        return self._ramp_guard_decrease_caps[cap_index]
 
     @staticmethod
     def _shift_forecast(forecast: HourlyForecast, shift_mw: float) -> HourlyForecast:
@@ -78,11 +86,14 @@ class IntradayResidualCorrector:
                 continue
 
             max_forecast_mw = last_observed_mw + self._ramp_guard_cap_for_lead(lead_hours)
-            if forecast.forecast_mw <= max_forecast_mw:
+            min_forecast_mw = last_observed_mw - self._ramp_guard_drop_cap_for_lead(lead_hours)
+            if min_forecast_mw <= forecast.forecast_mw <= max_forecast_mw:
                 guarded.append(forecast)
                 continue
 
-            guarded.append(self._shift_forecast(forecast, max_forecast_mw - forecast.forecast_mw))
+            target_mw = min(max(forecast.forecast_mw, min_forecast_mw), max_forecast_mw)
+
+            guarded.append(self._shift_forecast(forecast, target_mw - forecast.forecast_mw))
             changed = True
 
         return guarded, changed
