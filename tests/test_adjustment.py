@@ -8,7 +8,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from python.forecast.adjustment import AnalogousDayAdjuster, PostHolidayTimeBandGuard
+from python.forecast.adjustment import (
+    AnalogousDayAdjuster,
+    MiddayTransitionGuard,
+    PostHolidayTimeBandGuard,
+)
 from python.forecast.baseline import HourlyForecast
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -802,3 +806,106 @@ def test_guard_caps_warm_day_forecast_too_far_above_lag24():
     assert result[11].forecast_mw == pytest.approx(36_500.0)
     assert result[11].p95_upper_mw == pytest.approx(37_500.0)
     assert result[9].forecast_mw == pytest.approx(38_200.0)
+
+
+# ---------------------------------------------------------------------------
+# Midday transition guard
+# ---------------------------------------------------------------------------
+
+def _midday_guard_config(**overrides) -> dict:
+    guard_config = {
+        "enabled": True,
+        "hours": [12],
+        "min_negative_delta_mw": 500.0,
+        "min_excess_mw": 300.0,
+        "shrinkage": 0.5,
+        "max_downward_adjustment_mw": 900.0,
+    }
+    guard_config.update(overrides)
+    return {"adjustment": {"midday_transition_guard": guard_config}}
+
+
+def _midday_inf(is_non_business_day: int = 0, lag_delta: float = -900.0,
+                recent_delta: float = -800.0) -> pd.DataFrame:
+    rows = []
+    for hour in range(24):
+        rows.append({
+            "hour": hour,
+            "is_non_business_day": is_non_business_day,
+            "lag_24h_hourly_delta": lag_delta if hour == 12 else 0.0,
+            "recent_same_business_type_delta_mean": (
+                recent_delta if hour == 12 else 0.0
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
+def test_midday_transition_guard_dampens_unsupported_noon_jump():
+    target = date(2026, 5, 20)
+    forecasts = _make_raw_forecasts(target, 35_000.0)
+    forecasts[11] = HourlyForecast(
+        ts=forecasts[11].ts,
+        forecast_mw=36_000.0,
+        p95_lower_mw=35_000.0,
+        p95_upper_mw=37_000.0,
+        p99_lower_mw=34_000.0,
+        p99_upper_mw=38_000.0,
+    )
+    forecasts[12] = HourlyForecast(
+        ts=forecasts[12].ts,
+        forecast_mw=37_400.0,
+        p95_lower_mw=36_400.0,
+        p95_upper_mw=38_400.0,
+        p99_lower_mw=35_900.0,
+        p99_upper_mw=38_900.0,
+    )
+
+    result = MiddayTransitionGuard(_midday_guard_config()).apply(
+        forecasts,
+        _midday_inf(),
+    )
+
+    assert result[12].forecast_mw == pytest.approx(36_500.0)
+    assert result[12].p95_lower_mw == pytest.approx(35_500.0)
+    assert result[11].forecast_mw == pytest.approx(36_000.0)
+
+
+def test_midday_transition_guard_ignores_non_business_day():
+    target = date(2026, 5, 23)
+    forecasts = _make_raw_forecasts(target, 35_000.0)
+    forecasts[12] = HourlyForecast(
+        ts=forecasts[12].ts,
+        forecast_mw=37_400.0,
+        p95_lower_mw=36_400.0,
+        p95_upper_mw=38_400.0,
+        p99_lower_mw=35_900.0,
+        p99_upper_mw=38_900.0,
+    )
+
+    result = MiddayTransitionGuard(_midday_guard_config()).apply(
+        forecasts,
+        _midday_inf(is_non_business_day=1),
+    )
+
+    assert result is forecasts
+
+
+def test_midday_transition_guard_requires_recent_negative_shape():
+    target = date(2026, 5, 20)
+    forecasts = _make_raw_forecasts(target, 35_000.0)
+    forecasts[12] = HourlyForecast(
+        ts=forecasts[12].ts,
+        forecast_mw=37_400.0,
+        p95_lower_mw=36_400.0,
+        p95_upper_mw=38_400.0,
+        p99_lower_mw=35_900.0,
+        p99_upper_mw=38_900.0,
+    )
+
+    result = MiddayTransitionGuard(_midday_guard_config()).apply(
+        forecasts,
+        _midday_inf(lag_delta=-200.0, recent_delta=-100.0),
+    )
+
+    assert result is not forecasts
+    assert result[12].forecast_mw == pytest.approx(37_400.0)

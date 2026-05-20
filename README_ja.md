@@ -163,11 +163,11 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-05-20 昼時間帯の遷移ガード](docs/ja/model-improvements/model-improvement-2026-05-20-midday-transition-features.md)
 - [2026-05-20 相対気温と蓄積熱慣性の特徴量](docs/ja/model-improvements/model-improvement-2026-05-20-relative-morning-weather-features.md)
 - [2026-05-19 実績需要低下に基づく緩和](docs/ja/model-improvements/model-improvement-2026-05-19-observed-demand-drop-relaxation.md)
 - [2026-05-19 午後のthermal inertiaとshape guard](docs/ja/model-improvements/model-improvement-2026-05-19-afternoon-thermal-inertia-shape-guard.md)
 - [2026-05-19 予測スナップショットとshape診断](docs/ja/model-improvements/model-improvement-2026-05-19-operational-snapshots-and-shape-diagnostics.md)
-- [2026-05-18 気象庁公式予報入力](docs/ja/model-improvements/model-improvement-2026-05-18-official-jma-weather.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 

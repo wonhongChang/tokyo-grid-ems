@@ -10,6 +10,7 @@ import pytest
 
 from python.forecast.feature_builder import (
     FEATURE_COLS,
+    INFERENCE_CONTEXT_COLS,
     _consec_holiday_len,
     _days_since_holiday_end,
     _ensure_tz,
@@ -757,6 +758,47 @@ def test_inference_recent_same_business_type_mean_uses_non_business_days():
         [10_000.0 + hour for hour in range(24)],
         atol=1e-6,
     )
+
+
+def test_inference_midday_transition_context_uses_prior_business_day_shape():
+    start = pd.Timestamp("2024-12-20", tz=JST)
+    n = 60 * 24
+    timestamps = pd.date_range(start, periods=n, freq="h")
+    actual_mw = []
+    for ts in timestamps:
+        if _is_nonworking(ts.date()):
+            actual_mw.append(24_000.0 + ts.hour * 10.0)
+        elif ts.hour == 11:
+            actual_mw.append(36_000.0)
+        elif ts.hour == 12:
+            actual_mw.append(34_600.0)
+        elif ts.hour == 13:
+            actual_mw.append(35_600.0)
+        else:
+            actual_mw.append(30_000.0 + ts.hour * 10.0)
+    df = pd.DataFrame({
+        "ts": timestamps,
+        "actual_mw": actual_mw,
+        "temp_c": np.full(n, 20.0),
+    })
+    target = date(2025, 2, 5)  # Wednesday
+    df.loc[df["ts"].dt.date == target, "actual_mw"] = np.nan
+
+    out = build_inference_features(df, target, include_context=True)
+
+    assert list(out.columns) == FEATURE_COLS + INFERENCE_CONTEXT_COLS
+
+    hour_10 = out[out["hour"] == 10].iloc[0]
+    hour_12 = out[out["hour"] == 12].iloc[0]
+    hour_13 = out[out["hour"] == 13].iloc[0]
+    assert hour_12["lag_24h_hourly_delta"] == pytest.approx(-1_400.0)
+    assert hour_12["business_midday_x_lag_24h_delta"] == pytest.approx(-1_400.0)
+    assert hour_12["recent_same_business_type_delta_mean"] == pytest.approx(-1_400.0)
+    assert hour_12["business_midday_x_recent_delta_mean"] == pytest.approx(-1_400.0)
+    assert hour_13["lag_24h_hourly_delta"] == pytest.approx(1_000.0)
+    assert hour_13["business_midday_x_lag_24h_delta"] == pytest.approx(1_000.0)
+    assert hour_10["business_midday_x_lag_24h_delta"] == pytest.approx(0.0)
+    assert hour_10["business_midday_x_recent_delta_mean"] == pytest.approx(0.0)
 
 
 def test_inference_lag_gap_positive_on_monday_after_low_weekend():

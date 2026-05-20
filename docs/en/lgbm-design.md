@@ -55,7 +55,7 @@ Feature engineering lives in `python/forecast/feature_builder.py`.
 | Interactions | holiday x heat, post-holiday x heat | handles Golden Week and similar return-to-work spikes |
 | Lag context | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h business-type mismatch, recent same business-type mean | tells the model when lag values are holiday-contaminated or crossed a business/non-business boundary |
 
-The current feature set has 50 explicit features.
+The current feature set has 50 explicit LightGBM training features.
 
 Cooling/heating degree balance points are configured in `config.yaml`:
 
@@ -68,6 +68,8 @@ weather_features:
 `temp_delta_24h` and `cooling_delta_24h` help the model decide how much to trust yesterday's same-hour demand when today's weather has shifted. `temp_delta_168h` and `cooling_delta_168h` do the same for the same-hour value from one week ago. `temp_72h_mean`, `cooling_degree_72h_mean`, and `heating_degree_72h_mean` capture sustained heat or cold. `apparent_temp_c` and `apparent_cooling_degree` add a feels-like temperature signal when the weather source provides one.
 
 `lag_24h_business_type_mismatch` and `lag_24h_mismatch_x_business_hour` help the model treat Friday-to-Saturday and Sunday-to-Monday lag values more carefully, especially during daytime business hours. `recent_same_business_type_mean` provides a broader same-hour anchor from recent business or non-business days.
+
+`lag_24h_hourly_delta`, `lag_168h_hourly_delta`, and `recent_same_business_type_delta_mean` are built as inference-only context for internal diagnostics and the noon transition guard. They are not part of the LightGBM training feature set because validation showed that global hourly-delta training features could disturb unrelated morning hours.
 
 ---
 
@@ -104,6 +106,8 @@ See [Lag Temperature Regime Features](model-improvements/model-improvement-2026-
 See [24h Weather Delta and Apparent Temperature Features](model-improvements/model-improvement-2026-05-15-24h-weather-apparent-features.md) for the next feature-side follow-up.
 
 See [Business-Type Lag Features](model-improvements/model-improvement-2026-05-16-business-type-lag-features.md) for the weekend/weekday transition follow-up.
+
+See [Midday Transition Guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) for the 12:00 lag-shape follow-up.
 
 ---
 

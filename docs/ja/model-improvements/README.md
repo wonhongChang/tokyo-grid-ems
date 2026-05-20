@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-05
 
+- [2026-05-20 昼時間帯の遷移ガード](model-improvement-2026-05-20-midday-transition-features.md)
 - [2026-05-20 相対気温と蓄積熱慣性の特徴量](model-improvement-2026-05-20-relative-morning-weather-features.md)
 - [2026-05-19 実績需要低下に基づく緩和](model-improvement-2026-05-19-observed-demand-drop-relaxation.md)
 - [2026-05-19 午後のthermal inertiaとshape guard](model-improvement-2026-05-19-afternoon-thermal-inertia-shape-guard.md)

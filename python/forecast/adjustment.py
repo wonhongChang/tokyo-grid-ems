@@ -438,3 +438,95 @@ class PostHolidayTimeBandGuard:
             result.append(adjusted_forecast)
 
         return result
+
+
+# ---------------------------------------------------------------------------
+# MiddayTransitionGuard
+# ---------------------------------------------------------------------------
+
+class MiddayTransitionGuard:
+    """Dampen business-day noon over-elevation when recent shape points downward.
+
+    This guard does not create a fixed lunch dip. It only activates when the
+    inference context says that the same hour recently dropped from the previous
+    hour, and the current forecast ignores that transition by a meaningful margin.
+    """
+
+    def __init__(self, config: dict) -> None:
+        guard_config = config.get("adjustment", {}).get("midday_transition_guard", {})
+        self._enabled = bool(guard_config.get("enabled", True))
+        self._hours = set(guard_config.get("hours", [12]))
+        self._min_negative_delta_mw = float(
+            guard_config.get("min_negative_delta_mw", 500.0)
+        )
+        self._min_excess_mw = float(guard_config.get("min_excess_mw", 300.0))
+        self._shrinkage = float(guard_config.get("shrinkage", 0.5))
+        self._max_downward_adjustment_mw = float(
+            guard_config.get("max_downward_adjustment_mw", 900.0)
+        )
+
+    @staticmethod
+    def _shift_forecast(forecast, shift_mw: float):
+        from python.forecast.baseline import HourlyForecast
+
+        return HourlyForecast(
+            ts=forecast.ts,
+            forecast_mw=round(forecast.forecast_mw + shift_mw, 1),
+            p95_lower_mw=round(forecast.p95_lower_mw + shift_mw, 1),
+            p95_upper_mw=round(forecast.p95_upper_mw + shift_mw, 1),
+            p99_lower_mw=round(forecast.p99_lower_mw + shift_mw, 1),
+            p99_upper_mw=round(forecast.p99_upper_mw + shift_mw, 1),
+        )
+
+    def apply(self, forecasts: list, inference_features: pd.DataFrame) -> list:
+        if not self._enabled or not forecasts:
+            return forecasts
+        if "is_non_business_day" not in inference_features.columns:
+            return forecasts
+        if bool(inference_features.iloc[0].get("is_non_business_day", 0) != 0):
+            return forecasts
+
+        result = list(forecasts)
+        features_by_hour = {
+            int(row["hour"]): row
+            for _, row in inference_features.iterrows()
+            if "hour" in row
+        }
+        for hour in sorted(self._hours):
+            if hour <= 0 or hour >= len(result):
+                continue
+            row = features_by_hour.get(hour)
+            if row is None:
+                continue
+
+            deltas = []
+            for column in [
+                "lag_24h_hourly_delta",
+                "recent_same_business_type_delta_mean",
+            ]:
+                value = row.get(column)
+                if pd.notna(value) and np.isfinite(float(value)):
+                    deltas.append(float(value))
+            negative_deltas = [
+                value for value in deltas
+                if value <= -self._min_negative_delta_mw
+            ]
+            if not negative_deltas:
+                continue
+
+            expected_delta = float(np.mean(negative_deltas))
+            previous_forecast = result[hour - 1]
+            current_forecast = result[hour]
+            forecast_delta = current_forecast.forecast_mw - previous_forecast.forecast_mw
+            excess = forecast_delta - expected_delta
+            if excess < self._min_excess_mw:
+                continue
+
+            target_mw = previous_forecast.forecast_mw + expected_delta
+            raw_shift = (target_mw - current_forecast.forecast_mw) * self._shrinkage
+            if raw_shift >= 0.0:
+                continue
+            shift = max(raw_shift, -self._max_downward_adjustment_mw)
+            result[hour] = self._shift_forecast(current_forecast, shift)
+
+        return result

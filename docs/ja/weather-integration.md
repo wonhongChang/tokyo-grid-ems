@@ -245,7 +245,7 @@ MAE  (MW)   測定予定      測定予定
 1. `fetch_weather.py` はOpen-Meteo archive/forecastエンドポイントをretry/backoff付きで使用します。
 2. `run_batch.py` は過去 `temp_c` と `apparent_temp_c` を `.hourly_cache.parquet` に補完します。
 3. 将来予測気象は `actual_mw = NaN` の仮想cache行として追加し、intraday実行ごとに更新します。
-4. `feature_builder.py` はdegree値、体感温度、気温偏差、24時間/168時間気象変化量、72時間の熱慣性、営業タイプlag文脈を含む50個のLightGBM特徴量を生成します。
+4. `feature_builder.py` はdegree値、体感温度、気温偏差、24時間/168時間気象変化量、72時間の熱慣性、営業タイプlag文脈を含む50個のLightGBM学習特徴量を生成します。追加のlag-shape contextは内部診断と12時遷移guard向けに生成し、LightGBM学習には入れません。
 5. `LGBMForecaster(config=config)` は学習と推論で同じweather feature設定を使用します。
 6. 特徴量バージョンが変わった場合、既存保存モデルはstale扱いとなり次回実行で再学習されます。
 

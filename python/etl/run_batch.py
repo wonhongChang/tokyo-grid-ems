@@ -1024,6 +1024,19 @@ def _make_guard(config: dict):
         return None
 
 
+def _make_midday_guard(config: dict):
+    """Instantiate MiddayTransitionGuard from config. Returns None on import failure."""
+    try:
+        from python.forecast.adjustment import MiddayTransitionGuard
+        cfg = config.get("adjustment", {}).get("midday_transition_guard", {})
+        if not cfg.get("enabled", True):
+            return None
+        return MiddayTransitionGuard(config)
+    except Exception as e:
+        print(f"[WARN] MiddayTransitionGuard init failed: {e}", file=sys.stderr)
+        return None
+
+
 def _build_forecast_with_fallback(
     forecaster,
     cache: pd.DataFrame,
@@ -1033,6 +1046,7 @@ def _build_forecast_with_fallback(
     config: dict | None = None,
     adjuster=None,
     guard=None,
+    midday_guard=None,
 ) -> tuple[list, str]:
     """Return (forecasts, model_name).
 
@@ -1042,7 +1056,12 @@ def _build_forecast_with_fallback(
     if forecaster is not None:
         try:
             from python.forecast.feature_builder import build_inference_features
-            inference_features = build_inference_features(cache, target_date, config)
+            inference_features = build_inference_features(
+                cache,
+                target_date,
+                config,
+                include_context=True,
+            )
             raw_lgbm_forecasts = forecaster.predict(target_date, cache)
             analog_adjusted_forecasts = (
                 adjuster.adjust(
@@ -1060,7 +1079,12 @@ def _build_forecast_with_fallback(
                 if guard
                 else analog_adjusted_forecasts
             )
-            return guarded_forecasts, "lgbm_quantile_q50"
+            midday_guarded_forecasts = (
+                midday_guard.apply(guarded_forecasts, inference_features)
+                if midday_guard
+                else guarded_forecasts
+            )
+            return midday_guarded_forecasts, "lgbm_quantile_q50"
         except Exception as e:
             print(f"[WARN] LightGBM predict failed for {target_date}: {e}", file=sys.stderr)
     return compute_forecast(cache, target_date, n_weeks, min_samples), "baseline_dow_hour_mean"
@@ -1526,6 +1550,7 @@ def _run_status_only(
     forecaster = _try_load_lgbm(out_dir)
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
+    midday_guard = _make_midday_guard(config)
 
     # Inject recent missing actuals (yesterday + today) for both forecasts
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
@@ -1535,7 +1560,8 @@ def _run_status_only(
 
     # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
     today_fc, today_model = _build_forecast_with_fallback(
-        forecaster, extended_with_actuals, today, n_weeks, min_samples, config, adjuster, guard
+        forecaster, extended_with_actuals, today, n_weeks, min_samples,
+        config, adjuster, guard, midday_guard
     )
     today_fc, today_model = _apply_intraday_residual_correction(
         out_dir, today, today_fc, today_model, config
@@ -1546,7 +1572,8 @@ def _run_status_only(
 
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
-        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard
+        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
+        config, adjuster, guard, midday_guard
     )
 
     snapshot_generated_at = ts_now()
@@ -1745,6 +1772,7 @@ def main() -> None:
     forecaster = _try_train_lgbm(hourly_cache, out_dir, config)
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
+    midday_guard = _make_midday_guard(config)
 
     # Re-generate backfilled forecasts using LightGBM only when no operational
     # forecast JSON already existed for that date.
@@ -1755,7 +1783,7 @@ def main() -> None:
                 historical_cache = hourly_cache[hourly_cache["ts"] < pd.Timestamp(d, tz=JST)].copy()
                 fc_list, model_name = _build_forecast_with_fallback(
                     historical_forecaster, historical_cache, d, n_weeks, min_samples,
-                    config, adjuster, guard
+                    config, adjuster, guard, midday_guard
                 )
                 write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
                            build_forecast_json(d, fc_list, config, model_name))
@@ -1780,7 +1808,8 @@ def main() -> None:
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
     display_with_actuals = _inject_today_actuals(out_dir, today, forecast_weather_cache)
     today_fc, today_model = _build_forecast_with_fallback(
-        forecaster, extended_with_actuals, today, n_weeks, min_samples, config, adjuster, guard
+        forecaster, extended_with_actuals, today, n_weeks, min_samples,
+        config, adjuster, guard, midday_guard
     )
     today_fc, today_model = _apply_intraday_residual_correction(
         out_dir, today, today_fc, today_model, config
@@ -1790,7 +1819,8 @@ def main() -> None:
         preserve_observed_hours=not args.refresh_today_forecast,
     )
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
-        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples, config, adjuster, guard
+        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
+        config, adjuster, guard, midday_guard
     )
 
     snapshot_generated_at = ts_now()

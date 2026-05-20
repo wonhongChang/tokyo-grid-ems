@@ -32,9 +32,14 @@ _INTERNAL_LAG_FEATURES = [
     "lag_48h",
     "lag_168h",
     "lag_336h",
+    "lag_24h_hourly_delta",
+    "lag_168h_hourly_delta",
     "lag_last_biz_hour",
     "lag_last_nonhol_hour",
     "recent_same_business_type_mean",
+    "recent_same_business_type_delta_mean",
+    "business_midday_x_lag_24h_delta",
+    "business_midday_x_recent_delta_mean",
     "lag_24h_business_type_mismatch",
     "lag_24h_mismatch_x_business_hour",
     "lag_24h_to_last_biz_gap",
@@ -556,7 +561,12 @@ def _feature_rows_by_hour(
         if "ts" in feature_cache.columns and "actual_mw" in feature_cache.columns:
             target_mask = feature_cache["ts"].dt.date == target_date
             feature_cache.loc[target_mask, "actual_mw"] = float("nan")
-        features = build_inference_features(feature_cache, target_date, config)
+        features = build_inference_features(
+            feature_cache,
+            target_date,
+            config,
+            include_context=True,
+        )
     except Exception as e:
         return {}, str(e)
 
@@ -696,6 +706,16 @@ def build_internal_daily_diagnostic(
                 diagnostic_rows,
                 "lagFeatures",
                 "lag_24h_to_same_business_type_gap",
+            ),
+            "lag24HourlyDeltaByBand": _feature_band_means(
+                diagnostic_rows,
+                "lagFeatures",
+                "lag_24h_hourly_delta",
+            ),
+            "recentSameBusinessTypeDeltaByBand": _feature_band_means(
+                diagnostic_rows,
+                "lagFeatures",
+                "recent_same_business_type_delta_mean",
             ),
             "tempAnomaly7dByBand": _feature_band_means(
                 diagnostic_rows,

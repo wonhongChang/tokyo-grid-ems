@@ -8,6 +8,7 @@
 
 ## 2026-05
 
+- [2026-05-20 점심 시간대 전환 guard](model-improvement-2026-05-20-midday-transition-features.md)
 - [2026-05-20 상대 기온과 누적 열 관성 피처](model-improvement-2026-05-20-relative-morning-weather-features.md)
 - [2026-05-19 실측 수요 하락 기반 완화](model-improvement-2026-05-19-observed-demand-drop-relaxation.md)
 - [2026-05-19 오후 thermal inertia와 shape guard](model-improvement-2026-05-19-afternoon-thermal-inertia-shape-guard.md)

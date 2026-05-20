@@ -103,3 +103,11 @@ adjustment:
       lag24_warm_day_cap_enabled: true
       lag24_warm_day_max_increase_mw: 2500
       max_upward_offset_mw: 900
+
+  midday_transition_guard:
+    enabled: true
+    hours: [12]
+    min_negative_delta_mw: 500  # require recent same-business shape to show a real dip
+    min_excess_mw: 300          # ignore small differences between forecast and shape context
+    shrinkage: 0.5              # partial correction; keeps LightGBM as the primary forecast
+    max_downward_adjustment_mw: 900

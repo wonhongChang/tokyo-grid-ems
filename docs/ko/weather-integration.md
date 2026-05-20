@@ -245,7 +245,7 @@ MAE  (MW)   측정 예정     측정 예정
 1. `fetch_weather.py`는 Open-Meteo archive/forecast 엔드포인트를 retry/backoff와 함께 사용합니다.
 2. `run_batch.py`는 과거 `temp_c`와 `apparent_temp_c`를 `.hourly_cache.parquet`에 채웁니다.
 3. 미래 예측 날씨는 `actual_mw = NaN`인 가상 cache 행으로 추가하고, intraday 실행 때마다 갱신합니다.
-4. `feature_builder.py`는 degree 값, 체감온도, 기온 이상치, 24시간/168시간 날씨 변화량, 72시간 열 관성, 영업 타입 lag 컨텍스트를 포함한 50개 LightGBM 피처를 생성합니다.
+4. `feature_builder.py`는 degree 값, 체감온도, 기온 이상치, 24시간/168시간 날씨 변화량, 72시간 열 관성, 영업 타입 lag 컨텍스트를 포함한 50개 LightGBM 학습 피처를 생성합니다. 추가 lag-shape context는 내부 진단과 12시 전환 guard용으로 생성하며 LightGBM 학습에는 넣지 않습니다.
 5. `LGBMForecaster(config=config)`는 학습과 추론에서 같은 weather feature 설정을 사용합니다.
 6. 피처 버전이 바뀌면 기존 저장 모델을 stale로 보고 다음 실행에서 재학습합니다.
 

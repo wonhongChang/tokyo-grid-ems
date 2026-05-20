@@ -55,7 +55,7 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | 交互作用 | holiday x heat, post-holiday x heat | GW後などの復帰需要を補正する |
 | ラグ文脈 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h営業/非営業mismatch, 直近同営業タイプ平均 | ラグ値が休日需要に影響されたか、または営業/非営業境界をまたいだかを伝える |
 
-現在の明示的特徴量数は50個です。
+現在の明示的なLightGBM学習特徴量数は50個です。
 
 冷房/暖房degreeの基準温度は `config.yaml` で設定します。
 
@@ -68,6 +68,8 @@ weather_features:
 `temp_delta_24h` と `cooling_delta_24h` は、今日の天候が前日同時刻から変わった場合に、前日需要ラグをどの程度信頼するかをモデルに伝える特徴量です。`temp_delta_168h` と `cooling_delta_168h` は、前週同時刻の需要に対して同じ役割を持ちます。`temp_72h_mean`、`cooling_degree_72h_mean`、`heating_degree_72h_mean` は、持続的な暑さや寒さの蓄積効果を反映します。`apparent_temp_c` と `apparent_cooling_degree` は、データソースが体感温度を提供する場合に補助信号として使います。
 
 `lag_24h_business_type_mismatch` と `lag_24h_mismatch_x_business_hour` は、金曜→土曜、日曜→月曜のように前日ラグが営業/非営業境界をまたぐ場合をモデルに伝えます。特に日中の業務需要差を慎重に扱うための信号です。`recent_same_business_type_mean` は、直近の同じ営業タイプ・同時刻の平均を追加の基準線として与えます。
+
+`lag_24h_hourly_delta`、`lag_168h_hourly_delta`、`recent_same_business_type_delta_mean` は、内部診断と12時遷移guard向けの推論専用contextとして生成します。検証では、グローバルなhourly-deltaを学習特徴量に入れると無関係な午前時間帯も揺れる可能性があったため、LightGBM学習特徴量には含めていません。
 
 ---
 
@@ -106,6 +108,8 @@ residual = actualMw - modelForecastMw
 次の特徴量改善は [2026-05-15 前日比気象変化と体感温度特徴量](model-improvements/model-improvement-2026-05-15-24h-weather-apparent-features.md) に整理しています。
 
 週末/平日遷移の改善は [2026-05-16 営業タイプ遷移lag特徴量](model-improvements/model-improvement-2026-05-16-business-type-lag-features.md) に整理しています。
+
+12:00の時間遷移改善は [2026-05-20 昼時間帯の遷移ガード](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) に整理しています。
 
 ---
 

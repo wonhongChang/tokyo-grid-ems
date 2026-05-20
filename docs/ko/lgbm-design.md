@@ -55,7 +55,7 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | 교호작용 | holiday x heat, post-holiday x heat | 골든위크 이후 복귀 수요 보정 |
 | 래그 컨텍스트 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h 영업/비영업 mismatch, 최근 같은 영업타입 평균 | 래그값이 휴일 수요에 오염됐거나 영업/비영업 경계를 건넜는지 알려줌 |
 
-현재 명시적 피처 수는 50개입니다.
+현재 명시적 LightGBM 학습 피처 수는 50개입니다.
 
 냉방/난방 degree의 기준온도는 `config.yaml`에서 설정합니다.
 
@@ -68,6 +68,8 @@ weather_features:
 `temp_delta_24h`와 `cooling_delta_24h`는 오늘 날씨가 어제 같은 시간과 달라졌을 때, 전날 수요 lag를 얼마나 믿을지 모델에 알려주는 피처입니다. `temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요에 대해 같은 역할을 합니다. `temp_72h_mean`, `cooling_degree_72h_mean`, `heating_degree_72h_mean`은 지속적인 더위나 추위의 누적 효과를 반영합니다. `apparent_temp_c`와 `apparent_cooling_degree`는 데이터 소스가 체감온도를 제공할 때 이를 보완 신호로 사용합니다.
 
 `lag_24h_business_type_mismatch`와 `lag_24h_mismatch_x_business_hour`는 금요일→토요일, 일요일→월요일처럼 전날 lag가 영업/비영업 경계를 건너는 경우를 모델에 알려줍니다. 특히 낮 시간대 업무 수요 차이를 조심해서 보게 하는 신호입니다. `recent_same_business_type_mean`은 최근 같은 영업 타입의 같은 시간대 평균을 추가 기준선으로 제공합니다.
+
+`lag_24h_hourly_delta`, `lag_168h_hourly_delta`, `recent_same_business_type_delta_mean`은 내부 진단과 12시 전환 guard를 위한 추론 전용 context로 생성합니다. 검증 결과 전역 hourly-delta를 학습 피처에 넣으면 무관한 오전 시간대까지 흔들 수 있어 LightGBM 학습 피처에는 포함하지 않았습니다.
 
 ---
 
@@ -106,6 +108,8 @@ residual = actualMw - modelForecastMw
 다음 피처 개선은 [2026-05-15 전일 대비 날씨 변화와 체감온도 피처](model-improvements/model-improvement-2026-05-15-24h-weather-apparent-features.md)에 정리했습니다.
 
 주말/평일 전환 개선은 [2026-05-16 영업 타입 전환 lag 피처](model-improvements/model-improvement-2026-05-16-business-type-lag-features.md)에 정리했습니다.
+
+12:00 시간 전환 개선은 [2026-05-20 점심 시간대 전환 guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md)에 정리했습니다.
 
 ---
 

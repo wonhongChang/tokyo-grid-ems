@@ -63,6 +63,14 @@ FEATURE_COLS: list[str] = [
     "lag_24h_gap_x_business_hour",           # mismatch gap focused on morning/daytime demand hours
 ]
 
+INFERENCE_CONTEXT_COLS: list[str] = [
+    "lag_24h_hourly_delta",
+    "lag_168h_hourly_delta",
+    "recent_same_business_type_delta_mean",
+    "business_midday_x_lag_24h_delta",
+    "business_midday_x_recent_delta_mean",
+]
+
 # Golden Week / Obon / New Year day-of-year zones (wider than the holiday itself
 # to cover the return-to-work spike period)
 _SEASON_RANGES = [
@@ -212,6 +220,19 @@ def _add_lag_gap_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _add_midday_transition_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Expose learned weekday midday demand shape without hard-coding a dip."""
+    business_midday = (df["is_non_business_day"] == 0) & df["hour"].between(11, 13)
+    df["business_midday_x_lag_24h_delta"] = df["lag_24h_hourly_delta"].where(
+        business_midday,
+        0.0,
+    )
+    df["business_midday_x_recent_delta_mean"] = (
+        df["recent_same_business_type_delta_mean"].where(business_midday, 0.0)
+    )
+    return df
+
+
 def _add_relative_weather_interactions(df: pd.DataFrame) -> pd.DataFrame:
     """Add relative weather interactions without fixed temperature cutoffs."""
     business_morning = (
@@ -308,8 +329,10 @@ def build_training_features(
     actual_history = df[["ts", "actual_mw"]].copy()
     for hours, col in [
         (24,  "lag_24h"),
+        (25,  "_lag_25h"),
         (48,  "lag_48h"),
         (168, "lag_168h"),
+        (169, "_lag_169h"),
         (336, "lag_336h"),
     ]:
         shifted = (
@@ -317,6 +340,15 @@ def build_training_features(
                .rename(columns={"actual_mw": col})
         )
         df = df.merge(shifted, on="ts", how="left")
+    df["lag_24h_hourly_delta"] = df["lag_24h"] - df["_lag_25h"]
+    df["lag_168h_hourly_delta"] = df["lag_168h"] - df["_lag_169h"]
+
+    previous_hour = (
+        actual_history.assign(ts=actual_history["ts"] + pd.Timedelta(hours=1))
+            .rename(columns={"actual_mw": "_actual_prev_hour"})
+    )
+    df = df.merge(previous_hour, on="ts", how="left")
+    df["_actual_hourly_delta"] = df["actual_mw"] - df["_actual_prev_hour"]
 
     # Rolling stats within each (hour, dayofweek) slot
     hour_weekday_group = df.groupby(["hour", "dayofweek"])["actual_mw"]
@@ -333,12 +365,19 @@ def build_training_features(
     df["recent_same_business_type_mean"] = hour_business_type_group.transform(
         lambda s: s.shift(1).rolling(8, min_periods=1).mean()
     )
+    hour_business_type_delta_group = df.groupby(
+        ["hour", "is_non_business_day"]
+    )["_actual_hourly_delta"]
+    df["recent_same_business_type_delta_mean"] = hour_business_type_delta_group.transform(
+        lambda s: s.shift(1).rolling(8, min_periods=1).mean()
+    )
 
     # Holiday lag correction features
     ts_to_mw = dict(zip(df["ts"], df["actual_mw"]))
     date_feature_map = _date_features(sorted(set(df["ts"].dt.date)))
     df = _add_holiday_lag_cols(df, ts_to_mw, date_feature_map)
     df = _add_lag_gap_cols(df)
+    df = _add_midday_transition_cols(df)
 
     # Temperature features
     if "temp_c" in df.columns:
@@ -437,6 +476,7 @@ def build_inference_features(
     cache: pd.DataFrame,
     target_date: date,
     config: dict | None = None,
+    include_context: bool = False,
 ) -> pd.DataFrame:
     """Return a 24-row DataFrame (one row per hour) for predicting target_date.
 
@@ -452,6 +492,12 @@ def build_inference_features(
     actual_rows["_dow"]  = actual_rows["ts"].dt.dayofweek
     actual_rows["_is_non_business_day"] = actual_rows["ts"].dt.date.map(
         lambda d: int(_is_nonworking(d))
+    )
+    actual_rows["_actual_prev_hour"] = actual_rows["ts"].map(
+        lambda ts: actual_mw_by_ts.get(ts - pd.Timedelta(hours=1), np.nan)
+    )
+    actual_rows["_actual_hourly_delta"] = (
+        actual_rows["actual_mw"] - actual_rows["_actual_prev_hour"]
     )
 
     is_public_holiday = int(_is_holiday(target_date))
@@ -545,9 +591,13 @@ def build_inference_features(
         day_of_week = ts.dayofweek
 
         lag_24h  = actual_mw_by_ts.get(ts - pd.Timedelta(hours=24),  np.nan)
+        lag_25h  = actual_mw_by_ts.get(ts - pd.Timedelta(hours=25),  np.nan)
         lag_48h  = actual_mw_by_ts.get(ts - pd.Timedelta(hours=48),  np.nan)
         lag_168h = actual_mw_by_ts.get(ts - pd.Timedelta(hours=168), np.nan)
+        lag_169h = actual_mw_by_ts.get(ts - pd.Timedelta(hours=169), np.nan)
         lag_336h = actual_mw_by_ts.get(ts - pd.Timedelta(hours=336), np.nan)
+        lag_24h_hourly_delta = lag_24h - lag_25h
+        lag_168h_hourly_delta = lag_168h - lag_169h
 
         recent_same_hour_weekday = actual_rows[
             (actual_rows["_hour"] == hour) &
@@ -559,6 +609,11 @@ def build_inference_features(
             (actual_rows["_is_non_business_day"] == is_target_non_business_day) &
             (actual_rows["ts"] < ts)
         ].tail(8)
+        recent_same_business_type_delta = actual_rows[
+            (actual_rows["_hour"] == hour) &
+            (actual_rows["_is_non_business_day"] == is_target_non_business_day) &
+            (actual_rows["ts"] < ts)
+        ].dropna(subset=["_actual_hourly_delta"]).tail(8)
 
         target_date_features = date_feature_map[target_date]
 
@@ -679,6 +734,11 @@ def build_inference_features(
             if len(recent_same_business_type) > 0
             else np.nan
         )
+        recent_same_business_type_delta_mean = (
+            float(recent_same_business_type_delta["_actual_hourly_delta"].mean())
+            if len(recent_same_business_type_delta) > 0
+            else np.nan
+        )
         lag_last_biz_hour = _lag_day("last_biz_day")
         lag_last_nonhol_hour = _lag_day("last_nonhol_day")
         lag_24h_to_same_business_type_gap = recent_same_business_type_mean - lag_24h
@@ -694,6 +754,8 @@ def build_inference_features(
             "lag_48h":                lag_48h,
             "lag_168h":               lag_168h,
             "lag_336h":               lag_336h,
+            "lag_24h_hourly_delta":   lag_24h_hourly_delta,
+            "lag_168h_hourly_delta":  lag_168h_hourly_delta,
             "roll_4w_mean": (
                 float(recent_same_hour_weekday["actual_mw"].mean())
                 if len(recent_same_hour_weekday) > 0
@@ -705,6 +767,7 @@ def build_inference_features(
                 else 0.0
             ),
             "recent_same_business_type_mean": recent_same_business_type_mean,
+            "recent_same_business_type_delta_mean": recent_same_business_type_delta_mean,
             "lag_last_biz_hour":      lag_last_biz_hour,
             "lag_last_nonhol_hour":   lag_last_nonhol_hour,
             "consec_holiday_len":     target_date_features["consec_holiday_len"],
@@ -756,4 +819,6 @@ def build_inference_features(
             ),
         })
 
-    return pd.DataFrame(rows)[FEATURE_COLS]
+    out = _add_midday_transition_cols(pd.DataFrame(rows))
+    columns = FEATURE_COLS + (INFERENCE_CONTEXT_COLS if include_context else [])
+    return out[columns]
