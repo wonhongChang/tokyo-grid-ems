@@ -97,14 +97,12 @@ def test_reserve_risk_event_schema():
 
 # ── Spike / Drop ─────────────────────────────────────────────────────────────
 
-def test_spike_warning_above_p95():
+def test_spike_not_raised_for_p95_only_breach():
     forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
     # p95_upper ≈ 31960; p99_upper ≈ 32576
     actual = [32150.0] + [30000.0] * 23
     events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
-    spikes = [e for e in events if e["type"] == "spike"]
-    assert len(spikes) >= 1
-    assert spikes[0]["severity"] == "warning"
+    assert not [e for e in events if e["type"] == "spike"]
 
 
 def test_spike_critical_above_p99():
@@ -117,14 +115,12 @@ def test_spike_critical_above_p99():
     assert spikes[0]["severity"] == "critical"
 
 
-def test_drop_warning_below_p95():
+def test_drop_not_raised_for_p95_only_breach():
     forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
     # p95_lower ≈ 28040; p99_lower ≈ 27424
     actual = [27900.0] + [30000.0] * 23  # below p95, above p99 → warning
     events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
-    drops = [e for e in events if e["type"] == "drop"]
-    assert len(drops) >= 1
-    assert drops[0]["severity"] == "warning"
+    assert not [e for e in events if e["type"] == "drop"]
 
 
 def test_drop_critical_below_p99():

@@ -90,9 +90,6 @@ def _spike_drop(
 
     critical_breach_mw  = float(cfg.get("critical_breach_mw",  500.0))
     critical_breach_pct = float(cfg.get("critical_breach_pct",   2.0))
-    warning_breach_mw   = float(cfg.get("warning_breach_mw",    150.0))
-    warning_breach_pct  = float(cfg.get("warning_breach_pct",     0.5))
-
     # key: "2025-11-01T18" → HourlyForecast
     fc_map = {f.ts[:13]: f for f in forecasts}
     events = []
@@ -129,15 +126,9 @@ def _spike_drop(
                 f"by {breach_mw:.0f} MW ({breach_pct:.2f}%)"
             )
         elif actual > fc.p95_upper_mw:
-            breach_mw = actual - fc.p95_upper_mw
-            breach_pct = breach_mw / actual * 100 if actual > 0 else 0.0
-            if breach_mw < warning_breach_mw and breach_pct < warning_breach_pct:
-                continue
-            kind, severity = "spike", "warning"
-            reason = (
-                f"Actual {actual:.0f} MW exceeded p95 upper {fc.p95_upper_mw:.0f} MW "
-                f"by {breach_mw:.0f} MW ({breach_pct:.2f}%)"
-            )
+            # p95-only edge crossings are model-band misses, not operational spikes.
+            # Drift detection covers sustained bias; spike/drop is reserved for p99 outliers.
+            continue
         elif actual < fc.p99_lower_mw:
             breach_mw  = fc.p99_lower_mw - actual
             breach_pct = breach_mw / actual * 100 if actual > 0 else 0.0
@@ -148,15 +139,9 @@ def _spike_drop(
                 f"by {breach_mw:.0f} MW ({breach_pct:.2f}%)"
             )
         elif actual < fc.p95_lower_mw:
-            breach_mw = fc.p95_lower_mw - actual
-            breach_pct = breach_mw / actual * 100 if actual > 0 else 0.0
-            if breach_mw < warning_breach_mw and breach_pct < warning_breach_pct:
-                continue
-            kind, severity = "drop", "warning"
-            reason = (
-                f"Actual {actual:.0f} MW fell below p95 lower {fc.p95_lower_mw:.0f} MW "
-                f"by {breach_mw:.0f} MW ({breach_pct:.2f}%)"
-            )
+            # p95-only edge crossings are model-band misses, not operational drops.
+            # Drift detection covers sustained bias; spike/drop is reserved for p99 outliers.
+            continue
         else:
             continue
 
