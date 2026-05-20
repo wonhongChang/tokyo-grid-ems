@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-05
 
+- [2026-05-20 afternoon weather direction features](model-improvement-2026-05-20-afternoon-weather-direction-features.md)
 - [2026-05-20 midday transition guard](model-improvement-2026-05-20-midday-transition-features.md)
 - [2026-05-20 relative weather and thermal memory features](model-improvement-2026-05-20-relative-morning-weather-features.md)
 - [2026-05-19 observed demand drop relaxation](model-improvement-2026-05-19-observed-demand-drop-relaxation.md)

@@ -37,6 +37,10 @@ FEATURE_COLS: list[str] = [
     "cooling_delta_24h",    # current cooling_degree minus previous-day same-hour cooling_degree
     "temp_delta_168h",      # current temp_c minus 7-day-ago same-hour temp_c
     "cooling_delta_168h",   # current cooling_degree minus 7-day-ago same-hour cooling_degree
+    "temp_delta_1h",        # current temp_c minus previous-hour temp_c
+    "temp_delta_2h",        # current temp_c minus two-hours-ago temp_c
+    "apparent_temp_delta_1h",
+    "cooling_delta_1h",
     "cooling_degree_3h_mean",  # recent cooling load inertia, including current hour
     "cooling_degree_6h_mean",
     "heating_degree_3h_mean",  # recent heating load inertia, including current hour
@@ -47,6 +51,8 @@ FEATURE_COLS: list[str] = [
     "business_morning_x_temp_delta_24h",   # weekday morning ramp x same-hour temp change vs yesterday
     "business_morning_x_temp_anomaly_7d",  # weekday morning ramp x temp anomaly vs recent week
     "business_morning_x_temp_anomaly_doy", # weekday morning ramp x seasonal same-hour temp anomaly
+    "business_late_afternoon_x_temp_delta_1h",    # weekday 15-18 demand hysteresis x temp direction
+    "business_late_afternoon_x_cooling_delta_1h", # weekday 15-18 cooling-load direction
     # Interaction: holiday × heat surplus (captures post-holiday demand spike on hot days)
     "holiday_x_heat",                    # consec_holiday_len × max(0, temp_anomaly_7d)
     "post_holiday_x_heat",               # int(1 ≤ days_since_holiday_end ≤ 2) × max(0, temp_anomaly_7d)
@@ -242,6 +248,16 @@ def _add_relative_weather_interactions(df: pd.DataFrame) -> pd.DataFrame:
     df["business_morning_x_temp_delta_24h"] = business_morning * df["temp_delta_24h"]
     df["business_morning_x_temp_anomaly_7d"] = business_morning * df["temp_anomaly_7d"]
     df["business_morning_x_temp_anomaly_doy"] = business_morning * df["temp_anomaly_doy"]
+    business_late_afternoon = (
+        (df["is_non_business_day"] == 0)
+        & df["hour"].between(15, 18)
+    ).astype(float)
+    df["business_late_afternoon_x_temp_delta_1h"] = (
+        business_late_afternoon * df["temp_delta_1h"]
+    )
+    df["business_late_afternoon_x_cooling_delta_1h"] = (
+        business_late_afternoon * df["cooling_delta_1h"]
+    )
     return df
 
 
@@ -414,27 +430,52 @@ def build_training_features(
         # How abnormal vs historical same (month, hour) average
         month_hour_temp_mean = df.groupby(["month", "hour"])["temp_c"].transform("mean")
         df["temp_anomaly_doy"] = df["temp_c"] - month_hour_temp_mean
-        temp_history = df[["ts", "temp_c", "cooling_degree"]].copy()
+        temp_history = df[[
+            "ts", "temp_c", "apparent_temp_c", "cooling_degree",
+        ]].copy()
+        shifted_temp_1h = (
+            temp_history.assign(ts=temp_history["ts"] + pd.Timedelta(hours=1))
+                .rename(columns={
+                    "temp_c": "temp_c_1h",
+                    "apparent_temp_c": "apparent_temp_c_1h",
+                    "cooling_degree": "cooling_degree_1h",
+                })
+        )
+        shifted_temp_2h = (
+            temp_history[["ts", "temp_c"]]
+                .assign(ts=temp_history["ts"] + pd.Timedelta(hours=2))
+                .rename(columns={"temp_c": "temp_c_2h"})
+        )
         shifted_temp_24h = (
-            temp_history.assign(ts=temp_history["ts"] + pd.Timedelta(hours=24))
+            temp_history[["ts", "temp_c", "cooling_degree"]]
+                .assign(ts=temp_history["ts"] + pd.Timedelta(hours=24))
                 .rename(columns={
                     "temp_c": "temp_c_24h",
                     "cooling_degree": "cooling_degree_24h",
                 })
         )
         shifted_temp_168h = (
-            temp_history.assign(ts=temp_history["ts"] + pd.Timedelta(hours=168))
+            temp_history[["ts", "temp_c", "cooling_degree"]]
+                .assign(ts=temp_history["ts"] + pd.Timedelta(hours=168))
                 .rename(columns={
                     "temp_c": "temp_c_168h",
                     "cooling_degree": "cooling_degree_168h",
                 })
         )
+        df = df.merge(shifted_temp_1h, on="ts", how="left")
+        df = df.merge(shifted_temp_2h, on="ts", how="left")
         df = df.merge(shifted_temp_24h, on="ts", how="left")
         df = df.merge(shifted_temp_168h, on="ts", how="left")
         df["temp_delta_24h"] = df["temp_c"] - df["temp_c_24h"]
         df["cooling_delta_24h"] = df["cooling_degree"] - df["cooling_degree_24h"]
         df["temp_delta_168h"] = df["temp_c"] - df["temp_c_168h"]
         df["cooling_delta_168h"] = df["cooling_degree"] - df["cooling_degree_168h"]
+        df["temp_delta_1h"] = df["temp_c"] - df["temp_c_1h"]
+        df["temp_delta_2h"] = df["temp_c"] - df["temp_c_2h"]
+        df["apparent_temp_delta_1h"] = (
+            df["apparent_temp_c"] - df["apparent_temp_c_1h"]
+        )
+        df["cooling_delta_1h"] = df["cooling_degree"] - df["cooling_degree_1h"]
     else:
         df["temp_c"]           = np.nan
         df["cooling_degree"]   = np.nan
@@ -447,6 +488,10 @@ def build_training_features(
         df["cooling_delta_24h"] = np.nan
         df["temp_delta_168h"] = np.nan
         df["cooling_delta_168h"] = np.nan
+        df["temp_delta_1h"] = np.nan
+        df["temp_delta_2h"] = np.nan
+        df["apparent_temp_delta_1h"] = np.nan
+        df["cooling_delta_1h"] = np.nan
         df["cooling_degree_3h_mean"] = np.nan
         df["cooling_degree_6h_mean"] = np.nan
         df["heating_degree_3h_mean"] = np.nan
@@ -532,10 +577,15 @@ def build_inference_features(
             row["ts"]: float(row["temp_c"])
             for _, row in cache_weather.dropna(subset=["temp_c"]).iterrows()
         }
+        apparent_temp_by_ts: dict[pd.Timestamp, float] = {
+            row["ts"]: float(row["apparent_temp_c"])
+            for _, row in cache_weather.dropna(subset=["apparent_temp_c"]).iterrows()
+        }
     else:
         hour_to_temp = {}
         hour_to_apparent_temp = {}
         temp_by_ts = {}
+        apparent_temp_by_ts = {}
 
     # Trailing 7-day mean temperature (same for all 24 hours of target_date)
     target_start = pd.Timestamp(
@@ -569,6 +619,11 @@ def build_inference_features(
         if lookup_ts.date() == target_date:
             return hour_to_temp.get(int(lookup_ts.hour), float("nan"))
         return temp_by_ts.get(lookup_ts, float("nan"))
+
+    def _apparent_temp_at(lookup_ts: pd.Timestamp) -> float:
+        if lookup_ts.date() == target_date:
+            return hour_to_apparent_temp.get(int(lookup_ts.hour), float("nan"))
+        return apparent_temp_by_ts.get(lookup_ts, float("nan"))
 
     def _degree_window_mean(
         lookup_ts: pd.Timestamp,
@@ -701,6 +756,37 @@ def build_inference_features(
             if has_hour_temp and has_temp_168h
             else np.nan
         )
+        temp_1h = _temp_at(ts - pd.Timedelta(hours=1))
+        temp_2h = _temp_at(ts - pd.Timedelta(hours=2))
+        apparent_temp_1h = _apparent_temp_at(ts - pd.Timedelta(hours=1))
+        has_temp_1h = not np.isnan(temp_1h)
+        has_temp_2h = not np.isnan(temp_2h)
+        has_apparent_temp_1h = not np.isnan(apparent_temp_1h)
+        cooling_1h = (
+            _cooling_degree(temp_1h, cooling_base_temp_c)
+            if has_temp_1h
+            else np.nan
+        )
+        temp_delta_1h = (
+            hour_temp_c - temp_1h
+            if has_hour_temp and has_temp_1h
+            else np.nan
+        )
+        temp_delta_2h = (
+            hour_temp_c - temp_2h
+            if has_hour_temp and has_temp_2h
+            else np.nan
+        )
+        apparent_temp_delta_1h = (
+            hour_apparent_temp_c - apparent_temp_1h
+            if has_hour_apparent_temp and has_apparent_temp_1h
+            else np.nan
+        )
+        cooling_delta_1h = (
+            cooling - cooling_1h
+            if has_hour_temp and has_temp_1h
+            else np.nan
+        )
         temp_anomaly_vs_7d_mean = (
             hour_temp_c - recent_7d_temp_mean
             if has_hour_temp and not np.isnan(recent_7d_temp_mean)
@@ -729,6 +815,9 @@ def build_inference_features(
             int(9 <= hour <= 18) * is_recent_post_holiday * positive_temp_anomaly_7d
         )
         business_morning = int(is_target_non_business_day == 0 and 5 <= hour <= 11)
+        business_late_afternoon = int(
+            is_target_non_business_day == 0 and 15 <= hour <= 18
+        )
         recent_same_business_type_mean = (
             float(recent_same_business_type["actual_mw"].mean())
             if len(recent_same_business_type) > 0
@@ -784,6 +873,10 @@ def build_inference_features(
             "cooling_delta_24h":    cooling_delta_24h,
             "temp_delta_168h":      temp_delta_168h,
             "cooling_delta_168h":   cooling_delta_168h,
+            "temp_delta_1h":        temp_delta_1h,
+            "temp_delta_2h":        temp_delta_2h,
+            "apparent_temp_delta_1h": apparent_temp_delta_1h,
+            "cooling_delta_1h":     cooling_delta_1h,
             "cooling_degree_3h_mean": cooling_3h_mean,
             "cooling_degree_6h_mean": cooling_6h_mean,
             "heating_degree_3h_mean": heating_3h_mean,
@@ -799,6 +892,12 @@ def build_inference_features(
             ),
             "business_morning_x_temp_anomaly_doy": (
                 business_morning * temp_anomaly_vs_month_hour_mean
+            ),
+            "business_late_afternoon_x_temp_delta_1h": (
+                business_late_afternoon * temp_delta_1h
+            ),
+            "business_late_afternoon_x_cooling_delta_1h": (
+                business_late_afternoon * cooling_delta_1h
             ),
             "holiday_x_heat":                    holiday_heat_interaction,
             "post_holiday_x_heat":               post_holiday_heat_interaction,

@@ -59,6 +59,10 @@ _INTERNAL_WEATHER_FEATURES = [
     "cooling_delta_24h",
     "temp_delta_168h",
     "cooling_delta_168h",
+    "temp_delta_1h",
+    "temp_delta_2h",
+    "apparent_temp_delta_1h",
+    "cooling_delta_1h",
     "cooling_degree_3h_mean",
     "cooling_degree_6h_mean",
     "heating_degree_3h_mean",
@@ -66,6 +70,8 @@ _INTERNAL_WEATHER_FEATURES = [
     "temp_72h_mean",
     "cooling_degree_72h_mean",
     "heating_degree_72h_mean",
+    "business_late_afternoon_x_temp_delta_1h",
+    "business_late_afternoon_x_cooling_delta_1h",
 ]
 
 

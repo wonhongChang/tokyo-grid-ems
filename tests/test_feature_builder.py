@@ -243,6 +243,10 @@ def test_training_has_temp_anomaly_columns():
     assert "cooling_delta_24h" in X.columns
     assert "temp_delta_168h" in X.columns
     assert "cooling_delta_168h" in X.columns
+    assert "temp_delta_1h" in X.columns
+    assert "temp_delta_2h" in X.columns
+    assert "apparent_temp_delta_1h" in X.columns
+    assert "cooling_delta_1h" in X.columns
     assert "cooling_degree_3h_mean" in X.columns
     assert "cooling_degree_6h_mean" in X.columns
     assert "heating_degree_3h_mean" in X.columns
@@ -396,6 +400,10 @@ def test_inference_has_temp_anomaly_columns():
     assert "cooling_delta_24h" in out.columns
     assert "temp_delta_168h" in out.columns
     assert "cooling_delta_168h" in out.columns
+    assert "temp_delta_1h" in out.columns
+    assert "temp_delta_2h" in out.columns
+    assert "apparent_temp_delta_1h" in out.columns
+    assert "cooling_delta_1h" in out.columns
     assert "cooling_degree_3h_mean" in out.columns
     assert "cooling_degree_6h_mean" in out.columns
     assert "heating_degree_3h_mean" in out.columns
@@ -406,6 +414,8 @@ def test_inference_has_temp_anomaly_columns():
     assert "business_morning_x_temp_delta_24h" in out.columns
     assert "business_morning_x_temp_anomaly_7d" in out.columns
     assert "business_morning_x_temp_anomaly_doy" in out.columns
+    assert "business_late_afternoon_x_temp_delta_1h" in out.columns
+    assert "business_late_afternoon_x_cooling_delta_1h" in out.columns
 
 
 def test_inference_cooling_inertia_uses_recent_same_day_hours():
@@ -493,6 +503,32 @@ def test_inference_delta_168h_compares_same_hour_last_week():
 
     assert np.allclose(out["temp_delta_168h"].values, 5.0, atol=1e-6)
     assert np.allclose(out["cooling_delta_168h"].values, 3.0, atol=1e-6)
+
+
+def test_inference_weather_direction_features_follow_hourly_profile():
+    cache = _make_cache(600)
+    target = date(2025, 6, 2)  # Monday
+    target_mask = cache["ts"].dt.date == target
+    cache.loc[target_mask, "temp_c"] = 30.0
+    cache.loc[target_mask, "apparent_temp_c"] = 31.0
+    cache.loc[
+        cache["ts"] == pd.Timestamp("2025-06-02T16:00:00+09:00"),
+        ["temp_c", "apparent_temp_c"],
+    ] = [28.5, 29.0]
+    cache.loc[
+        cache["ts"] == pd.Timestamp("2025-06-02T17:00:00+09:00"),
+        ["temp_c", "apparent_temp_c"],
+    ] = [27.0, 27.5]
+
+    out = build_inference_features(cache, target)
+
+    assert out["temp_delta_1h"].iloc[16] == pytest.approx(-1.5)
+    assert out["temp_delta_2h"].iloc[17] == pytest.approx(-3.0)
+    assert out["apparent_temp_delta_1h"].iloc[16] == pytest.approx(-2.0)
+    assert out["cooling_delta_1h"].iloc[16] == pytest.approx(-1.5)
+    assert out["business_late_afternoon_x_temp_delta_1h"].iloc[16] == pytest.approx(-1.5)
+    assert out["business_late_afternoon_x_cooling_delta_1h"].iloc[16] == pytest.approx(-1.5)
+    assert out["business_late_afternoon_x_temp_delta_1h"].iloc[14] == pytest.approx(0.0)
 
 
 def test_inference_business_morning_weather_interactions_are_relative():
@@ -610,21 +646,33 @@ def test_lag_last_biz_hour_differs_from_lag_24h_post_holiday():
 def test_training_has_interaction_columns():
     cache = _make_cache(200)
     X, _ = build_training_features(cache)
-    for col in ["holiday_x_heat", "post_holiday_x_heat", "business_hour_x_post_holiday_heat"]:
+    for col in [
+        "holiday_x_heat",
+        "post_holiday_x_heat",
+        "business_hour_x_post_holiday_heat",
+        "business_late_afternoon_x_temp_delta_1h",
+        "business_late_afternoon_x_cooling_delta_1h",
+    ]:
         assert col in X.columns
 
 
 def test_inference_has_interaction_columns():
     cache = _make_cache(400)
     out = build_inference_features(cache, date(2025, 1, 13))
-    for col in ["holiday_x_heat", "post_holiday_x_heat", "business_hour_x_post_holiday_heat"]:
+    for col in [
+        "holiday_x_heat",
+        "post_holiday_x_heat",
+        "business_hour_x_post_holiday_heat",
+        "business_late_afternoon_x_temp_delta_1h",
+        "business_late_afternoon_x_cooling_delta_1h",
+    ]:
         assert col in out.columns
 
 
 def test_interaction_feature_cols_count():
     """FEATURE_COLS should include weather-delta, inertia, and lag context."""
     from python.forecast.feature_builder import FEATURE_COLS
-    assert len(FEATURE_COLS) == 50
+    assert len(FEATURE_COLS) == 56
 
 
 def test_holiday_x_heat_nonneg():
