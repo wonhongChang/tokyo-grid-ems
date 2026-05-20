@@ -33,7 +33,7 @@ The weather bias correction also now prefers recent JMA AMeDAS Tokyo observation
 
 ## Operational Change
 
-Manual GitHub Actions runs can now rebuild today's already-observed forecast hours by enabling `refresh_today_forecast`.
+Manual GitHub Actions runs preserve today's already-observed forecast hours. This keeps the chart as an operational forecast history instead of rewriting past forecast values after actuals arrive.
 
 Scheduled runs keep the normal forecast-preservation behavior. The manual option is intended for cases where a model or weather-source fix was deployed during the same operating day and the currently published line should be regenerated with the corrected pipeline.
 

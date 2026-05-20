@@ -1645,7 +1645,7 @@ def main() -> None:
     ap.add_argument("--status-only", action="store_true",
                     help="Skip CSV processing; only update status.json with today/tomorrow forecasts")
     ap.add_argument("--refresh-today-forecast", action="store_true",
-                    help="Rebuild today's already-observed forecast hours instead of preserving published values")
+                    help="Deprecated no-op; observed forecast hours are always preserved")
     ap.add_argument("--internal-diagnostics-out", default=None,
                     help="Write internal lag/weather diagnostics JSON. Defaults under web/public/reports/internal/")
     args = ap.parse_args()
@@ -1664,7 +1664,7 @@ def main() -> None:
         _run_status_only(
             out_dir,
             config,
-            preserve_observed_forecast_hours=not args.refresh_today_forecast,
+            preserve_observed_forecast_hours=True,
             internal_diagnostics_out=internal_diagnostics_out,
         )
         return
@@ -1816,7 +1816,7 @@ def main() -> None:
     )
     today_fc, today_model = _freeze_observed_forecast_hours(
         out_dir, today, today_fc, today_model,
-        preserve_observed_hours=not args.refresh_today_forecast,
+        preserve_observed_hours=True,
     )
     tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
@@ -1824,7 +1824,7 @@ def main() -> None:
     )
 
     snapshot_generated_at = ts_now()
-    snapshot_run_type = "etl_refresh" if args.refresh_today_forecast else "etl"
+    snapshot_run_type = "etl"
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
                build_forecast_json(today, today_fc, config, today_model))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
@@ -1837,7 +1837,7 @@ def main() -> None:
         today_model,
         snapshot_generated_at,
         snapshot_run_type,
-        not args.refresh_today_forecast,
+        True,
     )
     _write_forecast_snapshot(
         out_dir,
@@ -1847,7 +1847,7 @@ def main() -> None:
         tomorrow_model,
         snapshot_generated_at,
         snapshot_run_type,
-        not args.refresh_today_forecast,
+        True,
     )
 
     # Keep recent alert files aligned with the current anomaly thresholds, even
