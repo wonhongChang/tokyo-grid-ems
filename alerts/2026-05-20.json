@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 2,
+    "warning": 1,
     "info": 0
   },
   "events": [
@@ -16,7 +16,7 @@
       "endAt": "2026-05-20T02:00:00+09:00",
       "metric": "actual_mw",
       "actualMw": 22780.0,
-      "expectedMw": 22019.4,
+      "expectedMw": 22520.1,
       "interval": {
         "p95Lower": 21728.6,
         "p95Upper": 22624.6,
@@ -26,21 +26,6 @@
       "reason": "Actual 22780 MW exceeded p95 upper 22625 MW by 155 MW (0.68%)",
       "tags": [
         "interval"
-      ]
-    },
-    {
-      "id": "2026-05-20T07:00:00+09:00_drift",
-      "type": "drift",
-      "severity": "warning",
-      "startAt": "2026-05-20T07:00:00+09:00",
-      "endAt": "2026-05-20T10:00:00+09:00",
-      "metric": "residual_mw",
-      "residualAvgMw": 1028.9,
-      "method": "ewma",
-      "thresholdMw": 800.0,
-      "reason": "EWMA residual above ±800 MW for 4 consecutive hours",
-      "tags": [
-        "residual"
       ]
     }
   ]
