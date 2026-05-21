@@ -29,7 +29,7 @@ The statistical baseline (`baseline_dow_hour_mean`) remains as a fallback when L
 | q50 | point forecast |
 | q975 | upper p95 interval estimate |
 
-The dashboard uses q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread.
+The dashboard uses q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread. When one side of the quantile interval collapses near q50, the pipeline keeps only a minimum width on that side instead of mirroring the opposite side's larger uncertainty.
 
 Minimum training data:
 

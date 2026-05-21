@@ -19,7 +19,7 @@ weather_forecast_bias_correction:
 
 interval_calibration:
   min_p95_half_width_mw: 500 # prevent unrealistically narrow LightGBM bands
-  mirror_collapsed_side: true # use the opposite side when one quantile side collapses
+  mirror_collapsed_side: false # avoid mirroring one-sided quantile uncertainty into the other side
 
 intraday_correction:
   enabled: true

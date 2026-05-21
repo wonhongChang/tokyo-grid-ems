@@ -79,7 +79,7 @@ class LGBMForecaster:
                 )
             ),
         )
-        if interval_config.get("mirror_collapsed_side", True):
+        if interval_config.get("mirror_collapsed_side", False):
             reference_width = max(half_lo, half_hi, min_half_width)
             if half_lo < min_half_width:
                 half_lo = reference_width
