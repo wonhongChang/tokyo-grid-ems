@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-05-21T22:30:16+09:00",
+  "generatedAt": "2026-05-22T01:17:24+09:00",
   "windowDays": 30,
   "modelScope": {
     "summaryModelFamily": "lgbm_quantile_q50",
@@ -10,7 +10,6 @@
       "lgbm_quantile_q50_intraday_residual"
     ],
     "excludedDates": [
-      "2026-04-22",
       "2026-04-23",
       "2026-04-24",
       "2026-04-25",
@@ -28,30 +27,16 @@
     ]
   },
   "summary": {
-    "dates": 15,
-    "hours": 358,
-    "modelMaeMw": 391.8,
-    "tepcoMaeMw": 364.8,
+    "dates": 16,
+    "hours": 359,
+    "modelMaeMw": 393.2,
+    "tepcoMaeMw": 364.2,
     "modelWins": 177,
-    "tepcoWins": 181,
+    "tepcoWins": 182,
     "ties": 0,
-    "modelWinRate": 0.494
+    "modelWinRate": 0.493
   },
   "daily": [
-    {
-      "date": "2026-04-22",
-      "modelName": "baseline_dow_hour_mean",
-      "modelFamily": "baseline_dow_hour_mean",
-      "hours": 24,
-      "modelMaeMw": 2423.5,
-      "tepcoMaeMw": 226.2,
-      "maeGapMw": 2197.3,
-      "verdict": "tepco_better",
-      "modelWins": 0,
-      "tepcoWins": 24,
-      "ties": 0,
-      "includedInSummary": false
-    },
     {
       "date": "2026-04-23",
       "modelName": "baseline_dow_hour_mean",
@@ -457,16 +442,30 @@
       "tepcoWins": 13,
       "ties": 0,
       "includedInSummary": true
+    },
+    {
+      "date": "2026-05-22",
+      "modelName": "lgbm_quantile_q50",
+      "modelFamily": "lgbm_quantile_q50",
+      "hours": 1,
+      "modelMaeMw": 897.4,
+      "tepcoMaeMw": 150.0,
+      "maeGapMw": 747.4,
+      "verdict": "tepco_better",
+      "modelWins": 0,
+      "tepcoWins": 1,
+      "ties": 0,
+      "includedInSummary": true
     }
   ],
   "hourly": [
     {
       "hour": 0,
-      "samples": 15,
-      "modelMaeMw": 235.9,
-      "tepcoMaeMw": 250.7,
+      "samples": 16,
+      "modelMaeMw": 277.2,
+      "tepcoMaeMw": 244.4,
       "modelWins": 8,
-      "tepcoWins": 7,
+      "tepcoWins": 8,
       "ties": 0
     },
     {
