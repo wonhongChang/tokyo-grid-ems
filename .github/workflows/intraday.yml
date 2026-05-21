@@ -6,8 +6,13 @@ on:
     - cron: '10 15 * * *'
     # Every 2 hours after TEPCO's hourly refresh has settled.
     # Morning 07:20/09:20 JST are handled by ETL + Deploy to avoid duplicate Pages deployments.
-    # JST: 01:20, 03:20, 05:20, 11:20, 13:20, 15:20, 17:20, 19:20, 21:20, 23:20
-    - cron: '20 2-20/2 * * *'
+    # JST: 01:20, 03:20, 05:20, 11:20, 13:20, 15:20, 17:20, 19:20, 21:20
+    - cron: '20 2-12/2 * * *'
+    - cron: '20 16-20/2 * * *'
+    # Late-day catch-up after TEPCO has more time to publish the 22:00 bucket.
+    # The 23:00 bucket may still be unavailable; the ETL marks it as TEPCO forecast fallback.
+    # JST: 23:50
+    - cron: '50 14 * * *'
     # Catch-up for the important late-morning refresh if the 11:20 JST scheduled run is delayed or dropped.
     # JST: 12:05
     - cron: '5 3 * * *'

@@ -12,6 +12,7 @@ import pytest
 from python.forecast.baseline import HourlyForecast
 from python.etl.run_batch import (
     _apply_actual_json_latest_fallback,
+    _finalize_previous_actual_json_fallbacks,
     _apply_intraday_residual_correction,
     _apply_weather_forecast_bias_correction,
     _extend_cache_with_forecast_weather,
@@ -369,6 +370,73 @@ def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):
     assert date(2024, 1, 2) in ok_set
     assert summaries["2024-01-02"]["peakActualMw"] == pytest.approx(21_000.0)
     assert summaries["2024-01-02"]["peakActualAt"] == "2024-01-02T23:00:00+09:00"
+
+
+def test_finalize_previous_actual_json_fallbacks_marks_missing_tail_hours(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    path = actual_dir / "2024-01-02.json"
+    path.write_text(json.dumps({
+        "date": "2024-01-02",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-02T21:00:00+09:00",
+                "actualMw": 20_000.0,
+                "actualSource": "observed",
+                "tepcoForecastMw": 20_100.0,
+            },
+            {
+                "ts": "2024-01-02T22:00:00+09:00",
+                "actualMw": None,
+                "actualSource": None,
+                "tepcoForecastMw": 19_500.0,
+            },
+            {
+                "ts": "2024-01-02T23:00:00+09:00",
+                "actualMw": None,
+                "actualSource": None,
+                "tepcoForecastMw": 18_900.0,
+            },
+        ],
+    }), encoding="utf-8")
+
+    updated = _finalize_previous_actual_json_fallbacks(tmp_path, date(2024, 1, 3))
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert updated == 2
+    assert data["series"][0]["actualSource"] == "observed"
+    assert data["series"][1]["actualMw"] == pytest.approx(19_500.0)
+    assert data["series"][1]["actualSource"] == "tepco_forecast_fallback"
+    assert data["series"][2]["actualMw"] == pytest.approx(18_900.0)
+    assert data["series"][2]["actualSource"] == "tepco_forecast_fallback"
+
+
+def test_finalize_previous_actual_json_fallbacks_does_not_touch_today(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    path = actual_dir / "2024-01-03.json"
+    path.write_text(json.dumps({
+        "date": "2024-01-03",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2024-01-03T23:00:00+09:00",
+                "actualMw": None,
+                "actualSource": None,
+                "tepcoForecastMw": 18_900.0,
+            },
+        ],
+    }), encoding="utf-8")
+
+    updated = _finalize_previous_actual_json_fallbacks(tmp_path, date(2024, 1, 3))
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert updated == 0
+    assert data["series"][0]["actualMw"] is None
+    assert data["series"][0]["actualSource"] is None
 
 
 def test_inject_today_actuals_keeps_tepco_forecast_fallback_until_csv_arrives(tmp_path):

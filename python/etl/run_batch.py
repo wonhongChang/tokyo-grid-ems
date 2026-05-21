@@ -1536,6 +1536,63 @@ def _apply_actual_json_latest_fallback(
     return updated_ok, updated_summaries
 
 
+def _finalize_previous_actual_json_fallbacks(
+    out_dir: Path,
+    today: date,
+    lookback_days: int = 2,
+) -> int:
+    """Mark previous-day missing actuals with TEPCO forecast fallback.
+
+    The live TEPCO intraday CSV can stop with the last one or two buckets still
+    blank, and GitHub scheduled runs may be delayed past midnight. Once the date
+    has rolled over, use the already captured TEPCO forecast values as temporary
+    lag inputs until the official monthly CSV replaces them with observations.
+    """
+    actual_dir = out_dir / "actual"
+    if not actual_dir.exists():
+        return 0
+
+    total_updated = 0
+    for offset in range(1, max(1, lookback_days) + 1):
+        d = today - timedelta(days=offset)
+        path = actual_dir / f"{d.isoformat()}.json"
+        if not path.exists():
+            continue
+
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[WARN] Failed to read actual/{d.isoformat()}.json for fallback finalization: {e}", file=sys.stderr)
+            continue
+
+        updated = 0
+        for pt in data.get("series", []):
+            if pt.get("actualMw") is not None:
+                continue
+            tepco_forecast_mw = pt.get("tepcoForecastMw")
+            if tepco_forecast_mw is None:
+                continue
+            try:
+                fallback_mw = float(tepco_forecast_mw)
+            except (TypeError, ValueError):
+                continue
+            if fallback_mw <= 0:
+                continue
+            pt["actualMw"] = round(fallback_mw, 1)
+            pt["actualSource"] = _TEPCO_FORECAST_FALLBACK_SOURCE
+            updated += 1
+
+        if updated:
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            total_updated += updated
+            print(
+                f"[STATUS] Finalized {updated} missing actual hours for {d.isoformat()} "
+                "with TEPCO forecast fallback"
+            )
+
+    return total_updated
+
+
 def _run_status_only(
     out_dir: Path,
     config: dict,
@@ -1568,6 +1625,8 @@ def _run_status_only(
 
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
+
+    _finalize_previous_actual_json_fallbacks(out_dir, today)
 
     # If yesterday's CSV hasn't been processed yet, derive latest from actual/{yesterday}.json
     ok_set, summaries = _apply_actual_json_latest_fallback(out_dir, today, ok_set, summaries)
@@ -1834,6 +1893,7 @@ def main() -> None:
     # Today / tomorrow forecasts
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
+    _finalize_previous_actual_json_fallbacks(out_dir, today)
     status_ok_set, status_summaries = _apply_actual_json_latest_fallback(
         out_dir, today, ok_set, summaries
     )

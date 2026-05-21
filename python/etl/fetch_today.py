@@ -7,7 +7,7 @@ URL: https://www.tepco.co.jp/forecast/html/images/juyo-d1-j.csv
 Updated roughly every 30 minutes throughout the day.
 
 Hours whose actual value is not published yet are kept with actualMw=null.
-At the final 23:00 hour, the 23:40 JST workflow has no later same-day retry,
+At the final 23:00 hour, the late-day workflow has no later same-day retry,
 so TEPCO's forecast is used as a marked fallback when the actual is still blank.
 
 Usage:
