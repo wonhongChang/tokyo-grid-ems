@@ -1367,22 +1367,65 @@ def _apply_intraday_residual_correction(
     forecasts: list[HourlyForecast],
     model_name: str,
     config: dict,
+    cache: pd.DataFrame | None = None,
 ) -> tuple[list[HourlyForecast], str]:
     """Adjust the remaining hours of today's forecast using observed residuals."""
     actual_series = _load_actual_series(out_dir, target_date)
-    if not actual_series:
-        return forecasts, model_name
+    previous_actual_series = _load_actual_series(out_dir, target_date - timedelta(days=1))
+    previous_forecasts, _ = _load_existing_forecast(out_dir, target_date - timedelta(days=1))
+    inference_features = None
+    if cache is not None and not cache.empty:
+        try:
+            from python.forecast.feature_builder import build_inference_features
+            inference_features = build_inference_features(
+                cache,
+                target_date,
+                config,
+                include_context=True,
+            )
+        except Exception as e:
+            print(
+                f"[WARN] Operational calibration feature build failed for {target_date}: {e}",
+                file=sys.stderr,
+            )
     try:
         from python.forecast.intraday_correction import IntradayResidualCorrector
-        correction = IntradayResidualCorrector(config).apply(forecasts, actual_series)
+        correction = IntradayResidualCorrector(config).apply(
+            forecasts,
+            actual_series,
+            previous_actual_series=previous_actual_series,
+            previous_forecasts=previous_forecasts,
+            inference_features=inference_features,
+        )
     except Exception as e:
         print(f"[WARN] Intraday residual correction failed for {target_date}: {e}", file=sys.stderr)
         return forecasts, model_name
+
+    calibration_metadata = correction.metadata()
+    write_json(
+        out_dir / "reports" / "internal" / "operational-calibration" / f"{target_date.isoformat()}.json",
+        {
+            "schemaVersion": "1.0.0",
+            "timezone": "Asia/Tokyo",
+            "date": target_date.isoformat(),
+            "generatedAt": ts_now(),
+            "model": model_name,
+            "source_confidence": calibration_metadata.get("sourceConfidence"),
+            "applied_regime_reason": calibration_metadata.get("appliedRegimeReason"),
+            "applied_day_bias": calibration_metadata.get("appliedDayBiasMw"),
+            "correction": calibration_metadata,
+        },
+    )
 
     if not correction.applied:
         return forecasts, model_name
 
     corrected_model_name = f"{model_name}_intraday_residual"
+    after_hour = (
+        f"{correction.last_observed_hour:02d}"
+        if correction.last_observed_hour is not None
+        else "--"
+    )
     ramp_guard_note = " ramp_guard=applied" if correction.ramp_guard_applied else ""
     negative_damping_note = (
         " negative_residual_damping=applied"
@@ -1399,15 +1442,27 @@ def _apply_intraday_residual_correction(
         if getattr(correction, "observed_drop_relaxation_active", False)
         else ""
     )
+    carryover_note = (
+        f" carryover={correction.carryover_adjustment_mw:+.1f}MW"
+        if getattr(correction, "carryover_adjustment_mw", 0.0)
+        else ""
+    )
+    day_bias_note = (
+        f" day_bias={correction.applied_day_bias_mw:+.1f}MW"
+        if getattr(correction, "applied_day_bias_mw", 0.0)
+        else ""
+    )
     print(
         "[INTRADAY] Residual correction "
         f"{target_date}: base={correction.base_adjustment_mw:+.1f} MW "
-        f"after hour={correction.last_observed_hour:02d} "
+        f"after hour={after_hour} "
         f"(observed={correction.observed_hours})"
         f"{ramp_guard_note}"
         f"{negative_damping_note}"
         f"{shape_guard_note}"
         f"{observed_drop_note}"
+        f"{carryover_note}"
+        f"{day_bias_note}"
     )
     return correction.forecasts, corrected_model_name
 
@@ -1656,7 +1711,7 @@ def _run_status_only(
         config, adjuster, guard, midday_guard
     )
     today_fc, today_model = _apply_intraday_residual_correction(
-        out_dir, today, today_fc, today_model, config
+        out_dir, today, today_fc, today_model, config, extended_with_actuals
     )
     today_fc, today_model = _freeze_observed_forecast_hours(
         out_dir, today, today_fc, today_model, preserve_observed_forecast_hours

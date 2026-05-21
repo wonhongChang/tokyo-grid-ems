@@ -28,22 +28,37 @@ intraday_correction:
   shrinkage: 0.6             # partial correction; avoids chasing noisy hourly residuals
   max_abs_adjustment_mw: 1200
   decay_per_hour: 0.92       # gradually fades the correction farther into the day
+  operational_calibration:
+    day_boundary_carryover:
+      enabled: true          # carry the last real observed residual across midnight
+      decay_per_hour: 0.75   # fast decay; midnight continuity should not dominate the day
+      shrinkage: 0.5
+      max_age_hours: 8
+      max_abs_adjustment_mw: 500
+    day_level_scale:
+      enabled: true          # correct whole-day scale when lag_24h is overheated and the day is cooler
+      lag_overheat_threshold_mw: 600
+      temp_drop_threshold_c: 1.5
+      lag_overheat_weight: 0.25
+      max_abs_bias_mw: 700
+      observed_fade_hours: 3 # fade out once real same-day observations are available
+      max_heating_degree: 7.0
   negative_residual_damping:
-    enabled: true
+    enabled: false
     min_reference_hour: 12   # after midday, avoid over-chasing negative residuals
     multiplier: 0.5          # retain half of the downward residual correction
   midday_residual_deweight:
-    enabled: true
+    enabled: false
     hours: [12]              # lunch bucket only; applies on business days
     weight: 0.25             # keep a trace of the residual but do not let it steer afternoon
     min_abs_residual_mw: 600 # only treat a large lunch miss as a one-slot shock
   shape_guard:
-    enabled: true
+    enabled: false
     min_reference_hour: 12   # only after enough same-day context exists
     hours: [15, 16, 17, 18, 19]
     max_drop_mw: 1000        # avoid implausibly steep warm-afternoon line drops
   ramp_guard:
-    enabled: true
+    enabled: false
     min_reference_hour: 10   # avoid suppressing the real morning ramp
     max_lead_hours: 3        # guard only the nearest future hours
     max_increase_mw_by_lead_hour: [1200, 1500, 2000]
@@ -114,7 +129,7 @@ adjustment:
       max_upward_offset_mw: 900
 
   midday_transition_guard:
-    enabled: true
+    enabled: false
     hours: [12]
     min_negative_delta_mw: 500  # require recent same-business shape to show a real dip
     min_excess_mw: 300          # ignore small differences between forecast and shape context

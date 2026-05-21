@@ -8,6 +8,8 @@
 
 ## 2026-05
 
+- [2026-05-22 운영 보정 레이어](model-improvement-2026-05-22-operational-calibration-layer.md)
+- [2026-05-22 하루 단위 lag/날씨 regime 진단](model-improvement-2026-05-22-day-level-regime-diagnostics.md)
 - [2026-05-21 영업일 점심 단발성 하락 guard](model-improvement-2026-05-21-midday-shock-guard.md)
 - [2026-05-21 예측 밴드 보정](model-improvement-2026-05-21-forecast-band-calibration.md)
 - [2026-05-21 공식 JMA 기온과 하이브리드 습도 보완](model-improvement-2026-05-21-official-jma-humidity-correction.md)

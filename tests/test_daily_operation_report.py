@@ -221,6 +221,10 @@ def test_internal_daily_diagnostic_includes_lag_and_weather_features(tmp_path):
     assert summary["recentSameBusinessTypeDeltaByBand"]
     assert summary["coolingDelta24hByBand"]
     assert summary["coolingDegree3hMeanByBand"]
+    assert summary["dayLevelRegime"]["hours"] == 24
+    assert "lag24OverheatMeanMw" in summary["dayLevelRegime"]
+    assert "tempDelta24hMeanC" in summary["dayLevelRegime"]
+    assert "flags" in summary["dayLevelRegime"]
     assert summary["weatherDeltaRiskByBand"]
 
 

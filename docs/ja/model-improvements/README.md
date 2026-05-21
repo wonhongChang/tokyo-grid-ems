@@ -8,6 +8,8 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-05
 
+- [2026-05-22 運用補正レイヤー](model-improvement-2026-05-22-operational-calibration-layer.md)
+- [2026-05-22 日単位lag/天気regime診断](model-improvement-2026-05-22-day-level-regime-diagnostics.md)
 - [2026-05-21 営業日の昼休み単発ショック guard](model-improvement-2026-05-21-midday-shock-guard.md)
 - [2026-05-21 予測バンド補正](model-improvement-2026-05-21-forecast-band-calibration.md)
 - [2026-05-21 公式JMA気温とハイブリッド湿度補完](model-improvement-2026-05-21-official-jma-humidity-correction.md)

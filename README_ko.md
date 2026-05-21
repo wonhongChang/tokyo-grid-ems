@@ -165,6 +165,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 | `metrics/model_backtest.json` | 베이스라인 대비 LightGBM 백테스트 |
 | `reports/daily/*.json` | 검증 탭에 표시하는 전날 운영 리포트 |
 | `reports/internal/daily-diagnostics/*.json` | 운영 산출물과 함께 저장하는 내부 분석용 lag/기온/shape 진단 JSON (UI에는 연결하지 않음) |
+| `reports/internal/operational-calibration/*.json` | 운영 디버깅용 source confidence와 보정 메타데이터 |
 
 > 타임스탬프는 전 산출물에서 `Asia/Tokyo (+09:00)` 기준 ISO 8601로 출력합니다.
 
@@ -186,11 +187,11 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-05-22 운영 보정 레이어](docs/ko/model-improvements/model-improvement-2026-05-22-operational-calibration-layer.md)
+- [2026-05-22 하루 단위 lag/날씨 regime 진단](docs/ko/model-improvements/model-improvement-2026-05-22-day-level-regime-diagnostics.md)
 - [2026-05-21 영업일 점심 단발 쇼크 guard](docs/ko/model-improvements/model-improvement-2026-05-21-midday-shock-guard.md)
 - [2026-05-21 예측 밴드 보정](docs/ko/model-improvements/model-improvement-2026-05-21-forecast-band-calibration.md)
 - [2026-05-21 공식 JMA 예보와 습도 기반 체감온도 보정](docs/ko/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
-- [2026-05-20 점심 시간대 전환 guard](docs/ko/model-improvements/model-improvement-2026-05-20-midday-transition-features.md)
-- [2026-05-20 상대 기온과 누적 열 관성 피처](docs/ko/model-improvements/model-improvement-2026-05-20-relative-morning-weather-features.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 

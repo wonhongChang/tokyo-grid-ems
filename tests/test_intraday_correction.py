@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import pandas as pd
 import pytest
 
 from python.forecast.baseline import HourlyForecast
@@ -98,7 +99,7 @@ def test_intraday_correction_waits_for_minimum_observed_hours():
     assert result.forecasts == forecasts
 
 
-def test_intraday_correction_uses_tepco_forecast_fallback_for_operational_adjustment():
+def test_intraday_correction_ignores_tepco_forecast_fallback_for_residuals():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)
     actual_series = [
@@ -121,10 +122,103 @@ def test_intraday_correction_uses_tepco_forecast_fallback_for_operational_adjust
 
     result = corrector.apply(forecasts, actual_series)
 
+    assert result.applied is False
+    assert result.observed_hours == 2
+    assert result.fallback_residuals_ignored == 1
+    assert result.last_observed_hour == 9
+    assert result.forecasts == forecasts
+
+
+def test_intraday_correction_carries_last_real_residual_across_midnight():
+    target = date(2026, 5, 12)
+    previous = date(2026, 5, 11)
+    forecasts = _make_forecasts(target, 20_000.0)
+    previous_forecasts = _make_forecasts(previous, 20_000.0)
+    previous_actual_series = [
+        _actual_point(previous, 21, 19_000.0),
+        {
+            **_actual_point(previous, 22, 20_000.0),
+            "actualSource": "tepco_forecast_fallback",
+        },
+        {
+            **_actual_point(previous, 23, 20_000.0),
+            "actualSource": "tepco_forecast_fallback",
+        },
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "min_observed_hours": 3,
+            "operational_calibration": {
+                "day_boundary_carryover": {
+                    "enabled": True,
+                    "shrinkage": 1.0,
+                    "decay_per_hour": 1.0,
+                    "max_age_hours": 8,
+                    "max_abs_adjustment_mw": 1_200.0,
+                },
+                "day_level_scale": {"enabled": False},
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        [],
+        previous_actual_series=previous_actual_series,
+        previous_forecasts=previous_forecasts,
+    )
+
     assert result.applied is True
-    assert result.observed_hours == 3
-    assert result.last_observed_hour == 10
-    assert result.forecasts[11].forecast_mw == pytest.approx(20_500.0)
+    assert result.carryover_source_hour == 21
+    assert result.carryover_adjustment_mw == pytest.approx(-1_000.0)
+    assert result.forecasts[0].forecast_mw == pytest.approx(19_000.0)
+    assert result.forecasts[23].forecast_mw == pytest.approx(19_000.0)
+
+
+def test_intraday_correction_applies_day_level_scale_when_lag_is_overheated_and_cooler():
+    target = date(2026, 5, 12)
+    forecasts = _make_forecasts(target, 24_000.0)
+    inference_features = pd.DataFrame([
+        {
+            "hour": 0,
+            "lag_24h": 25_000.0,
+            "recent_same_business_type_mean": 22_000.0,
+            "temp_delta_24h": -4.0,
+            "heating_degree": 2.0,
+        },
+        {
+            "hour": 1,
+            "lag_24h": 24_000.0,
+            "recent_same_business_type_mean": 23_800.0,
+            "temp_delta_24h": -4.0,
+            "heating_degree": 2.0,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "min_observed_hours": 3,
+            "operational_calibration": {
+                "day_boundary_carryover": {"enabled": False},
+                "day_level_scale": {
+                    "enabled": True,
+                    "lag_overheat_threshold_mw": 600.0,
+                    "temp_drop_threshold_c": 1.5,
+                    "lag_overheat_weight": 0.25,
+                    "max_abs_bias_mw": 700.0,
+                    "observed_fade_hours": 3,
+                    "max_heating_degree": 7.0,
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, [], inference_features=inference_features)
+
+    assert result.applied is True
+    assert result.applied_day_bias_mw == pytest.approx(-480.0)
+    assert result.forecasts[0].forecast_mw == pytest.approx(23_520.0)
+    assert result.forecasts[1].forecast_mw == pytest.approx(24_000.0)
+    assert "lag24_overheat_with_cooler_day" in result.applied_regime_reason
 
 
 def test_intraday_correction_clips_large_adjustment():

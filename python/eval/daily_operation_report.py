@@ -624,6 +624,97 @@ def _feature_band_means(rows: list[dict], group_name: str, feature_name: str) ->
     return result
 
 
+def _numeric_feature_values(rows: list[dict], group_name: str, feature_name: str) -> list[float]:
+    values = [
+        row.get(group_name, {}).get(feature_name)
+        for row in rows
+    ]
+    return [float(value) for value in values if value is not None]
+
+
+def _day_level_regime(rows: list[dict]) -> dict:
+    """Summarize full-day lag/weather regime without imposing an hour-specific guard."""
+    if not rows:
+        return {
+            "hours": 0,
+            "flags": [],
+        }
+
+    lag_gap_values = _numeric_feature_values(
+        rows,
+        "lagFeatures",
+        "lag_24h_to_same_business_type_gap",
+    )
+    temp_delta_values = _numeric_feature_values(
+        rows,
+        "weatherFeatures",
+        "temp_delta_24h",
+    )
+    cooling_delta_values = _numeric_feature_values(
+        rows,
+        "weatherFeatures",
+        "cooling_delta_24h",
+    )
+    temp_anomaly_values = _numeric_feature_values(
+        rows,
+        "weatherFeatures",
+        "temp_anomaly_7d",
+    )
+    cooling_memory_values = _numeric_feature_values(
+        rows,
+        "weatherFeatures",
+        "cooling_degree_72h_mean",
+    )
+    model_bias = _mean([row["modelErrorMw"] for row in rows])
+    model_mae = _mean([row["modelAbsErrorMw"] for row in rows])
+
+    lag_overheat_values = [
+        max(0.0, -value)
+        for value in lag_gap_values
+    ]
+    temp_drop_values = [
+        max(0.0, -value)
+        for value in temp_delta_values
+    ]
+    flags = []
+    lag_overheat_mean = _mean(lag_overheat_values)
+    temp_delta_mean = _mean(temp_delta_values)
+    cooling_delta_mean = _mean(cooling_delta_values)
+    temp_anomaly_mean = _mean(temp_anomaly_values)
+    if lag_overheat_mean is not None and lag_overheat_mean >= 800.0:
+        flags.append("lag24_above_recent_same_business_type")
+    if temp_delta_mean is not None and temp_delta_mean <= -2.0:
+        flags.append("cooler_than_previous_day")
+    if cooling_delta_mean is not None and cooling_delta_mean <= -0.5:
+        flags.append("lower_cooling_load_than_previous_day")
+    if temp_anomaly_mean is not None and temp_anomaly_mean <= -2.0:
+        flags.append("cooler_than_recent_week")
+    if model_bias is not None and model_bias >= 500.0:
+        flags.append("model_overpredicted")
+    if model_bias is not None and model_bias <= -500.0:
+        flags.append("model_underpredicted")
+    if (
+        "lag24_above_recent_same_business_type" in flags
+        and "cooler_than_previous_day" in flags
+    ):
+        flags.append("cool_lag_overheat_regime")
+
+    return {
+        "hours": len(rows),
+        "modelBiasMw": model_bias,
+        "modelMaeMw": model_mae,
+        "lag24ToSameBusinessTypeGapMeanMw": _mean(lag_gap_values),
+        "lag24OverheatMeanMw": lag_overheat_mean,
+        "lag24OverheatHours": sum(1 for value in lag_overheat_values if value >= 500.0),
+        "tempDelta24hMeanC": temp_delta_mean,
+        "tempDrop24hMeanC": _mean(temp_drop_values),
+        "coolingDelta24hMeanC": cooling_delta_mean,
+        "tempAnomaly7dMeanC": temp_anomaly_mean,
+        "coolingDegree72hMeanC": _mean(cooling_memory_values),
+        "flags": flags,
+    }
+
+
 def _weather_delta_risk_by_band(rows: list[dict]) -> list[dict]:
     result = []
     for code, label, start_hour, end_hour in _TIME_BANDS:
@@ -743,6 +834,7 @@ def build_internal_daily_diagnostic(
                 "weatherFeatures",
                 "cooling_degree_3h_mean",
             ),
+            "dayLevelRegime": _day_level_regime(diagnostic_rows),
             "weatherDeltaRiskByBand": _weather_delta_risk_by_band(diagnostic_rows),
         },
         "rows": diagnostic_rows,

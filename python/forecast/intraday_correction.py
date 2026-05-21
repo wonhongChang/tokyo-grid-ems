@@ -8,6 +8,8 @@ import pandas as pd
 
 from python.forecast.baseline import HourlyForecast
 
+_TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
+
 
 @dataclass(frozen=True)
 class IntradayCorrectionResult:
@@ -21,6 +23,34 @@ class IntradayCorrectionResult:
     shape_guard_applied: bool = False
     observed_drop_relaxation_active: bool = False
     midday_residual_deweighted: bool = False
+    fallback_residuals_ignored: int = 0
+    carryover_adjustment_mw: float = 0.0
+    carryover_source_hour: int | None = None
+    applied_day_bias_mw: float = 0.0
+    source_confidence: dict | None = None
+    applied_regime_reason: tuple[str, ...] = ()
+
+    def metadata(self) -> dict:
+        return {
+            "applied": self.applied,
+            "observedHours": self.observed_hours,
+            "lastObservedHour": self.last_observed_hour,
+            "baseAdjustmentMw": round(float(self.base_adjustment_mw), 1),
+            "fallbackResidualsIgnored": self.fallback_residuals_ignored,
+            "carryoverAdjustmentMw": round(float(self.carryover_adjustment_mw), 1),
+            "carryoverSourceHour": self.carryover_source_hour,
+            "appliedDayBiasMw": round(float(self.applied_day_bias_mw), 1),
+            "sourceConfidence": self.source_confidence or {},
+            "appliedRegimeReason": list(self.applied_regime_reason),
+        }
+
+
+@dataclass(frozen=True)
+class _ResidualPoint:
+    hour: int
+    residual_mw: float
+    weight: float
+    ts: pd.Timestamp
 
 
 def _is_nonworking_day(ts: pd.Timestamp) -> bool:
@@ -42,6 +72,32 @@ class IntradayResidualCorrector:
         self._shrinkage = float(correction_config.get("shrinkage", 0.6))
         self._max_abs_adjustment_mw = float(correction_config.get("max_abs_adjustment_mw", 1200.0))
         self._decay_per_hour = float(correction_config.get("decay_per_hour", 0.92))
+        calibration_config = correction_config.get("operational_calibration", {})
+        carry_config = calibration_config.get("day_boundary_carryover", {})
+        self._carryover_enabled = bool(carry_config.get("enabled", True))
+        self._carryover_decay_per_hour = float(carry_config.get("decay_per_hour", 0.75))
+        self._carryover_shrinkage = float(carry_config.get("shrinkage", 0.5))
+        self._carryover_max_age_hours = float(carry_config.get("max_age_hours", 8.0))
+        self._carryover_max_abs_adjustment_mw = float(
+            carry_config.get("max_abs_adjustment_mw", 500.0)
+        )
+        scale_config = calibration_config.get("day_level_scale", {})
+        self._day_scale_enabled = bool(scale_config.get("enabled", True))
+        self._day_scale_lag_overheat_threshold_mw = float(
+            scale_config.get("lag_overheat_threshold_mw", 600.0)
+        )
+        self._day_scale_temp_drop_threshold_c = float(
+            scale_config.get("temp_drop_threshold_c", 1.5)
+        )
+        self._day_scale_lag_weight = float(scale_config.get("lag_overheat_weight", 0.25))
+        self._day_scale_max_abs_bias_mw = float(scale_config.get("max_abs_bias_mw", 700.0))
+        self._day_scale_observed_fade_hours = max(
+            int(scale_config.get("observed_fade_hours", self._min_observed_hours)),
+            1,
+        )
+        self._day_scale_max_heating_degree = float(
+            scale_config.get("max_heating_degree", 7.0)
+        )
         negative_damping_config = correction_config.get("negative_residual_damping", {})
         self._negative_damping_enabled = bool(negative_damping_config.get("enabled", False))
         self._negative_damping_min_reference_hour = int(
@@ -153,6 +209,37 @@ class IntradayResidualCorrector:
         return self._midday_deweight_weight
 
     @staticmethod
+    def _is_observed_point(point: dict) -> bool:
+        return (
+            point.get("actualMw") is not None
+            and point.get("actualSource") != _TEPCO_FORECAST_FALLBACK_SOURCE
+        )
+
+    @staticmethod
+    def _source_confidence(
+        actual_series: list[dict],
+        usable_observed_hours: int,
+        fallback_residuals_ignored: int,
+    ) -> dict:
+        actual_hours = sum(1 for point in actual_series if point.get("actualMw") is not None)
+        missing_hours = sum(1 for point in actual_series if point.get("actualMw") is None)
+        if usable_observed_hours >= 3:
+            level = "observed"
+        elif usable_observed_hours > 0:
+            level = "partial_observed"
+        elif fallback_residuals_ignored > 0:
+            level = "fallback_only"
+        else:
+            level = "none"
+        return {
+            "level": level,
+            "actualHours": actual_hours,
+            "usableObservedHours": usable_observed_hours,
+            "fallbackIgnoredHours": fallback_residuals_ignored,
+            "missingHours": missing_hours,
+        }
+
+    @staticmethod
     def _shift_forecast(forecast: HourlyForecast, shift_mw: float) -> HourlyForecast:
         return HourlyForecast(
             ts=forecast.ts,
@@ -162,6 +249,144 @@ class IntradayResidualCorrector:
             p99_lower_mw=round(forecast.p99_lower_mw + shift_mw, 1),
             p99_upper_mw=round(forecast.p99_upper_mw + shift_mw, 1),
         )
+
+    def _latest_previous_observed_residual(
+        self,
+        previous_actual_series: list[dict],
+        previous_forecasts: list[HourlyForecast],
+        first_forecast_ts: pd.Timestamp,
+    ) -> tuple[float, int, float] | None:
+        if (
+            not self._carryover_enabled
+            or not previous_actual_series
+            or not previous_forecasts
+            or self._carryover_max_age_hours <= 0
+        ):
+            return None
+
+        forecast_by_hour = {
+            pd.Timestamp(forecast.ts).hour: forecast
+            for forecast in previous_forecasts
+        }
+        candidates: list[tuple[pd.Timestamp, int, float]] = []
+        for point in previous_actual_series:
+            if not self._is_observed_point(point) or not point.get("ts"):
+                continue
+            point_ts = pd.Timestamp(point["ts"])
+            forecast = forecast_by_hour.get(point_ts.hour)
+            if forecast is None:
+                continue
+            residual = float(point["actualMw"]) - float(forecast.forecast_mw)
+            candidates.append((point_ts, point_ts.hour, residual))
+        if not candidates:
+            return None
+
+        point_ts, hour, residual_mw = max(candidates, key=lambda item: item[0])
+        age_hours = (first_forecast_ts - point_ts).total_seconds() / 3600.0
+        if age_hours < 0 or age_hours > self._carryover_max_age_hours:
+            return None
+        decayed_adjustment = (
+            residual_mw
+            * self._carryover_shrinkage
+            * (self._carryover_decay_per_hour ** age_hours)
+        )
+        decayed_adjustment = float(np.clip(
+            decayed_adjustment,
+            -self._carryover_max_abs_adjustment_mw,
+            self._carryover_max_abs_adjustment_mw,
+        ))
+        return decayed_adjustment, hour, age_hours
+
+    def _day_level_bias_by_hour(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        usable_observed_hours: int,
+    ) -> dict[int, float]:
+        if (
+            not self._day_scale_enabled
+            or inference_features is None
+            or inference_features.empty
+            or usable_observed_hours >= self._day_scale_observed_fade_hours
+        ):
+            return {}
+
+        fade = max(
+            0.0,
+            1.0 - (usable_observed_hours / self._day_scale_observed_fade_hours),
+        )
+        if fade <= 0.0:
+            return {}
+
+        forecast_hours = {pd.Timestamp(forecast.ts).hour for forecast in forecasts}
+        biases: dict[int, float] = {}
+        for _, row in inference_features.iterrows():
+            try:
+                hour = int(row["hour"])
+            except Exception:
+                continue
+            if hour not in forecast_hours:
+                continue
+            lag_24h = row.get("lag_24h")
+            recent_mean = row.get("recent_same_business_type_mean")
+            temp_delta_24h = row.get("temp_delta_24h")
+            heating_degree = row.get("heating_degree")
+            if (
+                pd.isna(lag_24h)
+                or pd.isna(recent_mean)
+                or pd.isna(temp_delta_24h)
+            ):
+                continue
+
+            lag_overheat_mw = float(lag_24h) - float(recent_mean)
+            temp_drop_c = -float(temp_delta_24h)
+            heating_degree_value = (
+                float(heating_degree)
+                if heating_degree is not None and not pd.isna(heating_degree)
+                else 0.0
+            )
+            if (
+                lag_overheat_mw <= self._day_scale_lag_overheat_threshold_mw
+                or temp_drop_c <= self._day_scale_temp_drop_threshold_c
+                or heating_degree_value > self._day_scale_max_heating_degree
+            ):
+                continue
+
+            overheat_excess = lag_overheat_mw - self._day_scale_lag_overheat_threshold_mw
+            temp_drop_factor = min(1.0, temp_drop_c / 5.0)
+            bias = -overheat_excess * self._day_scale_lag_weight * temp_drop_factor * fade
+            biases[hour] = float(np.clip(
+                bias,
+                -self._day_scale_max_abs_bias_mw,
+                self._day_scale_max_abs_bias_mw,
+            ))
+        return biases
+
+    def _apply_hourly_bias(
+        self,
+        forecasts: list[HourlyForecast],
+        bias_by_hour: dict[int, float],
+        last_observed_hour: int | None,
+    ) -> tuple[list[HourlyForecast], float]:
+        if not bias_by_hour:
+            return forecasts, 0.0
+
+        result: list[HourlyForecast] = []
+        applied_values: list[float] = []
+        for forecast in forecasts:
+            forecast_hour = pd.Timestamp(forecast.ts).hour
+            if last_observed_hour is not None and forecast_hour <= last_observed_hour:
+                result.append(forecast)
+                continue
+            bias_mw = round(float(bias_by_hour.get(forecast_hour, 0.0)), 1)
+            if bias_mw == 0.0:
+                result.append(forecast)
+                continue
+            result.append(self._shift_forecast(forecast, bias_mw))
+            applied_values.append(bias_mw)
+        if not applied_values:
+            return result, 0.0
+        return result, float(np.mean(applied_values))
 
     def _apply_shape_guard(
         self,
@@ -249,6 +474,9 @@ class IntradayResidualCorrector:
         self,
         forecasts: list[HourlyForecast],
         actual_series: list[dict],
+        previous_actual_series: list[dict] | None = None,
+        previous_forecasts: list[HourlyForecast] | None = None,
+        inference_features: pd.DataFrame | None = None,
     ) -> IntradayCorrectionResult:
         if not self._enabled or not forecasts:
             return IntradayCorrectionResult(forecasts, False, 0, None, 0.0)
@@ -257,12 +485,16 @@ class IntradayResidualCorrector:
             pd.Timestamp(forecast.ts).hour: forecast
             for forecast in forecasts
         }
-        residuals_by_hour: list[tuple[int, float, float]] = []
+        residuals_by_hour: list[_ResidualPoint] = []
         actual_mw_by_hour: dict[int, float] = {}
+        fallback_residuals_ignored = 0
 
         for point in actual_series:
             actual_mw = point.get("actualMw")
             if actual_mw is None or not point.get("ts"):
+                continue
+            if point.get("actualSource") == _TEPCO_FORECAST_FALLBACK_SOURCE:
+                fallback_residuals_ignored += 1
                 continue
             point_ts = pd.Timestamp(point["ts"])
             hour = point_ts.hour
@@ -271,23 +503,71 @@ class IntradayResidualCorrector:
                 continue
             actual_mw_by_hour[hour] = float(actual_mw)
             residual = float(actual_mw) - float(forecast.forecast_mw)
-            residuals_by_hour.append((hour, residual, self._residual_weight(point_ts, residual)))
+            residuals_by_hour.append(_ResidualPoint(
+                hour,
+                residual,
+                self._residual_weight(point_ts, residual),
+                point_ts,
+            ))
 
-        residuals_by_hour.sort(key=lambda item: item[0])
-        last_observed_hour = residuals_by_hour[-1][0] if residuals_by_hour else None
+        residuals_by_hour.sort(key=lambda item: item.hour)
+        last_observed_hour = residuals_by_hour[-1].hour if residuals_by_hour else None
         last_observed_mw = (
             actual_mw_by_hour.get(last_observed_hour)
             if last_observed_hour is not None
             else None
         )
         recent_residuals = residuals_by_hour[-self._lookback_hours:]
+        source_confidence = self._source_confidence(
+            actual_series,
+            len(residuals_by_hour),
+            fallback_residuals_ignored,
+        )
+        applied_reasons: list[str] = []
+        if fallback_residuals_ignored:
+            applied_reasons.append("fallback_residuals_ignored")
+
         observed_drop_relaxation_active = self._is_observed_drop_relaxation_active(
             actual_mw_by_hour,
             last_observed_hour,
         )
         if len(recent_residuals) < self._min_observed_hours:
-            shape_guarded_forecasts, shape_guard_applied = self._apply_shape_guard(
+            calibrated_forecasts, applied_day_bias_mw = self._apply_hourly_bias(
                 forecasts,
+                self._day_level_bias_by_hour(
+                    forecasts,
+                    inference_features,
+                    len(residuals_by_hour),
+                ),
+                last_observed_hour,
+            )
+            if applied_day_bias_mw != 0.0:
+                applied_reasons.append("lag24_overheat_with_cooler_day")
+
+            carryover_adjustment_mw = 0.0
+            carryover_source_hour: int | None = None
+            first_forecast_ts = min(pd.Timestamp(forecast.ts) for forecast in forecasts)
+            previous_residual = self._latest_previous_observed_residual(
+                previous_actual_series or [],
+                previous_forecasts or [],
+                first_forecast_ts,
+            )
+            if previous_residual is not None:
+                carryover_adjustment_mw, carryover_source_hour, _ = previous_residual
+                if carryover_adjustment_mw != 0.0:
+                    carry_bias_by_hour = {
+                        pd.Timestamp(forecast.ts).hour: carryover_adjustment_mw
+                        for forecast in calibrated_forecasts
+                    }
+                    calibrated_forecasts, _ = self._apply_hourly_bias(
+                        calibrated_forecasts,
+                        carry_bias_by_hour,
+                        last_observed_hour,
+                    )
+                    applied_reasons.append("day_boundary_residual_carryover")
+
+            shape_guarded_forecasts, shape_guard_applied = self._apply_shape_guard(
+                calibrated_forecasts,
                 last_observed_hour,
                 observed_drop_relaxation_active,
             )
@@ -299,7 +579,12 @@ class IntradayResidualCorrector:
             )
             return IntradayCorrectionResult(
                 ramp_guarded_forecasts,
-                ramp_guard_applied or shape_guard_applied,
+                bool(
+                    ramp_guard_applied
+                    or shape_guard_applied
+                    or applied_day_bias_mw != 0.0
+                    or carryover_adjustment_mw != 0.0
+                ),
                 len(residuals_by_hour),
                 last_observed_hour,
                 0.0,
@@ -307,6 +592,13 @@ class IntradayResidualCorrector:
                 False,
                 shape_guard_applied,
                 observed_drop_relaxation_active,
+                False,
+                fallback_residuals_ignored,
+                round(carryover_adjustment_mw, 1),
+                carryover_source_hour,
+                round(applied_day_bias_mw, 1),
+                source_confidence,
+                tuple(applied_reasons),
             )
 
         max_forecast_hour = max(forecast_by_hour)
@@ -318,11 +610,21 @@ class IntradayResidualCorrector:
                 last_observed_hour,
                 0.0,
                 False,
+                False,
+                False,
+                False,
+                False,
+                fallback_residuals_ignored,
+                0.0,
+                None,
+                0.0,
+                source_confidence,
+                tuple(applied_reasons),
             )
 
-        recent_weights = np.array([weight for _, _, weight in recent_residuals], dtype=float)
+        recent_weights = np.array([point.weight for point in recent_residuals], dtype=float)
         recent_residual_values = np.array(
-            [residual for _, residual, _ in recent_residuals],
+            [point.residual_mw for point in recent_residuals],
             dtype=float,
         )
         if float(recent_weights.sum()) <= 0.0:
@@ -340,11 +642,14 @@ class IntradayResidualCorrector:
         )
         if negative_adjustment_damped:
             base_adjustment_mw *= self._negative_damping_multiplier
+            applied_reasons.append("negative_residual_damping")
         base_adjustment_mw = float(np.clip(
             base_adjustment_mw,
             -self._max_abs_adjustment_mw,
             self._max_abs_adjustment_mw,
         ))
+        if base_adjustment_mw != 0.0:
+            applied_reasons.append("intraday_observed_residual")
 
         adjusted_forecasts: list[HourlyForecast] = []
         for forecast in forecasts:
@@ -391,4 +696,10 @@ class IntradayResidualCorrector:
             shape_guard_applied,
             observed_drop_relaxation_active,
             midday_residual_deweighted,
+            fallback_residuals_ignored,
+            0.0,
+            None,
+            0.0,
+            source_confidence,
+            tuple(applied_reasons),
         )
