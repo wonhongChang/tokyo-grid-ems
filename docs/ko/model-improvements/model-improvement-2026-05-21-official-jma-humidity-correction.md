@@ -1,6 +1,6 @@
-# 2026-05-21 공식 JMA 예보와 습도 기반 체감온도 보정
+# 2026-05-21 공식 JMA 기온과 하이브리드 습도 보완
 
-> Open-Meteo JMA를 운영 예보 fallback에서 제거하고, 공식 JMA AMeDAS 습도 관측을 가까운 미래 체감온도 보정에 사용한 개선 기록.
+> 공식 JMA를 기온 기준으로 유지하면서, 습도 결측 때문에 체감온도 신호가 단순 기온으로 무너지는 문제를 막은 개선 기록.
 
 언어: [English](../../en/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md) / [日本語](../../ja/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
 
@@ -8,54 +8,72 @@
 
 ## 왜 필요했나
 
-최근 intraday 예측에서 모델은 날씨를 실제 운영 감각보다 차갑게 해석하는 경우가 있었다. 일본 기상청 공식 예보는 기온 가이던스를 제공하지만, 시간별 습도는 제공하지 않는다. Open-Meteo JMA는 체감온도와 습도 계열 신호를 제공할 수 있지만, 도쿄 시간별 예보가 공식 JMA 기준과 다르게 움직이는 경우가 있어 운영 fallback으로 신뢰하기 어려웠다.
+최근 intraday 예측에서 오전 수요를 낮게 보는 문제가 반복됐다. 공식 JMA 예보는 기온 곡선을 제공하지만, 현재 사용 중인 Tokyo time-series endpoint에는 시간별 예보 습도가 없다.
 
-운영 예측 모델에서는 모든 파생 필드를 채우는 것보다 소스 일관성이 더 중요하다. 미래 기온 곡선은 한 소스에서 가져오고 체감온도만 다른 소스에서 섞으면 모델 입력이 서로 다른 신호를 줄 수 있다.
+그 결과 미래 예측 행이 다음 상태가 될 수 있었다.
+
+- `temp_c`는 공식 JMA 값
+- `apparent_temp_c`는 `temp_c`와 동일
+- `humidity_pct = NaN`
+- `discomfort_index = NaN`
+
+전력 수요 예측에서는 이 차이가 중요하다. 같은 22도라도 습한 오전은 건조한 오전보다 냉방 수요가 더 빨리 올라갈 수 있는데, 습도가 비어 있으면 모델은 그 차이를 볼 수 없다.
 
 ---
 
 ## 변경 내용
 
-미래 예보 기상 입력은 공식 JMA 도쿄 time-series endpoint만 사용한다.
+운영 기상 데이터 우선순위를 다음처럼 정리했다.
 
-```text
-https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json
-```
+1. **관측 완료 시간**
+   - 기온, 습도, 불쾌지수, 습도 반영 체감온도는 JMA AMeDAS 관측값을 사용한다.
 
-`fetch_forecast_temps()`에서는 더 이상 Open-Meteo JMA를 호출하지 않는다. 공식 JMA 예보를 가져오지 못하면, 덜 신뢰하는 소스로 조용히 전환하지 않고 에러로 드러나게 했다.
+2. **미래 기온**
+   - 공식 JMA time-series 예보만 사용한다.
 
-최근 관측 기상은 계속 공식 JMA AMeDAS 도쿄 관측소 데이터를 사용한다. 파서는 이제 아래 값을 보관한다.
+3. **가까운 미래 습도**
+   - 공식 JMA에 습도가 없으면, 최신 AMeDAS 관측 습도를 1-3시간만 짧게 forward fill 한다.
 
-- `humidity_pct`
-- `discomfort_index`
-- 공식 관측 기온, 습도, 풍속으로 추정한 습도 반영 체감온도
+4. **그 이후 미래 습도**
+   - Open-Meteo JMA는 습도 보완재로만 사용한다.
+   - 공식 JMA `temp_c`는 덮어쓰지 않는다.
+   - `apparent_temp_c`와 `discomfort_index`는 공식 JMA 기온과 보완 습도를 이용해 다시 계산한다.
 
-공식 JMA 예보에는 시간별 습도가 없으므로, 습도를 LightGBM 직접 피처로 추가하지는 않았다. 대신 intraday 기상 bias 보정이 최근 관측 습도 때문에 체감온도가 예보 입력보다 높거나 낮아진 경우 가까운 미래의 `apparent_temp_c`를 보정할 수 있게 했다.
+5. **최종 fallback**
+   - 모든 실시간 습도 소스가 실패하면 월별 보수 평균 습도를 사용한다.
+
+캐시에는 `weather_source`도 저장한다. 예측이 튀었을 때 다음처럼 기상 입력 경로를 추적할 수 있다.
+
+- `AMEDAS_ACTUAL`
+- `JMA_FORECAST+FORWARD_FILL`
+- `JMA_FORECAST+OPEN_METEO_JMA`
+- `JMA_FORECAST+SEASONAL_MEAN`
 
 ---
 
 ## 기대 효과
 
-공식 JMA 기온 곡선에 Open-Meteo JMA 체감온도 신호가 섞이는 문제를 피할 수 있다.
+공식 JMA 기온 곡선을 유지하면서, 습한 날의 체감온도 입력을 복구한다.
 
-습한 아침에는 최신 AMeDAS 관측이 가까운 미래 체감온도를 올릴 수 있다. 다만 내일의 습도를 만들어내는 방식은 아니며, 당일 단기 운영 보정으로만 제한한다.
+특히 raw 기온은 평범해 보이지만 실제로는 습해서 냉방 수요가 빨리 올라가는 오전/저녁 시간대에 도움이 된다. 동시에 다른 제공자의 기온 예보가 공식 JMA 기온을 덮어써서 생기던 운영 불신도 피한다.
 
 ---
 
 ## 운영 메모
 
-- 오래된 캐시 결측을 채우는 과거 backfill에는 Open-Meteo archive가 남아 있을 수 있다.
-- 운영용 미래 예보 입력에는 Open-Meteo JMA fallback을 사용하지 않는다.
-- 공식 JMA 예보 row의 `humidity_pct`와 `discomfort_index`는 AMeDAS 관측이 생기기 전까지 `NaN`이다.
-- 이 변경은 기상 소스 신뢰도와 보정 방식 변경이며, TEPCO 수요 데이터나 예비율 위험 기준은 바꾸지 않는다.
+- Open-Meteo JMA는 미래 예측 행의 습도 보완에만 사용한다.
+- 기존 과거 캐시는 `humidity_pct`만 비어 있다는 이유로 강제 backfill하지 않는다. 그렇지 않으면 ETL이 몇 년치 archive를 한 번에 다시 채우려 할 수 있다.
+- 기존 과거 `apparent_temp_c`는 모델 학습에 계속 사용한다.
+- `weather_source`는 추적용 메타데이터이며 LightGBM 입력 피처에는 추가하지 않았다.
 
 ---
 
 ## 테스트
 
-추가/수정한 테스트는 아래를 확인한다.
+추가/수정한 테스트는 다음을 확인한다.
 
-- `fetch_forecast_temps()`가 Open-Meteo JMA fallback을 호출하지 않음.
-- 공식 JMA 예보 실패가 에러로 드러남.
-- AMeDAS 습도와 불쾌지수를 파싱함.
-- 원 기온 bias가 threshold보다 작아도 체감온도 bias가 크면 intraday 보정이 적용됨.
+- Open-Meteo JMA 습도를 사용해도 공식 JMA 기온은 유지된다.
+- 가까운 미래에는 AMeDAS 습도 forward fill이 우선된다.
+- 계절 평균 습도는 최종 fallback으로만 사용된다.
+- 과거 캐시에 습도만 비어 있어도 대량 archive 재수집을 하지 않는다.
+- 전체 회귀 테스트: `306 passed`.

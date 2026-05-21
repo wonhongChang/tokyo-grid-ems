@@ -11,10 +11,12 @@ import pandas as pd
 import pytest
 
 from python.etl.fetch_weather import (
+    _apply_forecast_humidity_fallbacks,
     _fetch_json,
     _parse_jma_amedas_point,
     _parse_jma_official_timeseries,
     _parse_response,
+    _empty_weather_frame,
     enrich_cache_with_weather,
     fetch_forecast_temps,
     fetch_jma_observed_temps,
@@ -118,7 +120,8 @@ def test_parse_response_shape():
     df = _parse_response(_SAMPLE_RESPONSE)
     assert len(df) == 4
     assert list(df.columns) == [
-        "ts", "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index",
+        "ts", "temp_c", "apparent_temp_c", "humidity_pct",
+        "discomfort_index", "weather_source",
     ]
 
 
@@ -134,6 +137,7 @@ def test_parse_response_values():
     assert df["apparent_temp_c"].iloc[0] == pytest.approx(3.2)
     assert df["humidity_pct"].iloc[0] == pytest.approx(70.0)
     assert df["discomfort_index"].iloc[0] == pytest.approx(44.1)
+    assert df["weather_source"].iloc[0] == "OPEN_METEO"
 
 
 def test_parse_response_null_becomes_nan():
@@ -171,6 +175,7 @@ def test_parse_jma_official_timeseries_keeps_official_min_max():
 
     assert df["temp_c"].min() == pytest.approx(16.0)
     assert df["temp_c"].max() == pytest.approx(29.0)
+    assert df["weather_source"].unique().tolist() == ["JMA_FORECAST"]
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +191,7 @@ def test_parse_jma_amedas_point_keeps_exact_hourly_observations():
     assert df["humidity_pct"].iloc[1] == pytest.approx(75.0)
     assert df["discomfort_index"].iloc[1] == pytest.approx(75.3)
     assert df["apparent_temp_c"].iloc[1] > df["temp_c"].iloc[1]
+    assert df["weather_source"].iloc[0] == "AMEDAS_ACTUAL"
 
 
 def test_fetch_jma_observed_temps_fetches_three_hour_blocks():
@@ -272,11 +278,16 @@ def test_fetch_forecast_temps_returns_dataframe():
         days=1,
         today=date(2026, 5, 18),
     )
-    with patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official):
+    with (
+        patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official),
+        patch("python.etl.fetch_weather.fetch_jma_observed_temps", return_value=_empty_weather_frame()),
+        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=_empty_weather_frame()),
+    ):
         result = fetch_forecast_temps(days=1)
     assert isinstance(result, pd.DataFrame)
     assert "temp_c" in result.columns
     assert "apparent_temp_c" in result.columns
+    assert "weather_source" in result.columns
 
 
 def test_fetch_forecast_temps_passes_days():
@@ -285,7 +296,11 @@ def test_fetch_forecast_temps_passes_days():
         days=1,
         today=date(2026, 5, 18),
     )
-    with patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official) as mock:
+    with (
+        patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official) as mock,
+        patch("python.etl.fetch_weather.fetch_jma_observed_temps", return_value=_empty_weather_frame()),
+        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=_empty_weather_frame()),
+    ):
         fetch_forecast_temps(days=5)
     mock.assert_called_once_with(days=5)
 
@@ -298,10 +313,12 @@ def test_fetch_forecast_temps_uses_official_jma_timeseries_endpoint():
     )
     with (
         patch("python.etl.fetch_weather._parse_jma_official_timeseries", return_value=official),
+        patch("python.etl.fetch_weather.fetch_jma_observed_temps", return_value=_empty_weather_frame()),
+        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=_empty_weather_frame()),
         patch("python.etl.fetch_weather._fetch_json", return_value={}) as mock,
     ):
         fetch_forecast_temps(days=5)
-    url = mock.call_args[0][0]
+    url = mock.call_args_list[0][0][0]
     assert url == "https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json"
 
 
@@ -313,34 +330,105 @@ def test_fetch_forecast_temps_passes_no_open_meteo_coordinates():
     )
     with (
         patch("python.etl.fetch_weather._parse_jma_official_timeseries", return_value=official),
+        patch("python.etl.fetch_weather.fetch_jma_observed_temps", return_value=_empty_weather_frame()),
+        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=_empty_weather_frame()),
         patch("python.etl.fetch_weather._fetch_json", return_value={}) as mock,
     ):
         fetch_forecast_temps(days=5)
-    params = mock.call_args[0][1]
+    params = mock.call_args_list[0][0][1]
     assert params == {}
 
 
-def test_fetch_forecast_temps_uses_official_jma_only():
+def test_fetch_forecast_temps_keeps_official_temperature_and_fills_humidity_from_open_meteo():
     official = _parse_jma_official_timeseries(
         _JMA_OFFICIAL_TIMESERIES_RESPONSE,
         days=1,
         today=date(2026, 5, 18),
     )
+    fallback = official[["ts"]].copy()
+    fallback["temp_c"] = 99.0
+    fallback["apparent_temp_c"] = 99.0
+    fallback["humidity_pct"] = 82.0
+    fallback["discomfort_index"] = 80.0
+    fallback["weather_source"] = "OPEN_METEO_JMA"
 
     with (
         patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official),
-        patch(
-            "python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps",
-            side_effect=AssertionError("Open-Meteo JMA fallback must not be used"),
-        ),
+        patch("python.etl.fetch_weather.fetch_jma_observed_temps", return_value=_empty_weather_frame()),
+        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=fallback),
     ):
         result = fetch_forecast_temps(days=1)
 
     assert len(result) == 24
     assert result["temp_c"].max() == pytest.approx(29.0)
     assert result["temp_c"].min() == pytest.approx(16.0)
+    assert result["humidity_pct"].iloc[0] == pytest.approx(82.0)
     peak = result.loc[result["temp_c"].idxmax()]
-    assert peak["apparent_temp_c"] == pytest.approx(29.0)
+    assert peak["apparent_temp_c"] != pytest.approx(99.0)
+    assert peak["weather_source"] == "JMA_FORECAST+OPEN_METEO_JMA"
+
+
+def test_forecast_humidity_fallback_prefers_short_amedas_forward_fill():
+    base = pd.Timestamp("2026-05-18T09:00:00+09:00")
+    forecast = pd.DataFrame({
+        "ts": [base + pd.Timedelta(hours=i) for i in range(5)],
+        "temp_c": [24.0, 25.0, 26.0, 27.0, 28.0],
+        "apparent_temp_c": [24.0, 25.0, 26.0, 27.0, 28.0],
+        "humidity_pct": [float("nan")] * 5,
+        "discomfort_index": [float("nan")] * 5,
+        "weather_source": ["JMA_FORECAST"] * 5,
+    })
+    observed = pd.DataFrame({
+        "ts": [base],
+        "temp_c": [24.0],
+        "apparent_temp_c": [26.0],
+        "humidity_pct": [74.0],
+        "discomfort_index": [73.0],
+        "weather_source": ["AMEDAS_ACTUAL"],
+    })
+    fallback = pd.DataFrame({
+        "ts": forecast["ts"],
+        "temp_c": [99.0] * 5,
+        "apparent_temp_c": [99.0] * 5,
+        "humidity_pct": [55.0] * 5,
+        "discomfort_index": [60.0] * 5,
+        "weather_source": ["OPEN_METEO_JMA"] * 5,
+    })
+
+    result = _apply_forecast_humidity_fallbacks(
+        forecast,
+        observed,
+        fallback,
+        forward_fill_hours=3,
+    )
+
+    assert result.loc[result["ts"] == base + pd.Timedelta(hours=1), "humidity_pct"].iloc[0] == pytest.approx(74.0)
+    assert result.loc[result["ts"] == base + pd.Timedelta(hours=3), "humidity_pct"].iloc[0] == pytest.approx(74.0)
+    assert result.loc[result["ts"] == base + pd.Timedelta(hours=4), "humidity_pct"].iloc[0] == pytest.approx(55.0)
+    assert result.loc[result["ts"] == base + pd.Timedelta(hours=1), "weather_source"].iloc[0] == "JMA_FORECAST+FORWARD_FILL"
+    assert result["temp_c"].iloc[-1] == pytest.approx(28.0)
+
+
+def test_forecast_humidity_fallback_uses_seasonal_mean_last():
+    ts = pd.Timestamp("2026-05-18T12:00:00+09:00")
+    forecast = pd.DataFrame({
+        "ts": [ts],
+        "temp_c": [25.0],
+        "apparent_temp_c": [25.0],
+        "humidity_pct": [float("nan")],
+        "discomfort_index": [float("nan")],
+        "weather_source": ["JMA_FORECAST"],
+    })
+
+    result = _apply_forecast_humidity_fallbacks(
+        forecast,
+        _empty_weather_frame(),
+        _empty_weather_frame(),
+        forward_fill_hours=3,
+    )
+
+    assert result["humidity_pct"].iloc[0] == pytest.approx(68.0)
+    assert result["weather_source"].iloc[0] == "JMA_FORECAST+SEASONAL_MEAN"
 
 
 def test_fetch_forecast_temps_raises_when_official_jma_fails():
@@ -393,6 +481,8 @@ def test_enrich_no_op_when_already_filled():
     cache = _make_cache_no_temp(4)
     cache["temp_c"] = [5.0, 6.0, 7.0, 8.0]
     cache["apparent_temp_c"] = [4.0, 5.0, 6.0, 7.0]
+    cache["humidity_pct"] = [60.0, 61.0, 62.0, 63.0]
+    cache["discomfort_index"] = [45.0, 46.0, 47.0, 48.0]
 
     with patch("python.etl.fetch_weather._fetch_json") as mock:
         result = enrich_cache_with_weather(cache)
@@ -400,6 +490,20 @@ def test_enrich_no_op_when_already_filled():
     mock.assert_not_called()
     assert list(result["temp_c"]) == [5.0, 6.0, 7.0, 8.0]
     assert list(result["apparent_temp_c"]) == [4.0, 5.0, 6.0, 7.0]
+
+
+def test_enrich_does_not_backfill_legacy_humidity_only_gaps():
+    cache = _make_cache_no_temp(4)
+    cache["temp_c"] = [5.0, 6.0, 7.0, 8.0]
+    cache["apparent_temp_c"] = [4.0, 5.0, 6.0, 7.0]
+    cache["humidity_pct"] = float("nan")
+    cache["discomfort_index"] = float("nan")
+
+    with patch("python.etl.fetch_weather._fetch_json") as mock:
+        result = enrich_cache_with_weather(cache)
+
+    mock.assert_not_called()
+    assert result["humidity_pct"].isna().all()
 
 
 def test_enrich_no_op_when_no_temp_col():

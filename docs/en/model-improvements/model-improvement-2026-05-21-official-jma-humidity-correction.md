@@ -1,6 +1,6 @@
-# 2026-05-21 Official JMA Forecast and Humidity-Aware Correction
+# 2026-05-21 Official JMA Temperature and Hybrid Humidity Fallback
 
-> Removes Open-Meteo JMA as an operational forecast fallback and uses official JMA AMeDAS humidity observations for near-term apparent-temperature correction.
+> Keeps official JMA as the temperature source of truth while preventing humidity-driven apparent-temperature signals from collapsing to plain air temperature.
 
 Languages: [Korean](../../ko/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md) / [Japanese](../../ja/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
 
@@ -8,54 +8,72 @@ Languages: [Korean](../../ko/model-improvements/model-improvement-2026-05-21-off
 
 ## Why This Was Needed
 
-Recent intraday forecasts showed cases where the model interpreted the day as cooler than it felt operationally. The official JMA forecast feed provides temperature guidance, but not hourly humidity. Open-Meteo JMA can provide apparent temperature and humidity-like signals, but its Tokyo hourly forecast sometimes diverged from the official JMA view enough to weaken trust in it as an operational fallback.
+Recent intraday forecasts showed a repeated morning problem: the model sometimes saw a day as cooler than it felt operationally. The official JMA forecast feed provides the temperature curve, but the current Tokyo time-series endpoint does not publish hourly forecast humidity.
 
-For an operational forecast model, source consistency matters more than filling every derived field. If the future temperature curve comes from one provider while apparent temperature comes from another, the model can receive mixed signals.
+That means future rows could have:
+
+- `temp_c` from official JMA
+- `apparent_temp_c` equal to `temp_c`
+- `humidity_pct = NaN`
+- `discomfort_index = NaN`
+
+For demand forecasting this is risky. A humid 22 C morning can drive more cooling demand than a dry 22 C morning, but the model cannot see that difference if humidity is missing.
 
 ---
 
 ## Change
 
-Future forecast weather now uses the official JMA Tokyo time-series endpoint only:
+The operational weather hierarchy is now:
 
-```text
-https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json
-```
+1. **Observed/current and past hours**
+   - Use JMA AMeDAS observations for temperature, humidity, discomfort index, and humidity-aware apparent temperature.
 
-Open-Meteo JMA is no longer called from `fetch_forecast_temps()`. If the official JMA forecast is unavailable, the weather fetch fails visibly instead of silently switching to a less trusted forecast source.
+2. **Future temperature**
+   - Keep official JMA time-series forecast as the only temperature source.
 
-Recent observed weather still uses official JMA AMeDAS Tokyo station data. The parser now keeps:
+3. **Near-term future humidity**
+   - If official JMA humidity is missing, fill the next 1-3 hours from the latest valid AMeDAS observed humidity.
 
-- `humidity_pct`
-- `discomfort_index`
-- humid apparent temperature estimated from official observed temperature, humidity, and wind
+4. **Later future humidity**
+   - Use Open-Meteo JMA only as a humidity fallback.
+   - It does not replace official JMA `temp_c`.
+   - `apparent_temp_c` and `discomfort_index` are recomputed from the official temperature plus the fallback humidity.
 
-Because official JMA forecast does not provide hourly humidity, humidity is not added as a direct LightGBM feature yet. Instead, the intraday weather bias correction can adjust near-term `apparent_temp_c` when observed humidity makes the latest official observations feel warmer or cooler than the forecast input.
+5. **Final fallback**
+   - If all live humidity sources fail, use a conservative monthly seasonal humidity mean.
+
+The cache now also keeps `weather_source` so an operational miss can be traced back to sources such as:
+
+- `AMEDAS_ACTUAL`
+- `JMA_FORECAST+FORWARD_FILL`
+- `JMA_FORECAST+OPEN_METEO_JMA`
+- `JMA_FORECAST+SEASONAL_MEAN`
 
 ---
 
 ## Expected Effect
 
-The model should avoid mixing Open-Meteo JMA apparent-temperature signals into an official-JMA forecast curve.
+The model keeps the more trusted official JMA temperature curve while regaining humidity-sensitive apparent-temperature input for same-day operation.
 
-On humid mornings, recent AMeDAS observations can still raise near-term apparent temperature without changing the official forecast temperature itself. This is intentionally limited to short same-day horizons so it helps intraday operation without inventing tomorrow's humidity.
+This should help humid mornings and evenings where raw temperature looks ordinary but perceived heat is higher. It also avoids the earlier risk of replacing official JMA temperatures with a different provider's temperature forecast.
 
 ---
 
 ## Operational Notes
 
-- Historical backfill for old missing cache rows may still use Open-Meteo archive data.
-- Operational future forecast input does not use Open-Meteo JMA fallback.
-- Official JMA forecast rows have `humidity_pct = NaN` and `discomfort_index = NaN` until observed AMeDAS data exists.
-- This change updates source trust and weather correction behavior, not TEPCO demand data or reserve-risk thresholds.
+- Open-Meteo JMA is now a humidity-only fallback for future forecast rows.
+- Legacy historical rows are not force-backfilled just because `humidity_pct` is missing; otherwise ETL could try to refill years of cache in one run.
+- Existing historical apparent-temperature data remains usable for model training.
+- `weather_source` is trace metadata. It is not added to LightGBM feature columns.
 
 ---
 
 ## Tests
 
-Added tests cover:
+Added and updated tests cover:
 
-- Open-Meteo JMA forecast fallback is not called by `fetch_forecast_temps()`.
-- Official JMA forecast failure is surfaced as an error.
-- AMeDAS humidity and discomfort index are parsed.
-- Intraday weather bias correction can adjust apparent temperature even when raw temperature bias is below threshold.
+- Official JMA forecast temperatures are preserved even when Open-Meteo JMA humidity is used.
+- AMeDAS humidity forward fill is preferred for the short near-term horizon.
+- Seasonal humidity is used only as the final fallback.
+- Legacy cache rows with only humidity gaps do not trigger a large historical archive refill.
+- Full regression suite: `306 passed`.

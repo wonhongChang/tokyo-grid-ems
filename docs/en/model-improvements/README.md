@@ -10,7 +10,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 - [2026-05-21 business-day midday shock guard](model-improvement-2026-05-21-midday-shock-guard.md)
 - [2026-05-21 forecast band calibration](model-improvement-2026-05-21-forecast-band-calibration.md)
-- [2026-05-21 official JMA forecast and humidity-aware correction](model-improvement-2026-05-21-official-jma-humidity-correction.md)
+- [2026-05-21 official JMA temperature and hybrid humidity fallback](model-improvement-2026-05-21-official-jma-humidity-correction.md)
 - [2026-05-20 afternoon weather direction features](model-improvement-2026-05-20-afternoon-weather-direction-features.md)
 - [2026-05-20 midday transition guard](model-improvement-2026-05-20-midday-transition-features.md)
 - [2026-05-20 relative weather and thermal memory features](model-improvement-2026-05-20-relative-morning-weather-features.md)

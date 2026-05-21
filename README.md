@@ -165,7 +165,7 @@ Selected recent operational changes:
 
 - [2026-05-21 business-day midday shock guard](docs/en/model-improvements/model-improvement-2026-05-21-midday-shock-guard.md)
 - [2026-05-21 forecast band calibration](docs/en/model-improvements/model-improvement-2026-05-21-forecast-band-calibration.md)
-- [2026-05-21 official JMA forecast and humidity-aware correction](docs/en/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
+- [2026-05-21 official JMA temperature and hybrid humidity fallback](docs/en/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
 - [2026-05-20 afternoon weather direction features](docs/en/model-improvements/model-improvement-2026-05-20-afternoon-weather-direction-features.md)
 - [2026-05-20 midday transition guard](docs/en/model-improvements/model-improvement-2026-05-20-midday-transition-features.md)
 

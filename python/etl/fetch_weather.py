@@ -27,7 +27,17 @@ _TIMEOUT_SEC  = 30
 _MAX_RETRIES  = 3
 _RETRY_BACKOFF_SEC = 2.0
 _HOURLY_WEATHER_VARS = "temperature_2m,apparent_temperature,relative_humidity_2m"
-_WEATHER_COLUMNS = ["ts", "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index"]
+_WEATHER_COLUMNS = [
+    "ts", "temp_c", "apparent_temp_c", "humidity_pct",
+    "discomfort_index", "weather_source",
+]
+_SOURCE_AMEDAS_ACTUAL = "AMEDAS_ACTUAL"
+_SOURCE_JMA_FORECAST = "JMA_FORECAST"
+_SOURCE_FORWARD_FILL = "FORWARD_FILL"
+_SOURCE_OPEN_METEO_JMA = "OPEN_METEO_JMA"
+_SOURCE_OPEN_METEO_ARCHIVE = "OPEN_METEO_ARCHIVE"
+_SOURCE_SEASONAL_MEAN = "SEASONAL_MEAN"
+_SOURCE_OPEN_METEO = "OPEN_METEO"
 
 
 def _fetch_json(url: str, params: dict) -> dict:
@@ -57,7 +67,7 @@ def _fetch_json(url: str, params: dict) -> dict:
     raise last_error
 
 
-def _parse_response(data: dict) -> pd.DataFrame:
+def _parse_response(data: dict, source: str = _SOURCE_OPEN_METEO) -> pd.DataFrame:
     times = data["hourly"]["time"]
     temps = data["hourly"]["temperature_2m"]
     apparent_temps = data["hourly"].get("apparent_temperature", temps)
@@ -76,6 +86,7 @@ def _parse_response(data: dict) -> pd.DataFrame:
             _discomfort_index(temp, humidity)
             for temp, humidity in zip(temp_values, humidity_values)
         ],
+        "weather_source": [source] * len(times),
     })
 
 
@@ -100,6 +111,48 @@ def _discomfort_index(temp_c: float, humidity_pct: float) -> float:
     if pd.isna(temp_c) or pd.isna(humidity_pct):
         return float("nan")
     return round(0.81 * temp_c + 0.01 * humidity_pct * (0.99 * temp_c - 14.3) + 46.3, 1)
+
+
+def _combine_weather_source(current: object, added: str) -> str:
+    if current is None or pd.isna(current) or str(current).strip() == "":
+        return added
+    current_text = str(current)
+    parts = current_text.split("+")
+    if added in parts:
+        return current_text
+    return f"{current_text}+{added}"
+
+
+def _seasonal_humidity_pct(ts: pd.Timestamp) -> float:
+    """Conservative monthly humidity fallback for emergency forecast gaps."""
+    monthly = {
+        1: 52.0, 2: 54.0, 3: 58.0, 4: 63.0,
+        5: 68.0, 6: 75.0, 7: 78.0, 8: 76.0,
+        9: 72.0, 10: 66.0, 11: 61.0, 12: 56.0,
+    }
+    return monthly.get(int(ts.month), 65.0)
+
+
+def _refresh_humidity_derived_fields(
+    weather: pd.DataFrame,
+    mask: pd.Series,
+    humidity_source: str,
+) -> None:
+    if not mask.any():
+        return
+    for idx in weather.loc[mask].index:
+        temp_c = weather.at[idx, "temp_c"]
+        humidity_pct = weather.at[idx, "humidity_pct"]
+        weather.at[idx, "apparent_temp_c"] = _apparent_temp_from_observation(
+            temp_c,
+            humidity_pct,
+            float("nan"),
+        )
+        weather.at[idx, "discomfort_index"] = _discomfort_index(temp_c, humidity_pct)
+        weather.at[idx, "weather_source"] = _combine_weather_source(
+            weather.at[idx, "weather_source"],
+            humidity_source,
+        )
 
 
 def _apparent_temp_from_observation(
@@ -222,6 +275,7 @@ def _parse_jma_official_timeseries(
     hourly["apparent_temp_c"] = hourly["temp_c"]
     hourly["humidity_pct"] = float("nan")
     hourly["discomfort_index"] = float("nan")
+    hourly["weather_source"] = _SOURCE_JMA_FORECAST
     return hourly.reset_index()[_WEATHER_COLUMNS]
 
 
@@ -261,6 +315,7 @@ def _parse_jma_amedas_point(data: dict) -> pd.DataFrame:
             "apparent_temp_c": apparent_temp,
             "humidity_pct": parsed_humidity,
             "discomfort_index": _discomfort_index(parsed_temp, parsed_humidity),
+            "weather_source": _SOURCE_AMEDAS_ACTUAL,
         })
 
     if not rows:
@@ -274,14 +329,14 @@ def _parse_jma_amedas_point(data: dict) -> pd.DataFrame:
 
 
 def _fetch_open_meteo_jma_forecast_temps(days: int = 3) -> pd.DataFrame:
-    """Legacy Open-Meteo JMA fetcher; not used for operational forecasts."""
+    """Open-Meteo JMA humidity fallback; operational temperature stays official JMA."""
     return _parse_response(_fetch_json(_OPEN_METEO_JMA_FORECAST_URL, {
         "latitude":      TOKYO_LAT,
         "longitude":     TOKYO_LON,
         "hourly":        _HOURLY_WEATHER_VARS,
         "timezone":      "Asia/Tokyo",
         "forecast_days": days,
-    }))
+    }), source=_SOURCE_OPEN_METEO_JMA)
 
 
 def fetch_jma_official_forecast_temps(days: int = 3) -> pd.DataFrame:
@@ -381,7 +436,93 @@ def _fetch_open_meteo_archive_temps(start: date, end: date) -> pd.DataFrame:
         "end_date":   end.isoformat(),
         "hourly":     _HOURLY_WEATHER_VARS,
         "timezone":   "Asia/Tokyo",
-    }))
+    }), source=_SOURCE_OPEN_METEO_ARCHIVE)
+
+
+def _overlay_observed_weather(
+    forecast: pd.DataFrame,
+    observed: pd.DataFrame,
+) -> pd.DataFrame:
+    if forecast.empty or observed.empty:
+        return forecast
+
+    result = forecast.copy()
+    observed_cols = [col for col in _WEATHER_COLUMNS if col in observed.columns]
+    rename_map = {
+        col: f"_observed_{col}"
+        for col in observed_cols
+        if col != "ts"
+    }
+    result = result.merge(
+        observed[observed_cols].rename(columns=rename_map),
+        on="ts",
+        how="left",
+    )
+
+    observed_mask = pd.Series(False, index=result.index)
+    for col in ["temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index"]:
+        observed_col = f"_observed_{col}"
+        if observed_col not in result.columns:
+            continue
+        has_observed = result[observed_col].notna()
+        result.loc[has_observed, col] = result.loc[has_observed, observed_col]
+        observed_mask = observed_mask | has_observed
+    result.loc[observed_mask, "weather_source"] = _SOURCE_AMEDAS_ACTUAL
+
+    return result.drop(columns=list(rename_map.values()))
+
+
+def _apply_forecast_humidity_fallbacks(
+    forecast: pd.DataFrame,
+    observed: pd.DataFrame,
+    fallback: pd.DataFrame,
+    forward_fill_hours: int = 3,
+) -> pd.DataFrame:
+    """Fill forecast humidity without replacing official JMA temperatures."""
+    result = forecast.copy()
+    for col in _WEATHER_COLUMNS:
+        if col not in result.columns:
+            result[col] = float("nan") if col != "weather_source" else None
+
+    if not observed.empty and "humidity_pct" in observed.columns:
+        observed_humidity = (
+            observed.dropna(subset=["humidity_pct"])
+                    .sort_values("ts")
+                    .reset_index(drop=True)
+        )
+        if not observed_humidity.empty:
+            latest = observed_humidity.iloc[-1]
+            latest_ts = latest["ts"]
+            latest_humidity = float(latest["humidity_pct"])
+            if pd.notna(latest_humidity):
+                ff_end = latest_ts + pd.Timedelta(hours=max(0, int(forward_fill_hours)))
+                ff_mask = (
+                    result["humidity_pct"].isna()
+                    & (result["ts"] > latest_ts)
+                    & (result["ts"] <= ff_end)
+                )
+                result.loc[ff_mask, "humidity_pct"] = latest_humidity
+                _refresh_humidity_derived_fields(result, ff_mask, _SOURCE_FORWARD_FILL)
+
+    if not fallback.empty and "humidity_pct" in fallback.columns:
+        fallback = fallback.dropna(subset=["humidity_pct"]).copy()
+        humidity_by_ts = dict(zip(fallback["ts"], fallback["humidity_pct"]))
+        om_mask = result["humidity_pct"].isna() & result["ts"].isin(humidity_by_ts.keys())
+        result.loc[om_mask, "humidity_pct"] = result.loc[om_mask, "ts"].map(humidity_by_ts)
+        _refresh_humidity_derived_fields(result, om_mask, _SOURCE_OPEN_METEO_JMA)
+
+    seasonal_mask = result["humidity_pct"].isna()
+    if seasonal_mask.any():
+        result.loc[seasonal_mask, "humidity_pct"] = (
+            result.loc[seasonal_mask, "ts"].map(_seasonal_humidity_pct)
+        )
+        _refresh_humidity_derived_fields(result, seasonal_mask, _SOURCE_SEASONAL_MEAN)
+
+    result["temp_c"] = result["temp_c"].round(1)
+    result["apparent_temp_c"] = result["apparent_temp_c"].round(1)
+    result["humidity_pct"] = result["humidity_pct"].round(1)
+    result["discomfort_index"] = result["discomfort_index"].round(1)
+    return result[_WEATHER_COLUMNS].sort_values("ts").reset_index(drop=True)
 
 
 def _should_prefer_jma_observed(start: date, end: date) -> bool:
@@ -410,7 +551,13 @@ def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
 
 
 def fetch_forecast_temps(days: int = 3) -> pd.DataFrame:
-    """Hourly temperature forecast from official JMA time-series data only."""
+    """Hourly forecast weather with official JMA temperatures and guarded humidity.
+
+    Temperature remains anchored to the official JMA time-series forecast. Since
+    that feed does not publish hourly humidity, humidity is filled from short
+    AMeDAS persistence first, then Open-Meteo JMA humidity, then a conservative
+    seasonal mean as the final fallback.
+    """
     try:
         official = fetch_jma_official_forecast_temps(days=days)
     except Exception as e:
@@ -419,7 +566,23 @@ def fetch_forecast_temps(days: int = 3) -> pd.DataFrame:
 
     if official.empty:
         raise RuntimeError("No official JMA forecast weather data available")
-    return official
+
+    observed = _empty_weather_frame()
+    today = pd.Timestamp.now(tz=JST).date()
+    try:
+        observed = fetch_jma_observed_temps(today, today)
+    except Exception as e:
+        print(f"[WARN] JMA observed humidity fetch failed: {e}", file=sys.stderr)
+
+    result = _overlay_observed_weather(official, observed)
+
+    fallback = _empty_weather_frame()
+    try:
+        fallback = _fetch_open_meteo_jma_forecast_temps(days=days)
+    except Exception as e:
+        print(f"[WARN] Open-Meteo JMA humidity fallback fetch failed: {e}", file=sys.stderr)
+
+    return _apply_forecast_humidity_fallbacks(result, observed, fallback)
 
 
 def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
@@ -437,6 +600,8 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
         cache["humidity_pct"] = float("nan")
     if "discomfort_index" not in cache.columns:
         cache["discomfort_index"] = float("nan")
+    if "weather_source" not in cache.columns:
+        cache["weather_source"] = None
 
     missing_mask = (
         (cache["temp_c"].isna() | cache["apparent_temp_c"].isna())
@@ -463,11 +628,17 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
             if "discomfort_index" in weather.columns
             else {}
         )
+        ts_to_source = (
+            dict(zip(weather["ts"], weather["weather_source"]))
+            if "weather_source" in weather.columns
+            else {}
+        )
         fill_mask = cache["actual_mw"].notna()
         temp_fill_mask = cache["temp_c"].isna() & fill_mask
         apparent_fill_mask = cache["apparent_temp_c"].isna() & fill_mask
         humidity_fill_mask = cache["humidity_pct"].isna() & fill_mask
         discomfort_fill_mask = cache["discomfort_index"].isna() & fill_mask
+        source_fill_mask = cache["weather_source"].isna() & fill_mask
         cache.loc[temp_fill_mask, "temp_c"] = cache.loc[temp_fill_mask, "ts"].map(ts_to_temp)
         cache.loc[apparent_fill_mask, "apparent_temp_c"] = (
             cache.loc[apparent_fill_mask, "ts"].map(ts_to_apparent_temp)
@@ -480,12 +651,17 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
             cache.loc[discomfort_fill_mask, "discomfort_index"] = (
                 cache.loc[discomfort_fill_mask, "ts"].map(ts_to_discomfort)
             )
+        if ts_to_source:
+            cache.loc[source_fill_mask, "weather_source"] = (
+                cache.loc[source_fill_mask, "ts"].map(ts_to_source)
+            )
         print(
             "[WEATHER] Filled "
             f"{int(temp_fill_mask.sum())} temp_c values, "
             f"{int(apparent_fill_mask.sum())} apparent_temp_c values, "
             f"{int(humidity_fill_mask.sum())} humidity_pct values, "
-            f"{int(discomfort_fill_mask.sum())} discomfort_index values"
+            f"{int(discomfort_fill_mask.sum())} discomfort_index values, "
+            f"{int(source_fill_mask.sum())} weather_source values"
         )
     except Exception as e:
         print(f"[WARN] Weather archive fetch failed: {e}", file=sys.stderr)

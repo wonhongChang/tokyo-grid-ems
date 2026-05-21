@@ -158,8 +158,13 @@ def save_state(out_dir: Path, state: dict) -> None:
 _CACHE_COLS = [
     "ts", "actual_mw", "forecast_mw", "usage_pct", "supply_mw",
     "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index",
+    "weather_source",
 ]
 _CACHE_PATH_NAME = ".hourly_cache.parquet"
+
+
+def _cache_default_value(col: str):
+    return None if col == "weather_source" else float("nan")
 
 
 def load_hourly_cache(out_dir: Path) -> pd.DataFrame:
@@ -168,9 +173,9 @@ def load_hourly_cache(out_dir: Path) -> pd.DataFrame:
         df = pd.read_parquet(p)
         if "ts" in df.columns and df["ts"].dt.tz is None:
             df["ts"] = df["ts"].dt.tz_localize("Asia/Tokyo")
-        for col in ["temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index"]:
+        for col in ["temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index", "weather_source"]:
             if col not in df.columns:
-                df[col] = float("nan")
+                df[col] = _cache_default_value(col)
         return df
     return pd.DataFrame(columns=_CACHE_COLS)
 
@@ -561,7 +566,7 @@ def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd
             for c in ("actual_mw", "forecast_mw", "usage_pct", "supply_mw"):
                 value = upd_df.loc[ts, c] if c in upd_df.columns else None
                 row[c] = float(value) if value is not None and pd.notna(value) else float("nan")
-            new_rows.append({c: row.get(c, float("nan")) for c in _CACHE_COLS})
+            new_rows.append({c: row.get(c, _cache_default_value(c)) for c in _CACHE_COLS})
         result = pd.concat(
             [result, pd.DataFrame(new_rows)], ignore_index=True
         ).sort_values("ts").reset_index(drop=True)
@@ -866,11 +871,11 @@ def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> p
     result = cache.copy()
     for col in _CACHE_COLS:
         if col not in result.columns:
-            result[col] = float("nan")
+            result[col] = _cache_default_value(col)
 
     weather_cols = [
         col
-        for col in ["ts", "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index"]
+        for col in ["ts", "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index", "weather_source"]
         if col in weather.columns
     ]
     weather_temp = weather[weather_cols].copy()
@@ -896,7 +901,7 @@ def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> p
     new_rows = weather_temp[~weather_temp["ts"].isin(existing_ts)].copy()
     for col in _CACHE_COLS:
         if col not in new_rows.columns:
-            new_rows[col] = float("nan")
+            new_rows[col] = _cache_default_value(col)
 
     result = pd.concat([result[_CACHE_COLS], new_rows[_CACHE_COLS]], ignore_index=True)
     return result.sort_values("ts").reset_index(drop=True)
@@ -944,7 +949,7 @@ def _apply_weather_forecast_bias_correction(
     result = cache.copy()
     for col in _CACHE_COLS:
         if col not in result.columns:
-            result[col] = float("nan")
+            result[col] = _cache_default_value(col)
     result["ts"] = pd.to_datetime(result["ts"], utc=True).dt.tz_convert("Asia/Tokyo")
 
     try:

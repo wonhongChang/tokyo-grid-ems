@@ -1,61 +1,79 @@
-# 2026-05-21 気象庁公式予報と湿度ベース体感温度補正
+# 2026-05-21 公式JMA気温とハイブリッド湿度補完
 
-> Open-Meteo JMAを運用予報fallbackから外し、気象庁AMeDASの公式湿度観測を短期の体感温度補正に使う改善メモ。
+> 公式JMAを気温の基準として維持しつつ、湿度欠損によって体感温度の信号が単なる気温に落ちる問題を防ぐ改善。
 
 Languages: [English](../../en/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md) / [한국어](../../ko/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
 
 ---
 
-## なぜ必要だったか
+## 背景
 
-最近のintraday予測では、モデルが当日の体感よりも涼しい気象条件として解釈するケースがあった。気象庁公式予報は気温ガイダンスを提供するが、時間別湿度は提供しない。Open-Meteo JMAは体感温度や湿度系の信号を提供できるが、東京の時間別予報が気象庁公式の見立てとずれる場合があり、運用fallbackとしての信頼性に課題があった。
+最近の intraday 予測では、朝の需要を低く見るケースが続いた。公式JMAの予報は気温カーブを提供するが、現在利用している東京の time-series endpoint には時間別の予報湿度がない。
 
-運用予測モデルでは、すべての派生項目を埋めることよりも、入力ソースの一貫性が重要である。将来気温カーブは一つのソース、体感温度だけ別ソースという形にすると、モデルに混ざった信号を渡す可能性がある。
+そのため将来行では次の状態になり得た。
+
+- `temp_c` は公式JMA
+- `apparent_temp_c` は `temp_c` と同じ
+- `humidity_pct = NaN`
+- `discomfort_index = NaN`
+
+電力需要予測ではこの差が重要になる。同じ22度でも、湿度が高い朝は乾いた朝より冷房需要が早く立ち上がる可能性がある。湿度が欠けると、モデルはその違いを見られない。
 
 ---
 
 ## 変更内容
 
-将来予報の気象入力は、気象庁公式の東京time-series endpointのみを使う。
+運用時の気象データ優先順位を次のように整理した。
 
-```text
-https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json
-```
+1. **観測済みの時間**
+   - 気温、湿度、不快指数、湿度を反映した体感温度は JMA AMeDAS 観測値を使う。
 
-`fetch_forecast_temps()` はOpen-Meteo JMAを呼び出さない。気象庁公式予報が取得できない場合は、信頼度の低いソースへ静かに切り替えるのではなく、エラーとして表面化させる。
+2. **将来の気温**
+   - 公式JMA time-series 予報だけを使う。
 
-直近の観測気象は、引き続き気象庁AMeDAS東京地点を使う。パーサーは以下を保持する。
+3. **近い将来の湿度**
+   - 公式JMAに湿度がないため、最新の AMeDAS 観測湿度を1-3時間だけ forward fill する。
 
-- `humidity_pct`
-- `discomfort_index`
-- 公式観測の気温、湿度、風速から推定した湿度反映の体感温度
+4. **それ以降の将来湿度**
+   - Open-Meteo JMA は湿度補完だけに使う。
+   - 公式JMAの `temp_c` は上書きしない。
+   - `apparent_temp_c` と `discomfort_index` は公式JMA気温と補完湿度から再計算する。
 
-気象庁公式予報には時間別湿度がないため、湿度をLightGBMの直接特徴量にはまだ追加しない。その代わり、intraday気象bias補正で、直近観測の湿度により体感温度が予報入力より高い/低い場合、近い将来の `apparent_temp_c` を補正できるようにした。
+5. **最終 fallback**
+   - すべてのライブ湿度ソースが失敗した場合のみ、月別の保守的な平均湿度を使う。
+
+キャッシュには `weather_source` も保存する。予測が外れた時に、気象入力の経路を追跡できる。
+
+- `AMEDAS_ACTUAL`
+- `JMA_FORECAST+FORWARD_FILL`
+- `JMA_FORECAST+OPEN_METEO_JMA`
+- `JMA_FORECAST+SEASONAL_MEAN`
 
 ---
 
 ## 期待される効果
 
-気象庁公式の気温カーブにOpen-Meteo JMAの体感温度信号が混ざることを避けられる。
+信頼している公式JMAの気温カーブを維持しながら、湿った日の体感温度入力を復元する。
 
-湿度の高い朝には、最新のAMeDAS観測が近い将来の体感温度を引き上げられる。ただし、翌日の湿度を生成するものではなく、当日短期運用の補正に限定する。
+特に、生の気温は普通に見えるが湿度が高く冷房需要が早く立ち上がる朝や夕方に効く。別プロバイダの気温予報が公式JMA気温を上書きするリスクも避けられる。
 
 ---
 
 ## 運用メモ
 
-- 古いキャッシュ欠損を埋める過去backfillでは、Open-Meteo archiveが残る場合がある。
-- 運用向けの将来予報入力ではOpen-Meteo JMA fallbackを使わない。
-- 気象庁公式予報rowの `humidity_pct` と `discomfort_index` は、AMeDAS観測が入るまで `NaN` である。
-- この変更は気象ソース信頼性と補正方法の変更であり、TEPCO需要データや予備率リスク基準は変更しない。
+- Open-Meteo JMA は将来予測行の湿度補完だけに使う。
+- 既存の過去キャッシュは `humidity_pct` だけが欠けている理由では強制 backfill しない。そうしないと ETL が数年分の archive を一度に再取得しようとする可能性がある。
+- 既存の過去 `apparent_temp_c` はモデル学習に引き続き利用する。
+- `weather_source` は追跡用メタデータであり、LightGBM の入力特徴量には追加していない。
 
 ---
 
 ## テスト
 
-追加/更新したテストは以下を確認する。
+追加・更新したテストでは次を確認した。
 
-- `fetch_forecast_temps()` がOpen-Meteo JMA fallbackを呼び出さないこと。
-- 気象庁公式予報の失敗がエラーとして表面化すること。
-- AMeDAS湿度と不快指数をパースすること。
-- 実気温biasがthreshold未満でも、体感温度biasが大きい場合はintraday補正が適用されること。
+- Open-Meteo JMA の湿度を使っても公式JMA気温は維持される。
+- 近い将来では AMeDAS 湿度の forward fill が優先される。
+- 季節平均湿度は最終 fallback としてのみ使われる。
+- 過去キャッシュで湿度だけが欠けていても、大量の archive 再取得を起こさない。
+- 全体回帰テスト: `306 passed`.
