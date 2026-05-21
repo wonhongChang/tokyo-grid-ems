@@ -6,6 +6,8 @@ from python.forecast.baseline import HourlyForecast
 
 DEFAULT_RESERVE_WARNING_PCT = 92.0
 DEFAULT_RESERVE_CRITICAL_PCT = 97.0
+DEFAULT_WARNING_BREACH_MW = 300.0
+DEFAULT_WARNING_BREACH_PCT = 1.0
 
 
 def detect_anomalies(
@@ -90,6 +92,10 @@ def _spike_drop(
 
     critical_breach_mw  = float(cfg.get("critical_breach_mw",  500.0))
     critical_breach_pct = float(cfg.get("critical_breach_pct",   2.0))
+    warning_breach_mw = float(cfg.get("warning_breach_mw", DEFAULT_WARNING_BREACH_MW))
+    warning_breach_pct = float(
+        cfg.get("warning_breach_pct", DEFAULT_WARNING_BREACH_PCT)
+    )
     # key: "2025-11-01T18" → HourlyForecast
     fc_map = {f.ts[:13]: f for f in forecasts}
     events = []
@@ -119,8 +125,18 @@ def _spike_drop(
         if actual > fc.p99_upper_mw:
             breach_mw  = actual - fc.p99_upper_mw
             breach_pct = breach_mw / actual * 100 if actual > 0 else 0.0
+            is_critical = (
+                breach_mw >= critical_breach_mw
+                or breach_pct >= critical_breach_pct
+            )
+            is_material_warning = (
+                breach_mw >= warning_breach_mw
+                or breach_pct >= warning_breach_pct
+            )
+            if not is_critical and not is_material_warning:
+                continue
             kind       = "spike"
-            severity   = "critical" if (breach_mw >= critical_breach_mw or breach_pct >= critical_breach_pct) else "warning"
+            severity   = "critical" if is_critical else "warning"
             reason     = (
                 f"Actual {actual:.0f} MW exceeded p99 upper {fc.p99_upper_mw:.0f} MW "
                 f"by {breach_mw:.0f} MW ({breach_pct:.2f}%)"
@@ -132,8 +148,18 @@ def _spike_drop(
         elif actual < fc.p99_lower_mw:
             breach_mw  = fc.p99_lower_mw - actual
             breach_pct = breach_mw / actual * 100 if actual > 0 else 0.0
+            is_critical = (
+                breach_mw >= critical_breach_mw
+                or breach_pct >= critical_breach_pct
+            )
+            is_material_warning = (
+                breach_mw >= warning_breach_mw
+                or breach_pct >= warning_breach_pct
+            )
+            if not is_critical and not is_material_warning:
+                continue
             kind       = "drop"
-            severity   = "critical" if (breach_mw >= critical_breach_mw or breach_pct >= critical_breach_pct) else "warning"
+            severity   = "critical" if is_critical else "warning"
             reason     = (
                 f"Actual {actual:.0f} MW fell below p99 lower {fc.p99_lower_mw:.0f} MW "
                 f"by {breach_mw:.0f} MW ({breach_pct:.2f}%)"

@@ -34,15 +34,17 @@ Spike/drop compares actual demand against prediction intervals.
 
 | Event | warning | critical |
 |---|---|---|
-| Spike | actual > `p99Upper` | actual > `p99Upper` and breach exceeds MW or % threshold |
-| Drop | actual < `p99Lower` | actual < `p99Lower` and breach exceeds MW or % threshold |
+| Spike | actual > `p99Upper` and breach exceeds the warning MW or % threshold | actual > `p99Upper` and breach exceeds the critical MW or % threshold |
+| Drop | actual < `p99Lower` and breach exceeds the warning MW or % threshold | actual < `p99Lower` and breach exceeds the critical MW or % threshold |
 
-p95-only edge crossings are ignored. They are treated as ordinary model-band misses, not operational spike/drop events. Sustained bias is still captured by drift detection.
+p95-only edge crossings are ignored. Tiny p99 edge crossings are also suppressed unless the breach is operationally meaningful. They are treated as ordinary model-band misses, not operational spike/drop events. Sustained bias is still captured by drift detection.
 
-Default critical thresholds:
+Default thresholds:
 
 ```yaml
 spike_drop:
+  warning_breach_mw: 300
+  warning_breach_pct: 1.0
   critical_breach_mw: 500
   critical_breach_pct: 2.0
 ```

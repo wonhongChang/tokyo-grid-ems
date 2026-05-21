@@ -29,6 +29,8 @@ _LGBM_PARAMS = {
     "verbose": -1,
 }
 
+_DEFAULT_MIN_P95_HALF_WIDTH_MW = 500.0
+
 
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
@@ -58,6 +60,35 @@ class LGBMForecaster:
             learning_rate=self.learning_rate,
             **_LGBM_PARAMS,
         )
+
+    def _calibrate_interval_half_widths(
+        self,
+        half_lo: float,
+        half_hi: float,
+    ) -> tuple[float, float]:
+        interval_config = (getattr(self, "config", {}) or {}).get(
+            "interval_calibration",
+            {},
+        )
+        min_half_width = max(
+            0.0,
+            float(
+                interval_config.get(
+                    "min_p95_half_width_mw",
+                    _DEFAULT_MIN_P95_HALF_WIDTH_MW,
+                )
+            ),
+        )
+        if interval_config.get("mirror_collapsed_side", True):
+            reference_width = max(half_lo, half_hi, min_half_width)
+            if half_lo < min_half_width:
+                half_lo = reference_width
+            if half_hi < min_half_width:
+                half_hi = reference_width
+        else:
+            half_lo = max(half_lo, min_half_width)
+            half_hi = max(half_hi, min_half_width)
+        return half_lo, half_hi
 
     def fit(self, cache: pd.DataFrame) -> None:
         """Train q025/q50/q975 quantile models on hourly cache. Needs >= 90 days."""
@@ -107,6 +138,9 @@ class LGBMForecaster:
             # p99 = 2x half-width beyond the q025/q975 interval as a conservative outer band.
             half_lo = max(0.0, mid - lo)
             half_hi = max(0.0, hi - mid)
+            half_lo, half_hi = self._calibrate_interval_half_widths(half_lo, half_hi)
+            lo = round(mid - half_lo, 1)
+            hi = round(mid + half_hi, 1)
             result.append(HourlyForecast(
                 ts=ts.isoformat(timespec="seconds"),
                 forecast_mw=mid,

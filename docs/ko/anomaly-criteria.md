@@ -34,15 +34,17 @@ TEPCO 사용률이 기준치에 도달하면 이벤트를 생성합니다.
 
 | 이벤트 | warning | critical |
 |---|---|---|
-| Spike | 실측이 `p99Upper` 초과 | 실측이 `p99Upper`를 넘고, 초과 폭이 MW 또는 % 기준 이상 |
-| Drop | 실측이 `p99Lower` 미만 | 실측이 `p99Lower`를 밑돌고, 초과 폭이 MW 또는 % 기준 이상 |
+| Spike | 실측이 `p99Upper`를 넘고, 초과 폭이 warning MW 또는 % 기준 이상 | 실측이 `p99Upper`를 넘고, 초과 폭이 critical MW 또는 % 기준 이상 |
+| Drop | 실측이 `p99Lower`를 밑돌고, 초과 폭이 warning MW 또는 % 기준 이상 | 실측이 `p99Lower`를 밑돌고, 초과 폭이 critical MW 또는 % 기준 이상 |
 
-p95만 살짝 벗어난 경우는 spike/drop 이벤트로 만들지 않습니다. 이런 경우는 운영상 급등/급락이라기보다 일반적인 모델 밴드 오차에 가깝고, 여러 시간 동안 같은 방향으로 지속되면 drift 탐지가 별도로 잡습니다.
+p95만 살짝 벗어난 경우는 spike/drop 이벤트로 만들지 않습니다. p99를 아주 조금 벗어난 경우도 운영상 의미 있는 초과 폭이 아니면 제외합니다. 이런 경우는 운영상 급등/급락이라기보다 일반적인 모델 밴드 오차에 가깝고, 여러 시간 동안 같은 방향으로 지속되면 drift 탐지가 별도로 잡습니다.
 
-기본 critical 기준:
+기본 기준:
 
 ```yaml
 spike_drop:
+  warning_breach_mw: 300
+  warning_breach_pct: 1.0
   critical_breach_mw: 500
   critical_breach_pct: 2.0
 ```

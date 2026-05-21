@@ -18,6 +18,7 @@ from python.etl.run_batch import (
     _freeze_observed_forecast_hours,
     _inject_today_actuals,
     _load_existing_forecast,
+    _reserve_risk_severity_from_alerts_payload,
     _write_forecast_snapshot,
     build_actual_json,
     build_alerts_json,
@@ -430,6 +431,24 @@ def test_build_alerts_json_preserves_events():
 
 
 # ── build_forecast_json ───────────────────────────────────────────────────────
+
+def test_reserve_risk_severity_ignores_model_error_warnings():
+    payload = build_alerts_json(date(2024, 1, 1), [
+        {"severity": "warning", "type": "spike"},
+        {"severity": "warning", "type": "drift"},
+    ])
+
+    assert _reserve_risk_severity_from_alerts_payload(payload) == "info"
+
+
+def test_reserve_risk_severity_uses_usage_risk_events():
+    payload = build_alerts_json(date(2024, 1, 1), [
+        {"severity": "warning", "type": "spike"},
+        {"severity": "critical", "type": "reserve_risk"},
+    ])
+
+    assert _reserve_risk_severity_from_alerts_payload(payload) == "critical"
+
 
 def test_build_forecast_json_not_yet_available_when_empty():
     result = build_forecast_json(date(2024, 1, 1), [], {})

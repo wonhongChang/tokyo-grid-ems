@@ -237,6 +237,29 @@ def build_alerts_json(d: date, events: list[dict]) -> dict:
     }
 
 
+def _reserve_risk_severity_from_alerts_payload(payload: dict | None) -> str | None:
+    """Return status severity from reserve-risk alerts only.
+
+    The dashboard's day badge represents TEPCO usage-rate risk:
+    stable below 92%, warning from 92% to below 97%, critical at 97%+.
+    Forecast interval misses and drift can still appear in the alert list, but
+    they should not turn the day tab into a usage-risk warning.
+    """
+    if payload is None:
+        return None
+
+    severities = [
+        event.get("severity", "info")
+        for event in payload.get("events", [])
+        if event.get("type") == "reserve_risk"
+    ]
+    if "critical" in severities:
+        return "critical"
+    if "warning" in severities:
+        return "warning"
+    return "info"
+
+
 def build_actual_json(d: date, hourly: pd.DataFrame) -> dict:
     series = []
     for _, row in hourly.sort_values("ts").iterrows():
@@ -550,7 +573,7 @@ def _build_today_alerts(
     config: dict,
     day_context: dict | None = None,
 ) -> dict | None:
-    """Build and write alerts JSON for one date. Returns the summary dict, or None on failure."""
+    """Build and write alerts JSON for one date. Returns the payload, or None on failure."""
     actual_path  = out_dir / "actual"   / f"{today.isoformat()}.json"
     forecast_path = out_dir / "forecast" / f"{today.isoformat()}.json"
     alerts_path  = out_dir / "alerts"   / f"{today.isoformat()}.json"
@@ -592,7 +615,7 @@ def _build_today_alerts(
         payload = build_alerts_json(today, events)
         write_json(alerts_path, payload)
         print(f"[STATUS] Alerts {today.isoformat()}: {len(events)} events -> {alerts_path.name}")
-        return payload.get("summary")
+        return payload
     except Exception as e:
         print(f"[WARN] Failed to build today alerts: {e}", file=sys.stderr)
     return None
@@ -612,17 +635,6 @@ def _build_alerts_for_date(
     except Exception:
         pass
     return _build_today_alerts(out_dir, d, config, day_context=day_context)
-
-
-def _severity_from_alerts_summary(summary: dict | None) -> str | None:
-    if summary is None:
-        return None
-    if summary.get("critical", 0) > 0:
-        return "critical"
-    if summary.get("warning", 0) > 0:
-        return "warning"
-    return "info"
-
 
 
 def compute_missing_days(csv_dates: set[date]) -> list[str]:
@@ -737,15 +749,6 @@ def build_status_json(
             if not temp_row.empty and pd.notna(temp_row.iloc[0]):
                 result["peakTempC"] = round(float(temp_row.iloc[0]), 1)
         return result
-
-    def _alerts_severity(summary: dict | None) -> str:
-        if not summary:
-            return "info"
-        if summary.get("critical", 0) > 0:
-            return "critical"
-        if summary.get("warning", 0) > 0:
-            return "warning"
-        return "info"
 
     yesterday = today - timedelta(days=1)
     return {
@@ -1614,8 +1617,8 @@ def _run_status_only(
     _build_alerts_for_date(out_dir, yesterday, config, extended_with_actuals)
     alerts_summary = _build_alerts_for_date(out_dir, today, config, extended_with_actuals)
 
-    # Derive today's severity from actual alerts (not from forecast-based reserve risk estimate)
-    today_severity = _severity_from_alerts_summary(alerts_summary)
+    # The day badge is a reserve-risk signal, not a generic model-error alert.
+    today_severity = _reserve_risk_severity_from_alerts_payload(alerts_summary)
 
     write_json(out_dir / "status.json", build_status_json(
         ok_set, fail_set, summaries, ok_set | fail_set,
@@ -1860,7 +1863,7 @@ def main() -> None:
     write_json(out_dir / "status.json", build_status_json(
         status_ok_set, fail_set, status_summaries, set(csv_map.keys()) | status_ok_set | fail_set,
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
-        today_severity=_severity_from_alerts_summary(today_alerts_summary),
+        today_severity=_reserve_risk_severity_from_alerts_payload(today_alerts_summary),
         extended_cache=extended_with_actuals,
         display_cache=display_with_actuals,
     ))

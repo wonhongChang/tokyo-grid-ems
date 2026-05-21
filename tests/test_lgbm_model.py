@@ -165,7 +165,44 @@ def test_predict_normalizes_crossed_quantiles(monkeypatch):
         assert point.p95_lower_mw <= point.forecast_mw <= point.p95_upper_mw
         assert point.p95_lower_mw == 30_000.0
         assert point.forecast_mw == 32_000.0
-        assert point.p95_upper_mw == 32_000.0
+        assert point.p95_upper_mw == 34_000.0
+        assert point.p99_upper_mw == 36_000.0
+
+
+def test_predict_applies_minimum_interval_half_width(monkeypatch):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({"hour": range(24)}),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "interval_calibration": {
+            "min_p95_half_width_mw": 500.0,
+            "mirror_collapsed_side": True,
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(31_900.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(32_050.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    for point in result:
+        assert point.p95_lower_mw == 31_500.0
+        assert point.p95_upper_mw == 32_500.0
+        assert point.p99_lower_mw == 31_000.0
+        assert point.p99_upper_mw == 33_000.0
 
 
 def test_old_q10_q90_pickle_layout_is_incompatible():

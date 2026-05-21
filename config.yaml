@@ -17,6 +17,10 @@ weather_forecast_bias_correction:
   max_abs_bias_c: 1.5        # cap both warm and cold corrections
   decay_per_hour: 0.6        # fade the correction each hour ahead
 
+interval_calibration:
+  min_p95_half_width_mw: 500 # prevent unrealistically narrow LightGBM bands
+  mirror_collapsed_side: true # use the opposite side when one quantile side collapses
+
 intraday_correction:
   enabled: true
   lookback_hours: 3          # recent actual-vs-model residuals used for same-day correction
@@ -53,6 +57,8 @@ forecast_snapshots:
 
 anomaly:
   spike_drop:
+    warning_breach_mw: 300       # ignore tiny p99 edge crossings below this MW
+    warning_breach_pct: 1.0      # OR below this % of actual demand
     critical_breach_mw: 500      # p99 breach must exceed this MW to be CRITICAL
     critical_breach_pct: 2.0     # OR this % of actual to be CRITICAL (whichever first)
   reserve_risk:

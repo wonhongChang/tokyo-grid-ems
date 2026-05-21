@@ -133,20 +133,34 @@ def test_drop_critical_below_p99():
     assert drops[0]["severity"] == "critical"
 
 
-def test_drop_p99_small_breach_is_warning():
+def test_drop_p99_tiny_breach_is_not_an_event():
     forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
-    # p99_lower ≈ 27424; actual=27300 → breach=124 MW (0.45%) → warning
+    # p99_lower approx 27424; actual=27300 gives a tiny breach.
     actual = [27300.0] + [30000.0] * 23
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
+    assert not [e for e in events if e["type"] == "drop"]
+
+
+def test_spike_p99_tiny_breach_is_not_an_event():
+    forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
+    # p99_upper approx 32576; actual=32700 gives a tiny breach.
+    actual = [32700.0] + [30000.0] * 23
+    events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
+    assert not [e for e in events if e["type"] == "spike"]
+
+
+def test_drop_p99_material_breach_is_warning():
+    forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
+    actual = [27100.0] + [30000.0] * 23
     events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
     drops = [e for e in events if e["type"] == "drop"]
     assert len(drops) >= 1
     assert drops[0]["severity"] == "warning"
 
 
-def test_spike_p99_small_breach_is_warning():
+def test_spike_p99_material_breach_is_warning():
     forecasts = _make_forecasts(forecast_mw=30000.0, std=1000.0)
-    # p99_upper ≈ 32576; actual=32700 → breach=124 MW (0.38%) → warning
-    actual = [32700.0] + [30000.0] * 23
+    actual = [32900.0] + [30000.0] * 23
     events = detect_anomalies(_make_hourly(actual_mw=actual), forecasts, {})
     spikes = [e for e in events if e["type"] == "spike"]
     assert len(spikes) >= 1
