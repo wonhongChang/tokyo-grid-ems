@@ -21,7 +21,16 @@ The original motivation was to improve over calendar + lag features only. In pro
 
 ---
 
-## Data Source: Open-Meteo
+## Current Operational Source Policy
+
+- Future forecast temperatures use official JMA Tokyo time-series data only.
+- Recent observed weather uses official JMA AMeDAS Tokyo station data, including humidity when available.
+- Open-Meteo JMA forecast fallback is disabled because operational source consistency is more important than filling apparent-temperature fields from a less trusted forecast.
+- Open-Meteo archive may still be used only as historical backfill for older cache gaps.
+
+---
+
+## Historical Backfill Source: Open-Meteo
 
 ```
 API: https://api.open-meteo.com/v1/forecast
@@ -202,13 +211,13 @@ tomorrow_fc = forecaster.predict(tomorrow, extended_cache)
 
 | Stage | Temperature Source | Notes |
 |---|---|---|
-| Training (full history) | Open-Meteo archive API | Historical `temp_c` / `apparent_temp_c` are stored in `.hourly_cache.parquet` |
-| Yesterday's forecast | Historical actuals (confirmed) | Exact |
-| Today's forecast | Historical (morning) + forecast (afternoon) | Mixed |
-| Tomorrow's forecast | Open-Meteo 48h forecast | ±1–2°C error tolerated |
+| Training (full history) | Cached historical weather | Recent observed rows prefer official JMA AMeDAS; older cache gaps may use Open-Meteo archive backfill |
+| Yesterday's forecast | Historical actual weather (confirmed) | Recent dates prefer JMA AMeDAS observations |
+| Today's forecast | JMA AMeDAS observations + official JMA forecast | AMeDAS can correct near-term apparent temperature during intraday runs |
+| Tomorrow's forecast | Official JMA time-series forecast | Open-Meteo JMA forecast fallback is not used |
 
 > Tomorrow's temperature forecast error propagates into model error.
-> During summer heat waves, forecast error can be large; the quantile models and anomaly rules should be interpreted with that uncertainty in mind.
+> Official JMA forecast does not provide hourly humidity, so humidity is used only after AMeDAS observations become available.
 
 ---
 

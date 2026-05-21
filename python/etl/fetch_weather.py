@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 import time
 import urllib.error
@@ -25,7 +26,8 @@ _JMA_TOKYO_AMEDAS_STATION = "44132"
 _TIMEOUT_SEC  = 30
 _MAX_RETRIES  = 3
 _RETRY_BACKOFF_SEC = 2.0
-_HOURLY_WEATHER_VARS = "temperature_2m,apparent_temperature"
+_HOURLY_WEATHER_VARS = "temperature_2m,apparent_temperature,relative_humidity_2m"
+_WEATHER_COLUMNS = ["ts", "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index"]
 
 
 def _fetch_json(url: str, params: dict) -> dict:
@@ -59,11 +61,26 @@ def _parse_response(data: dict) -> pd.DataFrame:
     times = data["hourly"]["time"]
     temps = data["hourly"]["temperature_2m"]
     apparent_temps = data["hourly"].get("apparent_temperature", temps)
+    humidities = data["hourly"].get("relative_humidity_2m", [None] * len(times))
+    temp_values = [float(t) if t is not None else float("nan") for t in temps]
+    humidity_values = [
+        float(h) if h is not None else float("nan")
+        for h in humidities
+    ]
     return pd.DataFrame({
         "ts":              pd.to_datetime(times).tz_localize("Asia/Tokyo"),
-        "temp_c":          [float(t) if t is not None else float("nan") for t in temps],
+        "temp_c":          temp_values,
         "apparent_temp_c": [float(t) if t is not None else float("nan") for t in apparent_temps],
+        "humidity_pct":    humidity_values,
+        "discomfort_index": [
+            _discomfort_index(temp, humidity)
+            for temp, humidity in zip(temp_values, humidity_values)
+        ],
     })
+
+
+def _empty_weather_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=_WEATHER_COLUMNS)
 
 
 def _to_jst_timestamp(value: str) -> pd.Timestamp:
@@ -77,6 +94,30 @@ def _optional_float(value) -> float:
     if value is None or value == "":
         return float("nan")
     return float(value)
+
+
+def _discomfort_index(temp_c: float, humidity_pct: float) -> float:
+    if pd.isna(temp_c) or pd.isna(humidity_pct):
+        return float("nan")
+    return round(0.81 * temp_c + 0.01 * humidity_pct * (0.99 * temp_c - 14.3) + 46.3, 1)
+
+
+def _apparent_temp_from_observation(
+    temp_c: float,
+    humidity_pct: float,
+    wind_mps: float,
+) -> float:
+    """Estimate humid apparent temperature from official JMA observations."""
+    if pd.isna(temp_c) or pd.isna(humidity_pct):
+        return temp_c
+    wind = 1.0 if pd.isna(wind_mps) else max(0.0, float(wind_mps))
+    vapor_pressure_hpa = (
+        humidity_pct
+        / 100.0
+        * 6.105
+        * math.exp((17.27 * temp_c) / (237.7 + temp_c))
+    )
+    return round(temp_c + 0.33 * vapor_pressure_hpa - 0.70 * wind - 4.0, 1)
 
 
 def _extract_daily_extremes(point_series: dict, field: str, reducer) -> dict[date, float]:
@@ -150,7 +191,7 @@ def _parse_jma_official_timeseries(
         })
 
     if len(rows) < 2:
-        return pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
+        return _empty_weather_frame()
 
     hourly = (
         pd.DataFrame(rows)
@@ -175,11 +216,13 @@ def _parse_jma_official_timeseries(
         & (hourly.index.date < end_date)
     ]
     if hourly.empty:
-        return pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
+        return _empty_weather_frame()
 
     hourly["temp_c"] = hourly["temp_c"].round(1)
     hourly["apparent_temp_c"] = hourly["temp_c"]
-    return hourly.reset_index()[["ts", "temp_c", "apparent_temp_c"]]
+    hourly["humidity_pct"] = float("nan")
+    hourly["discomfort_index"] = float("nan")
+    return hourly.reset_index()[_WEATHER_COLUMNS]
 
 
 def _parse_jma_amedas_point(data: dict) -> pd.DataFrame:
@@ -192,17 +235,36 @@ def _parse_jma_amedas_point(data: dict) -> pd.DataFrame:
         parsed_temp = _optional_float(temp[0])
         if pd.isna(parsed_temp):
             continue
+        humidity = point.get("humidity")
+        wind = point.get("wind")
+        parsed_humidity = (
+            _optional_float(humidity[0])
+            if isinstance(humidity, list) and humidity
+            else float("nan")
+        )
+        parsed_wind = (
+            _optional_float(wind[0])
+            if isinstance(wind, list) and wind
+            else float("nan")
+        )
         ts = pd.to_datetime(timestamp_key, format="%Y%m%d%H%M%S").tz_localize(JST)
         if ts.minute != 0:
             continue
+        apparent_temp = _apparent_temp_from_observation(
+            parsed_temp,
+            parsed_humidity,
+            parsed_wind,
+        )
         rows.append({
             "ts": ts,
             "temp_c": parsed_temp,
-            "apparent_temp_c": parsed_temp,
+            "apparent_temp_c": apparent_temp,
+            "humidity_pct": parsed_humidity,
+            "discomfort_index": _discomfort_index(parsed_temp, parsed_humidity),
         })
 
     if not rows:
-        return pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
+        return _empty_weather_frame()
     return (
         pd.DataFrame(rows)
           .drop_duplicates(subset=["ts"], keep="last")
@@ -212,7 +274,7 @@ def _parse_jma_amedas_point(data: dict) -> pd.DataFrame:
 
 
 def _fetch_open_meteo_jma_forecast_temps(days: int = 3) -> pd.DataFrame:
-    """Hourly temperature forecast from Open-Meteo JMA for Tokyo (fallback source)."""
+    """Legacy Open-Meteo JMA fetcher; not used for operational forecasts."""
     return _parse_response(_fetch_json(_OPEN_METEO_JMA_FORECAST_URL, {
         "latitude":      TOKYO_LAT,
         "longitude":     TOKYO_LON,
@@ -256,7 +318,7 @@ def fetch_jma_observed_temps(
 
     frames = [frame for frame in frames if not frame.empty]
     if not frames:
-        return pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
+        return _empty_weather_frame()
 
     result = (
         pd.concat(frames, ignore_index=True)
@@ -280,12 +342,25 @@ def _combine_official_and_fallback_weather(
         return official
 
     combined = fallback.copy()
-    official_temp = official[["ts", "temp_c"]].rename(columns={"temp_c": "_official_temp_c"})
-    combined = combined.merge(official_temp, on="ts", how="left")
-    has_official = combined["_official_temp_c"].notna()
-    combined.loc[has_official, "temp_c"] = combined.loc[has_official, "_official_temp_c"]
-    combined.loc[has_official, "apparent_temp_c"] = combined.loc[has_official, "temp_c"]
-    combined = combined.drop(columns=["_official_temp_c"])
+    for col in _WEATHER_COLUMNS:
+        if col not in combined.columns:
+            combined[col] = float("nan") if col != "ts" else pd.NaT
+
+    official_cols = [col for col in _WEATHER_COLUMNS if col in official.columns]
+    rename_map = {
+        col: f"_official_{col}"
+        for col in official_cols
+        if col != "ts"
+    }
+    combined = combined.merge(
+        official[official_cols].rename(columns=rename_map),
+        on="ts",
+        how="left",
+    )
+    for col, official_col in rename_map.items():
+        has_official = combined[official_col].notna()
+        combined.loc[has_official, col] = combined.loc[has_official, official_col]
+    combined = combined.drop(columns=list(rename_map.values()))
 
     missing_official = official[~official["ts"].isin(set(combined["ts"]))].copy()
     if not missing_official.empty:
@@ -293,6 +368,8 @@ def _combine_official_and_fallback_weather(
 
     combined["temp_c"] = combined["temp_c"].round(1)
     combined["apparent_temp_c"] = combined["apparent_temp_c"].round(1)
+    combined["humidity_pct"] = combined["humidity_pct"].round(1)
+    combined["discomfort_index"] = combined["discomfort_index"].round(1)
     return combined.sort_values("ts").reset_index(drop=True)
 
 
@@ -315,7 +392,7 @@ def _should_prefer_jma_observed(start: date, end: date) -> bool:
 def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
     """Hourly temperature for Tokyo, preferring JMA AMeDAS for recent observations."""
     if _should_prefer_jma_observed(start, end):
-        observed = pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
+        observed = _empty_weather_frame()
         try:
             observed = fetch_jma_observed_temps(start, end)
         except Exception as e:
@@ -333,30 +410,16 @@ def fetch_past_temps(start: date, end: date) -> pd.DataFrame:
 
 
 def fetch_forecast_temps(days: int = 3) -> pd.DataFrame:
-    """Hourly temperature forecast, preferring official JMA time-series data."""
-    official = pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
-    fallback = pd.DataFrame(columns=["ts", "temp_c", "apparent_temp_c"])
-    official_error: Exception | None = None
-    fallback_error: Exception | None = None
-
+    """Hourly temperature forecast from official JMA time-series data only."""
     try:
         official = fetch_jma_official_forecast_temps(days=days)
     except Exception as e:
-        official_error = e
         print(f"[WARN] JMA official forecast fetch failed: {e}", file=sys.stderr)
+        raise
 
-    try:
-        fallback = _fetch_open_meteo_jma_forecast_temps(days=days)
-    except Exception as e:
-        fallback_error = e
-        if official.empty:
-            print(f"[WARN] Open-Meteo JMA fallback fetch failed: {e}", file=sys.stderr)
-
-    if not official.empty:
-        return _combine_official_and_fallback_weather(official, fallback)
-    if not fallback.empty:
-        return fallback
-    raise official_error or fallback_error or RuntimeError("No forecast weather data available")
+    if official.empty:
+        raise RuntimeError("No official JMA forecast weather data available")
+    return official
 
 
 def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
@@ -370,6 +433,10 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
         cache["temp_c"] = float("nan")
     if "apparent_temp_c" not in cache.columns:
         cache["apparent_temp_c"] = float("nan")
+    if "humidity_pct" not in cache.columns:
+        cache["humidity_pct"] = float("nan")
+    if "discomfort_index" not in cache.columns:
+        cache["discomfort_index"] = float("nan")
 
     missing_mask = (
         (cache["temp_c"].isna() | cache["apparent_temp_c"].isna())
@@ -386,17 +453,39 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
         weather    = fetch_past_temps(start, end)
         ts_to_temp = dict(zip(weather["ts"], weather["temp_c"]))
         ts_to_apparent_temp = dict(zip(weather["ts"], weather["apparent_temp_c"]))
+        ts_to_humidity = (
+            dict(zip(weather["ts"], weather["humidity_pct"]))
+            if "humidity_pct" in weather.columns
+            else {}
+        )
+        ts_to_discomfort = (
+            dict(zip(weather["ts"], weather["discomfort_index"]))
+            if "discomfort_index" in weather.columns
+            else {}
+        )
         fill_mask = cache["actual_mw"].notna()
         temp_fill_mask = cache["temp_c"].isna() & fill_mask
         apparent_fill_mask = cache["apparent_temp_c"].isna() & fill_mask
+        humidity_fill_mask = cache["humidity_pct"].isna() & fill_mask
+        discomfort_fill_mask = cache["discomfort_index"].isna() & fill_mask
         cache.loc[temp_fill_mask, "temp_c"] = cache.loc[temp_fill_mask, "ts"].map(ts_to_temp)
         cache.loc[apparent_fill_mask, "apparent_temp_c"] = (
             cache.loc[apparent_fill_mask, "ts"].map(ts_to_apparent_temp)
         )
+        if ts_to_humidity:
+            cache.loc[humidity_fill_mask, "humidity_pct"] = (
+                cache.loc[humidity_fill_mask, "ts"].map(ts_to_humidity)
+            )
+        if ts_to_discomfort:
+            cache.loc[discomfort_fill_mask, "discomfort_index"] = (
+                cache.loc[discomfort_fill_mask, "ts"].map(ts_to_discomfort)
+            )
         print(
             "[WEATHER] Filled "
             f"{int(temp_fill_mask.sum())} temp_c values, "
-            f"{int(apparent_fill_mask.sum())} apparent_temp_c values"
+            f"{int(apparent_fill_mask.sum())} apparent_temp_c values, "
+            f"{int(humidity_fill_mask.sum())} humidity_pct values, "
+            f"{int(discomfort_fill_mask.sum())} discomfort_index values"
         )
     except Exception as e:
         print(f"[WARN] Weather archive fetch failed: {e}", file=sys.stderr)

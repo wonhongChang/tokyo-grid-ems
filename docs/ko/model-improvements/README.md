@@ -8,6 +8,7 @@
 
 ## 2026-05
 
+- [2026-05-21 공식 JMA 예보와 습도 기반 체감온도 보정](model-improvement-2026-05-21-official-jma-humidity-correction.md)
 - [2026-05-20 오후 기온 방향성 피처](model-improvement-2026-05-20-afternoon-weather-direction-features.md)
 - [2026-05-20 점심 시간대 전환 guard](model-improvement-2026-05-20-midday-transition-features.md)
 - [2026-05-20 상대 기온과 누적 열 관성 피처](model-improvement-2026-05-20-relative-morning-weather-features.md)

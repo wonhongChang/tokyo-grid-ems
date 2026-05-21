@@ -21,7 +21,16 @@
 
 ---
 
-## 데이터 소스: Open-Meteo
+## 현재 운영 소스 정책
+
+- 미래 예보 기온은 공식 JMA 도쿄 시계열 데이터만 사용합니다.
+- 최근 관측 기상은 공식 JMA AMeDAS 도쿄 관측소 데이터를 사용하며, 가능한 경우 습도도 함께 보관합니다.
+- 운영 소스 일관성이 더 중요하므로 Open-Meteo JMA 예보 fallback은 비활성화했습니다.
+- Open-Meteo archive는 오래된 캐시 결측을 채우는 과거 backfill 용도로만 남을 수 있습니다.
+
+---
+
+## 과거 backfill 소스: Open-Meteo
 
 ```
 API: https://api.open-meteo.com/v1/forecast
@@ -202,13 +211,13 @@ tomorrow_fc = forecaster.predict(tomorrow, extended_cache)
 
 | 시점 | 기온 소스 | 비고 |
 |---|---|---|
-| 훈련 (과거 전체) | Open-Meteo archive API | 과거 `temp_c` / `apparent_temp_c`는 `.hourly_cache.parquet`에 저장 |
-| 어제 예측 | 실적 기온 (확정) | 정확 |
-| 오늘 예측 | 실적 기온 (오전) + 예측 기온 (오후) | 혼합 |
-| 내일 예측 | Open-Meteo 48h 예측 기온 | ±1–2°C 오차 허용 |
+| 훈련 (과거 전체) | 캐시된 과거 기상 데이터 | 최근 실측 row는 공식 JMA AMeDAS를 우선하고, 오래된 캐시 결측은 Open-Meteo archive backfill을 사용할 수 있음 |
+| 어제 예측 | 확정된 과거 실측 기상 | 최근 날짜는 JMA AMeDAS 관측값을 우선 |
+| 오늘 예측 | JMA AMeDAS 관측 + 공식 JMA 예보 | intraday 실행 시 AMeDAS로 가까운 미래 체감온도를 보정 가능 |
+| 내일 예측 | 공식 JMA 시계열 예보 | Open-Meteo JMA 예보 fallback은 사용하지 않음 |
 
 > 내일 기온 예측 오차가 모델 오차에 전파됨.
-> 여름 폭염 기간엔 예측 오차가 커질 수 있으므로 quantile 모델과 이상탐지 결과를 그 불확실성까지 고려해 해석해야 합니다.
+> 공식 JMA 예보에는 시간별 습도가 없으므로, 습도는 AMeDAS 관측이 생긴 뒤에만 사용합니다.
 
 ---
 

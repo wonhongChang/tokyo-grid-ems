@@ -32,15 +32,14 @@ Because the demand model needs hourly features, the three-hourly temperatures ar
 
 ---
 
-## Fallback Behavior
+## Current Source Policy
 
-Open-Meteo JMA is still used as a fallback and supplement:
+This document records the first step of moving the forecast input toward official JMA data. As of the 2026-05-21 follow-up, Open-Meteo JMA is no longer used as an operational forecast fallback.
 
-- If official JMA time-series data is unavailable, Open-Meteo JMA still provides hourly temperatures.
-- If official JMA data covers only part of the horizon, Open-Meteo fills the missing hours.
-- Apparent temperature is not provided by the official JMA time-series feed, so the pipeline keeps the Open-Meteo apparent-temperature offset when available.
-
-This keeps the model operational even if one weather source is temporarily unavailable.
+- Future forecast weather comes from official JMA time-series data only.
+- If official JMA forecast data is unavailable, the weather fetch fails visibly instead of switching to Open-Meteo JMA.
+- Apparent temperature for future forecast rows falls back to official `temp_c` because the official JMA forecast feed does not provide hourly humidity.
+- Recent AMeDAS observations can still adjust near-term apparent temperature during intraday runs.
 
 ---
 
@@ -63,4 +62,4 @@ Added tests cover:
 - Parsing official JMA three-hourly temperature data.
 - Interpolating official JMA data to 24 hourly rows.
 - Preserving official daily minimum and maximum temperatures.
-- Falling back to Open-Meteo JMA when official JMA data is unavailable.
+- The 2026-05-21 follow-up covers removal of Open-Meteo JMA forecast fallback.

@@ -31,6 +31,7 @@ _SAMPLE_RESPONSE = {
         ],
         "temperature_2m": [5.2, 4.8, 4.5, 4.1],
         "apparent_temperature": [3.2, 2.8, 2.5, 2.1],
+        "relative_humidity_2m": [70, 72, 74, 76],
     }
 }
 
@@ -39,6 +40,7 @@ _SAMPLE_WITH_NULL = {
         "time": ["2024-01-01T00:00", "2024-01-01T01:00"],
         "temperature_2m": [5.2, None],
         "apparent_temperature": [3.2, None],
+        "relative_humidity_2m": [70, None],
     }
 }
 
@@ -69,16 +71,22 @@ _JMA_AMEDAS_POINT_RESPONSE = {
         "prefNumber": 44,
         "observationNumber": 132,
         "temp": [24.6, 0],
+        "humidity": [70, 0],
+        "wind": [1.0, 0],
     },
     "20260518091000": {
         "prefNumber": 44,
         "observationNumber": 132,
         "temp": [24.9, 0],
+        "humidity": [72, 0],
+        "wind": [1.1, 0],
     },
     "20260518100000": {
         "prefNumber": 44,
         "observationNumber": 132,
         "temp": [25.6, 0],
+        "humidity": [75, 0],
+        "wind": [1.0, 0],
     },
 }
 
@@ -109,7 +117,9 @@ def _make_mock_fetch(data: dict):
 def test_parse_response_shape():
     df = _parse_response(_SAMPLE_RESPONSE)
     assert len(df) == 4
-    assert list(df.columns) == ["ts", "temp_c", "apparent_temp_c"]
+    assert list(df.columns) == [
+        "ts", "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index",
+    ]
 
 
 def test_parse_response_tz_is_jst():
@@ -122,6 +132,8 @@ def test_parse_response_values():
     assert df["temp_c"].iloc[0] == pytest.approx(5.2)
     assert df["temp_c"].iloc[1] == pytest.approx(4.8)
     assert df["apparent_temp_c"].iloc[0] == pytest.approx(3.2)
+    assert df["humidity_pct"].iloc[0] == pytest.approx(70.0)
+    assert df["discomfort_index"].iloc[0] == pytest.approx(44.1)
 
 
 def test_parse_response_null_becomes_nan():
@@ -129,6 +141,8 @@ def test_parse_response_null_becomes_nan():
     df = _parse_response(_SAMPLE_WITH_NULL)
     assert math.isnan(df["temp_c"].iloc[1])
     assert math.isnan(df["apparent_temp_c"].iloc[1])
+    assert math.isnan(df["humidity_pct"].iloc[1])
+    assert math.isnan(df["discomfort_index"].iloc[1])
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +183,9 @@ def test_parse_jma_amedas_point_keeps_exact_hourly_observations():
     assert len(df) == 2
     assert df["ts"].iloc[0] == pd.Timestamp("2026-05-18T09:00:00+09:00")
     assert df["temp_c"].iloc[0] == pytest.approx(24.6)
-    assert df["apparent_temp_c"].iloc[1] == pytest.approx(25.6)
+    assert df["humidity_pct"].iloc[1] == pytest.approx(75.0)
+    assert df["discomfort_index"].iloc[1] == pytest.approx(75.3)
+    assert df["apparent_temp_c"].iloc[1] > df["temp_c"].iloc[1]
 
 
 def test_fetch_jma_observed_temps_fetches_three_hour_blocks():
@@ -251,7 +267,12 @@ def test_fetch_past_temps_uses_tokyo_center_coordinates():
 # ---------------------------------------------------------------------------
 
 def test_fetch_forecast_temps_returns_dataframe():
-    with _make_mock_fetch(_SAMPLE_RESPONSE):
+    official = _parse_jma_official_timeseries(
+        _JMA_OFFICIAL_TIMESERIES_RESPONSE,
+        days=1,
+        today=date(2026, 5, 18),
+    )
+    with patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official):
         result = fetch_forecast_temps(days=1)
     assert isinstance(result, pd.DataFrame)
     assert "temp_c" in result.columns
@@ -259,52 +280,59 @@ def test_fetch_forecast_temps_returns_dataframe():
 
 
 def test_fetch_forecast_temps_passes_days():
-    with patch("python.etl.fetch_weather._fetch_json", return_value=_SAMPLE_RESPONSE) as mock:
-        fetch_forecast_temps(days=5)
-    params = mock.call_args[0][1]
-    assert params["forecast_days"] == 5
-
-
-def test_fetch_forecast_temps_uses_official_jma_timeseries_endpoint():
-    with patch("python.etl.fetch_weather._fetch_json", return_value=_SAMPLE_RESPONSE) as mock:
-        fetch_forecast_temps(days=5)
-    url = mock.call_args_list[0][0][0]
-    assert url == "https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json"
-
-
-def test_fetch_forecast_temps_uses_jma_endpoint():
-    with patch("python.etl.fetch_weather._fetch_json", return_value=_SAMPLE_RESPONSE) as mock:
-        fetch_forecast_temps(days=5)
-    url = mock.call_args[0][0]
-    assert url == "https://api.open-meteo.com/v1/jma"
-
-
-def test_fetch_forecast_temps_uses_tokyo_center_coordinates():
-    with patch("python.etl.fetch_weather._fetch_json", return_value=_SAMPLE_RESPONSE) as mock:
-        fetch_forecast_temps(days=5)
-    params = mock.call_args[0][1]
-    assert params["latitude"] == pytest.approx(35.6589)
-    assert params["longitude"] == pytest.approx(139.7066)
-
-
-def test_fetch_forecast_temps_prefers_official_jma_temperature():
-    fallback_response = {
-        "hourly": {
-            "time": [f"2026-05-18T{hour:02d}:00" for hour in range(24)],
-            "temperature_2m": [20.0] * 24,
-            "apparent_temperature": [21.0] * 24,
-        }
-    }
     official = _parse_jma_official_timeseries(
         _JMA_OFFICIAL_TIMESERIES_RESPONSE,
         days=1,
         today=date(2026, 5, 18),
     )
-    fallback = _parse_response(fallback_response)
+    with patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official) as mock:
+        fetch_forecast_temps(days=5)
+    mock.assert_called_once_with(days=5)
+
+
+def test_fetch_forecast_temps_uses_official_jma_timeseries_endpoint():
+    official = _parse_jma_official_timeseries(
+        _JMA_OFFICIAL_TIMESERIES_RESPONSE,
+        days=1,
+        today=date(2026, 5, 18),
+    )
+    with (
+        patch("python.etl.fetch_weather._parse_jma_official_timeseries", return_value=official),
+        patch("python.etl.fetch_weather._fetch_json", return_value={}) as mock,
+    ):
+        fetch_forecast_temps(days=5)
+    url = mock.call_args[0][0]
+    assert url == "https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json"
+
+
+def test_fetch_forecast_temps_passes_no_open_meteo_coordinates():
+    official = _parse_jma_official_timeseries(
+        _JMA_OFFICIAL_TIMESERIES_RESPONSE,
+        days=1,
+        today=date(2026, 5, 18),
+    )
+    with (
+        patch("python.etl.fetch_weather._parse_jma_official_timeseries", return_value=official),
+        patch("python.etl.fetch_weather._fetch_json", return_value={}) as mock,
+    ):
+        fetch_forecast_temps(days=5)
+    params = mock.call_args[0][1]
+    assert params == {}
+
+
+def test_fetch_forecast_temps_uses_official_jma_only():
+    official = _parse_jma_official_timeseries(
+        _JMA_OFFICIAL_TIMESERIES_RESPONSE,
+        days=1,
+        today=date(2026, 5, 18),
+    )
 
     with (
         patch("python.etl.fetch_weather.fetch_jma_official_forecast_temps", return_value=official),
-        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=fallback),
+        patch(
+            "python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps",
+            side_effect=AssertionError("Open-Meteo JMA fallback must not be used"),
+        ),
     ):
         result = fetch_forecast_temps(days=1)
 
@@ -315,20 +343,18 @@ def test_fetch_forecast_temps_prefers_official_jma_temperature():
     assert peak["apparent_temp_c"] == pytest.approx(29.0)
 
 
-def test_fetch_forecast_temps_falls_back_to_open_meteo_when_official_fails():
-    fallback = _parse_response(_SAMPLE_RESPONSE)
-
+def test_fetch_forecast_temps_raises_when_official_jma_fails():
     with (
         patch(
             "python.etl.fetch_weather.fetch_jma_official_forecast_temps",
             side_effect=OSError("official unavailable"),
         ),
-        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps", return_value=fallback),
+        patch("python.etl.fetch_weather._fetch_open_meteo_jma_forecast_temps") as fallback,
+        pytest.raises(OSError),
     ):
-        result = fetch_forecast_temps(days=1)
+        fetch_forecast_temps(days=1)
 
-    assert len(result) == 4
-    assert result["temp_c"].iloc[0] == pytest.approx(5.2)
+    fallback.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

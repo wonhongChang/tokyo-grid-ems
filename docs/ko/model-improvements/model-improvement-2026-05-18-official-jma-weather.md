@@ -32,15 +32,14 @@ https://www.jma.go.jp/bosai/jmatile/data/wdist/VPFD/130010.json
 
 ---
 
-## fallback 동작
+## 현재 소스 정책
 
-Open-Meteo JMA는 계속 fallback 및 보조 입력으로 사용한다.
+이 문서는 예보 입력을 공식 JMA 기준으로 옮긴 첫 단계를 기록한다. 2026-05-21 후속 개선 이후에는 Open-Meteo JMA를 운영 예보 fallback으로 사용하지 않는다.
 
-- 일본 기상청 공식 시계열 예보를 가져오지 못하면 Open-Meteo JMA를 사용한다.
-- 공식 JMA 데이터가 일부 시간대만 제공되면 부족한 시간은 Open-Meteo가 채운다.
-- 공식 JMA 시계열에는 체감온도가 없으므로, 가능하면 Open-Meteo의 체감온도 차이를 유지한다.
-
-이렇게 하면 한쪽 날씨 소스가 일시적으로 실패해도 모델 운영은 계속된다.
+- 미래 예보 기상 입력은 공식 JMA 시계열 데이터만 사용한다.
+- 공식 JMA 예보를 가져오지 못하면 Open-Meteo JMA로 조용히 전환하지 않고 에러로 드러낸다.
+- 공식 JMA 예보 피드는 시간별 습도를 제공하지 않으므로, 미래 예보 row의 체감온도는 공식 `temp_c`로 대체한다.
+- 단, intraday 실행 중에는 최신 AMeDAS 관측값으로 가까운 미래 체감온도를 제한적으로 보정할 수 있다.
 
 ---
 
@@ -63,4 +62,4 @@ Open-Meteo JMA는 계속 fallback 및 보조 입력으로 사용한다.
 - 일본 기상청 공식 3시간 기온 데이터 파싱
 - 3시간 기온을 24개 시간별 행으로 보간
 - 공식 일 최저/최고기온 유지
-- 공식 JMA 데이터 실패 시 Open-Meteo JMA fallback
+- Open-Meteo JMA 예보 fallback 제거는 2026-05-21 후속 개선에서 다룬다.

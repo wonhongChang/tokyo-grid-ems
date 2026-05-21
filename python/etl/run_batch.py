@@ -136,7 +136,7 @@ def save_state(out_dir: Path, state: dict) -> None:
 
 _CACHE_COLS = [
     "ts", "actual_mw", "forecast_mw", "usage_pct", "supply_mw",
-    "temp_c", "apparent_temp_c",
+    "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index",
 ]
 _CACHE_PATH_NAME = ".hourly_cache.parquet"
 
@@ -147,10 +147,9 @@ def load_hourly_cache(out_dir: Path) -> pd.DataFrame:
         df = pd.read_parquet(p)
         if "ts" in df.columns and df["ts"].dt.tz is None:
             df["ts"] = df["ts"].dt.tz_localize("Asia/Tokyo")
-        if "temp_c" not in df.columns:
-            df["temp_c"] = float("nan")
-        if "apparent_temp_c" not in df.columns:
-            df["apparent_temp_c"] = float("nan")
+        for col in ["temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index"]:
+            if col not in df.columns:
+                df[col] = float("nan")
         return df
     return pd.DataFrame(columns=_CACHE_COLS)
 
@@ -848,34 +847,29 @@ def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> p
         if col not in result.columns:
             result[col] = float("nan")
 
-    weather_cols = ["ts", "temp_c"]
-    if "apparent_temp_c" in weather.columns:
-        weather_cols.append("apparent_temp_c")
+    weather_cols = [
+        col
+        for col in ["ts", "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index"]
+        if col in weather.columns
+    ]
     weather_temp = weather[weather_cols].copy()
-    forecast_temp_col = "_forecast_temp_c"
-    forecast_apparent_temp_col = "_forecast_apparent_temp_c"
+    forecast_col_map = {
+        col: f"_forecast_{col}"
+        for col in weather_cols
+        if col != "ts"
+    }
     result = result.merge(
-        weather_temp.rename(columns={
-            "temp_c": forecast_temp_col,
-            "apparent_temp_c": forecast_apparent_temp_col,
-        }),
+        weather_temp.rename(columns=forecast_col_map),
         on="ts",
         how="left",
     )
-    can_refresh_temp = result["actual_mw"].isna() & result[forecast_temp_col].notna()
-    result.loc[can_refresh_temp, "temp_c"] = result.loc[can_refresh_temp, forecast_temp_col]
-    if forecast_apparent_temp_col in result.columns:
-        can_refresh_apparent_temp = (
+    for col, forecast_col in forecast_col_map.items():
+        can_refresh = (
             result["actual_mw"].isna()
-            & result[forecast_apparent_temp_col].notna()
+            & result[forecast_col].notna()
         )
-        result.loc[can_refresh_apparent_temp, "apparent_temp_c"] = (
-            result.loc[can_refresh_apparent_temp, forecast_apparent_temp_col]
-        )
-    result = result.drop(columns=[
-        col for col in [forecast_temp_col, forecast_apparent_temp_col]
-        if col in result.columns
-    ])
+        result.loc[can_refresh, col] = result.loc[can_refresh, forecast_col]
+    result = result.drop(columns=list(forecast_col_map.values()))
 
     existing_ts = set(result["ts"])
     new_rows = weather_temp[~weather_temp["ts"].isin(existing_ts)].copy()
@@ -966,16 +960,25 @@ def _apply_weather_forecast_bias_correction(
     temp_bias = float((comparison["temp_c"] - comparison["_forecast_temp_c"]).median())
     temp_bias = max(-max_abs_bias_c, min(max_abs_bias_c, temp_bias))
     if abs(temp_bias) < min_abs_bias_c:
-        return cache
+        temp_bias = 0.0
 
     apparent_bias = temp_bias
+    has_apparent_bias = False
     if "apparent_temp_c" in comparison.columns and "_forecast_apparent_temp_c" in comparison.columns:
         apparent_comparison = comparison.dropna(subset=["apparent_temp_c", "_forecast_apparent_temp_c"])
         if not apparent_comparison.empty:
+            has_apparent_bias = True
             apparent_bias = float(
                 (apparent_comparison["apparent_temp_c"] - apparent_comparison["_forecast_apparent_temp_c"]).median()
             )
             apparent_bias = max(-max_abs_bias_c, min(max_abs_bias_c, apparent_bias))
+            if abs(apparent_bias) < min_abs_bias_c:
+                apparent_bias = 0.0
+
+    if not has_apparent_bias:
+        apparent_bias = temp_bias
+    if temp_bias == 0.0 and apparent_bias == 0.0:
+        return cache
 
     future_mask = (
         (result["ts"].dt.date == now_ts.date())
@@ -988,8 +991,9 @@ def _apply_weather_forecast_bias_correction(
 
     for step, idx in enumerate(future_index):
         decay = decay_per_hour ** step
-        result.at[idx, "temp_c"] = result.at[idx, "temp_c"] + temp_bias * decay
-        if pd.notna(result.at[idx, "apparent_temp_c"]):
+        if temp_bias != 0.0 and pd.notna(result.at[idx, "temp_c"]):
+            result.at[idx, "temp_c"] = result.at[idx, "temp_c"] + temp_bias * decay
+        if apparent_bias != 0.0 and pd.notna(result.at[idx, "apparent_temp_c"]):
             result.at[idx, "apparent_temp_c"] = result.at[idx, "apparent_temp_c"] + apparent_bias * decay
 
     latest_observed_hour = comparison["ts"].max().hour
@@ -997,7 +1001,7 @@ def _apply_weather_forecast_bias_correction(
     last_adjusted_hour = int(result.loc[future_index[-1], "ts"].hour)
     print(
         "[WEATHER] Forecast bias correction "
-        f"{now_ts.date()}: bias={temp_bias:+.1f}C "
+        f"{now_ts.date()}: temp_bias={temp_bias:+.1f}C apparent_bias={apparent_bias:+.1f}C "
         f"(samples={len(comparison)}, latest_obs={latest_observed_hour:02d}:00, "
         f"hours={first_adjusted_hour:02d}-{last_adjusted_hour:02d})"
     )

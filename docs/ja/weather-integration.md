@@ -21,7 +21,16 @@
 
 ---
 
-## データソース: Open-Meteo
+## 現在の運用ソース方針
+
+- 将来予報の気温は、気象庁公式の東京時系列データのみを使用する。
+- 直近の観測気象は、気象庁AMeDAS東京地点を使用し、利用可能な場合は湿度も保持する。
+- 運用ソースの一貫性を優先するため、Open-Meteo JMA予報fallbackは無効化する。
+- Open-Meteo archiveは、古いキャッシュ欠損を埋める過去backfill用途に限って残る場合がある。
+
+---
+
+## 過去backfillソース: Open-Meteo
 
 ```
 API: https://api.open-meteo.com/v1/forecast
@@ -202,13 +211,13 @@ tomorrow_fc = forecaster.predict(tomorrow, extended_cache)
 
 | タイミング | 気温ソース | 備考 |
 |---|---|---|
-| 訓練（過去全体） | Open-Meteo archive API | 過去 `temp_c` / `apparent_temp_c` は `.hourly_cache.parquet` に保存 |
-| 昨日予測 | 実績気温（確定） | 正確 |
-| 今日予測 | 実績気温（午前）+ 予測気温（午後） | 混合 |
-| 明日予測 | Open-Meteo 48h予測気温 | ±1〜2°C誤差許容 |
+| 訓練（過去全体） | キャッシュ済みの過去気象データ | 直近の実績rowは気象庁AMeDASを優先し、古いキャッシュ欠損はOpen-Meteo archive backfillを使う場合がある |
+| 昨日予測 | 確定した過去実績気象 | 直近の日付はAMeDAS観測を優先 |
+| 今日予測 | AMeDAS観測 + 気象庁公式予報 | intraday実行時にAMeDASで近い将来の体感温度を補正可能 |
+| 明日予測 | 気象庁公式時系列予報 | Open-Meteo JMA予報fallbackは使用しない |
 
 > 明日の気温予測誤差がモデル誤差に伝播する。
-> 夏の猛暑期は予測誤差が大きくなる可能性があるため、quantileモデルと異常検知結果はその不確実性も含めて解釈する必要があります。
+> 気象庁公式予報には時間別湿度がないため、湿度はAMeDAS観測が利用可能になってから使用します。
 
 ---
 

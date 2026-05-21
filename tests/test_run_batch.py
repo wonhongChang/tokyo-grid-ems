@@ -145,11 +145,15 @@ def test_extend_cache_refreshes_existing_virtual_forecast_weather(monkeypatch):
         "supply_mw": float("nan"),
         "temp_c": 24.5,
         "apparent_temp_c": 25.5,
+        "humidity_pct": 60.0,
+        "discomfort_index": 72.0,
     }])
     weather = pd.DataFrame({
         "ts": [ts],
         "temp_c": [21.8],
         "apparent_temp_c": [20.8],
+        "humidity_pct": [88.0],
+        "discomfort_index": [74.1],
     })
     monkeypatch.setattr(
         "python.etl.fetch_weather.fetch_forecast_temps",
@@ -161,6 +165,8 @@ def test_extend_cache_refreshes_existing_virtual_forecast_weather(monkeypatch):
     assert len(result) == 1
     assert result["temp_c"].iloc[0] == pytest.approx(21.8)
     assert result["apparent_temp_c"].iloc[0] == pytest.approx(20.8)
+    assert result["humidity_pct"].iloc[0] == pytest.approx(88.0)
+    assert result["discomfort_index"].iloc[0] == pytest.approx(74.1)
 
 
 def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
@@ -173,11 +179,15 @@ def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
         "supply_mw": 36_000.0,
         "temp_c": 24.5,
         "apparent_temp_c": 25.5,
+        "humidity_pct": 60.0,
+        "discomfort_index": 72.0,
     }])
     weather = pd.DataFrame({
         "ts": [ts],
         "temp_c": [21.8],
         "apparent_temp_c": [20.8],
+        "humidity_pct": [88.0],
+        "discomfort_index": [74.1],
     })
     monkeypatch.setattr(
         "python.etl.fetch_weather.fetch_forecast_temps",
@@ -190,6 +200,8 @@ def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
     assert result["actual_mw"].iloc[0] == pytest.approx(30_000.0)
     assert result["temp_c"].iloc[0] == pytest.approx(24.5)
     assert result["apparent_temp_c"].iloc[0] == pytest.approx(25.5)
+    assert result["humidity_pct"].iloc[0] == pytest.approx(60.0)
+    assert result["discomfort_index"].iloc[0] == pytest.approx(72.0)
 
 
 def test_weather_forecast_bias_correction_raises_near_term_morning_forecast(monkeypatch):
@@ -280,6 +292,49 @@ def test_weather_forecast_bias_correction_lowers_cold_biased_forecast(monkeypatc
     assert by_hour[8]["temp_c"] == pytest.approx(6.0)
     assert by_hour[9]["temp_c"] == pytest.approx(7.0)
     assert by_hour[10]["temp_c"] == pytest.approx(8.0)
+
+
+def test_weather_forecast_bias_correction_applies_humid_apparent_bias(monkeypatch):
+    base = pd.Timestamp("2024-06-01T08:00:00+09:00")
+    cache = pd.DataFrame([{
+        "ts": base + pd.Timedelta(hours=i),
+        "actual_mw": float("nan"),
+        "forecast_mw": float("nan"),
+        "usage_pct": float("nan"),
+        "supply_mw": float("nan"),
+        "temp_c": 22.0,
+        "apparent_temp_c": 22.0,
+    } for i in range(5)])
+    observed_weather = pd.DataFrame({
+        "ts": [base, base + pd.Timedelta(hours=1)],
+        "temp_c": [22.2, 22.2],
+        "apparent_temp_c": [25.0, 25.0],
+    })
+    monkeypatch.setattr(
+        "python.etl.fetch_weather.fetch_past_temps",
+        lambda start, end: observed_weather,
+    )
+
+    result = _apply_weather_forecast_bias_correction(
+        cache,
+        {
+            "weather_forecast_bias_correction": {
+                "enabled": True,
+                "lookback_hours": 4,
+                "observation_lag_hours": 1,
+                "horizon_hours": 2,
+                "min_abs_bias_c": 1.0,
+                "max_abs_bias_c": 3.0,
+                "decay_per_hour": 0.5,
+            }
+        },
+        now=pd.Timestamp("2024-06-01T10:30:00+09:00"),
+    )
+
+    by_hour = {int(row["ts"].hour): row for _, row in result.iterrows()}
+    assert by_hour[10]["temp_c"] == pytest.approx(22.0)
+    assert by_hour[10]["apparent_temp_c"] == pytest.approx(25.0)
+    assert by_hour[11]["apparent_temp_c"] == pytest.approx(23.5)
 
 
 def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):
