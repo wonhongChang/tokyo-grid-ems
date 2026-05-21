@@ -20,6 +20,15 @@ class IntradayCorrectionResult:
     negative_adjustment_damped: bool = False
     shape_guard_applied: bool = False
     observed_drop_relaxation_active: bool = False
+    midday_residual_deweighted: bool = False
+
+
+def _is_nonworking_day(ts: pd.Timestamp) -> bool:
+    try:
+        import jpholiday
+        return ts.weekday() >= 5 or bool(jpholiday.is_holiday(ts.date()))
+    except ImportError:
+        return ts.weekday() >= 5
 
 
 class IntradayResidualCorrector:
@@ -40,6 +49,20 @@ class IntradayResidualCorrector:
         )
         negative_damping_multiplier = float(negative_damping_config.get("multiplier", 1.0))
         self._negative_damping_multiplier = min(max(negative_damping_multiplier, 0.0), 1.0)
+        midday_deweight_config = correction_config.get("midday_residual_deweight", {})
+        self._midday_deweight_enabled = bool(
+            midday_deweight_config.get("enabled", True)
+        )
+        self._midday_deweight_hours = {
+            int(hour) for hour in midday_deweight_config.get("hours", [12])
+        }
+        self._midday_deweight_weight = min(
+            max(float(midday_deweight_config.get("weight", 0.25)), 0.0),
+            1.0,
+        )
+        self._midday_deweight_min_abs_residual_mw = float(
+            midday_deweight_config.get("min_abs_residual_mw", 600.0)
+        )
         shape_guard_config = correction_config.get("shape_guard", {})
         self._shape_guard_enabled = bool(shape_guard_config.get("enabled", False))
         self._shape_guard_min_reference_hour = int(
@@ -118,6 +141,16 @@ class IntradayResidualCorrector:
             if observed_drop_mw >= self._observed_drop_threshold_mw:
                 return True
         return False
+
+    def _residual_weight(self, forecast_ts: pd.Timestamp, residual_mw: float) -> float:
+        if (
+            not self._midday_deweight_enabled
+            or forecast_ts.hour not in self._midday_deweight_hours
+            or _is_nonworking_day(forecast_ts)
+            or abs(residual_mw) < self._midday_deweight_min_abs_residual_mw
+        ):
+            return 1.0
+        return self._midday_deweight_weight
 
     @staticmethod
     def _shift_forecast(forecast: HourlyForecast, shift_mw: float) -> HourlyForecast:
@@ -224,19 +257,21 @@ class IntradayResidualCorrector:
             pd.Timestamp(forecast.ts).hour: forecast
             for forecast in forecasts
         }
-        residuals_by_hour: list[tuple[int, float]] = []
+        residuals_by_hour: list[tuple[int, float, float]] = []
         actual_mw_by_hour: dict[int, float] = {}
 
         for point in actual_series:
             actual_mw = point.get("actualMw")
             if actual_mw is None or not point.get("ts"):
                 continue
-            hour = pd.Timestamp(point["ts"]).hour
+            point_ts = pd.Timestamp(point["ts"])
+            hour = point_ts.hour
             forecast = forecast_by_hour.get(hour)
             if forecast is None:
                 continue
             actual_mw_by_hour[hour] = float(actual_mw)
-            residuals_by_hour.append((hour, float(actual_mw) - float(forecast.forecast_mw)))
+            residual = float(actual_mw) - float(forecast.forecast_mw)
+            residuals_by_hour.append((hour, residual, self._residual_weight(point_ts, residual)))
 
         residuals_by_hour.sort(key=lambda item: item[0])
         last_observed_hour = residuals_by_hour[-1][0] if residuals_by_hour else None
@@ -285,7 +320,18 @@ class IntradayResidualCorrector:
                 False,
             )
 
-        base_adjustment_mw = float(np.mean([residual for _, residual in recent_residuals]))
+        recent_weights = np.array([weight for _, _, weight in recent_residuals], dtype=float)
+        recent_residual_values = np.array(
+            [residual for _, residual, _ in recent_residuals],
+            dtype=float,
+        )
+        if float(recent_weights.sum()) <= 0.0:
+            base_adjustment_mw = float(np.mean(recent_residual_values))
+        else:
+            base_adjustment_mw = float(
+                np.average(recent_residual_values, weights=recent_weights)
+            )
+        midday_residual_deweighted = bool(np.any(recent_weights < 1.0))
         base_adjustment_mw *= self._shrinkage
         negative_adjustment_damped = (
             self._negative_damping_enabled
@@ -344,4 +390,5 @@ class IntradayResidualCorrector:
             negative_adjustment_damped,
             shape_guard_applied,
             observed_drop_relaxation_active,
+            midday_residual_deweighted,
         )

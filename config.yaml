@@ -32,6 +32,11 @@ intraday_correction:
     enabled: true
     min_reference_hour: 12   # after midday, avoid over-chasing negative residuals
     multiplier: 0.5          # retain half of the downward residual correction
+  midday_residual_deweight:
+    enabled: true
+    hours: [12]              # lunch bucket only; applies on business days
+    weight: 0.25             # keep a trace of the residual but do not let it steer afternoon
+    min_abs_residual_mw: 600 # only treat a large lunch miss as a one-slot shock
   shape_guard:
     enabled: true
     min_reference_hour: 12   # only after enough same-day context exists
@@ -114,4 +119,9 @@ adjustment:
     min_negative_delta_mw: 500  # require recent same-business shape to show a real dip
     min_excess_mw: 300          # ignore small differences between forecast and shape context
     shrinkage: 0.5              # partial correction; keeps LightGBM as the primary forecast
+    triggered_shrinkage: 0.75   # stronger only when same-day morning demand is already softening
     max_downward_adjustment_mw: 900
+    triggered_max_downward_adjustment_mw: 1200
+    same_day_softening_min_latest_hour: 10
+    same_day_softening_delta_mw: -300
+    use_recent_quantile_when_softening: true

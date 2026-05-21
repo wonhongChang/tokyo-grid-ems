@@ -80,6 +80,12 @@ def load_config(config_path: Path) -> dict:
                 "min_reference_hour": 12,
                 "multiplier": 0.5,
             },
+            "midday_residual_deweight": {
+                "enabled": True,
+                "hours": [12],
+                "weight": 0.25,
+                "min_abs_residual_mw": 600,
+            },
             "shape_guard": {
                 "enabled": True,
                 "min_reference_hour": 12,
@@ -99,6 +105,21 @@ def load_config(config_path: Path) -> dict:
                     "skip_shape_guard": True,
                     "max_decrease_mw_by_lead_hour": [2000, 3600, 5000],
                 },
+            },
+        },
+        "adjustment": {
+            "midday_transition_guard": {
+                "enabled": True,
+                "hours": [12],
+                "min_negative_delta_mw": 500,
+                "min_excess_mw": 300,
+                "shrinkage": 0.5,
+                "triggered_shrinkage": 0.75,
+                "max_downward_adjustment_mw": 900,
+                "triggered_max_downward_adjustment_mw": 1200,
+                "same_day_softening_min_latest_hour": 10,
+                "same_day_softening_delta_mw": -300,
+                "use_recent_quantile_when_softening": True,
             },
         },
         "forecast_snapshots": {

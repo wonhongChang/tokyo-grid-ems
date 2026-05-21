@@ -180,6 +180,65 @@ def test_intraday_correction_damps_afternoon_negative_residual():
     assert result.forecasts[15].forecast_mw == pytest.approx(19_500.0)
 
 
+def test_intraday_correction_deweights_large_business_day_midday_residual():
+    target = date(2026, 5, 11)  # Monday
+    forecasts = _make_forecasts(target, 20_000.0)
+    actual_series = [
+        _actual_point(target, 10, 20_000.0),
+        _actual_point(target, 11, 20_000.0),
+        _actual_point(target, 12, 18_000.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "decay_per_hour": 1.0,
+            "midday_residual_deweight": {
+                "enabled": True,
+                "hours": [12],
+                "weight": 0.25,
+                "min_abs_residual_mw": 600.0,
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.midday_residual_deweighted is True
+    assert result.base_adjustment_mw == pytest.approx(-222.2, abs=0.1)
+    assert result.forecasts[13].forecast_mw == pytest.approx(19_777.8)
+
+
+def test_intraday_correction_keeps_weekend_midday_residual_weight():
+    target = date(2026, 5, 16)  # Saturday
+    forecasts = _make_forecasts(target, 20_000.0)
+    actual_series = [
+        _actual_point(target, 10, 20_000.0),
+        _actual_point(target, 11, 20_000.0),
+        _actual_point(target, 12, 18_000.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "decay_per_hour": 1.0,
+            "midday_residual_deweight": {
+                "enabled": True,
+                "hours": [12],
+                "weight": 0.25,
+                "min_abs_residual_mw": 600.0,
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.midday_residual_deweighted is False
+    assert result.base_adjustment_mw == pytest.approx(-666.7, abs=0.1)
+
+
 def test_intraday_correction_keeps_morning_negative_residual():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)

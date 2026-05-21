@@ -842,11 +842,36 @@ def test_inference_midday_transition_context_uses_prior_business_day_shape():
     assert hour_12["lag_24h_hourly_delta"] == pytest.approx(-1_400.0)
     assert hour_12["business_midday_x_lag_24h_delta"] == pytest.approx(-1_400.0)
     assert hour_12["recent_same_business_type_delta_mean"] == pytest.approx(-1_400.0)
+    assert hour_12["recent_same_business_type_delta_q25"] == pytest.approx(-1_400.0)
     assert hour_12["business_midday_x_recent_delta_mean"] == pytest.approx(-1_400.0)
+    assert hour_12["business_midday_x_recent_delta_q25"] == pytest.approx(-1_400.0)
     assert hour_13["lag_24h_hourly_delta"] == pytest.approx(1_000.0)
     assert hour_13["business_midday_x_lag_24h_delta"] == pytest.approx(1_000.0)
     assert hour_10["business_midday_x_lag_24h_delta"] == pytest.approx(0.0)
     assert hour_10["business_midday_x_recent_delta_mean"] == pytest.approx(0.0)
+    assert hour_10["business_midday_x_recent_delta_q25"] == pytest.approx(0.0)
+
+
+def test_inference_midday_context_includes_same_day_softening():
+    start = pd.Timestamp("2025-01-01", tz=JST)
+    n = 30 * 24
+    timestamps = pd.date_range(start, periods=n, freq="h")
+    df = pd.DataFrame({
+        "ts": timestamps,
+        "actual_mw": [30_000.0 + ts.hour * 100.0 for ts in timestamps],
+        "temp_c": np.full(n, 20.0),
+    })
+    target = date(2025, 1, 20)  # Monday
+    df.loc[df["ts"].dt.date == target, "actual_mw"] = np.nan
+    df.loc[df["ts"] == pd.Timestamp("2025-01-20T10:00:00+09:00"), "actual_mw"] = 34_000.0
+    df.loc[df["ts"] == pd.Timestamp("2025-01-20T11:00:00+09:00"), "actual_mw"] = 33_300.0
+
+    out = build_inference_features(df, target, include_context=True)
+    hour_12 = out[out["hour"] == 12].iloc[0]
+
+    assert hour_12["same_day_latest_actual_hour"] == pytest.approx(11.0)
+    assert hour_12["same_day_latest_hourly_delta"] == pytest.approx(-700.0)
+    assert hour_12["business_midday_x_same_day_recent_delta_mean"] < 0.0
 
 
 def test_inference_lag_gap_positive_on_monday_after_low_weekend():

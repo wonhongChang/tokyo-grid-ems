@@ -73,8 +73,14 @@ INFERENCE_CONTEXT_COLS: list[str] = [
     "lag_24h_hourly_delta",
     "lag_168h_hourly_delta",
     "recent_same_business_type_delta_mean",
+    "recent_same_business_type_delta_q25",
+    "same_day_latest_actual_hour",
+    "same_day_latest_hourly_delta",
+    "same_day_recent_hourly_delta_mean",
     "business_midday_x_lag_24h_delta",
     "business_midday_x_recent_delta_mean",
+    "business_midday_x_recent_delta_q25",
+    "business_midday_x_same_day_recent_delta_mean",
 ]
 
 # Golden Week / Obon / New Year day-of-year zones (wider than the holiday itself
@@ -228,6 +234,12 @@ def _add_lag_gap_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 def _add_midday_transition_cols(df: pd.DataFrame) -> pd.DataFrame:
     """Expose learned weekday midday demand shape without hard-coding a dip."""
+    for column in [
+        "recent_same_business_type_delta_q25",
+        "same_day_recent_hourly_delta_mean",
+    ]:
+        if column not in df.columns:
+            df[column] = np.nan
     business_midday = (df["is_non_business_day"] == 0) & df["hour"].between(11, 13)
     df["business_midday_x_lag_24h_delta"] = df["lag_24h_hourly_delta"].where(
         business_midday,
@@ -235,6 +247,12 @@ def _add_midday_transition_cols(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["business_midday_x_recent_delta_mean"] = (
         df["recent_same_business_type_delta_mean"].where(business_midday, 0.0)
+    )
+    df["business_midday_x_recent_delta_q25"] = (
+        df["recent_same_business_type_delta_q25"].where(business_midday, 0.0)
+    )
+    df["business_midday_x_same_day_recent_delta_mean"] = (
+        df["same_day_recent_hourly_delta_mean"].where(business_midday, 0.0)
     )
     return df
 
@@ -669,6 +687,10 @@ def build_inference_features(
             (actual_rows["_is_non_business_day"] == is_target_non_business_day) &
             (actual_rows["ts"] < ts)
         ].dropna(subset=["_actual_hourly_delta"]).tail(8)
+        same_day_actuals_before_ts = actual_rows[
+            (actual_rows["ts"].dt.date == target_date) &
+            (actual_rows["ts"] < ts)
+        ].dropna(subset=["_actual_hourly_delta"])
 
         target_date_features = date_feature_map[target_date]
 
@@ -828,6 +850,27 @@ def build_inference_features(
             if len(recent_same_business_type_delta) > 0
             else np.nan
         )
+        recent_same_business_type_delta_q25 = (
+            float(recent_same_business_type_delta["_actual_hourly_delta"].quantile(0.25))
+            if len(recent_same_business_type_delta) >= 3
+            else recent_same_business_type_delta_mean
+        )
+        same_day_recent_deltas = same_day_actuals_before_ts.tail(2)
+        same_day_latest_actual_hour = (
+            int(same_day_actuals_before_ts["ts"].dt.hour.iloc[-1])
+            if len(same_day_actuals_before_ts) > 0
+            else np.nan
+        )
+        same_day_latest_hourly_delta = (
+            float(same_day_actuals_before_ts["_actual_hourly_delta"].iloc[-1])
+            if len(same_day_actuals_before_ts) > 0
+            else np.nan
+        )
+        same_day_recent_hourly_delta_mean = (
+            float(same_day_recent_deltas["_actual_hourly_delta"].mean())
+            if len(same_day_recent_deltas) > 0
+            else np.nan
+        )
         lag_last_biz_hour = _lag_day("last_biz_day")
         lag_last_nonhol_hour = _lag_day("last_nonhol_day")
         lag_24h_to_same_business_type_gap = recent_same_business_type_mean - lag_24h
@@ -857,6 +900,10 @@ def build_inference_features(
             ),
             "recent_same_business_type_mean": recent_same_business_type_mean,
             "recent_same_business_type_delta_mean": recent_same_business_type_delta_mean,
+            "recent_same_business_type_delta_q25": recent_same_business_type_delta_q25,
+            "same_day_latest_actual_hour": same_day_latest_actual_hour,
+            "same_day_latest_hourly_delta": same_day_latest_hourly_delta,
+            "same_day_recent_hourly_delta_mean": same_day_recent_hourly_delta_mean,
             "lag_last_biz_hour":      lag_last_biz_hour,
             "lag_last_nonhol_hour":   lag_last_nonhol_hour,
             "consec_holiday_len":     target_date_features["consec_holiday_len"],

@@ -8,6 +8,7 @@
 
 ## 2026-05
 
+- [2026-05-21 영업일 점심 단발 쇼크 guard](model-improvement-2026-05-21-midday-shock-guard.md)
 - [2026-05-21 예측 밴드 보정](model-improvement-2026-05-21-forecast-band-calibration.md)
 - [2026-05-21 공식 JMA 예보와 습도 기반 체감온도 보정](model-improvement-2026-05-21-official-jma-humidity-correction.md)
 - [2026-05-20 오후 기온 방향성 피처](model-improvement-2026-05-20-afternoon-weather-direction-features.md)

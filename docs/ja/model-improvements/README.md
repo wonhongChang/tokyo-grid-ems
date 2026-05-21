@@ -8,6 +8,8 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-05
 
+- [2026-05-21 営業日の昼時間帯ショック guard](model-improvement-2026-05-21-midday-shock-guard.md)
+
 - [2026-05-21 予測バンド補正](model-improvement-2026-05-21-forecast-band-calibration.md)
 - [2026-05-21 気象庁公式予報と湿度ベース体感温度補正](model-improvement-2026-05-21-official-jma-humidity-correction.md)
 - [2026-05-20 午後の気温方向性フィーチャー](model-improvement-2026-05-20-afternoon-weather-direction-features.md)

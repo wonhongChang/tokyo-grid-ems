@@ -186,11 +186,11 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-05-21 영업일 점심 단발 쇼크 guard](docs/ko/model-improvements/model-improvement-2026-05-21-midday-shock-guard.md)
+- [2026-05-21 예측 밴드 보정](docs/ko/model-improvements/model-improvement-2026-05-21-forecast-band-calibration.md)
+- [2026-05-21 공식 JMA 예보와 습도 기반 체감온도 보정](docs/ko/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
 - [2026-05-20 점심 시간대 전환 guard](docs/ko/model-improvements/model-improvement-2026-05-20-midday-transition-features.md)
 - [2026-05-20 상대 기온과 누적 열 관성 피처](docs/ko/model-improvements/model-improvement-2026-05-20-relative-morning-weather-features.md)
-- [2026-05-19 실측 수요 하락 기반 완화](docs/ko/model-improvements/model-improvement-2026-05-19-observed-demand-drop-relaxation.md)
-- [2026-05-19 오후 thermal inertia와 shape guard](docs/ko/model-improvements/model-improvement-2026-05-19-afternoon-thermal-inertia-shape-guard.md)
-- [2026-05-19 예측 스냅샷과 shape 진단](docs/ko/model-improvements/model-improvement-2026-05-19-operational-snapshots-and-shape-diagnostics.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 

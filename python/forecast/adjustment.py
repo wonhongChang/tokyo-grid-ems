@@ -461,8 +461,26 @@ class MiddayTransitionGuard:
         )
         self._min_excess_mw = float(guard_config.get("min_excess_mw", 300.0))
         self._shrinkage = float(guard_config.get("shrinkage", 0.5))
+        self._triggered_shrinkage = float(
+            guard_config.get("triggered_shrinkage", 0.75)
+        )
         self._max_downward_adjustment_mw = float(
             guard_config.get("max_downward_adjustment_mw", 900.0)
+        )
+        self._triggered_max_downward_adjustment_mw = float(
+            guard_config.get(
+                "triggered_max_downward_adjustment_mw",
+                self._max_downward_adjustment_mw,
+            )
+        )
+        self._same_day_softening_min_latest_hour = int(
+            guard_config.get("same_day_softening_min_latest_hour", 10)
+        )
+        self._same_day_softening_delta_mw = float(
+            guard_config.get("same_day_softening_delta_mw", -300.0)
+        )
+        self._use_recent_quantile_when_softening = bool(
+            guard_config.get("use_recent_quantile_when_softening", True)
         )
 
     @staticmethod
@@ -477,6 +495,18 @@ class MiddayTransitionGuard:
             p99_lower_mw=round(forecast.p99_lower_mw + shift_mw, 1),
             p99_upper_mw=round(forecast.p99_upper_mw + shift_mw, 1),
         )
+
+    def _same_day_softening_active(self, row) -> bool:
+        latest_hour = row.get("same_day_latest_actual_hour")
+        latest_delta = row.get("same_day_latest_hourly_delta")
+        recent_delta = row.get("same_day_recent_hourly_delta_mean")
+        if pd.isna(latest_hour) or float(latest_hour) < self._same_day_softening_min_latest_hour:
+            return False
+        for value in [latest_delta, recent_delta]:
+            if pd.notna(value) and np.isfinite(float(value)):
+                if float(value) <= self._same_day_softening_delta_mw:
+                    return True
+        return False
 
     def apply(self, forecasts: list, inference_features: pd.DataFrame) -> list:
         if not self._enabled or not forecasts:
@@ -507,6 +537,12 @@ class MiddayTransitionGuard:
                 value = row.get(column)
                 if pd.notna(value) and np.isfinite(float(value)):
                     deltas.append(float(value))
+
+            same_day_softening_active = self._same_day_softening_active(row)
+            if self._use_recent_quantile_when_softening and same_day_softening_active:
+                value = row.get("recent_same_business_type_delta_q25")
+                if pd.notna(value) and np.isfinite(float(value)):
+                    deltas.append(float(value))
             negative_deltas = [
                 value for value in deltas
                 if value <= -self._min_negative_delta_mw
@@ -514,7 +550,11 @@ class MiddayTransitionGuard:
             if not negative_deltas:
                 continue
 
-            expected_delta = float(np.mean(negative_deltas))
+            expected_delta = (
+                float(min(negative_deltas))
+                if same_day_softening_active
+                else float(np.mean(negative_deltas))
+            )
             previous_forecast = result[hour - 1]
             current_forecast = result[hour]
             forecast_delta = current_forecast.forecast_mw - previous_forecast.forecast_mw
@@ -523,10 +563,20 @@ class MiddayTransitionGuard:
                 continue
 
             target_mw = previous_forecast.forecast_mw + expected_delta
-            raw_shift = (target_mw - current_forecast.forecast_mw) * self._shrinkage
+            shrinkage = (
+                self._triggered_shrinkage
+                if same_day_softening_active
+                else self._shrinkage
+            )
+            max_downward_adjustment_mw = (
+                self._triggered_max_downward_adjustment_mw
+                if same_day_softening_active
+                else self._max_downward_adjustment_mw
+            )
+            raw_shift = (target_mw - current_forecast.forecast_mw) * shrinkage
             if raw_shift >= 0.0:
                 continue
-            shift = max(raw_shift, -self._max_downward_adjustment_mw)
+            shift = max(raw_shift, -max_downward_adjustment_mw)
             result[hour] = self._shift_forecast(current_forecast, shift)
 
         return result

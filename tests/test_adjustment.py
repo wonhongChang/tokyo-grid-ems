@@ -825,8 +825,17 @@ def _midday_guard_config(**overrides) -> dict:
     return {"adjustment": {"midday_transition_guard": guard_config}}
 
 
-def _midday_inf(is_non_business_day: int = 0, lag_delta: float = -900.0,
-                recent_delta: float = -800.0) -> pd.DataFrame:
+def _midday_inf(
+    is_non_business_day: int = 0,
+    lag_delta: float = -900.0,
+    recent_delta: float = -800.0,
+    recent_delta_q25: float | None = None,
+    same_day_latest_hour: float = np.nan,
+    same_day_latest_delta: float = np.nan,
+    same_day_recent_delta: float = np.nan,
+) -> pd.DataFrame:
+    if recent_delta_q25 is None:
+        recent_delta_q25 = recent_delta
     rows = []
     for hour in range(24):
         rows.append({
@@ -835,6 +844,18 @@ def _midday_inf(is_non_business_day: int = 0, lag_delta: float = -900.0,
             "lag_24h_hourly_delta": lag_delta if hour == 12 else 0.0,
             "recent_same_business_type_delta_mean": (
                 recent_delta if hour == 12 else 0.0
+            ),
+            "recent_same_business_type_delta_q25": (
+                recent_delta_q25 if hour == 12 else 0.0
+            ),
+            "same_day_latest_actual_hour": (
+                same_day_latest_hour if hour == 12 else np.nan
+            ),
+            "same_day_latest_hourly_delta": (
+                same_day_latest_delta if hour == 12 else np.nan
+            ),
+            "same_day_recent_hourly_delta_mean": (
+                same_day_recent_delta if hour == 12 else np.nan
             ),
         })
     return pd.DataFrame(rows)
@@ -909,3 +930,76 @@ def test_midday_transition_guard_requires_recent_negative_shape():
 
     assert result is not forecasts
     assert result[12].forecast_mw == pytest.approx(37_400.0)
+
+
+def test_midday_transition_guard_uses_lower_recent_quantile_when_same_day_softens():
+    target = date(2026, 5, 20)
+    forecasts = _make_raw_forecasts(target, 35_000.0)
+    forecasts[11] = HourlyForecast(
+        ts=forecasts[11].ts,
+        forecast_mw=36_000.0,
+        p95_lower_mw=35_000.0,
+        p95_upper_mw=37_000.0,
+        p99_lower_mw=34_000.0,
+        p99_upper_mw=38_000.0,
+    )
+    forecasts[12] = HourlyForecast(
+        ts=forecasts[12].ts,
+        forecast_mw=35_700.0,
+        p95_lower_mw=34_700.0,
+        p95_upper_mw=36_700.0,
+        p99_lower_mw=34_200.0,
+        p99_upper_mw=37_200.0,
+    )
+
+    result = MiddayTransitionGuard(_midday_guard_config()).apply(
+        forecasts,
+        _midday_inf(
+            lag_delta=-200.0,
+            recent_delta=-650.0,
+            recent_delta_q25=-1_000.0,
+            same_day_latest_hour=11.0,
+            same_day_latest_delta=-700.0,
+            same_day_recent_delta=-370.0,
+        ),
+    )
+
+    # Previous hour 36,000 + q25 transition -1,000 = 35,000 target.
+    # Triggered shrinkage 0.75 moves 35,700 down by 525 MW.
+    assert result[12].forecast_mw == pytest.approx(35_175.0)
+
+
+def test_midday_transition_guard_does_not_use_quantile_without_same_day_softening():
+    target = date(2026, 5, 20)
+    forecasts = _make_raw_forecasts(target, 35_000.0)
+    forecasts[11] = HourlyForecast(
+        ts=forecasts[11].ts,
+        forecast_mw=36_000.0,
+        p95_lower_mw=35_000.0,
+        p95_upper_mw=37_000.0,
+        p99_lower_mw=34_000.0,
+        p99_upper_mw=38_000.0,
+    )
+    forecasts[12] = HourlyForecast(
+        ts=forecasts[12].ts,
+        forecast_mw=35_700.0,
+        p95_lower_mw=34_700.0,
+        p95_upper_mw=36_700.0,
+        p99_lower_mw=34_200.0,
+        p99_upper_mw=37_200.0,
+    )
+
+    result = MiddayTransitionGuard(_midday_guard_config()).apply(
+        forecasts,
+        _midday_inf(
+            lag_delta=-200.0,
+            recent_delta=-650.0,
+            recent_delta_q25=-1_000.0,
+            same_day_latest_hour=11.0,
+            same_day_latest_delta=-100.0,
+            same_day_recent_delta=-50.0,
+        ),
+    )
+
+    # Without same-day softening, the guard keeps using the mean transition.
+    assert result[12].forecast_mw == pytest.approx(35_525.0)
