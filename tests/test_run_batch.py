@@ -697,6 +697,40 @@ def test_write_forecast_snapshot_retains_recent_files_and_indexes(tmp_path):
     assert root_index["dates"][0]["latest"]["fallbackActualHoursAtGeneration"] == 1
 
 
+def test_write_forecast_snapshot_can_include_build_stage_diagnostics(tmp_path):
+    target = date(2024, 1, 2)
+    forecasts = [_forecast_point_at(target, hour, 30_000.0 + hour) for hour in range(2)]
+    raw_forecasts = [_forecast_point_at(target, hour, 29_500.0 + hour) for hour in range(2)]
+    config = {
+        "forecast_snapshots": {
+            "enabled": True,
+            "retention_days": 2,
+            "max_per_day": 2,
+        },
+    }
+
+    snapshot_path = _write_forecast_snapshot(
+        tmp_path,
+        target,
+        forecasts,
+        config,
+        "lgbm_quantile_q50",
+        "2024-01-03T00:00:00+09:00",
+        "intraday",
+        True,
+        {
+            "raw_lgbm": raw_forecasts,
+            "pre_calibration": forecasts,
+        },
+    )
+
+    assert snapshot_path is not None
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["forecastBuild"]["stageSummary"]["raw_lgbm"]["hours"] == 2
+    assert snapshot["forecastBuild"]["series"][0]["forecastMwByStage"]["raw_lgbm"] == 29_500.0
+    assert snapshot["forecastBuild"]["series"][0]["forecastMwByStage"]["pre_calibration"] == 30_000.0
+
+
 def _recent_supply_cache(supply_mw: float = 34_000.0) -> pd.DataFrame:
     base = pd.Timestamp("2024-01-08T00:00:00+09:00")
     return pd.DataFrame({
@@ -1060,6 +1094,15 @@ def test_intraday_correction_uses_current_model_before_freezing_observed_hours(t
                 "decay_per_hour": 1.0,
             },
         },
+        stage_forecasts={
+            "raw_lgbm": [
+                _forecast_point_at(target, 10, 31_900.0),
+                _forecast_point_at(target, 11, 31_900.0),
+                _forecast_point_at(target, 12, 31_900.0),
+                _forecast_point_at(target, 13, 33_800.0),
+            ],
+            "pre_calibration": raw_forecasts,
+        },
     )
     frozen_forecasts, frozen_model = _freeze_observed_forecast_hours(
         tmp_path,
@@ -1071,6 +1114,20 @@ def test_intraday_correction_uses_current_model_before_freezing_observed_hours(t
     assert frozen_model == "lgbm_quantile_q50_intraday_residual"
     assert frozen_forecasts[0].forecast_mw == pytest.approx(35_000.0)
     assert frozen_forecasts[3].forecast_mw == pytest.approx(34_500.0)
+    calibration_path = (
+        tmp_path
+        / "reports"
+        / "internal"
+        / "operational-calibration"
+        / "2024-01-02.json"
+    )
+    calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
+    assert calibration["forecast_build"]["stageSummary"]["raw_lgbm"]["hours"] == 4
+    hour_13 = next(row for row in calibration["hourlyDiagnostics"] if row["hour"] == 13)
+    assert hour_13["forecastMwByStage"]["raw_lgbm"] == pytest.approx(33_800.0)
+    assert hour_13["preCalibrationForecastMw"] == pytest.approx(34_000.0)
+    assert hour_13["postCalibrationForecastMw"] == pytest.approx(34_500.0)
+    assert hour_13["calibrationDeltaMw"] == pytest.approx(500.0)
 
 
 # ── compute_missing_days ──────────────────────────────────────────────────────

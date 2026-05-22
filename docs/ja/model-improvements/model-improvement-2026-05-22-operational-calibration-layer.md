@@ -58,14 +58,18 @@ intraday post-processing レイヤーの責務を三つに分けました。
 - `source_confidence`
 - `applied_regime_reason`
 - `applied_day_bias`
+- `forecast_build.stageSummary`
+- `hourlyDiagnostics`
 - residual carry-over メタデータ
 - residual 計算から除外した fallback 数
 
-これにより、ダッシュボード UI に内部診断を出さずに「なぜ深夜予測が跳ねたのか」を追跡できます。
+`hourlyDiagnostics` には、時間別の実績、TEPCO予測、raw LightGBM、analog補正、guard後、intraday補正直前/直後の値を残します。これにより「なぜ深夜予測が跳ねたのか」「午前の過大予測がrawモデル由来か補正レイヤー由来か」を、ダッシュボードUIに内部診断を出さずに追跡できます。
+
+lead-timeスナップショット(`forecast_snapshots/YYYY-MM-DD/*.json`)にも任意の `forecastBuild` ブロックを保存します。各実行時点のraw modelとpre-calibration予測線を保持するため、後から表示済み予測がどのように作られたかを確認できます。
 
 ## テスト
 
 - fallback 行は residual 計算から除外されます。
 - 日付境界 carry-over は fallback をスキップし、最後の実測 observed residual のみを使用します。
 - day-level scale calibration は lag 過熱と cooler-day シグナルが同時にある場合だけ適用されます。
-
+- internal calibration JSON は pre/post calibration とstage別forecastを時間別に記録します。

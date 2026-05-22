@@ -21,6 +21,7 @@ The ETL/batch pipeline generates files under `web/public/` conforming to this sc
 - `web/public/actual/YYYY-MM-DD.json`
 - `web/public/metrics/forecast_accuracy.json`
 - `web/public/metrics/model_backtest.json`
+- `web/public/reports/internal/operational-calibration/YYYY-MM-DD.json`
 
 ---
 
@@ -273,13 +274,49 @@ Preserves bounded lead-time forecast snapshots for operational review. These fil
     "lastObservedActualHour": 11,
     "lastFallbackActualHour": null
   },
+  "forecastBuild": {
+    "stageSummary": {
+      "raw_lgbm": { "hours": 24, "peak": {} },
+      "pre_calibration": { "hours": 24, "peak": {} }
+    },
+    "series": [
+      {
+        "hour": 9,
+        "ts": "2025-12-02T09:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 31000.0,
+          "analog_adjusted": 30950.0,
+          "post_holiday_guarded": 30950.0,
+          "midday_guarded": 30950.0,
+          "pre_calibration": 30950.0
+        }
+      }
+    ]
+  },
   "series": []
 }
 ```
 
+`forecastBuild` is an optional operational-analysis field. It is not directly shown in the public UI, but it lets lead-time snapshots compare raw LightGBM, analog adjustment, guard stages, and the pre-intraday-calibration value.
+
 ## Retention
 - `config.yaml` controls `forecast_snapshots.retention_days` and `forecast_snapshots.max_per_day`.
 - Current default: 21 target dates, maximum 16 snapshots per target date.
+
+---
+
+# 3.6) reports/internal/operational-calibration/YYYY-MM-DD.json
+
+## Purpose
+Internal diagnostics JSON for tracking how the operational calibration layer moved the forecast line. It is not directly linked from the dashboard UI.
+
+## Key Fields
+- `source_confidence`: same-day observed/fallback/missing source summary
+- `applied_regime_reason`: list of applied calibration reasons
+- `applied_day_bias`: average day-level scale adjustment
+- `forecast_build.stageSummary`: stage summary from raw model to pre-calibration
+- `correction`: residual-correction metadata
+- `hourlyDiagnostics[]`: per-hour actual, TEPCO, stage forecasts, pre/post calibration forecast, calibration delta, and residuals
 
 ---
 

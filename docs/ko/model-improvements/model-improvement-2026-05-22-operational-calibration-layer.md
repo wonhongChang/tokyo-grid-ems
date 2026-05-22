@@ -58,14 +58,18 @@ intraday post-processing 레이어의 역할을 세 가지로 분리했습니다
 - `source_confidence`
 - `applied_regime_reason`
 - `applied_day_bias`
+- `forecast_build.stageSummary`
+- `hourlyDiagnostics`
 - residual carry-over 메타데이터
 - residual 계산에서 제외한 fallback 개수
 
-따라서 "왜 자정 예측이 튀었는가?"를 UI에 내부 진단을 노출하지 않고도 추적할 수 있습니다.
+`hourlyDiagnostics`는 시간별로 actual, TEPCO forecast, raw LightGBM, analog adjustment, guard 이후 값, intraday 보정 직전/직후 값을 함께 남깁니다. 따라서 "왜 자정 예측이 튀었는가?", "오전 고평가가 raw 모델 때문인가 보정 레이어 때문인가?"를 UI에 내부 진단을 노출하지 않고도 추적할 수 있습니다.
+
+lead-time 스냅샷(`forecast_snapshots/YYYY-MM-DD/*.json`)에도 `forecastBuild` 선택 필드를 저장합니다. 이 필드는 각 실행 시점의 raw model과 pre-calibration 예측선을 보존하므로, 나중에 특정 시각의 운영 예측이 어떻게 만들어졌는지 복기할 수 있습니다.
 
 ## 테스트
 
 - fallback 행은 residual 계산에서 제외됩니다.
 - 날짜 경계 이월은 fallback을 건너뛰고 마지막 실제 observed residual만 사용합니다.
 - day-level scale calibration은 lag 과열과 cooler-day 신호가 함께 있을 때만 적용됩니다.
-
+- internal calibration JSON은 pre/post calibration 및 stage별 forecast를 시간별로 남깁니다.

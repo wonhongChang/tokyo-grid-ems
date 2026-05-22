@@ -58,14 +58,18 @@ The report includes:
 - `source_confidence`
 - `applied_regime_reason`
 - `applied_day_bias`
+- `forecast_build.stageSummary`
+- `hourlyDiagnostics`
 - residual carry-over metadata
 - ignored fallback residual count
 
-This makes midnight failures explainable without exposing internal diagnostics in the dashboard UI.
+`hourlyDiagnostics` records actual demand, TEPCO forecast, raw LightGBM, analog adjustment, guard output, and pre/post intraday calibration values by hour. This makes it possible to tell whether a midnight spike or morning overestimate came from the raw model or from the operational calibration layer, without exposing internal diagnostics in the dashboard UI.
+
+Lead-time snapshots (`forecast_snapshots/YYYY-MM-DD/*.json`) also store an optional `forecastBuild` block. It preserves the raw model and pre-calibration forecast line at each run time, so later operational reviews can reconstruct how a visible forecast was produced.
 
 ## Tests
 
 - Intraday correction now ignores fallback rows for residual calculation.
 - Day-boundary carry-over skips fallback rows and uses the latest real observed residual.
 - Day-level scale calibration applies only when lag overheat and cooler-day signals align.
-
+- Internal calibration JSON records pre/post calibration and stage-level forecasts by hour.

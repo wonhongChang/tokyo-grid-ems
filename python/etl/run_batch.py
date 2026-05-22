@@ -28,6 +28,7 @@ import argparse
 import json
 import shutil
 import sys
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -54,6 +55,13 @@ _LGBM_MODEL_NAME = ".lgbm_model.pkl"
 _LGBM_MIN_ROWS   = 90 * 24
 _TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
 _FORECAST_SNAPSHOT_PATH_NAME = "forecast_snapshots"
+
+
+@dataclass(frozen=True)
+class ForecastBuildResult:
+    forecasts: list[HourlyForecast]
+    model_name: str
+    stages: dict[str, list[HourlyForecast]]
 
 # ---------------------------------------------------------------------------
 # Config
@@ -1070,7 +1078,7 @@ def _make_midday_guard(config: dict):
         return None
 
 
-def _build_forecast_with_fallback(
+def _build_forecast_pipeline(
     forecaster,
     cache: pd.DataFrame,
     target_date: date,
@@ -1080,8 +1088,8 @@ def _build_forecast_with_fallback(
     adjuster=None,
     guard=None,
     midday_guard=None,
-) -> tuple[list, str]:
-    """Return (forecasts, model_name).
+) -> ForecastBuildResult:
+    """Return forecast output plus intermediate stages.
 
     Pipeline: LightGBM → AnalogousDayAdjuster → PostHolidayTimeBandGuard → output.
     Falls back to baseline when LightGBM is unavailable or fails.
@@ -1117,10 +1125,54 @@ def _build_forecast_with_fallback(
                 if midday_guard
                 else guarded_forecasts
             )
-            return midday_guarded_forecasts, "lgbm_quantile_q50"
+            return ForecastBuildResult(
+                forecasts=midday_guarded_forecasts,
+                model_name="lgbm_quantile_q50",
+                stages={
+                    "raw_lgbm": raw_lgbm_forecasts,
+                    "analog_adjusted": analog_adjusted_forecasts,
+                    "post_holiday_guarded": guarded_forecasts,
+                    "midday_guarded": midday_guarded_forecasts,
+                    "pre_calibration": midday_guarded_forecasts,
+                },
+            )
         except Exception as e:
             print(f"[WARN] LightGBM predict failed for {target_date}: {e}", file=sys.stderr)
-    return compute_forecast(cache, target_date, n_weeks, min_samples), "baseline_dow_hour_mean"
+    baseline_forecasts = compute_forecast(cache, target_date, n_weeks, min_samples)
+    return ForecastBuildResult(
+        forecasts=baseline_forecasts,
+        model_name="baseline_dow_hour_mean",
+        stages={
+            "baseline": baseline_forecasts,
+            "pre_calibration": baseline_forecasts,
+        },
+    )
+
+
+def _build_forecast_with_fallback(
+    forecaster,
+    cache: pd.DataFrame,
+    target_date: date,
+    n_weeks: int,
+    min_samples: int,
+    config: dict | None = None,
+    adjuster=None,
+    guard=None,
+    midday_guard=None,
+) -> tuple[list, str]:
+    """Return (forecasts, model_name), preserving the historical helper API."""
+    result = _build_forecast_pipeline(
+        forecaster,
+        cache,
+        target_date,
+        n_weeks,
+        min_samples,
+        config,
+        adjuster,
+        guard,
+        midday_guard,
+    )
+    return result.forecasts, result.model_name
 
 
 def _load_actual_series(out_dir: Path, target_date: date) -> list[dict]:
@@ -1175,6 +1227,54 @@ def _actual_observation_summary(actual_series: list[dict]) -> dict:
         "lastObservedActualHour": max(observed_hours) if observed_hours else None,
         "lastFallbackActualHour": max(fallback_hours) if fallback_hours else None,
     }
+
+
+def _forecast_hour_map(forecasts: list[HourlyForecast]) -> dict[int, HourlyForecast]:
+    return {
+        pd.Timestamp(forecast.ts).hour: forecast
+        for forecast in forecasts
+    }
+
+
+def _forecast_stage_summary(stages: dict[str, list[HourlyForecast]]) -> dict:
+    return {
+        name: {
+            "hours": len(forecasts),
+            "peak": peak_of_forecasts(forecasts),
+        }
+        for name, forecasts in stages.items()
+    }
+
+
+def _forecast_stage_rows(stages: dict[str, list[HourlyForecast]]) -> list[dict]:
+    if not stages:
+        return []
+
+    stage_maps = {
+        name: _forecast_hour_map(forecasts)
+        for name, forecasts in stages.items()
+    }
+    hours = sorted({
+        hour
+        for forecasts_by_hour in stage_maps.values()
+        for hour in forecasts_by_hour
+    })
+    rows = []
+    for hour in hours:
+        ts = None
+        forecasts_by_stage = {}
+        for name, forecasts_by_hour in stage_maps.items():
+            forecast = forecasts_by_hour.get(hour)
+            if forecast is None:
+                continue
+            ts = ts or forecast.ts
+            forecasts_by_stage[name] = round(float(forecast.forecast_mw), 1)
+        rows.append({
+            "hour": hour,
+            "ts": ts,
+            "forecastMwByStage": forecasts_by_stage,
+        })
+    return rows
 
 
 def _snapshot_sort_key(path: Path) -> tuple[str, str]:
@@ -1299,6 +1399,7 @@ def _write_forecast_snapshot(
     generated_at: str,
     run_type: str,
     preserve_observed_forecast_hours: bool,
+    stage_forecasts: dict[str, list[HourlyForecast]] | None = None,
 ) -> Path | None:
     snapshot_config = _forecast_snapshot_config(config)
     if not snapshot_config["enabled"] or not forecasts:
@@ -1336,6 +1437,11 @@ def _write_forecast_snapshot(
         "observationSummary": _actual_observation_summary(actual_series),
         "series": forecast_json.get("series", []),
     }
+    if stage_forecasts:
+        snapshot["forecastBuild"] = {
+            "stageSummary": _forecast_stage_summary(stage_forecasts),
+            "series": _forecast_stage_rows(stage_forecasts),
+        }
 
     snapshot_dir = out_dir / _FORECAST_SNAPSHOT_PATH_NAME / target_date.isoformat()
     snapshot_dir.mkdir(parents=True, exist_ok=True)
@@ -1361,6 +1467,105 @@ def _write_forecast_snapshot(
     return snapshot_path
 
 
+def _actual_series_by_hour(actual_series: list[dict]) -> dict[int, dict]:
+    result = {}
+    for point in actual_series:
+        try:
+            hour = int(str(point.get("ts", ""))[11:13])
+        except ValueError:
+            continue
+        result[hour] = point
+    return result
+
+
+def _round_mw(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    return round(float(value), 1)
+
+
+def _operational_calibration_rows(
+    actual_series: list[dict],
+    stage_forecasts: dict[str, list[HourlyForecast]],
+    post_calibration_forecasts: list[HourlyForecast],
+) -> list[dict]:
+    actual_by_hour = _actual_series_by_hour(actual_series)
+    stage_maps = {
+        name: _forecast_hour_map(forecasts)
+        for name, forecasts in stage_forecasts.items()
+    }
+    post_by_hour = _forecast_hour_map(post_calibration_forecasts)
+    pre_by_hour = stage_maps.get("pre_calibration", {})
+    hours = sorted(
+        set(actual_by_hour)
+        | set(post_by_hour)
+        | {
+            hour
+            for forecasts_by_hour in stage_maps.values()
+            for hour in forecasts_by_hour
+        }
+    )
+
+    rows = []
+    for hour in hours:
+        actual_point = actual_by_hour.get(hour, {})
+        post_forecast = post_by_hour.get(hour)
+        pre_forecast = pre_by_hour.get(hour)
+        ts = (
+            (post_forecast.ts if post_forecast is not None else None)
+            or (pre_forecast.ts if pre_forecast is not None else None)
+            or actual_point.get("ts")
+        )
+        forecasts_by_stage = {
+            name: _round_mw(forecasts_by_hour[hour].forecast_mw)
+            for name, forecasts_by_hour in stage_maps.items()
+            if hour in forecasts_by_hour
+        }
+        actual_mw = _round_mw(actual_point.get("actualMw"))
+        tepco_forecast_mw = _round_mw(actual_point.get("tepcoForecastMw"))
+        pre_mw = _round_mw(pre_forecast.forecast_mw if pre_forecast is not None else None)
+        post_mw = _round_mw(
+            post_forecast.forecast_mw if post_forecast is not None else None
+        )
+        row = {
+            "hour": hour,
+            "ts": ts,
+            "actualMw": actual_mw,
+            "actualSource": actual_point.get("actualSource"),
+            "tepcoForecastMw": tepco_forecast_mw,
+            "forecastMwByStage": forecasts_by_stage,
+            "preCalibrationForecastMw": pre_mw,
+            "postCalibrationForecastMw": post_mw,
+            "calibrationDeltaMw": (
+                round(post_mw - pre_mw, 1)
+                if post_mw is not None and pre_mw is not None
+                else None
+            ),
+            "actualVsPreCalibrationResidualMw": (
+                round(actual_mw - pre_mw, 1)
+                if actual_mw is not None and pre_mw is not None
+                else None
+            ),
+            "actualVsPostCalibrationResidualMw": (
+                round(actual_mw - post_mw, 1)
+                if actual_mw is not None and post_mw is not None
+                else None
+            ),
+            "tepcoErrorMw": (
+                round(tepco_forecast_mw - actual_mw, 1)
+                if tepco_forecast_mw is not None and actual_mw is not None
+                else None
+            ),
+        }
+        rows.append(row)
+    return rows
+
+
 def _apply_intraday_residual_correction(
     out_dir: Path,
     target_date: date,
@@ -1368,6 +1573,7 @@ def _apply_intraday_residual_correction(
     model_name: str,
     config: dict,
     cache: pd.DataFrame | None = None,
+    stage_forecasts: dict[str, list[HourlyForecast]] | None = None,
 ) -> tuple[list[HourlyForecast], str]:
     """Adjust the remaining hours of today's forecast using observed residuals."""
     actual_series = _load_actual_series(out_dir, target_date)
@@ -1402,6 +1608,8 @@ def _apply_intraday_residual_correction(
         return forecasts, model_name
 
     calibration_metadata = correction.metadata()
+    effective_stage_forecasts = dict(stage_forecasts or {})
+    effective_stage_forecasts.setdefault("pre_calibration", forecasts)
     write_json(
         out_dir / "reports" / "internal" / "operational-calibration" / f"{target_date.isoformat()}.json",
         {
@@ -1413,7 +1621,15 @@ def _apply_intraday_residual_correction(
             "source_confidence": calibration_metadata.get("sourceConfidence"),
             "applied_regime_reason": calibration_metadata.get("appliedRegimeReason"),
             "applied_day_bias": calibration_metadata.get("appliedDayBiasMw"),
+            "forecast_build": {
+                "stageSummary": _forecast_stage_summary(effective_stage_forecasts),
+            },
             "correction": calibration_metadata,
+            "hourlyDiagnostics": _operational_calibration_rows(
+                actual_series,
+                effective_stage_forecasts,
+                correction.forecasts,
+            ),
         },
     )
 
@@ -1706,22 +1922,30 @@ def _run_status_only(
         forecaster = _try_train_lgbm(extended_with_actuals, out_dir, config)
 
     # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
-    today_fc, today_model = _build_forecast_with_fallback(
+    today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,
         config, adjuster, guard, midday_guard
     )
+    today_fc, today_model = today_build.forecasts, today_build.model_name
     today_fc, today_model = _apply_intraday_residual_correction(
-        out_dir, today, today_fc, today_model, config, extended_with_actuals
+        out_dir,
+        today,
+        today_fc,
+        today_model,
+        config,
+        extended_with_actuals,
+        stage_forecasts=today_build.stages,
     )
     today_fc, today_model = _freeze_observed_forecast_hours(
         out_dir, today, today_fc, today_model, preserve_observed_forecast_hours
     )
 
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
-    tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
+    tomorrow_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
         config, adjuster, guard, midday_guard
     )
+    tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
 
     snapshot_generated_at = ts_now()
     snapshot_run_type = (
@@ -1742,6 +1966,7 @@ def _run_status_only(
         snapshot_generated_at,
         snapshot_run_type,
         preserve_observed_forecast_hours,
+        today_build.stages,
     )
     _write_forecast_snapshot(
         out_dir,
@@ -1752,6 +1977,7 @@ def _run_status_only(
         snapshot_generated_at,
         snapshot_run_type,
         preserve_observed_forecast_hours,
+        tomorrow_build.stages,
     )
 
     # Rebuild recent actual alerts with the current config. This keeps yesterday's
@@ -1955,21 +2181,29 @@ def main() -> None:
 
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
     display_with_actuals = _inject_today_actuals(out_dir, today, forecast_weather_cache)
-    today_fc, today_model = _build_forecast_with_fallback(
+    today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,
         config, adjuster, guard, midday_guard
     )
+    today_fc, today_model = today_build.forecasts, today_build.model_name
     today_fc, today_model = _apply_intraday_residual_correction(
-        out_dir, today, today_fc, today_model, config
+        out_dir,
+        today,
+        today_fc,
+        today_model,
+        config,
+        extended_with_actuals,
+        stage_forecasts=today_build.stages,
     )
     today_fc, today_model = _freeze_observed_forecast_hours(
         out_dir, today, today_fc, today_model,
         preserve_observed_hours=True,
     )
-    tomorrow_fc, tomorrow_model = _build_forecast_with_fallback(
+    tomorrow_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
         config, adjuster, guard, midday_guard
     )
+    tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
 
     snapshot_generated_at = ts_now()
     snapshot_run_type = "etl"
@@ -1986,6 +2220,7 @@ def main() -> None:
         snapshot_generated_at,
         snapshot_run_type,
         True,
+        today_build.stages,
     )
     _write_forecast_snapshot(
         out_dir,
@@ -1996,6 +2231,7 @@ def main() -> None:
         snapshot_generated_at,
         snapshot_run_type,
         True,
+        tomorrow_build.stages,
     )
 
     # Keep recent alert files aligned with the current anomaly thresholds, even
