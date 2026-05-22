@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-05-22T08:00:46+09:00",
+  "generatedAt": "2026-05-22T10:31:38+09:00",
   "date": "2026-05-13",
   "availability": "ok",
   "visibility": {
@@ -17,7 +17,7 @@
   "operationReport": {
     "schemaVersion": "1.0.0",
     "timezone": "Asia/Tokyo",
-    "generatedAt": "2026-05-22T08:00:46+09:00",
+    "generatedAt": "2026-05-22T10:31:38+09:00",
     "date": "2026-05-13",
     "availability": "ok",
     "model": {
@@ -28,11 +28,24 @@
       "comparableHours": 24,
       "modelMaeMw": 401.7,
       "tepcoMaeMw": 332.5,
+      "modelWapePct": 1.45,
+      "tepcoWapePct": 1.2,
+      "modelRmseMw": 568.8,
+      "tepcoRmseMw": 494.5,
+      "modelMaxErrorMw": 1420.5,
+      "tepcoMaxErrorMw": 1330.0,
+      "modelMaxErrorHour": 14,
+      "tepcoMaxErrorHour": 12,
       "maeGapMw": 69.2,
+      "wapeGapPct": 0.25,
       "verdict": "tepco_better",
       "modelWins": 7,
       "tepcoWins": 17,
-      "ties": 0
+      "ties": 0,
+      "modelAdvantageHours": 7,
+      "tepcoAdvantageHours": 17,
+      "equalHours": 0,
+      "modelAdvantageRate": 0.292
     },
     "peak": {
       "actual": {
@@ -158,7 +171,8 @@
         "severity": "warning",
         "title": "TEPCO was closer overall.",
         "evidence": {
-          "maeGapMw": 69.2
+          "maeGapMw": 69.2,
+          "wapeGapPct": 0.25
         }
       },
       {
