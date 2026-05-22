@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-05
 
+- [2026-05-22 validation metrics scorecard](model-improvement-2026-05-22-validation-metrics-scorecard.md)
 - [2026-05-22 operational calibration layer](model-improvement-2026-05-22-operational-calibration-layer.md)
 - [2026-05-22 day-level lag and weather regime diagnostics](model-improvement-2026-05-22-day-level-regime-diagnostics.md)
 - [2026-05-21 business-day midday shock guard](model-improvement-2026-05-21-midday-shock-guard.md)

@@ -8,6 +8,7 @@
 
 ## 2026-05
 
+- [2026-05-22 검증 지표 스코어카드](model-improvement-2026-05-22-validation-metrics-scorecard.md)
 - [2026-05-22 운영 보정 레이어](model-improvement-2026-05-22-operational-calibration-layer.md)
 - [2026-05-22 하루 단위 lag/날씨 regime 진단](model-improvement-2026-05-22-day-level-regime-diagnostics.md)
 - [2026-05-21 영업일 점심 단발성 하락 guard](model-improvement-2026-05-21-midday-shock-guard.md)

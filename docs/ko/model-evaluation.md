@@ -70,11 +70,12 @@ web/public/metrics/forecast_accuracy.json
 
 | 지표 | 의미 |
 |---|---|
-| `modelMaeMw` | 자체 모델의 평균 절대 오차(MW) |
-| `tepcoMaeMw` | TEPCO 예측의 평균 절대 오차(MW) |
-| `modelWins` | 자체 모델의 절대 오차가 TEPCO보다 작았던 시간 수 |
-| `tepcoWins` | TEPCO 예측의 절대 오차가 자체 모델보다 작았던 시간 수 |
-| `modelWinRate` | `modelWins / comparableHours` |
+| `modelMaeMw`, `tepcoMaeMw` | 평균 절대 오차(MW). 운영자가 체감하기 쉬운 대표 지표입니다. |
+| `modelWapePct`, `tepcoWapePct` | 총 실적 수요 대비 절대 오차율. 하루 전체 수요 규모 대비 어느 쪽이 더 안정적인지 봅니다. |
+| `modelRmseMw`, `tepcoRmseMw` | 큰 오차를 더 강하게 반영하는 리스크 지표입니다. |
+| `modelMaxErrorMw`, `tepcoMaxErrorMw` | 단일 시간대에서 발생한 최대 오차입니다. |
+| `modelAdvantageHours`, `tepcoAdvantageHours` | 시간별 절대 오차가 상대보다 작았던 시간 수입니다. 기존 `modelWins`, `tepcoWins`와 같은 값이지만 UI에서는 운영 용어인 “우위 시간”으로 표시합니다. |
+| `verdict` | `MAE`, `WAPE`, `RMSE`를 함께 본 운영 판단입니다. `model_better`, `tepco_better`, `close`, `mixed`, `insufficient` 중 하나입니다. |
 
 해석 시 주의점:
 
@@ -82,6 +83,7 @@ web/public/metrics/forecast_accuracy.json
 - 자체 모델은 GitHub Actions 기반 정적 대시보드 운영을 목표로 하며, 최근 실적이 들어온 경우 intraday residual correction을 적용합니다.
 - 따라서 이 비교는 논문식 순수 모델 비교라기보다, 사용자가 실제 화면에서 보게 되는 운영 성능 비교입니다.
 - 엄격한 학습/평가 분리 기준의 모델 성능은 `model_backtest.json`를 기준으로 봅니다.
+- 시간별 “우위 시간”은 보조 정보입니다. 전체 판단은 단순 승률보다 `WAPE`와 대형 오차 리스크를 우선합니다.
 
 ---
 
@@ -90,7 +92,7 @@ web/public/metrics/forecast_accuracy.json
 검증 탭은 다음 순서로 읽으면 됩니다.
 
 1. **TEPCO 예측 대비 운영 비교**: 최근 운영 구간에서 어떤 예측이 더 실제 수요에 가까웠는지 봅니다.
-2. **최근 일별 MAE**: 특정 날짜에 자체 모델이 강했는지, TEPCO가 강했는지 확인합니다.
+2. **최근 일별 MAE/WAPE/RMSE**: 특정 날짜에 평균 오차, 전체 오차율, 큰 오차 리스크가 어떻게 달랐는지 확인합니다.
 3. **모델 백테스트**: LightGBM이 기존 베이스라인 대비 실제로 개선되는지 확인합니다.
 
 이 구조는 “모델이 좋아 보인다”가 아니라, **운영 중인 예측 시스템을 어떻게 검증하고 설명하는지**를 보여주기 위한 것입니다.

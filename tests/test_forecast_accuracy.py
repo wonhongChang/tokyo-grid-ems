@@ -52,8 +52,21 @@ def test_forecast_accuracy_report_compares_model_and_tepco(tmp_path):
     assert report["summary"]["hours"] == 2
     assert report["summary"]["modelMaeMw"] == 175.0
     assert report["summary"]["tepcoMaeMw"] == 300.0
+    assert report["summary"]["modelWapePct"] == 0.85
+    assert report["summary"]["tepcoWapePct"] == 1.46
+    assert report["summary"]["modelRmseMw"] == 215.1
+    assert report["summary"]["tepcoRmseMw"] == 360.6
+    assert report["summary"]["modelMaxErrorMw"] == 300.0
+    assert report["summary"]["tepcoMaxErrorMw"] == 500.0
+    assert report["summary"]["verdict"] == "model_better"
     assert report["summary"]["modelWins"] == 2
+    assert report["summary"]["modelAdvantageHours"] == 2
+    assert report["summary"]["modelAdvantageRate"] == 1.0
     assert report["daily"][0]["date"] == date_iso
+    assert report["daily"][0]["modelWapePct"] == 0.85
+    assert report["daily"][0]["tepcoWapePct"] == 1.46
+    assert report["daily"][0]["modelRmseMw"] == 215.1
+    assert report["daily"][0]["tepcoRmseMw"] == 360.6
     assert report["hourly"][0]["hour"] == 0
 
 
@@ -84,6 +97,8 @@ def test_forecast_accuracy_report_skips_incomplete_points(tmp_path):
     assert report["summary"]["dates"] == 0
     assert report["summary"]["hours"] == 0
     assert report["summary"]["modelMaeMw"] is None
+    assert report["summary"]["modelWapePct"] is None
+    assert report["summary"]["modelRmseMw"] is None
 
 
 def test_forecast_accuracy_report_skips_tepco_forecast_fallback_actuals(tmp_path):
@@ -113,3 +128,41 @@ def test_forecast_accuracy_report_skips_tepco_forecast_fallback_actuals(tmp_path
 
     assert report["summary"]["dates"] == 0
     assert report["summary"]["hours"] == 0
+
+
+def test_forecast_accuracy_report_marks_mixed_when_peak_risk_conflicts(tmp_path):
+    date_iso = "2026-05-11"
+    actual_series = []
+    forecast_series = []
+    for hour in range(4):
+        actual = 10_000.0
+        model_forecast = actual + (2_000.0 if hour == 3 else 0.0)
+        tepco_forecast = actual + 600.0
+        actual_series.append({
+            "ts": f"{date_iso}T{hour:02d}:00:00+09:00",
+            "actualMw": actual,
+            "tepcoForecastMw": tepco_forecast,
+        })
+        forecast_series.append({
+            "ts": f"{date_iso}T{hour:02d}:00:00+09:00",
+            "forecastMw": model_forecast,
+        })
+
+    _write_json(tmp_path / "actual" / f"{date_iso}.json", {
+        "date": date_iso,
+        "series": actual_series,
+    })
+    _write_json(tmp_path / "forecast" / f"{date_iso}.json", {
+        "date": date_iso,
+        "series": forecast_series,
+    })
+
+    report = build_forecast_accuracy_report(tmp_path, generated_at="now")
+
+    assert report["daily"][0]["modelMaeMw"] == 500.0
+    assert report["daily"][0]["tepcoMaeMw"] == 600.0
+    assert report["daily"][0]["modelWapePct"] == 5.0
+    assert report["daily"][0]["tepcoWapePct"] == 6.0
+    assert report["daily"][0]["modelRmseMw"] == 1000.0
+    assert report["daily"][0]["tepcoRmseMw"] == 600.0
+    assert report["daily"][0]["verdict"] == "mixed"

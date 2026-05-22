@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 TIMEZONE = "Asia/Tokyo"
+_CLOSE_MAE_GAP_MW = 100.0
+_CLOSE_WAPE_GAP_PCT = 0.2
+_RMSE_RISK_GAP_MW = 300.0
 
 _TIME_BANDS = [
     ("overnight", "00-05", 0, 5),
@@ -105,13 +109,67 @@ def _model_family(model_name: str) -> str:
     return model_name
 
 
-def _verdict(model_mae_mw: float | None, tepco_mae_mw: float | None) -> str:
+def _metrics(rows: list[dict], prefix: str) -> dict:
+    abs_key = f"{prefix}AbsErrorMw"
+    error_key = f"{prefix}ErrorMw"
+    abs_errors = [float(row[abs_key]) for row in rows]
+    signed_errors = [float(row[error_key]) for row in rows]
+    actual_sum = sum(float(row["actualMw"]) for row in rows)
+    if not abs_errors:
+        return {
+            "maeMw": None,
+            "wapePct": None,
+            "rmseMw": None,
+            "maxErrorMw": None,
+            "maxErrorHour": None,
+        }
+
+    max_error_row = max(rows, key=lambda row: float(row[abs_key]))
+    return {
+        "maeMw": _mean(abs_errors),
+        "wapePct": round(sum(abs_errors) / actual_sum * 100, 2) if actual_sum > 0 else None,
+        "rmseMw": round(math.sqrt(sum(error ** 2 for error in signed_errors) / len(signed_errors)), 1),
+        "maxErrorMw": round(float(max_error_row[abs_key]), 1),
+        "maxErrorHour": int(max_error_row["hour"]),
+    }
+
+
+def _verdict(
+    model_mae_mw: float | None,
+    tepco_mae_mw: float | None,
+    model_wape_pct: float | None = None,
+    tepco_wape_pct: float | None = None,
+    model_rmse_mw: float | None = None,
+    tepco_rmse_mw: float | None = None,
+) -> str:
     if model_mae_mw is None or tepco_mae_mw is None:
         return "insufficient"
     gap_mw = model_mae_mw - tepco_mae_mw
-    if abs(gap_mw) <= 50.0:
+    if model_wape_pct is None or tepco_wape_pct is None:
+        if abs(gap_mw) <= 50.0:
+            return "close"
+        return "model_better" if gap_mw < 0 else "tepco_better"
+
+    wape_gap_pct = model_wape_pct - tepco_wape_pct
+    if abs(gap_mw) <= _CLOSE_MAE_GAP_MW and abs(wape_gap_pct) <= _CLOSE_WAPE_GAP_PCT:
         return "close"
-    return "model_better" if gap_mw < 0 else "tepco_better"
+    if gap_mw < 0 and wape_gap_pct < 0:
+        if (
+            model_rmse_mw is not None
+            and tepco_rmse_mw is not None
+            and model_rmse_mw - tepco_rmse_mw > _RMSE_RISK_GAP_MW
+        ):
+            return "mixed"
+        return "model_better"
+    if gap_mw > 0 and wape_gap_pct > 0:
+        if (
+            model_rmse_mw is not None
+            and tepco_rmse_mw is not None
+            and tepco_rmse_mw - model_rmse_mw > _RMSE_RISK_GAP_MW
+        ):
+            return "mixed"
+        return "tepco_better"
+    return "mixed"
 
 
 def _win_counts(rows: list[dict]) -> tuple[int, int, int]:
@@ -317,7 +375,10 @@ def _build_insights(
             "model_closer_overall",
             "info",
             "The model was closer than TEPCO overall.",
-            {"maeGapMw": summary["maeGapMw"]},
+            {
+                "maeGapMw": summary["maeGapMw"],
+                "wapeGapPct": summary.get("wapeGapPct"),
+            },
         )
     elif summary["verdict"] == "tepco_better":
         _add_insight(
@@ -325,7 +386,23 @@ def _build_insights(
             "tepco_closer_overall",
             "warning",
             "TEPCO was closer overall.",
-            {"maeGapMw": summary["maeGapMw"]},
+            {
+                "maeGapMw": summary["maeGapMw"],
+                "wapeGapPct": summary.get("wapeGapPct"),
+            },
+        )
+    elif summary["verdict"] == "mixed":
+        _add_insight(
+            insights,
+            "mixed_operational_assessment",
+            "info",
+            "Average error and large-error risk pointed in different directions.",
+            {
+                "maeGapMw": summary.get("maeGapMw"),
+                "wapeGapPct": summary.get("wapeGapPct"),
+                "modelRmseMw": summary.get("modelRmseMw"),
+                "tepcoRmseMw": summary.get("tepcoRmseMw"),
+            },
         )
 
     for band in bands:
@@ -456,22 +533,48 @@ def build_daily_operation_report(
             "insights": [],
         }
 
-    model_wins, tepco_wins, ties = _win_counts(rows)
-    model_mae = _mean([row["modelAbsErrorMw"] for row in rows])
-    tepco_mae = _mean([row["tepcoAbsErrorMw"] for row in rows])
+    model_advantage_hours, tepco_advantage_hours, equal_hours = _win_counts(rows)
+    model_metrics = _metrics(rows, "model")
+    tepco_metrics = _metrics(rows, "tepco")
+    model_mae = model_metrics["maeMw"]
+    tepco_mae = tepco_metrics["maeMw"]
     summary = {
         "comparableHours": len(rows),
         "modelMaeMw": model_mae,
         "tepcoMaeMw": tepco_mae,
+        "modelWapePct": model_metrics["wapePct"],
+        "tepcoWapePct": tepco_metrics["wapePct"],
+        "modelRmseMw": model_metrics["rmseMw"],
+        "tepcoRmseMw": tepco_metrics["rmseMw"],
+        "modelMaxErrorMw": model_metrics["maxErrorMw"],
+        "tepcoMaxErrorMw": tepco_metrics["maxErrorMw"],
+        "modelMaxErrorHour": model_metrics["maxErrorHour"],
+        "tepcoMaxErrorHour": tepco_metrics["maxErrorHour"],
         "maeGapMw": (
             round(model_mae - tepco_mae, 1)
             if model_mae is not None and tepco_mae is not None
             else None
         ),
-        "verdict": _verdict(model_mae, tepco_mae),
-        "modelWins": model_wins,
-        "tepcoWins": tepco_wins,
-        "ties": ties,
+        "wapeGapPct": (
+            round(model_metrics["wapePct"] - tepco_metrics["wapePct"], 2)
+            if model_metrics["wapePct"] is not None and tepco_metrics["wapePct"] is not None
+            else None
+        ),
+        "verdict": _verdict(
+            model_mae,
+            tepco_mae,
+            model_metrics["wapePct"],
+            tepco_metrics["wapePct"],
+            model_metrics["rmseMw"],
+            tepco_metrics["rmseMw"],
+        ),
+        "modelWins": model_advantage_hours,
+        "tepcoWins": tepco_advantage_hours,
+        "ties": equal_hours,
+        "modelAdvantageHours": model_advantage_hours,
+        "tepcoAdvantageHours": tepco_advantage_hours,
+        "equalHours": equal_hours,
+        "modelAdvantageRate": round(model_advantage_hours / len(rows), 3) if rows else None,
     }
     peak = _peak_summary(rows)
     time_bands = _band_summary(rows)

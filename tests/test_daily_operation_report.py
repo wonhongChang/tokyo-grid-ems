@@ -96,8 +96,18 @@ def test_daily_operation_report_summarizes_previous_day_accuracy(tmp_path):
     assert report["date"] == date_iso
     assert report["summary"]["comparableHours"] == 24
     assert report["summary"]["tepcoMaeMw"] == 100.0
+    assert report["summary"]["tepcoWapePct"] == 0.47
+    assert report["summary"]["tepcoRmseMw"] == 100.0
+    assert report["summary"]["tepcoMaxErrorMw"] == 100.0
     assert report["summary"]["modelMaeMw"] > report["summary"]["tepcoMaeMw"]
+    assert report["summary"]["modelMaeMw"] == 350.0
+    assert report["summary"]["modelWapePct"] == 1.65
+    assert report["summary"]["modelRmseMw"] == 616.4
+    assert report["summary"]["modelMaxErrorMw"] == 1300.0
+    assert report["summary"]["modelMaxErrorHour"] == 16
     assert report["summary"]["verdict"] == "tepco_better"
+    assert report["summary"]["modelAdvantageHours"] == 16
+    assert report["summary"]["tepcoAdvantageHours"] == 8
     assert report["model"]["family"] == "lgbm_quantile_q50"
     assert report["topMisses"][0]["modelAbsErrorMw"] == 1300.0
     assert report["shape"]["transitionHours"] == 23

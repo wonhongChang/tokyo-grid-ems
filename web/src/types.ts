@@ -114,11 +114,24 @@ export interface ForecastAccuracyDaily {
   hours: number
   modelMaeMw: number | null
   tepcoMaeMw: number | null
+  modelWapePct?: number | null
+  tepcoWapePct?: number | null
+  modelRmseMw?: number | null
+  tepcoRmseMw?: number | null
+  modelMaxErrorMw?: number | null
+  tepcoMaxErrorMw?: number | null
+  modelMaxErrorHour?: number | null
+  tepcoMaxErrorHour?: number | null
   maeGapMw?: number | null
-  verdict?: 'model_better' | 'tepco_better' | 'close' | 'insufficient'
+  wapeGapPct?: number | null
+  verdict?: 'model_better' | 'tepco_better' | 'close' | 'mixed' | 'insufficient'
   modelWins: number
   tepcoWins: number
   ties: number
+  modelAdvantageHours?: number
+  tepcoAdvantageHours?: number
+  equalHours?: number
+  modelAdvantageRate?: number | null
 }
 
 export interface ForecastAccuracyHourly {
@@ -126,9 +139,19 @@ export interface ForecastAccuracyHourly {
   samples: number
   modelMaeMw: number | null
   tepcoMaeMw: number | null
+  modelWapePct?: number | null
+  tepcoWapePct?: number | null
+  modelRmseMw?: number | null
+  tepcoRmseMw?: number | null
+  modelMaxErrorMw?: number | null
+  tepcoMaxErrorMw?: number | null
   modelWins: number
   tepcoWins: number
   ties: number
+  modelAdvantageHours?: number
+  tepcoAdvantageHours?: number
+  equalHours?: number
+  modelAdvantageRate?: number | null
 }
 
 export interface ForecastAccuracyJSON {
@@ -146,16 +169,29 @@ export interface ForecastAccuracyJSON {
     hours: number
     modelMaeMw: number | null
     tepcoMaeMw: number | null
+    modelWapePct?: number | null
+    tepcoWapePct?: number | null
+    modelRmseMw?: number | null
+    tepcoRmseMw?: number | null
+    modelMaxErrorMw?: number | null
+    tepcoMaxErrorMw?: number | null
+    modelMaxErrorHour?: number | null
+    tepcoMaxErrorHour?: number | null
+    verdict?: 'model_better' | 'tepco_better' | 'close' | 'mixed' | 'insufficient'
     modelWins: number
     tepcoWins: number
     ties: number
     modelWinRate: number | null
+    modelAdvantageHours?: number
+    tepcoAdvantageHours?: number
+    equalHours?: number
+    modelAdvantageRate?: number | null
   }
   daily: ForecastAccuracyDaily[]
   hourly: ForecastAccuracyHourly[]
 }
 
-export type DailyOperationVerdict = 'model_better' | 'tepco_better' | 'close' | 'insufficient'
+export type DailyOperationVerdict = 'model_better' | 'tepco_better' | 'close' | 'mixed' | 'insufficient'
 
 export interface DailyOperationInsight {
   code: string
@@ -186,11 +222,24 @@ export interface DailyOperationReport {
     comparableHours: number
     modelMaeMw?: number | null
     tepcoMaeMw?: number | null
+    modelWapePct?: number | null
+    tepcoWapePct?: number | null
+    modelRmseMw?: number | null
+    tepcoRmseMw?: number | null
+    modelMaxErrorMw?: number | null
+    tepcoMaxErrorMw?: number | null
+    modelMaxErrorHour?: number | null
+    tepcoMaxErrorHour?: number | null
     maeGapMw?: number | null
+    wapeGapPct?: number | null
     verdict?: DailyOperationVerdict
     modelWins?: number
     tepcoWins?: number
     ties?: number
+    modelAdvantageHours?: number
+    tepcoAdvantageHours?: number
+    equalHours?: number
+    modelAdvantageRate?: number | null
   }
   peak?: {
     actual: { hour: number; actualMw: number }

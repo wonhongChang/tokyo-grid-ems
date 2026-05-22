@@ -187,11 +187,11 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-05-22 검증 지표 스코어카드](docs/ko/model-improvements/model-improvement-2026-05-22-validation-metrics-scorecard.md)
 - [2026-05-22 운영 보정 레이어](docs/ko/model-improvements/model-improvement-2026-05-22-operational-calibration-layer.md)
 - [2026-05-22 하루 단위 lag/날씨 regime 진단](docs/ko/model-improvements/model-improvement-2026-05-22-day-level-regime-diagnostics.md)
 - [2026-05-21 영업일 점심 단발 쇼크 guard](docs/ko/model-improvements/model-improvement-2026-05-21-midday-shock-guard.md)
 - [2026-05-21 예측 밴드 보정](docs/ko/model-improvements/model-improvement-2026-05-21-forecast-band-calibration.md)
-- [2026-05-21 공식 JMA 예보와 습도 기반 체감온도 보정](docs/ko/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 

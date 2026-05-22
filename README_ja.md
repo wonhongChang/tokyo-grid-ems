@@ -164,11 +164,11 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-05-22 検証指標スコアカード](docs/ja/model-improvements/model-improvement-2026-05-22-validation-metrics-scorecard.md)
 - [2026-05-22 運用補正レイヤー](docs/ja/model-improvements/model-improvement-2026-05-22-operational-calibration-layer.md)
 - [2026-05-22 日単位lag/天気regime診断](docs/ja/model-improvements/model-improvement-2026-05-22-day-level-regime-diagnostics.md)
 - [2026-05-21 営業日の昼時間帯ショック guard](docs/ja/model-improvements/model-improvement-2026-05-21-midday-shock-guard.md)
 - [2026-05-21 予測バンド補正](docs/ja/model-improvements/model-improvement-2026-05-21-forecast-band-calibration.md)
-- [2026-05-21 公式JMA予報と湿度ベースの体感温度補正](docs/ja/model-improvements/model-improvement-2026-05-21-official-jma-humidity-correction.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 

@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
+
+_CLOSE_MAE_GAP_MW = 100.0
+_CLOSE_WAPE_GAP_PCT = 0.2
+_RMSE_RISK_GAP_MW = 300.0
 
 
 def _mean(values: list[float]) -> float | None:
@@ -18,13 +23,69 @@ def _win_counts(rows: list[dict]) -> tuple[int, int, int]:
     return model_wins, tepco_wins, ties
 
 
-def _verdict(model_mae_mw: float | None, tepco_mae_mw: float | None) -> str:
-    if model_mae_mw is None or tepco_mae_mw is None:
+def _metrics(rows: list[dict], prefix: str) -> dict:
+    abs_key = f"{prefix}AbsErrorMw"
+    error_key = f"{prefix}ErrorMw"
+    abs_errors = [float(row[abs_key]) for row in rows]
+    signed_errors = [float(row[error_key]) for row in rows]
+    actual_sum = sum(float(row["actualMw"]) for row in rows)
+    if not abs_errors:
+        return {
+            "maeMw": None,
+            "wapePct": None,
+            "rmseMw": None,
+            "maxErrorMw": None,
+            "maxErrorHour": None,
+        }
+
+    max_error_row = max(rows, key=lambda row: float(row[abs_key]))
+    return {
+        "maeMw": _mean(abs_errors),
+        "wapePct": round(sum(abs_errors) / actual_sum * 100, 2) if actual_sum > 0 else None,
+        "rmseMw": round(math.sqrt(sum(error ** 2 for error in signed_errors) / len(signed_errors)), 1),
+        "maxErrorMw": round(float(max_error_row[abs_key]), 1),
+        "maxErrorHour": int(max_error_row["hour"]),
+    }
+
+
+def _verdict(model: dict, tepco: dict) -> str:
+    model_mae_mw = model.get("maeMw")
+    tepco_mae_mw = tepco.get("maeMw")
+    model_wape_pct = model.get("wapePct")
+    tepco_wape_pct = tepco.get("wapePct")
+    model_rmse_mw = model.get("rmseMw")
+    tepco_rmse_mw = tepco.get("rmseMw")
+    if (
+        model_mae_mw is None
+        or tepco_mae_mw is None
+        or model_wape_pct is None
+        or tepco_wape_pct is None
+    ):
         return "insufficient"
     gap_mw = model_mae_mw - tepco_mae_mw
-    if abs(gap_mw) <= 50.0:
+    wape_gap_pct = model_wape_pct - tepco_wape_pct
+    if abs(gap_mw) <= _CLOSE_MAE_GAP_MW and abs(wape_gap_pct) <= _CLOSE_WAPE_GAP_PCT:
         return "close"
-    return "model_better" if gap_mw < 0 else "tepco_better"
+
+    if gap_mw < 0 and wape_gap_pct < 0:
+        if (
+            model_rmse_mw is not None
+            and tepco_rmse_mw is not None
+            and model_rmse_mw - tepco_rmse_mw > _RMSE_RISK_GAP_MW
+        ):
+            return "mixed"
+        return "model_better"
+
+    if gap_mw > 0 and wape_gap_pct > 0:
+        if (
+            model_rmse_mw is not None
+            and tepco_rmse_mw is not None
+            and tepco_rmse_mw - model_rmse_mw > _RMSE_RISK_GAP_MW
+        ):
+            return "mixed"
+        return "tepco_better"
+
+    return "mixed"
 
 
 def _load_json(path: Path) -> dict:
@@ -76,6 +137,8 @@ def _comparable_rows_for_date(public_dir: Path, date_iso: str) -> list[dict]:
             "actualMw": round(float(actual_mw), 1),
             "modelForecastMw": round(float(model_forecast_mw), 1),
             "tepcoForecastMw": round(float(tepco_forecast_mw), 1),
+            "modelErrorMw": round(float(model_forecast_mw) - float(actual_mw), 1),
+            "tepcoErrorMw": round(float(tepco_forecast_mw) - float(actual_mw), 1),
             "modelAbsErrorMw": round(model_abs_error_mw, 1),
             "tepcoAbsErrorMw": round(tepco_abs_error_mw, 1),
             "modelName": model_name,
@@ -105,8 +168,10 @@ def build_forecast_accuracy_report(
         model_name = rows[0]["modelName"]
         model_family = rows[0]["modelFamily"]
         model_wins, tepco_wins, ties = _win_counts(rows)
-        model_mae_mw = _mean([row["modelAbsErrorMw"] for row in rows])
-        tepco_mae_mw = _mean([row["tepcoAbsErrorMw"] for row in rows])
+        model_metrics = _metrics(rows, "model")
+        tepco_metrics = _metrics(rows, "tepco")
+        model_mae_mw = model_metrics["maeMw"]
+        tepco_mae_mw = tepco_metrics["maeMw"]
         mae_gap_mw = (
             round(model_mae_mw - tepco_mae_mw, 1)
             if model_mae_mw is not None and tepco_mae_mw is not None
@@ -119,11 +184,28 @@ def build_forecast_accuracy_report(
             "hours": len(rows),
             "modelMaeMw": model_mae_mw,
             "tepcoMaeMw": tepco_mae_mw,
+            "modelWapePct": model_metrics["wapePct"],
+            "tepcoWapePct": tepco_metrics["wapePct"],
+            "modelRmseMw": model_metrics["rmseMw"],
+            "tepcoRmseMw": tepco_metrics["rmseMw"],
+            "modelMaxErrorMw": model_metrics["maxErrorMw"],
+            "tepcoMaxErrorMw": tepco_metrics["maxErrorMw"],
+            "modelMaxErrorHour": model_metrics["maxErrorHour"],
+            "tepcoMaxErrorHour": tepco_metrics["maxErrorHour"],
             "maeGapMw": mae_gap_mw,
-            "verdict": _verdict(model_mae_mw, tepco_mae_mw),
+            "wapeGapPct": (
+                round(model_metrics["wapePct"] - tepco_metrics["wapePct"], 2)
+                if model_metrics["wapePct"] is not None and tepco_metrics["wapePct"] is not None
+                else None
+            ),
+            "verdict": _verdict(model_metrics, tepco_metrics),
             "modelWins": model_wins,
             "tepcoWins": tepco_wins,
             "ties": ties,
+            "modelAdvantageHours": model_wins,
+            "tepcoAdvantageHours": tepco_wins,
+            "equalHours": ties,
+            "modelAdvantageRate": round(model_wins / len(rows), 3) if rows else None,
         })
         all_rows.extend(rows)
 
@@ -147,18 +229,32 @@ def build_forecast_accuracy_report(
         if not hour_rows:
             continue
         model_wins, tepco_wins, ties = _win_counts(hour_rows)
+        model_metrics = _metrics(hour_rows, "model")
+        tepco_metrics = _metrics(hour_rows, "tepco")
         hourly.append({
             "hour": hour,
             "samples": len(hour_rows),
-            "modelMaeMw": _mean([row["modelAbsErrorMw"] for row in hour_rows]),
-            "tepcoMaeMw": _mean([row["tepcoAbsErrorMw"] for row in hour_rows]),
+            "modelMaeMw": model_metrics["maeMw"],
+            "tepcoMaeMw": tepco_metrics["maeMw"],
+            "modelWapePct": model_metrics["wapePct"],
+            "tepcoWapePct": tepco_metrics["wapePct"],
+            "modelRmseMw": model_metrics["rmseMw"],
+            "tepcoRmseMw": tepco_metrics["rmseMw"],
+            "modelMaxErrorMw": model_metrics["maxErrorMw"],
+            "tepcoMaxErrorMw": tepco_metrics["maxErrorMw"],
             "modelWins": model_wins,
             "tepcoWins": tepco_wins,
             "ties": ties,
+            "modelAdvantageHours": model_wins,
+            "tepcoAdvantageHours": tepco_wins,
+            "equalHours": ties,
+            "modelAdvantageRate": round(model_wins / len(hour_rows), 3) if hour_rows else None,
         })
 
     model_wins, tepco_wins, ties = _win_counts(summary_rows)
     model_win_rate = round(model_wins / len(summary_rows), 3) if summary_rows else None
+    model_summary_metrics = _metrics(summary_rows, "model")
+    tepco_summary_metrics = _metrics(summary_rows, "tepco")
 
     return {
         "schemaVersion": "1.0.0",
@@ -175,12 +271,25 @@ def build_forecast_accuracy_report(
         "summary": {
             "dates": sum(1 for row in summary_daily if row["includedInSummary"]),
             "hours": len(summary_rows),
-            "modelMaeMw": _mean([row["modelAbsErrorMw"] for row in summary_rows]),
-            "tepcoMaeMw": _mean([row["tepcoAbsErrorMw"] for row in summary_rows]),
+            "modelMaeMw": model_summary_metrics["maeMw"],
+            "tepcoMaeMw": tepco_summary_metrics["maeMw"],
+            "modelWapePct": model_summary_metrics["wapePct"],
+            "tepcoWapePct": tepco_summary_metrics["wapePct"],
+            "modelRmseMw": model_summary_metrics["rmseMw"],
+            "tepcoRmseMw": tepco_summary_metrics["rmseMw"],
+            "modelMaxErrorMw": model_summary_metrics["maxErrorMw"],
+            "tepcoMaxErrorMw": tepco_summary_metrics["maxErrorMw"],
+            "modelMaxErrorHour": model_summary_metrics["maxErrorHour"],
+            "tepcoMaxErrorHour": tepco_summary_metrics["maxErrorHour"],
+            "verdict": _verdict(model_summary_metrics, tepco_summary_metrics),
             "modelWins": model_wins,
             "tepcoWins": tepco_wins,
             "ties": ties,
             "modelWinRate": model_win_rate,
+            "modelAdvantageHours": model_wins,
+            "tepcoAdvantageHours": tepco_wins,
+            "equalHours": ties,
+            "modelAdvantageRate": model_win_rate,
         },
         "daily": summary_daily,
         "hourly": hourly,

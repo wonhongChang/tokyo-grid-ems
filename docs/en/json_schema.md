@@ -338,11 +338,16 @@ Evaluation outputs used by the dashboard's **Validation** tab.
 - `modelScope.summaryModelFamily`: latest operating model family included in the aggregate summary
 - `modelScope.excludedDates`: dates excluded from the aggregate summary because they use another model family such as baseline
 - `summary.modelMaeMw`, `summary.tepcoMaeMw`: MAE over comparable recent hours
-- `summary.modelWins`, `summary.tepcoWins`: hourly win counts by absolute error
-- `daily[]`: daily MAE and win counts. Dates with `includedInSummary: false` are excluded from the aggregate summary
+- `summary.modelWapePct`, `summary.tepcoWapePct`: absolute error divided by total actual demand
+- `summary.modelRmseMw`, `summary.tepcoRmseMw`: RMSE for large-error risk
+- `summary.modelMaxErrorMw`, `summary.tepcoMaxErrorMw`: largest single-hour miss in the comparison window
+- `summary.modelAdvantageHours`, `summary.tepcoAdvantageHours`: hourly advantage counts by absolute error. `summary.modelWins` and `summary.tepcoWins` remain for backward compatibility
+- `summary.modelAdvantageRate`: `modelAdvantageHours / summary.hours`
+- `daily[]`: daily MAE/WAPE/RMSE and advantage-hour counts. Dates with `includedInSummary: false` are excluded from the aggregate summary
 - `daily[].maeGapMw`: model MAE minus TEPCO MAE. Positive means TEPCO was closer; negative means the model was closer
-- `daily[].verdict`: daily verdict, one of `model_better`, `tepco_better`, `close`, or `insufficient`
-- `hourly[]`: hour-of-day MAE and win counts
+- `daily[].wapeGapPct`: model WAPE minus TEPCO WAPE
+- `daily[].verdict`: daily operational assessment, one of `model_better`, `tepco_better`, `close`, `mixed`, or `insufficient`
+- `hourly[]`: hour-of-day MAE/WAPE/RMSE and advantage-hour counts
 
 ## model_backtest Key Fields
 - `methodology`: backtest strategy and split point

@@ -23,7 +23,7 @@ const COPY = {
     subtitle: '백테스트와 TEPCO 예측 대비 운영 성능을 함께 확인합니다.',
     opsTitle: 'TEPCO 예측 대비 운영 비교',
     backtestTitle: '모델 백테스트',
-    maeHelp: 'MAE는 평균 절대 오차입니다. 실적과 예측의 차이를 평균낸 값이라 낮을수록 실제 수요에 더 가깝습니다.',
+    maeHelp: 'MAE는 평균 오차 규모, WAPE는 전체 수요 대비 오차율, RMSE는 큰 오차 리스크를 봅니다. 낮을수록 실제 수요에 가깝습니다.',
     opsScopeNote: '최근 같은 모델로 만든 예측만 모아 TEPCO와 비교합니다.',
     backtestScopeNote: '학습용 데이터와 평가용 데이터를 나눠서 계산했습니다.',
     trainWindow: '학습 구간',
@@ -32,25 +32,34 @@ const COPY = {
     samples: '비교 시간',
     modelMae: '모델 MAE',
     tepcoMae: 'TEPCO MAE',
-    modelWins: '모델 우세',
-    tepcoWins: 'TEPCO 우세',
-    winRate: '모델 승률',
+    modelWins: '모델 우위 시간',
+    tepcoWins: 'TEPCO 우위 시간',
+    winRate: '우위 시간 비율',
+    modelWape: '모델 WAPE',
+    tepcoWape: 'TEPCO WAPE',
+    rmseRisk: 'RMSE 리스크',
+    maxErrorRisk: '최대 오차 리스크',
+    advantageHours: 'TEPCO 대비 우위 시간',
+    assessment: '운영 판단',
     modelScope: '집계 대상',
-    smallerBetter: 'MAE는 낮을수록 좋습니다.',
+    smallerBetter: '낮을수록 좋습니다.',
     dailyTrend: '최근 일별 MAE',
-    recentDays: '최근 일별 판정',
+    recentDays: '최근 일별 운영 판단',
     date: '날짜',
     hours: '시간',
-    winner: '우세',
+    winner: '운영 판단',
     comment: '코멘트',
     commentModelBetter: '모델이 더 가까웠습니다.',
     commentTepcoBetter: 'TEPCO가 더 가까웠습니다.',
     commentClose: '두 예측이 비슷했습니다.',
+    commentMixed: '평균 오차와 큰 오차 리스크가 엇갈립니다.',
     commentInsufficient: '아직 비교 시간이 부족합니다.',
     commentModelMiss: '모델 오차가 커진 날입니다.',
     partialPrefix: '집계 중',
     model: '모델',
     tepco: 'TEPCO',
+    mixed: '혼재',
+    tie: '비슷함',
     baseline: '요일/시간 베이스라인',
     lightgbm: 'LightGBM',
     rmse: 'RMSE',
@@ -65,7 +74,7 @@ const COPY = {
     subtitle: 'Backtest results and operational accuracy against TEPCO forecasts.',
     opsTitle: 'Operational Comparison vs TEPCO',
     backtestTitle: 'Model Backtest',
-    maeHelp: 'MAE is mean absolute error: the average gap between actual demand and forecast. Lower means closer to actual load.',
+    maeHelp: 'MAE shows average MW error, WAPE shows error as a share of total load, and RMSE highlights large-error risk. Lower is better.',
     opsScopeNote: 'Compares TEPCO against recent forecasts made by the same model.',
     backtestScopeNote: 'Training data and evaluation data are separated.',
     trainWindow: 'Training window',
@@ -74,25 +83,34 @@ const COPY = {
     samples: 'Comparable hours',
     modelMae: 'Model MAE',
     tepcoMae: 'TEPCO MAE',
-    modelWins: 'Model wins',
-    tepcoWins: 'TEPCO wins',
-    winRate: 'Model win rate',
+    modelWins: 'Model advantage hours',
+    tepcoWins: 'TEPCO advantage hours',
+    winRate: 'Advantage rate',
+    modelWape: 'Model WAPE',
+    tepcoWape: 'TEPCO WAPE',
+    rmseRisk: 'RMSE risk',
+    maxErrorRisk: 'Max error risk',
+    advantageHours: 'Model advantage hours',
+    assessment: 'Operational assessment',
     modelScope: 'Scope',
     smallerBetter: 'Lower MAE is better.',
     dailyTrend: 'Recent Daily MAE',
-    recentDays: 'Recent Daily Verdict',
+    recentDays: 'Recent Daily Assessment',
     date: 'Date',
     hours: 'Hours',
-    winner: 'Winner',
+    winner: 'Assessment',
     comment: 'Comment',
     commentModelBetter: 'The model was closer.',
     commentTepcoBetter: 'TEPCO was closer.',
     commentClose: 'Both forecasts were similar.',
+    commentMixed: 'Average error and large-error risk are mixed.',
     commentInsufficient: 'Not enough comparable hours yet.',
     commentModelMiss: 'The model error widened that day.',
     partialPrefix: 'In progress',
     model: 'Model',
     tepco: 'TEPCO',
+    mixed: 'Mixed',
+    tie: 'Close',
     baseline: 'Weekday/hour baseline',
     lightgbm: 'LightGBM',
     rmse: 'RMSE',
@@ -107,7 +125,7 @@ const COPY = {
     subtitle: 'バックテストとTEPCO予測に対する運用精度を確認します。',
     opsTitle: 'TEPCO予測との運用比較',
     backtestTitle: 'モデルバックテスト',
-    maeHelp: 'MAEは平均絶対誤差です。実績と予測の差を平均した値で、低いほど実績需要に近いことを示します。',
+    maeHelp: 'MAEは平均的なMW誤差、WAPEは総需要に対する誤差率、RMSEは大きな誤差リスクを示します。低いほど良好です。',
     opsScopeNote: '同じモデルで作成した直近予測だけをTEPCOと比較します。',
     backtestScopeNote: '学習データと評価データを分けて計算しています。',
     trainWindow: '学習期間',
@@ -116,25 +134,34 @@ const COPY = {
     samples: '比較時間',
     modelMae: 'モデルMAE',
     tepcoMae: 'TEPCO MAE',
-    modelWins: 'モデル優勢',
-    tepcoWins: 'TEPCO優勢',
-    winRate: 'モデル勝率',
+    modelWins: 'モデル優位時間',
+    tepcoWins: 'TEPCO優位時間',
+    winRate: '優位時間率',
+    modelWape: 'モデル WAPE',
+    tepcoWape: 'TEPCO WAPE',
+    rmseRisk: 'RMSEリスク',
+    maxErrorRisk: '最大誤差リスク',
+    advantageHours: 'TEPCO比の優位時間',
+    assessment: '運用判断',
     modelScope: '集計対象',
     smallerBetter: 'MAEは低いほど良好です。',
     dailyTrend: '直近日別MAE',
-    recentDays: '直近日別判定',
+    recentDays: '直近日別運用判断',
     date: '日付',
     hours: '時間',
-    winner: '優勢',
+    winner: '運用判断',
     comment: 'コメント',
     commentModelBetter: 'モデルの方が近い予測でした。',
     commentTepcoBetter: 'TEPCOの方が近い予測でした。',
     commentClose: '両方の予測はほぼ同等でした。',
+    commentMixed: '平均誤差と大きな誤差リスクの評価が分かれています。',
     commentInsufficient: '比較できる時間がまだ不足しています。',
     commentModelMiss: 'モデル誤差が大きくなった日です。',
     partialPrefix: '集計中',
     model: 'モデル',
     tepco: 'TEPCO',
+    mixed: '混在',
+    tie: '同程度',
     baseline: '曜日/時間ベースライン',
     lightgbm: 'LightGBM',
     rmse: 'RMSE',
@@ -152,18 +179,25 @@ const DAILY_REPORT_COPY = {
     subtitle: '확정 실측 기준으로 전날 예측 품질을 요약합니다.',
     modelMae: '모델 MAE',
     tepcoMae: 'TEPCO MAE',
-    winner: '우세',
+    winner: '운영 판단',
+    modelWape: '모델 WAPE',
+    tepcoWape: 'TEPCO WAPE',
+    rmseRisk: 'RMSE 리스크',
+    advantageHours: 'TEPCO 대비 우위 시간',
     peakError: '피크 오차',
     largestMiss: '최대 오차',
     insights: '주요 코멘트',
     noInsight: '특별히 큰 패턴 이탈은 감지되지 않았습니다.',
     model: '모델',
     tepco: 'TEPCO',
+    mixed: '혼재',
+    tie: '비슷함',
     close: '비슷함',
     hourSuffix: '시',
     insightText: {
       model_closer_overall: '전날 전체 기준으로 모델이 TEPCO보다 실제에 가까웠습니다.',
       tepco_closer_overall: '전날 전체 기준으로 TEPCO 예측이 더 가까웠습니다.',
+      mixed_operational_assessment: '평균 오차와 큰 오차 리스크가 서로 다른 신호를 보였습니다.',
       morning_ramp_underestimated: '아침 수요 상승을 모델이 낮게 봤습니다.',
       morning_ramp_overestimated: '아침 수요 상승을 모델이 높게 봤습니다.',
       daytime_level_underestimated: '낮 시간대 수요 수준을 낮게 봤습니다.',
@@ -181,18 +215,25 @@ const DAILY_REPORT_COPY = {
     subtitle: 'Summarizes yesterday’s forecast quality after confirmed actuals arrive.',
     modelMae: 'Model MAE',
     tepcoMae: 'TEPCO MAE',
-    winner: 'Winner',
+    winner: 'Assessment',
+    modelWape: 'Model WAPE',
+    tepcoWape: 'TEPCO WAPE',
+    rmseRisk: 'RMSE risk',
+    advantageHours: 'Model advantage hours',
     peakError: 'Peak error',
     largestMiss: 'Largest miss',
     insights: 'Key comments',
     noInsight: 'No major recurring pattern was detected.',
     model: 'Model',
     tepco: 'TEPCO',
+    mixed: 'Mixed',
+    tie: 'Close',
     close: 'Close',
     hourSuffix: ':00',
     insightText: {
       model_closer_overall: 'The model was closer than TEPCO overall.',
       tepco_closer_overall: 'TEPCO was closer overall.',
+      mixed_operational_assessment: 'Average error and large-error risk pointed in different directions.',
       morning_ramp_underestimated: 'The model underestimated the morning demand ramp.',
       morning_ramp_overestimated: 'The model overestimated the morning demand ramp.',
       daytime_level_underestimated: 'The model underestimated daytime demand level.',
@@ -210,18 +251,25 @@ const DAILY_REPORT_COPY = {
     subtitle: '確定実績を基準に、前日の予測品質を要約します。',
     modelMae: 'モデル MAE',
     tepcoMae: 'TEPCO MAE',
-    winner: '優勢',
+    winner: '運用判断',
+    modelWape: 'モデル WAPE',
+    tepcoWape: 'TEPCO WAPE',
+    rmseRisk: 'RMSEリスク',
+    advantageHours: 'TEPCO比の優位時間',
     peakError: 'ピーク誤差',
     largestMiss: '最大誤差',
     insights: '主なコメント',
     noInsight: '大きな継続パターンのずれは検出されませんでした。',
     model: 'モデル',
     tepco: 'TEPCO',
+    mixed: '混在',
+    tie: '同程度',
     close: '同程度',
     hourSuffix: '時',
     insightText: {
       model_closer_overall: '前日全体ではモデルの方がTEPCOより実績に近くなりました。',
       tepco_closer_overall: '前日全体ではTEPCO予測の方が近くなりました。',
+      mixed_operational_assessment: '平均誤差と大きな誤差リスクの評価が分かれました。',
       morning_ramp_underestimated: '朝の需要上昇をモデルが低く見積もりました。',
       morning_ramp_overestimated: '朝の需要上昇をモデルが高く見積もりました。',
       daytime_level_underestimated: '日中の需要水準を低く見積もりました。',
@@ -256,19 +304,54 @@ function fmtMape(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
-function winnerOf(row: ForecastAccuracyDaily, labels: typeof COPY.ko): string {
-  if (row.modelMaeMw == null || row.tepcoMaeMw == null) return '-'
-  if (row.modelMaeMw < row.tepcoMaeMw) return labels.model
-  if (row.tepcoMaeMw < row.modelMaeMw) return labels.tepco
-  return 'Tie'
-}
+type AccuracyVerdict = NonNullable<ForecastAccuracyDaily['verdict']>
 
-function verdictOf(row: ForecastAccuracyDaily): ForecastAccuracyDaily['verdict'] {
+function verdictOf(row: ForecastAccuracyDaily): AccuracyVerdict {
   if (row.verdict) return row.verdict
   if (row.modelMaeMw == null || row.tepcoMaeMw == null) return 'insufficient'
   const gapMw = row.modelMaeMw - row.tepcoMaeMw
   if (Math.abs(gapMw) <= 50) return 'close'
   return gapMw < 0 ? 'model_better' : 'tepco_better'
+}
+
+function summaryVerdict(summary: ForecastAccuracyJSON['summary']): AccuracyVerdict {
+  if (summary.verdict) return summary.verdict
+  if (summary.modelMaeMw == null || summary.tepcoMaeMw == null) return 'insufficient'
+  const gapMw = summary.modelMaeMw - summary.tepcoMaeMw
+  if (Math.abs(gapMw) <= 50) return 'close'
+  return gapMw < 0 ? 'model_better' : 'tepco_better'
+}
+
+function assessmentLabel(verdict: AccuracyVerdict | undefined, labels: typeof COPY.ko): string {
+  if (verdict === 'model_better') return labels.model
+  if (verdict === 'tepco_better') return labels.tepco
+  if (verdict === 'mixed') return labels.mixed
+  if (verdict === 'close') return labels.tie
+  return '-'
+}
+
+function assessmentBadge(verdict: AccuracyVerdict | undefined): string {
+  if (verdict === 'model_better') return 'ok'
+  if (verdict === 'tepco_better') return 'warning'
+  return 'info'
+}
+
+function advantageHoursValue(modelHours: number | undefined, totalHours: number | undefined, locale: Locale): string {
+  const count = modelHours ?? 0
+  const total = totalHours ?? 0
+  if (locale === 'ko') return `${count}/${total}시간`
+  if (locale === 'ja') return `${count}/${total}時間`
+  return `${count}/${total}h`
+}
+
+function advantageHoursSub(
+  modelHours: number | undefined,
+  tepcoHours: number | undefined,
+  equalHours: number | undefined,
+  rate: number | null | undefined,
+  labels: { model: string; tepco: string; tie: string },
+): string {
+  return `${labels.model} ${modelHours ?? 0} · ${labels.tepco} ${tepcoHours ?? 0} · ${labels.tie} ${equalHours ?? 0} · ${fmtPct(rate)}`
 }
 
 function commentFor(row: ForecastAccuracyDaily, labels: typeof COPY.ko): string {
@@ -284,6 +367,7 @@ function commentFor(row: ForecastAccuracyDaily, labels: typeof COPY.ko): string 
     ? labels.commentModelMiss
     : labels.commentTepcoBetter
   if (verdict === 'close') comment = labels.commentClose
+  if (verdict === 'mixed') comment = labels.commentMixed
   return row.hours < 24 ? `${labels.partialPrefix}: ${comment}` : comment
 }
 
@@ -345,19 +429,21 @@ function DailyTooltip({ active, payload, label, locale }: {
   )
 }
 
-function reportWinner(report: DailyOperationReport, labels: typeof DAILY_REPORT_COPY.ko): string {
+function reportAssessment(report: DailyOperationReport, labels: typeof DAILY_REPORT_COPY.ko): string {
   const verdict = report.summary.verdict
   if (verdict === 'model_better') return labels.model
   if (verdict === 'tepco_better') return labels.tepco
+  if (verdict === 'mixed') return labels.mixed
   if (verdict === 'close') return labels.close
   return '-'
 }
 
-function reportWinnerBadge(report: DailyOperationReport): string {
+function reportAssessmentBadge(report: DailyOperationReport): string {
   const verdict = report.summary.verdict
   if (verdict === 'model_better') return 'ok'
   if (verdict === 'tepco_better') return 'warning'
   if (verdict === 'close') return 'info'
+  if (verdict === 'mixed') return 'info'
   return 'info'
 }
 
@@ -390,15 +476,28 @@ function OperationReportCard({
       <div className="validation-stat-grid compact">
         <StatCard label={labels.modelMae} value={fmtPowerMaybe(report.summary.modelMaeMw, locale)} />
         <StatCard label={labels.tepcoMae} value={fmtPowerMaybe(report.summary.tepcoMaeMw, locale)} />
+        <StatCard label={labels.modelWape} value={fmtMape(report.summary.modelWapePct)} />
+        <StatCard label={labels.tepcoWape} value={fmtMape(report.summary.tepcoWapePct)} />
+        <StatCard
+          label={labels.rmseRisk}
+          value={`${fmtPowerMaybe(report.summary.modelRmseMw, locale)} / ${fmtPowerMaybe(report.summary.tepcoRmseMw, locale)}`}
+          sub={`${labels.model} / ${labels.tepco}`}
+        />
         <div className="validation-stat">
           <div className="validation-stat-label">{labels.winner}</div>
           <div className="validation-stat-value">
-            <span className={`badge ${reportWinnerBadge(report)}`}>
-              {reportWinner(report, labels)}
+            <span className={`badge ${reportAssessmentBadge(report)}`}>
+              {reportAssessment(report, labels)}
             </span>
           </div>
           <div className="validation-stat-sub">
-            {report.summary.comparableHours}h · {report.summary.modelWins ?? 0}:{report.summary.tepcoWins ?? 0}
+            {advantageHoursSub(
+              report.summary.modelAdvantageHours ?? report.summary.modelWins,
+              report.summary.tepcoAdvantageHours ?? report.summary.tepcoWins,
+              report.summary.equalHours ?? report.summary.ties,
+              report.summary.modelAdvantageRate,
+              labels,
+            )}
           </div>
         </div>
         <StatCard
@@ -486,9 +585,52 @@ export function ValidationPanel({ baseUrl }: Props) {
               <StatCard label={labels.samples} value={summary.hours.toLocaleString()} />
               <StatCard label={labels.modelMae} value={fmtPowerMaybe(summary.modelMaeMw, locale)} sub={labels.smallerBetter} />
               <StatCard label={labels.tepcoMae} value={fmtPowerMaybe(summary.tepcoMaeMw, locale)} sub={labels.smallerBetter} />
-              <StatCard label={labels.modelWins} value={summary.modelWins.toLocaleString()} />
-              <StatCard label={labels.tepcoWins} value={summary.tepcoWins.toLocaleString()} />
-              <StatCard label={labels.winRate} value={fmtPct(summary.modelWinRate)} />
+              <StatCard label={labels.modelWape} value={fmtMape(summary.modelWapePct)} sub={labels.smallerBetter} />
+              <StatCard label={labels.tepcoWape} value={fmtMape(summary.tepcoWapePct)} sub={labels.smallerBetter} />
+              <StatCard
+                label={labels.rmseRisk}
+                value={`${fmtPowerMaybe(summary.modelRmseMw, locale)} / ${fmtPowerMaybe(summary.tepcoRmseMw, locale)}`}
+                sub={`${labels.model} / ${labels.tepco}`}
+              />
+              <StatCard
+                label={labels.maxErrorRisk}
+                value={`${fmtPowerMaybe(summary.modelMaxErrorMw, locale)} / ${fmtPowerMaybe(summary.tepcoMaxErrorMw, locale)}`}
+                sub={`${labels.model} / ${labels.tepco}`}
+              />
+              <StatCard
+                label={labels.advantageHours}
+                value={advantageHoursValue(summary.modelAdvantageHours ?? summary.modelWins, summary.hours, locale)}
+                sub={advantageHoursSub(
+                  summary.modelAdvantageHours ?? summary.modelWins,
+                  summary.tepcoAdvantageHours ?? summary.tepcoWins,
+                  summary.equalHours ?? summary.ties,
+                  summary.modelAdvantageRate ?? summary.modelWinRate,
+                  labels,
+                )}
+              />
+              <div className="validation-stat">
+                <div className="validation-stat-label">{labels.assessment}</div>
+                <div className="validation-stat-value">
+                  <span className={`badge ${assessmentBadge(summaryVerdict(summary))}`}>
+                    {assessmentLabel(summaryVerdict(summary), labels)}
+                  </span>
+                </div>
+                <div className="validation-stat-sub">
+                  {commentFor({
+                    date: '',
+                    hours: 24,
+                    modelMaeMw: summary.modelMaeMw,
+                    tepcoMaeMw: summary.tepcoMaeMw,
+                    maeGapMw: summary.modelMaeMw != null && summary.tepcoMaeMw != null
+                      ? summary.modelMaeMw - summary.tepcoMaeMw
+                      : null,
+                    verdict: summaryVerdict(summary),
+                    modelWins: summary.modelWins,
+                    tepcoWins: summary.tepcoWins,
+                    ties: summary.ties,
+                  }, labels)}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -523,8 +665,10 @@ export function ValidationPanel({ baseUrl }: Props) {
                     <tr>
                       <th>{labels.date}</th>
                       <th>{labels.hours}</th>
-                      <th>{labels.modelMae}</th>
-                      <th>{labels.tepcoMae}</th>
+                      <th>{labels.mae}</th>
+                      <th>WAPE</th>
+                      <th>{labels.rmse}</th>
+                      <th>{labels.advantageHours}</th>
                       <th>{labels.winner}</th>
                       <th>{labels.comment}</th>
                     </tr>
@@ -534,11 +678,15 @@ export function ValidationPanel({ baseUrl }: Props) {
                       <tr key={row.date}>
                         <td>{fmtDate(row.date)}</td>
                         <td>{row.hours}</td>
-                        <td>{fmtPowerMaybe(row.modelMaeMw, locale)}</td>
-                        <td>{fmtPowerMaybe(row.tepcoMaeMw, locale)}</td>
+                        <td>{fmtPowerMaybe(row.modelMaeMw, locale)} / {fmtPowerMaybe(row.tepcoMaeMw, locale)}</td>
+                        <td>{fmtMape(row.modelWapePct)} / {fmtMape(row.tepcoWapePct)}</td>
+                        <td>{fmtPowerMaybe(row.modelRmseMw, locale)} / {fmtPowerMaybe(row.tepcoRmseMw, locale)}</td>
                         <td>
-                          <span className={`badge ${winnerOf(row, labels) === labels.model ? 'ok' : 'info'}`}>
-                            {winnerOf(row, labels)}
+                          {advantageHoursValue(row.modelAdvantageHours ?? row.modelWins, row.hours, locale)}
+                        </td>
+                        <td>
+                          <span className={`badge ${assessmentBadge(verdictOf(row))}`}>
+                            {assessmentLabel(verdictOf(row), labels)}
                           </span>
                         </td>
                         <td className="validation-comment">{commentFor(row, labels)}</td>
