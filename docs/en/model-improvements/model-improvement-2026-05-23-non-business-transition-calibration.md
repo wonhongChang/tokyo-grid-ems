@@ -15,7 +15,7 @@ In that regime, `lag_24h` can dominate the model even when `is_weekend` and `is_
 
 Added a conservative `business_type_transition` calibration inside the intraday correction layer.
 
-It activates only when:
+The observed transition layer activates only when:
 
 - the target day is a non-business day,
 - the previous-day lag comes from a different business type,
@@ -24,6 +24,21 @@ It activates only when:
 - the current forecast is still above that non-business-day anchor after a configurable allowance.
 
 The correction is applied only to future hours. Observed/published hours are left untouched.
+
+## Midnight Prior
+
+Added a separate `business_type_transition_prior` layer for the midnight-to-early-morning information gap.
+
+This layer is intentionally weaker than the observed transition correction. It can run only while usable same-day observations are still below the normal intraday threshold, and it is forced off once `lastObservedHour >= 6`.
+
+Default behavior:
+
+- `shrinkage`: 0.25
+- `max_abs_bias_mw`: 500
+- `lag_overheat_threshold_mw`: 1500
+- `base_allowed_excess_mw`: 900
+
+It lowers a future hour only when the forecast is above `recent_same_business_type_mean + base_allowed_excess_mw`. This makes it a weak prior against Friday-to-Saturday lag contamination, not a fixed weekend shape.
 
 ## Operating Behavior
 
@@ -35,8 +50,11 @@ Warm non-business days still get extra allowance through temperature anomaly and
 
 The operational calibration metadata now records:
 
+- `businessTypeTransitionPriorApplied`
+- `businessTypeTransitionPriorBiasMw`
 - `businessTypeTransitionApplied`
 - `businessTypeTransitionBiasMw`
+- `business_type_transition_prior_lag_overheat` in `appliedRegimeReason`
 - `business_type_transition_lag_overheat` in `appliedRegimeReason`
 
 These fields make it easier to confirm whether a weekend/holiday line was lowered by this calibration or by the ordinary residual correction.

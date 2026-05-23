@@ -221,6 +221,98 @@ def test_intraday_correction_applies_day_level_scale_when_lag_is_overheated_and_
     assert "lag24_overheat_with_cooler_day" in result.applied_regime_reason
 
 
+def test_intraday_correction_applies_non_business_transition_prior_before_observations():
+    target = date(2026, 5, 23)  # Saturday after a business day
+    forecasts = _make_forecasts(target, 24_000.0)
+    inference_features = pd.DataFrame([
+        {
+            "hour": 0,
+            "is_non_business_day": 1,
+            "lag_24h_business_type_mismatch": 1,
+            "lag_24h": 25_500.0,
+            "recent_same_business_type_mean": 22_000.0,
+        },
+        {
+            "hour": 1,
+            "is_non_business_day": 1,
+            "lag_24h_business_type_mismatch": 1,
+            "lag_24h": 25_000.0,
+            "recent_same_business_type_mean": 22_000.0,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "min_observed_hours": 3,
+            "operational_calibration": {
+                "day_boundary_carryover": {"enabled": False},
+                "day_level_scale": {"enabled": False},
+                "business_type_transition_prior": {
+                    "enabled": True,
+                    "force_off_hour": 6,
+                    "lag_overheat_threshold_mw": 1_500.0,
+                    "base_allowed_excess_mw": 900.0,
+                    "shrinkage": 0.25,
+                    "max_abs_bias_mw": 500.0,
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, [], inference_features=inference_features)
+
+    assert result.applied is True
+    assert result.business_type_transition_prior_applied is True
+    assert result.business_type_transition_prior_bias_mw == pytest.approx(-275.0)
+    assert result.business_type_transition_applied is False
+    assert result.forecasts[0].forecast_mw == pytest.approx(23_725.0)
+    assert result.forecasts[1].forecast_mw == pytest.approx(23_725.0)
+    assert result.forecasts[2].forecast_mw == pytest.approx(24_000.0)
+    assert "business_type_transition_prior_lag_overheat" in result.applied_regime_reason
+
+
+def test_intraday_correction_turns_transition_prior_off_at_morning_cutoff():
+    target = date(2026, 5, 23)  # Saturday after a business day
+    forecasts = _make_forecasts(target, 24_000.0)
+    actual_series = [_actual_point(target, 6, 23_500.0)]
+    inference_features = pd.DataFrame([
+        {
+            "hour": 7,
+            "is_non_business_day": 1,
+            "lag_24h_business_type_mismatch": 1,
+            "lag_24h": 28_000.0,
+            "recent_same_business_type_mean": 22_000.0,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "min_observed_hours": 3,
+            "operational_calibration": {
+                "day_boundary_carryover": {"enabled": False},
+                "day_level_scale": {"enabled": False},
+                "business_type_transition_prior": {
+                    "enabled": True,
+                    "force_off_hour": 6,
+                    "lag_overheat_threshold_mw": 1_500.0,
+                    "base_allowed_excess_mw": 900.0,
+                    "shrinkage": 0.25,
+                    "max_abs_bias_mw": 500.0,
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.applied is False
+    assert result.business_type_transition_prior_applied is False
+    assert result.business_type_transition_prior_bias_mw == pytest.approx(0.0)
+    assert result.forecasts == forecasts
+
+
 def test_intraday_correction_clips_large_adjustment():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)

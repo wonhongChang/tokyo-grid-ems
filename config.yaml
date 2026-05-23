@@ -43,6 +43,14 @@ intraday_correction:
       max_abs_bias_mw: 700
       observed_fade_hours: 3 # fade out once real same-day observations are available
       max_heating_degree: 7.0
+    business_type_transition_prior:
+      enabled: true          # weak prior for Fri->Sat/holiday boundaries before same-day evidence exists
+      target_non_business_only: true
+      force_off_hour: 6      # once morning observations exist, hand off to observed transition correction
+      lag_overheat_threshold_mw: 1500
+      base_allowed_excess_mw: 900
+      shrinkage: 0.25
+      max_abs_bias_mw: 500
     business_type_transition:
       enabled: true          # when Fri/Sat or holiday boundaries make lag_24h too business-day-like
       target_non_business_only: true

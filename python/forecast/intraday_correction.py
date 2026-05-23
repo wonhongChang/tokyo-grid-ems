@@ -27,6 +27,8 @@ class IntradayCorrectionResult:
     carryover_adjustment_mw: float = 0.0
     carryover_source_hour: int | None = None
     applied_day_bias_mw: float = 0.0
+    business_type_transition_prior_bias_mw: float = 0.0
+    business_type_transition_prior_applied: bool = False
     business_type_transition_bias_mw: float = 0.0
     business_type_transition_applied: bool = False
     source_confidence: dict | None = None
@@ -42,7 +44,17 @@ class IntradayCorrectionResult:
             "carryoverAdjustmentMw": round(float(self.carryover_adjustment_mw), 1),
             "carryoverSourceHour": self.carryover_source_hour,
             "appliedDayBiasMw": round(float(self.applied_day_bias_mw), 1),
-            "businessTypeTransitionBiasMw": round(float(self.business_type_transition_bias_mw), 1),
+            "businessTypeTransitionPriorBiasMw": round(
+                float(self.business_type_transition_prior_bias_mw),
+                1,
+            ),
+            "businessTypeTransitionPriorApplied": (
+                self.business_type_transition_prior_applied
+            ),
+            "businessTypeTransitionBiasMw": round(
+                float(self.business_type_transition_bias_mw),
+                1,
+            ),
             "businessTypeTransitionApplied": self.business_type_transition_applied,
             "sourceConfidence": self.source_confidence or {},
             "appliedRegimeReason": list(self.applied_regime_reason),
@@ -101,6 +113,31 @@ class IntradayResidualCorrector:
         )
         self._day_scale_max_heating_degree = float(
             scale_config.get("max_heating_degree", 7.0)
+        )
+        transition_prior_config = calibration_config.get(
+            "business_type_transition_prior",
+            {},
+        )
+        self._transition_prior_enabled = bool(
+            transition_prior_config.get("enabled", True)
+        )
+        self._transition_prior_target_non_business_only = bool(
+            transition_prior_config.get("target_non_business_only", True)
+        )
+        self._transition_prior_force_off_hour = int(
+            transition_prior_config.get("force_off_hour", 6)
+        )
+        self._transition_prior_lag_overheat_threshold_mw = float(
+            transition_prior_config.get("lag_overheat_threshold_mw", 1_500.0)
+        )
+        self._transition_prior_base_allowed_excess_mw = float(
+            transition_prior_config.get("base_allowed_excess_mw", 900.0)
+        )
+        self._transition_prior_shrinkage = float(
+            transition_prior_config.get("shrinkage", 0.25)
+        )
+        self._transition_prior_max_abs_bias_mw = float(
+            transition_prior_config.get("max_abs_bias_mw", 500.0)
         )
         transition_config = calibration_config.get("business_type_transition", {})
         self._transition_enabled = bool(transition_config.get("enabled", True))
@@ -517,6 +554,73 @@ class IntradayResidualCorrector:
 
         return biases
 
+    def _business_type_transition_prior_bias_by_hour(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        last_observed_hour: int | None,
+        usable_observed_hours: int,
+    ) -> dict[int, float]:
+        if (
+            not self._transition_prior_enabled
+            or inference_features is None
+            or inference_features.empty
+            or usable_observed_hours >= self._min_observed_hours
+        ):
+            return {}
+        if (
+            last_observed_hour is not None
+            and last_observed_hour >= self._transition_prior_force_off_hour
+        ):
+            return {}
+
+        forecast_by_hour = {
+            pd.Timestamp(forecast.ts).hour: forecast
+            for forecast in forecasts
+        }
+        biases: dict[int, float] = {}
+        for _, row in inference_features.iterrows():
+            hour = int(row.get("hour", -1))
+            forecast = forecast_by_hour.get(hour)
+            if forecast is None:
+                continue
+            if last_observed_hour is not None and hour <= last_observed_hour:
+                continue
+
+            mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if mismatch is None or mismatch <= 0:
+                continue
+            if (
+                self._transition_prior_target_non_business_only
+                and is_non_business_day != 1.0
+            ):
+                continue
+
+            lag_24h = self._finite_float(row.get("lag_24h"))
+            recent_mean = self._finite_float(row.get("recent_same_business_type_mean"))
+            if lag_24h is None or recent_mean is None:
+                continue
+            lag_overheat_mw = lag_24h - recent_mean
+            if lag_overheat_mw <= self._transition_prior_lag_overheat_threshold_mw:
+                continue
+
+            allowed_forecast_mw = (
+                recent_mean + self._transition_prior_base_allowed_excess_mw
+            )
+            excess_mw = forecast.forecast_mw - allowed_forecast_mw
+            if excess_mw <= 0.0:
+                continue
+
+            bias = -min(
+                self._transition_prior_max_abs_bias_mw,
+                excess_mw * self._transition_prior_shrinkage,
+            )
+            if bias != 0.0:
+                biases[hour] = round(float(bias), 1)
+
+        return biases
+
     def _apply_shape_guard(
         self,
         forecasts: list[HourlyForecast],
@@ -695,6 +799,27 @@ class IntradayResidualCorrector:
                     )
                     applied_reasons.append("day_boundary_residual_carryover")
 
+            transition_prior_bias_by_hour = (
+                self._business_type_transition_prior_bias_by_hour(
+                    calibrated_forecasts,
+                    inference_features,
+                    last_observed_hour,
+                    len(residuals_by_hour),
+                )
+            )
+            calibrated_forecasts, business_type_transition_prior_bias_mw = (
+                self._apply_hourly_bias(
+                    calibrated_forecasts,
+                    transition_prior_bias_by_hour,
+                    last_observed_hour,
+                )
+            )
+            business_type_transition_prior_applied = bool(
+                business_type_transition_prior_bias_mw != 0.0
+            )
+            if business_type_transition_prior_applied:
+                applied_reasons.append("business_type_transition_prior_lag_overheat")
+
             shape_guarded_forecasts, shape_guard_applied = self._apply_shape_guard(
                 calibrated_forecasts,
                 last_observed_hour,
@@ -713,6 +838,7 @@ class IntradayResidualCorrector:
                     or shape_guard_applied
                     or applied_day_bias_mw != 0.0
                     or carryover_adjustment_mw != 0.0
+                    or business_type_transition_prior_bias_mw != 0.0
                 ),
                 len(residuals_by_hour),
                 last_observed_hour,
@@ -726,6 +852,8 @@ class IntradayResidualCorrector:
                 round(carryover_adjustment_mw, 1),
                 carryover_source_hour,
                 round(applied_day_bias_mw, 1),
+                round(business_type_transition_prior_bias_mw, 1),
+                business_type_transition_prior_applied,
                 0.0,
                 False,
                 source_confidence,
@@ -749,6 +877,8 @@ class IntradayResidualCorrector:
                 0.0,
                 None,
                 0.0,
+                0.0,
+                False,
                 0.0,
                 False,
                 source_confidence,
@@ -850,6 +980,8 @@ class IntradayResidualCorrector:
             0.0,
             None,
             0.0,
+            0.0,
+            False,
             round(business_type_transition_bias_mw, 1),
             business_type_transition_applied,
             source_confidence,
