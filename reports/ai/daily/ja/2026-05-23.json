@@ -1,0 +1,306 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-23",
+  "generatedAt": "2026-05-24T07:53:06+09:00",
+  "availability": "ok",
+  "language": "ja",
+  "contentLanguage": "ja",
+  "generator": {
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "promptVersion": "openai_ops_report_v2",
+    "schemaVersion": "1.0.0",
+    "localizationModel": "gpt-4o-mini",
+    "localizationStatus": "ok"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-23.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-23.json",
+    "operationalCalibration": "reports/internal/operational-calibration/2026-05-23.json",
+    "operationalCalibrationHistory": null,
+    "alerts": "alerts/2026-05-23.json",
+    "forecast": "forecast/2026-05-23.json",
+    "actual": "actual/2026-05-23.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-24T07:53:06+09:00",
+    "fingerprint": "sha256:9935fdeb420afef11ba3ecae4af7b2a4db73902906ef35915a3e0a477bfb91e0",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:d96305a4f0ade1f91ab5ed5be1a130559ea877c4a64224763c31b560a0c30adc"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:9fd5c601a64bf04a2f0ee69f43313880e3be4c9842c8715fa6bb384d39644490"
+      },
+      "operationalCalibration": {
+        "path": "reports/internal/operational-calibration/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-23T21:42:50+09:00",
+        "fingerprint": "sha256:2a315b5de5e7cf0042d7f5d7f653d583349ff6920cadb31938e2ab2197bf8dfb"
+      },
+      "operationalCalibrationHistory": {
+        "path": null,
+        "exists": false,
+        "date": null,
+        "generatedAt": null,
+        "fingerprint": null
+      },
+      "alerts": {
+        "path": "alerts/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:6e2cedd809a9ebeca37a2cee9eb9f5707b10c9278e96a35cd04360c5a5dfde1e"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:0a17fdc31658900c18f599a4500615181a60c8352643105d05705b31bf5e1894"
+      },
+      "actual": {
+        "path": "actual/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:85c908a5c7f090336f72195f33fcb335298590a17ebdc0afffd579781c993038"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-24T07:42:45+09:00",
+        "fingerprint": "sha256:aca147d02d32a123a797ea923536bc3952a08f028c579446288757e188a76c58"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 0,
+    "limitations": [
+      "公開JSONから中間のintraday実行履歴は完全に再構築できない。",
+      "営業日から非営業日へのラベル変更の直接のスナップショット証拠が提供されていないため、移行因果関係は解釈されたままとなる。",
+      "上書きされたintradayタイムラインにより、最終診断やキャリブレーションスナップショットを超えた時間単位での検証が妨げられる。"
+    ]
+  },
+  "executiveSummary": {
+    "severity": "critical",
+    "headline": "モデルはTEPCOのパフォーマンスに及ばず、厳しい朝のラ ramp 漠が原因である。",
+    "summary": "TEPCOはMAE、WAPE、RMSE、及び最大誤差でモデルを上回った。最大の失敗は07-08 JSTであり、モデルは早い時間帯のラ ramp を過大予測した後、08-09の形状を逆転させ、実際の+1,560 MWの増加を1,910.3 MWも逃した。",
+    "modelVerdict": "tepco_better",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 489.0,
+    "tepcoMaeMw": 292.5,
+    "modelWapePct": 2.03,
+    "tepcoWapePct": 1.22,
+    "modelRmseMw": 679.7,
+    "tepcoRmseMw": 376.5,
+    "modelMaxErrorMw": 1908.3,
+    "tepcoMaxErrorMw": 1010.0,
+    "modelMaxErrorHour": 8,
+    "tepcoMaxErrorHour": 8,
+    "maeGapMw": 196.5,
+    "wapeGapPct": 0.81,
+    "verdict": "tepco_better",
+    "modelWins": 7,
+    "tepcoWins": 17,
+    "ties": 0,
+    "modelAdvantageHours": 7,
+    "tepcoAdvantageHours": 17,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.292
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "H1",
+      "severity": "critical",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "朝のラ ramp の転換が大きく誤ってモデル化された",
+      "explanation": "モデルは07-08および08-09を過大予測しており、実際の需要は08-09に急激に上昇した。これが支配的な形状の崩壊であり、最悪の時間あたり誤差を説明している。",
+      "evidence": [
+        {
+          "source": "topMisses",
+          "metric": "hour_8_model_error_mw",
+          "value": 1908.3,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "topMisses",
+          "metric": "hour_7_model_error_mw",
+          "value": 1626.5,
+          "unit": "MW",
+          "hour": 7,
+          "timeBand": "morning_ramp"
+        }
+      ],
+      "relatedHours": [
+        7,
+        8,
+        9
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition",
+        "intraday_correction.business_type_transition_prior"
+      ],
+      "counterEvidence": [
+        "TEPCOもラ rampを逃したが、モデルよりも少ない量である。"
+      ]
+    },
+    {
+      "id": "H2",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "営業日から非営業日への移行がラ ramp の慣性を汚染した可能性がある",
+      "explanation": "診断結果は、朝のラ ramp に大きなlag24のギャップが見られ、開発者ルールは06-10の傾向が大きいときに移行による慣性を指摘している。朝のラ rampにおけるモデルのバイアスは強くプラスであり、これは古いキャリーオーバー効果と一致する。",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24HourlyDeltaByBand_morning_ramp_mean",
+          "value": 1430.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "morning_ramp_model_bias_mw",
+          "value": 659.9,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "morning_ramp"
+        }
+      ],
+      "relatedHours": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.business_type_transition",
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "スナップショットでは営業日から非営業日へのラベル変更が明示的に示されていないため、移行自体は直接観察されず、推測されている。"
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "日レベルの慣性が観測されたレジームに対して強すぎた",
+      "explanation": "日レベルのレジームは最近の同業種に対してlag24が4,007 MW上回り、かつその日は最近の週よりも涼しかった。この組み合わせは、モデルが現在のレジームに対して前日の需要レベルに過度に依存していたことを示唆している。",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24ToSameBusinessTypeGapMeanMw",
+          "value": -4007.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        },
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "dayLevelRegime.flags",
+          "value": "lag24_above_recent_same_business_type",
+          "unit": null,
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "relatedTimeBands": [
+        "overnight",
+        "morning_ramp",
+        "daytime"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.day_level_scale",
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "最終日次バイアスは-42.7 MW近くでほぼ中立であったため、これは1日のレベルよりも日内の形状に関することだ。"
+      ]
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "R1",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.business_type_transition_prior",
+      "suggestion": "ビジネスタイプ変更インジケーターがアクティブで、朝のラ ramp が500 MWを2時間連続して超えるときのみ、以前のものを有効にし、0.35で上限を設定し、10:00 JST以降は50%減少させる。",
+      "expectedEffect": "ビジネスタイプの移行中に古いラ ramp のキャリーオーバーを減少させ、06-10の形状の整合性を改善する。",
+      "risk": "トリガーが広すぎると、平常の平日に過少補正される可能性がある。",
+      "validationPlan": "最近の30日の類似の移行日を再生し、06-10のMAEと08-09のデルタエラーを現在の設定に対して比較する。",
+      "linkedHypotheses": [
+        "H1",
+        "H2"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "R2",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.business_type_transition",
+      "suggestion": "朝のラ ramp モデルバイアスが+400 MWを超え、07-09の残差が2時間同じサインを維持する場合にトランジションオーバーライドを追加し、08:00 JSTで確実にハンドオフを行う。",
+      "expectedEffect": "ラ ramp のハンドオフを改善し、モデルが観測された08-09の増加を逆転するのを防ぐ。",
+      "risk": "ハードハンドオフは、朝のラ ramp が遅延するとノイズを追加する可能性がある。",
+      "validationPlan": "トランジション日でバックテストを実行し、08-09の最大delta_missが1,200 MW未満になるかを測定する。",
+      "linkedHypotheses": [
+        "H1",
+        "H2"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "TEPCOは全体的に優れたパフォーマンスを示した: MAE 292.5 MW対489.0 MW, WAPE 1.22%対2.03%, 及び最大誤差1,010.0 MW対1,908.3 MW。",
+    "主要な運用失敗は天候によるものではなく、すべてのweatherDeltaRisk評価が中立的であり、冷却デeltaがすべての帯域で0.0であった。",
+    "キャリブレーションが適用されたが、businessTypeTransitionPriorとbusinessTypeTransitionの両方が偽であったため、朝のラ ramp ギャップがこれらの制御によって減衰されなかった。"
+  ],
+  "limitations": [
+    "公開JSONから中間のintraday実行履歴は完全に再構築できない。",
+    "営業日から非営業日へのラベル変更の直接のスナップショット証拠が提供されていないため、移行因果関係は解釈されたままとなる。",
+    "上書きされたintradayタイムラインにより、最終診断やキャリブレーションスナップショットを超えた時間単位での検証が妨げられる。"
+  ]
+}

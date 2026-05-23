@@ -1,0 +1,306 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-23",
+  "generatedAt": "2026-05-24T07:53:06+09:00",
+  "availability": "ok",
+  "language": "ko",
+  "contentLanguage": "ko",
+  "generator": {
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "promptVersion": "openai_ops_report_v2",
+    "schemaVersion": "1.0.0",
+    "localizationModel": "gpt-4o-mini",
+    "localizationStatus": "ok"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-23.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-23.json",
+    "operationalCalibration": "reports/internal/operational-calibration/2026-05-23.json",
+    "operationalCalibrationHistory": null,
+    "alerts": "alerts/2026-05-23.json",
+    "forecast": "forecast/2026-05-23.json",
+    "actual": "actual/2026-05-23.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-24T07:53:06+09:00",
+    "fingerprint": "sha256:9935fdeb420afef11ba3ecae4af7b2a4db73902906ef35915a3e0a477bfb91e0",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:d96305a4f0ade1f91ab5ed5be1a130559ea877c4a64224763c31b560a0c30adc"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:9fd5c601a64bf04a2f0ee69f43313880e3be4c9842c8715fa6bb384d39644490"
+      },
+      "operationalCalibration": {
+        "path": "reports/internal/operational-calibration/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-23T21:42:50+09:00",
+        "fingerprint": "sha256:2a315b5de5e7cf0042d7f5d7f653d583349ff6920cadb31938e2ab2197bf8dfb"
+      },
+      "operationalCalibrationHistory": {
+        "path": null,
+        "exists": false,
+        "date": null,
+        "generatedAt": null,
+        "fingerprint": null
+      },
+      "alerts": {
+        "path": "alerts/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:6e2cedd809a9ebeca37a2cee9eb9f5707b10c9278e96a35cd04360c5a5dfde1e"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:0a17fdc31658900c18f599a4500615181a60c8352643105d05705b31bf5e1894"
+      },
+      "actual": {
+        "path": "actual/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:85c908a5c7f090336f72195f33fcb335298590a17ebdc0afffd579781c993038"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-24T07:42:45+09:00",
+        "fingerprint": "sha256:aca147d02d32a123a797ea923536bc3952a08f028c579446288757e188a76c58"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 0,
+    "limitations": [
+      "중간의 intraday 실행 이력은 공개 JSON에서 완전하게 재구성할 수 없다.",
+      "영업일에서 비영업일로의 레이블 변경에 대한 직접적인 스냅샷 증거가 제공되지 않아 전환 인과관계가 여전히 해석된다.",
+      "압축된 intraday 타임라인은 최종 진단과 보정 스냅샷을 넘어 시간 단위 검증을 방해한다."
+    ]
+  },
+  "executiveSummary": {
+    "severity": "critical",
+    "headline": "모델 성능이 TEPCO보다 떨어졌다. 심각한 아침 램프 누락으로 인한 결과이다.",
+    "summary": "TEPCO는 MAE, WAPE, RMSE 및 최대 오차에서 모델을 초과하였다. 가장 큰 실패는 07-08 JST: 모델이 아침 램프를 과대 예측하였고, 08-09 형태를 역전시키면서 실제 +1,560 MW 증가를 1,910.3 MW만큼 놓쳤다.",
+    "modelVerdict": "tepco_better",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 489.0,
+    "tepcoMaeMw": 292.5,
+    "modelWapePct": 2.03,
+    "tepcoWapePct": 1.22,
+    "modelRmseMw": 679.7,
+    "tepcoRmseMw": 376.5,
+    "modelMaxErrorMw": 1908.3,
+    "tepcoMaxErrorMw": 1010.0,
+    "modelMaxErrorHour": 8,
+    "tepcoMaxErrorHour": 8,
+    "maeGapMw": 196.5,
+    "wapeGapPct": 0.81,
+    "verdict": "tepco_better",
+    "modelWins": 7,
+    "tepcoWins": 17,
+    "ties": 0,
+    "modelAdvantageHours": 7,
+    "tepcoAdvantageHours": 17,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.292
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "H1",
+      "severity": "critical",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "아침 램프 전환 모델링이 잘못되었다.",
+      "explanation": "모델이 07-08과 08-09에서 과대 예측하였으며 실제 수요는 08-09에 급격히 상승하였다. 이것이 가장 큰 형태의 파손을 나타내며 최악의 시간당 오류를 설명한다.",
+      "evidence": [
+        {
+          "source": "topMisses",
+          "metric": "hour_8_model_error_mw",
+          "value": 1908.3,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "topMisses",
+          "metric": "hour_7_model_error_mw",
+          "value": 1626.5,
+          "unit": "MW",
+          "hour": 7,
+          "timeBand": "morning_ramp"
+        }
+      ],
+      "relatedHours": [
+        7,
+        8,
+        9
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition",
+        "intraday_correction.business_type_transition_prior"
+      ],
+      "counterEvidence": [
+        "TEPCO도 램프를 놓쳤으나 모델보다 적은 양이다."
+      ]
+    },
+    {
+      "id": "H2",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "영업일에서 비영업일로의 전환이 램프 관성을 오염시켰을 가능성이 있다.",
+      "explanation": "진단 결과 아침 램프에서 큰 lag24 갭이 나타나며, 개발자 규칙은 06-10의 편향이 클 때 전환에 따른 관성을 가리킨다. 아침 램프에서 모델의 편향은 강하게 긍정적이며, 이는 오래된 여파 효과와 일치한다.",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24HourlyDeltaByBand_morning_ramp_mean",
+          "value": 1430.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "morning_ramp_model_bias_mw",
+          "value": 659.9,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "morning_ramp"
+        }
+      ],
+      "relatedHours": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.business_type_transition",
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "스냅샷은 영업일에서 비영업일로의 레이블 변경을 명시적으로 나타내지 않으므로 전환은 직접 관찰되지 않고 추론된다."
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "일 수준의 관성이 관측된 체계에 비해 너무 강했다.",
+      "explanation": "일 수준의 체계는 최근 동일 사업 부문 대비 4,007 MW 이상의 lag24를 보이며, 해당 일은 최근 주보다 시원한 날이었다. 이 조합은 모델이 현재 체계에 비해 이전 날 수요 수준에 너무 많이 의존했음을 나타낸다.",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24ToSameBusinessTypeGapMeanMw",
+          "value": -4007.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        },
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "dayLevelRegime.flags",
+          "value": "lag24_above_recent_same_business_type",
+          "unit": null,
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "relatedTimeBands": [
+        "overnight",
+        "morning_ramp",
+        "daytime"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.day_level_scale",
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "최종 일간 편향은 -42.7 MW 근처로 거의 중립적이었다. 이는 전체 일 수명보다 내부의 형태에 관한 것에 더 가깝다."
+      ]
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "R1",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.business_type_transition_prior",
+      "suggestion": "비즈니스 유형 변경 지표가 활성화되고 아침 램프의 절대 편향이 2시간 연속 500 MW를 초과할 때에만 이전을 활성화하고, 0.35로 제한하며, 10:00 JST 이후 50% 감소시킨다.",
+      "expectedEffect": "비즈니스 유형 전환 중 오래된 램프 여파를 줄이고 06-10 형태 정렬을 개선한다.",
+      "risk": "트리거가 너무 광범위하면 일반적인 평일에 과소 수정될 수 있다.",
+      "validationPlan": "마지막 30일 전환 가능 일들을 재생하고 06-10 MAE와 08-09 차이 오류를 현재 설정과 비교한다.",
+      "linkedHypotheses": [
+        "H1",
+        "H2"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "R2",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.business_type_transition",
+      "suggestion": "아침 램프 모델 편향이 +400 MW 이상일 때, 07-09 잔여물이 2시간 동안 같은 부호를 유지할 때 전환 오버라이드를 추가하고, 08:00 JST에서 확실하게 전환한다.",
+      "expectedEffect": "램프의 핸드오프를 개선하고 모델이 관측된 08-09 증가를 역전하는 것을 방지한다.",
+      "risk": "확실한 핸드오프는 아침 램프가 지연된 날에 잡음을 추가할 수 있다.",
+      "validationPlan": "전환일에 백테스트를 실행하고 08-09에서 largest_delta_miss가 1,200 MW 이하인지 측정한다.",
+      "linkedHypotheses": [
+        "H1",
+        "H2"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "TEPCO는 전반적으로 더 나은 성능을 보였다: MAE 292.5 MW 대 489.0 MW, WAPE 1.22% 대 2.03%, 최대 오류 1,010.0 MW 대 1,908.3 MW.",
+    "주요 운영 실패는 날씨가 아니라 모든 weatherDeltaRisk 평가가 중립적이었고 냉각 델타가 모든 밴드에서 0.0이었다.",
+    "보정이 적용되었으나 businessTypeTransitionPrior와 businessTypeTransition가 모두 거짓이었으므로 아침 램프 갭이 이러한 제어에 의해 완화되지 않았다."
+  ],
+  "limitations": [
+    "중간의 intraday 실행 이력은 공개 JSON에서 완전하게 재구성할 수 없다.",
+    "영업일에서 비영업일로의 레이블 변경에 대한 직접적인 스냅샷 증거가 제공되지 않아 전환 인과관계가 여전히 해석된다.",
+    "압축된 intraday 타임라인은 최종 진단과 보정 스냅샷을 넘어 시간 단위 검증을 방해한다."
+  ]
+}

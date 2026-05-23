@@ -1,0 +1,190 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-15",
+  "generatedAt": "2026-05-24T07:53:06+09:00",
+  "availability": "ok",
+  "language": "ko",
+  "contentLanguage": "ko",
+  "generator": {
+    "provider": "fallback",
+    "model": null,
+    "promptVersion": "fallback_rules_v1",
+    "schemaVersion": "1.0.0"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-15.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-15.json",
+    "operationalCalibration": null,
+    "operationalCalibrationHistory": null,
+    "alerts": "alerts/2026-05-15.json",
+    "forecast": "forecast/2026-05-15.json",
+    "actual": "actual/2026-05-15.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-24T07:53:06+09:00",
+    "fingerprint": "sha256:e57e55053ea610b8beaa9e80f860862df18e79f0a8461fc298aeb22818e3ad38",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-15.json",
+        "exists": true,
+        "date": "2026-05-15",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:57ab96befcfa85abc477df1c59d2c3fcc0fd542a9f0acb9dc91187f24064653f"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-15.json",
+        "exists": true,
+        "date": "2026-05-15",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:1d3727231f04718cc723a02b76e4ece8ab299e7e68a080b8611252afdd0bafe1"
+      },
+      "operationalCalibration": {
+        "path": null,
+        "exists": false,
+        "date": null,
+        "generatedAt": null,
+        "fingerprint": null
+      },
+      "operationalCalibrationHistory": {
+        "path": null,
+        "exists": false,
+        "date": null,
+        "generatedAt": null,
+        "fingerprint": null
+      },
+      "alerts": {
+        "path": "alerts/2026-05-15.json",
+        "exists": true,
+        "date": "2026-05-15",
+        "generatedAt": null,
+        "fingerprint": "sha256:6453fbc72bcde798646477ed743a79283c0411b6f79ea2dcee60e3baea6bbafe"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-15.json",
+        "exists": true,
+        "date": "2026-05-15",
+        "generatedAt": null,
+        "fingerprint": "sha256:463f34e80f8a161408fda1b4e9f7be6cfac192cb50f22b4d2569aed38caf6167"
+      },
+      "actual": {
+        "path": "actual/2026-05-15.json",
+        "exists": true,
+        "date": "2026-05-15",
+        "generatedAt": null,
+        "fingerprint": "sha256:bd78c666519092198e7e8d7f1dd02cb2ce607b50748ae913a8f968b754faee9a"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-24T07:42:45+09:00",
+        "fingerprint": "sha256:aca147d02d32a123a797ea923536bc3952a08f028c579446288757e188a76c58"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 0,
+    "limitations": [
+      "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
+      "현재 공개 JSON은 최종 실행분 중심이라 중간 intraday 실행 타임라인은 완전히 복원할 수 없습니다.",
+      "해당 날짜의 operational-calibration JSON이 없어 보정 레이어 가동 여부는 직접 확인하지 못했습니다."
+    ]
+  },
+  "executiveSummary": {
+    "severity": "info",
+    "headline": "모델이 TEPCO보다 일일 오차를 낮췄습니다.",
+    "summary": "비교 가능 시간은 24시간이며, 모델 MAE는 250.0 MW, TEPCO MAE는 331.7 MW입니다. WAPE는 모델 0.93%, TEPCO 1.23%로 집계되었습니다.",
+    "modelVerdict": "model_better",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 250.0,
+    "tepcoMaeMw": 331.7,
+    "modelWapePct": 0.93,
+    "tepcoWapePct": 1.23,
+    "modelRmseMw": 319.1,
+    "tepcoRmseMw": 446.4,
+    "modelMaxErrorMw": 736.6,
+    "tepcoMaxErrorMw": 950.0,
+    "modelMaxErrorHour": 9,
+    "tepcoMaxErrorHour": 12,
+    "maeGapMw": -81.7,
+    "wapeGapPct": -0.3,
+    "verdict": "model_better",
+    "modelWins": 16,
+    "tepcoWins": 8,
+    "ties": 0,
+    "modelAdvantageHours": 16,
+    "tepcoAdvantageHours": 8,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.667
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "h1",
+      "severity": "info",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "모델이 일일 기준으로 TEPCO보다 가까웠습니다.",
+      "explanation": "일일 MAE/WAPE 기준으로 모델 예측이 더 안정적이었습니다. 같은 조건의 반복 여부를 추적할 가치가 있습니다.",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "maeGapMw",
+          "value": -81.7,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        },
+        {
+          "source": "reports/daily",
+          "metric": "wapeGapPct",
+          "value": -0.3,
+          "unit": null,
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "lgbm_quantile_q50",
+        "intraday_correction.day_level_scale"
+      ],
+      "counterEvidence": []
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "r1",
+      "priority": "low",
+      "type": "feature_engineering",
+      "target": "lgbm_quantile_q50",
+      "suggestion": "모델이 일일 기준으로 TEPCO보다 가까웠습니다. 가설을 기준으로 lgbm_quantile_q50의 영향도를 재검토합니다.",
+      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
+      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
+      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
+      "linkedHypotheses": [
+        "h1"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "featureRecommendations는 검토 후보이며 자동 적용되지 않습니다.",
+    "운영 보정 신호 카탈로그: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale"
+  ],
+  "limitations": [
+    "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
+    "현재 공개 JSON은 최종 실행분 중심이라 중간 intraday 실행 타임라인은 완전히 복원할 수 없습니다.",
+    "해당 날짜의 operational-calibration JSON이 없어 보정 레이어 가동 여부는 직접 확인하지 못했습니다."
+  ]
+}

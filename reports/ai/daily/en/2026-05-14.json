@@ -1,0 +1,182 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-14",
+  "generatedAt": "2026-05-24T07:53:06+09:00",
+  "availability": "ok",
+  "language": "en",
+  "contentLanguage": "en",
+  "generator": {
+    "provider": "fallback",
+    "model": null,
+    "promptVersion": "fallback_rules_v1",
+    "schemaVersion": "1.0.0"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-14.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-14.json",
+    "operationalCalibration": null,
+    "operationalCalibrationHistory": null,
+    "alerts": "alerts/2026-05-14.json",
+    "forecast": "forecast/2026-05-14.json",
+    "actual": "actual/2026-05-14.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-24T07:53:06+09:00",
+    "fingerprint": "sha256:cc6ef8a3f1343247fecc8b1bc800d7ae98c470cb7106b1b95bd4c46e499058d3",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-14.json",
+        "exists": true,
+        "date": "2026-05-14",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:5c70265d300cb2d329772edd57ccb38eeeeb2e676eeeaedde61eeba770677d85"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-14.json",
+        "exists": true,
+        "date": "2026-05-14",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:686f210027fdd2c6dc60111dc118d288d9fa8792a1462209849c491bae4f6983"
+      },
+      "operationalCalibration": {
+        "path": null,
+        "exists": false,
+        "date": null,
+        "generatedAt": null,
+        "fingerprint": null
+      },
+      "operationalCalibrationHistory": {
+        "path": null,
+        "exists": false,
+        "date": null,
+        "generatedAt": null,
+        "fingerprint": null
+      },
+      "alerts": {
+        "path": "alerts/2026-05-14.json",
+        "exists": true,
+        "date": "2026-05-14",
+        "generatedAt": null,
+        "fingerprint": "sha256:ca95b534b136cfdd8abcc9e9f51263cbc4e86dc36e519044d5516a878b66f5b9"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-14.json",
+        "exists": true,
+        "date": "2026-05-14",
+        "generatedAt": null,
+        "fingerprint": "sha256:0710bb879daeb070be58c902ec6154f19d7010381b79f9d2e3b03361cb4afb3a"
+      },
+      "actual": {
+        "path": "actual/2026-05-14.json",
+        "exists": true,
+        "date": "2026-05-14",
+        "generatedAt": null,
+        "fingerprint": "sha256:90986baafb382f035c00c13aefbafc2d6d79f9f35287404b21b6daccb2a9148b"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-24T07:42:45+09:00",
+        "fingerprint": "sha256:aca147d02d32a123a797ea923536bc3952a08f028c579446288757e188a76c58"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 0,
+    "limitations": [
+      "This report was generated from deterministic JSON without calling OpenAI.",
+      "The public JSON mainly preserves the final run, so intermediate intraday execution history cannot be fully reconstructed.",
+      "No operational-calibration JSON was available for this date, so calibration-layer activity could not be directly verified."
+    ]
+  },
+  "executiveSummary": {
+    "severity": "info",
+    "headline": "The model and TEPCO performed similarly.",
+    "summary": "24 comparable hours were available. Model MAE was 214.0 MW, TEPCO MAE was 187.9 MW. WAPE was 0.78% for the model and 0.68% for TEPCO.",
+    "modelVerdict": "close",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 214.0,
+    "tepcoMaeMw": 187.9,
+    "modelWapePct": 0.78,
+    "tepcoWapePct": 0.68,
+    "modelRmseMw": 301.5,
+    "tepcoRmseMw": 269.9,
+    "modelMaxErrorMw": 719.9,
+    "tepcoMaxErrorMw": 720.0,
+    "modelMaxErrorHour": 15,
+    "tepcoMaxErrorHour": 10,
+    "maeGapMw": 26.1,
+    "wapeGapPct": 0.1,
+    "verdict": "close",
+    "modelWins": 12,
+    "tepcoWins": 12,
+    "ties": 0,
+    "modelAdvantageHours": 12,
+    "tepcoAdvantageHours": 12,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.5
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "h1",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "Peak timing was missed.",
+      "explanation": "The model peak hour differed from the actual peak hour. Review weather deltas and lag shape around the peak.",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "timeErrorHours",
+          "value": 2,
+          "unit": null,
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "temp_delta_1h",
+        "lag_168h_hourly_delta"
+      ],
+      "counterEvidence": []
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "r1",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "temp_delta_1h",
+      "suggestion": "Review the impact of temp_delta_1h based on the hypothesis: Peak timing was missed.",
+      "expectedEffect": "Check whether MAE, WAPE, and RMSE improve together under repeated hour-band and business-type conditions.",
+      "risk": "Overfitting a single-day pattern can cause over-correction in other seasons or day types.",
+      "validationPlan": "Compare WAPE, RMSE, and max error against TEPCO using recent 2-4 week replay and backtests.",
+      "linkedHypotheses": [
+        "h1"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "featureRecommendations are review candidates and are never applied automatically.",
+    "Operational calibration signal catalog: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale"
+  ],
+  "limitations": [
+    "This report was generated from deterministic JSON without calling OpenAI.",
+    "The public JSON mainly preserves the final run, so intermediate intraday execution history cannot be fully reconstructed.",
+    "No operational-calibration JSON was available for this date, so calibration-layer activity could not be directly verified."
+  ]
+}

@@ -1,0 +1,305 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-23",
+  "generatedAt": "2026-05-24T07:53:06+09:00",
+  "availability": "ok",
+  "language": "en",
+  "contentLanguage": "en",
+  "generator": {
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "promptVersion": "openai_ops_report_v2",
+    "schemaVersion": "1.0.0",
+    "localizationStatus": "not_requested"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-23.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-23.json",
+    "operationalCalibration": "reports/internal/operational-calibration/2026-05-23.json",
+    "operationalCalibrationHistory": null,
+    "alerts": "alerts/2026-05-23.json",
+    "forecast": "forecast/2026-05-23.json",
+    "actual": "actual/2026-05-23.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-24T07:53:06+09:00",
+    "fingerprint": "sha256:9935fdeb420afef11ba3ecae4af7b2a4db73902906ef35915a3e0a477bfb91e0",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:d96305a4f0ade1f91ab5ed5be1a130559ea877c4a64224763c31b560a0c30adc"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-24T07:52:09+09:00",
+        "fingerprint": "sha256:9fd5c601a64bf04a2f0ee69f43313880e3be4c9842c8715fa6bb384d39644490"
+      },
+      "operationalCalibration": {
+        "path": "reports/internal/operational-calibration/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": "2026-05-23T21:42:50+09:00",
+        "fingerprint": "sha256:2a315b5de5e7cf0042d7f5d7f653d583349ff6920cadb31938e2ab2197bf8dfb"
+      },
+      "operationalCalibrationHistory": {
+        "path": null,
+        "exists": false,
+        "date": null,
+        "generatedAt": null,
+        "fingerprint": null
+      },
+      "alerts": {
+        "path": "alerts/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:6e2cedd809a9ebeca37a2cee9eb9f5707b10c9278e96a35cd04360c5a5dfde1e"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:0a17fdc31658900c18f599a4500615181a60c8352643105d05705b31bf5e1894"
+      },
+      "actual": {
+        "path": "actual/2026-05-23.json",
+        "exists": true,
+        "date": "2026-05-23",
+        "generatedAt": null,
+        "fingerprint": "sha256:85c908a5c7f090336f72195f33fcb335298590a17ebdc0afffd579781c993038"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-24T07:42:45+09:00",
+        "fingerprint": "sha256:aca147d02d32a123a797ea923536bc3952a08f028c579446288757e188a76c58"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 0,
+    "limitations": [
+      "Intermediate intraday execution history is not fully reconstructible from the public JSON.",
+      "No direct snapshot evidence of a business-day to non-business-day label change was provided, so transition causality remains inferred.",
+      "The overwritten intraday timeline prevents hour-by-hour validation beyond the final diagnostics and calibration snapshot."
+    ]
+  },
+  "executiveSummary": {
+    "severity": "critical",
+    "headline": "Model underperformed TEPCO, driven by a severe morning ramp miss",
+    "summary": "TEPCO beat the model on MAE, WAPE, RMSE, and max error. The largest failure was 07-08 JST: the model overforecasted early ramp and then reversed the 08-09 shape, missing the actual +1,560 MW rise by 1,910.3 MW.",
+    "modelVerdict": "tepco_better",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 489.0,
+    "tepcoMaeMw": 292.5,
+    "modelWapePct": 2.03,
+    "tepcoWapePct": 1.22,
+    "modelRmseMw": 679.7,
+    "tepcoRmseMw": 376.5,
+    "modelMaxErrorMw": 1908.3,
+    "tepcoMaxErrorMw": 1010.0,
+    "modelMaxErrorHour": 8,
+    "tepcoMaxErrorHour": 8,
+    "maeGapMw": 196.5,
+    "wapeGapPct": 0.81,
+    "verdict": "tepco_better",
+    "modelWins": 7,
+    "tepcoWins": 17,
+    "ties": 0,
+    "modelAdvantageHours": 7,
+    "tepcoAdvantageHours": 17,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.292
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "H1",
+      "severity": "critical",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "Morning ramp transition was badly mis-modeled",
+      "explanation": "The model overforecasted 07-08 and 08-09, while actual demand rose sharply at 08-09. This is the dominant shape break and explains the worst hourly errors.",
+      "evidence": [
+        {
+          "source": "topMisses",
+          "metric": "hour_8_model_error_mw",
+          "value": 1908.3,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "topMisses",
+          "metric": "hour_7_model_error_mw",
+          "value": 1626.5,
+          "unit": "MW",
+          "hour": 7,
+          "timeBand": "morning_ramp"
+        }
+      ],
+      "relatedHours": [
+        7,
+        8,
+        9
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition",
+        "intraday_correction.business_type_transition_prior"
+      ],
+      "counterEvidence": [
+        "TEPCO also missed the ramp, though by a smaller amount than the model."
+      ]
+    },
+    {
+      "id": "H2",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "Business-day to non-business-day transition likely contaminated ramp inertia",
+      "explanation": "Diagnostics show a large morning_ramp lag24 gap and the developer rule points to transition-driven inertia when 06-10 bias is large. The model bias in morning_ramp was strongly positive, consistent with a stale carryover effect.",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24HourlyDeltaByBand_morning_ramp_mean",
+          "value": 1430.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "morning_ramp_model_bias_mw",
+          "value": 659.9,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "morning_ramp"
+        }
+      ],
+      "relatedHours": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.business_type_transition",
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "The snapshot does not explicitly expose the business-day to non-business-day label change, so the transition itself is inferred rather than directly observed."
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "Day-level inertia was too strong against the observed regime",
+      "explanation": "The day-level regime shows lag24 above recent same-business-type by 4,007 MW and the day was cooler than the recent week. That combination suggests the model leaned too much on prior-day demand level relative to the current regime.",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24ToSameBusinessTypeGapMeanMw",
+          "value": -4007.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        },
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "dayLevelRegime.flags",
+          "value": "lag24_above_recent_same_business_type",
+          "unit": null,
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "relatedTimeBands": [
+        "overnight",
+        "morning_ramp",
+        "daytime"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.day_level_scale",
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "The final daily bias was near neutral at -42.7 MW, so this is more about intra-day shape than total-day level."
+      ]
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "R1",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.business_type_transition_prior",
+      "suggestion": "Enable the prior only when the business-type change indicator is active and the morning_ramp absolute bias exceeds 500 MW for 2 consecutive hours; cap the prior at 0.35 and decay it by 50% after 10:00 JST.",
+      "expectedEffect": "Reduce stale ramp carryover during business-type transitions and improve 06-10 shape alignment.",
+      "risk": "May under-correct on ordinary weekdays if the trigger is too broad.",
+      "validationPlan": "Replay the last 30 comparable transition days and compare 06-10 MAE plus 08-09 delta error against the current setting.",
+      "linkedHypotheses": [
+        "H1",
+        "H2"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "R2",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.business_type_transition",
+      "suggestion": "Add a transition override that activates when morning_ramp model bias is above +400 MW and 07-09 residuals keep the same sign for 2 hours, with a hard handoff at 08:00 JST.",
+      "expectedEffect": "Improve the ramp handoff and prevent the model from reversing the observed 08-09 increase.",
+      "risk": "A hard handoff can add noise on days with delayed morning ramp.",
+      "validationPlan": "Run a backtest on transition days and measure whether the largest_delta_miss at 08-09 falls below 1,200 MW.",
+      "linkedHypotheses": [
+        "H1",
+        "H2"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "TEPCO was better overall: MAE 292.5 MW vs 489.0 MW, WAPE 1.22% vs 2.03%, and max error 1,010.0 MW vs 1,908.3 MW.",
+    "The key operational failure was not weather; all weatherDeltaRisk assessments were neutral and cooling deltas were 0.0 across bands.",
+    "Calibration was applied, but businessTypeTransitionPrior and businessTypeTransition were both false, so the morning ramp gap was not damped by those controls."
+  ],
+  "limitations": [
+    "Intermediate intraday execution history is not fully reconstructible from the public JSON.",
+    "No direct snapshot evidence of a business-day to non-business-day label change was provided, so transition causality remains inferred.",
+    "The overwritten intraday timeline prevents hour-by-hour validation beyond the final diagnostics and calibration snapshot."
+  ]
+}
