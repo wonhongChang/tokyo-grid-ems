@@ -2,14 +2,14 @@
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-23",
-  "generatedAt": "2026-05-23T19:48:36+09:00",
+  "generatedAt": "2026-05-23T21:42:50+09:00",
   "model": "lgbm_quantile_q50",
   "source_confidence": {
     "level": "observed",
-    "actualHours": 19,
-    "usableObservedHours": 19,
+    "actualHours": 21,
+    "usableObservedHours": 21,
     "fallbackIgnoredHours": 0,
-    "missingHours": 5
+    "missingHours": 3
   },
   "applied_regime_reason": [
     "intraday_observed_residual"
@@ -76,9 +76,9 @@
   },
   "correction": {
     "applied": true,
-    "observedHours": 19,
-    "lastObservedHour": 18,
-    "baseAdjustmentMw": -106.0,
+    "observedHours": 21,
+    "lastObservedHour": 20,
+    "baseAdjustmentMw": -3.8,
     "fallbackResidualsIgnored": 0,
     "carryoverAdjustmentMw": 0.0,
     "carryoverSourceHour": null,
@@ -93,10 +93,10 @@
     "negResidualRecoveryDampingFactor": 1.0,
     "sourceConfidence": {
       "level": "observed",
-      "actualHours": 19,
-      "usableObservedHours": 19,
+      "actualHours": 21,
+      "usableObservedHours": 21,
       "fallbackIgnoredHours": 0,
-      "missingHours": 5
+      "missingHours": 3
     },
     "appliedRegimeReason": [
       "intraday_observed_residual"
@@ -486,8 +486,8 @@
     {
       "hour": 19,
       "ts": "2026-05-23T19:00:00+09:00",
-      "actualMw": null,
-      "actualSource": null,
+      "actualMw": 26920.0,
+      "actualSource": "observed",
       "tepcoForecastMw": 26820.0,
       "forecastMwByStage": {
         "raw_lgbm": 26753.3,
@@ -497,48 +497,48 @@
         "pre_calibration": 27043.5
       },
       "preCalibrationForecastMw": 27043.5,
-      "postCalibrationForecastMw": 26937.5,
-      "calibrationDeltaMw": -106.0,
-      "actualVsPreCalibrationResidualMw": null,
-      "actualVsPostCalibrationResidualMw": null,
-      "tepcoErrorMw": null
+      "postCalibrationForecastMw": 27043.5,
+      "calibrationDeltaMw": 0.0,
+      "actualVsPreCalibrationResidualMw": -123.5,
+      "actualVsPostCalibrationResidualMw": -123.5,
+      "tepcoErrorMw": -100.0
     },
     {
       "hour": 20,
       "ts": "2026-05-23T20:00:00+09:00",
-      "actualMw": null,
-      "actualSource": null,
-      "tepcoForecastMw": 25960.0,
+      "actualMw": 26100.0,
+      "actualSource": "observed",
+      "tepcoForecastMw": 25970.0,
       "forecastMwByStage": {
-        "raw_lgbm": 25429.7,
-        "analog_adjusted": 25736.4,
-        "post_holiday_guarded": 25736.4,
-        "midday_guarded": 25736.4,
-        "pre_calibration": 25736.4
+        "raw_lgbm": 25659.6,
+        "analog_adjusted": 25966.3,
+        "post_holiday_guarded": 25966.3,
+        "midday_guarded": 25966.3,
+        "pre_calibration": 25966.3
       },
-      "preCalibrationForecastMw": 25736.4,
-      "postCalibrationForecastMw": 25638.9,
-      "calibrationDeltaMw": -97.5,
-      "actualVsPreCalibrationResidualMw": null,
-      "actualVsPostCalibrationResidualMw": null,
-      "tepcoErrorMw": null
+      "preCalibrationForecastMw": 25966.3,
+      "postCalibrationForecastMw": 25966.3,
+      "calibrationDeltaMw": 0.0,
+      "actualVsPreCalibrationResidualMw": 133.7,
+      "actualVsPostCalibrationResidualMw": 133.7,
+      "tepcoErrorMw": -130.0
     },
     {
       "hour": 21,
       "ts": "2026-05-23T21:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 24730.0,
+      "tepcoForecastMw": 24770.0,
       "forecastMwByStage": {
-        "raw_lgbm": 24447.5,
-        "analog_adjusted": 24692.4,
-        "post_holiday_guarded": 24692.4,
-        "midday_guarded": 24692.4,
-        "pre_calibration": 24692.4
+        "raw_lgbm": 24586.5,
+        "analog_adjusted": 24831.4,
+        "post_holiday_guarded": 24831.4,
+        "midday_guarded": 24831.4,
+        "pre_calibration": 24831.4
       },
-      "preCalibrationForecastMw": 24692.4,
-      "postCalibrationForecastMw": 24602.7,
-      "calibrationDeltaMw": -89.7,
+      "preCalibrationForecastMw": 24831.4,
+      "postCalibrationForecastMw": 24827.6,
+      "calibrationDeltaMw": -3.8,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -548,17 +548,17 @@
       "ts": "2026-05-23T22:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 23440.0,
+      "tepcoForecastMw": 23620.0,
       "forecastMwByStage": {
-        "raw_lgbm": 23723.6,
-        "analog_adjusted": 23865.4,
-        "post_holiday_guarded": 23865.4,
-        "midday_guarded": 23865.4,
-        "pre_calibration": 23865.4
+        "raw_lgbm": 23579.3,
+        "analog_adjusted": 23721.1,
+        "post_holiday_guarded": 23721.1,
+        "midday_guarded": 23721.1,
+        "pre_calibration": 23721.1
       },
-      "preCalibrationForecastMw": 23865.4,
-      "postCalibrationForecastMw": 23782.9,
-      "calibrationDeltaMw": -82.5,
+      "preCalibrationForecastMw": 23721.1,
+      "postCalibrationForecastMw": 23717.6,
+      "calibrationDeltaMw": -3.5,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -568,17 +568,17 @@
       "ts": "2026-05-23T23:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 22390.0,
+      "tepcoForecastMw": 22560.0,
       "forecastMwByStage": {
-        "raw_lgbm": 22938.4,
-        "analog_adjusted": 23041.6,
-        "post_holiday_guarded": 23041.6,
-        "midday_guarded": 23041.6,
-        "pre_calibration": 23041.6
+        "raw_lgbm": 22908.1,
+        "analog_adjusted": 23011.3,
+        "post_holiday_guarded": 23011.3,
+        "midday_guarded": 23011.3,
+        "pre_calibration": 23011.3
       },
-      "preCalibrationForecastMw": 23041.6,
-      "postCalibrationForecastMw": 22965.7,
-      "calibrationDeltaMw": -75.9,
+      "preCalibrationForecastMw": 23011.3,
+      "postCalibrationForecastMw": 23008.1,
+      "calibrationDeltaMw": -3.2,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
