@@ -29,7 +29,7 @@ The correction is applied only to future hours. Observed/published hours are lef
 
 Added a separate `business_type_transition_prior` layer for the midnight-to-early-morning information gap.
 
-This layer is intentionally weaker than the observed transition correction. It can run only while usable same-day observations are still below the normal intraday threshold, and it is forced off once `lastObservedHour >= 6`.
+This layer is intentionally weaker than the observed transition correction. Its evaluation window stays open while `lastObservedHour < 6`, even if more than the normal intraday minimum number of observations has already arrived. It is forced off once `lastObservedHour >= 6`, where the observed transition layer can take over.
 
 Default behavior:
 
@@ -39,6 +39,19 @@ Default behavior:
 - `base_allowed_excess_mw`: 900
 
 It lowers a future hour only when the forecast is above `recent_same_business_type_mean + base_allowed_excess_mw`. This makes it a weak prior against Friday-to-Saturday lag contamination, not a fixed weekend shape.
+
+## Handoff Gap Mitigation
+
+The 2026-05-23 live run exposed a handoff gap around the early morning ramp. At 07:44 JST, five observed readings existed, but the latest observed hour was still 04:00. The old logic had already turned the prior off because the observation count reached the intraday minimum, while the observed transition layer was still off because `lastObservedHour < 6`.
+
+The new behavior keeps the prior eligible through that handoff gap. It also prevents small positive overnight residuals from lifting overheated weekend ramp forecasts when all of the following are true:
+
+- the target day is non-business and the 24h lag comes from a different business type,
+- `lag_24h` is above the recent same-business-type anchor,
+- the affected hour is in the configured morning ramp window,
+- the current forecast is already above `recent_same_business_type_mean + base_allowed_excess_mw`.
+
+This does not suppress every positive residual. If the forecast still has room under the non-business anchor plus allowance, the positive residual can pass through normally.
 
 ## Operating Behavior
 
@@ -54,11 +67,14 @@ The operational calibration metadata now records:
 - `businessTypeTransitionPriorBiasMw`
 - `businessTypeTransitionApplied`
 - `businessTypeTransitionBiasMw`
+- `positiveResidualMitigationApplied`
+- `positiveResidualMitigationMaxMw`
 - `business_type_transition_prior_lag_overheat` in `appliedRegimeReason`
 - `business_type_transition_lag_overheat` in `appliedRegimeReason`
+- `positive_residual_mitigation` in `appliedRegimeReason`
 
 These fields make it easier to confirm whether a weekend/holiday line was lowered by this calibration or by the ordinary residual correction.
 
 ## Test Coverage
 
-Added a focused intraday correction test for a Saturday after a business day where recent observed residuals show overprediction and the Friday lag is far above the non-business-day anchor.
+Added focused intraday correction tests for a Saturday after a business day where recent observed residuals show overprediction, the Friday lag is far above the non-business-day anchor, and the 07:44-style handoff gap could otherwise let small positive overnight residuals lift the 07:00-08:00 ramp.

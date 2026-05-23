@@ -33,6 +33,8 @@ class IntradayCorrectionResult:
     business_type_transition_applied: bool = False
     source_confidence: dict | None = None
     applied_regime_reason: tuple[str, ...] = ()
+    positive_residual_mitigation_applied: bool = False
+    positive_residual_mitigation_max_mw: float = 0.0
 
     def metadata(self) -> dict:
         return {
@@ -56,6 +58,13 @@ class IntradayCorrectionResult:
                 1,
             ),
             "businessTypeTransitionApplied": self.business_type_transition_applied,
+            "positiveResidualMitigationApplied": (
+                self.positive_residual_mitigation_applied
+            ),
+            "positiveResidualMitigationMaxMw": round(
+                float(self.positive_residual_mitigation_max_mw),
+                1,
+            ),
             "sourceConfidence": self.source_confidence or {},
             "appliedRegimeReason": list(self.applied_regime_reason),
         }
@@ -138,6 +147,24 @@ class IntradayResidualCorrector:
         )
         self._transition_prior_max_abs_bias_mw = float(
             transition_prior_config.get("max_abs_bias_mw", 500.0)
+        )
+        positive_mitigation_config = transition_prior_config.get(
+            "positive_residual_mitigation",
+            {},
+        )
+        self._transition_positive_mitigation_enabled = bool(
+            positive_mitigation_config.get("enabled", True)
+        )
+        self._transition_positive_mitigation_hours = {
+            int(hour)
+            for hour in positive_mitigation_config.get(
+                "hours",
+                [6, 7, 8, 9, 10, 11],
+            )
+        }
+        self._transition_positive_mitigation_multiplier = min(
+            max(float(positive_mitigation_config.get("multiplier", 0.0)), 0.0),
+            1.0,
         )
         transition_config = calibration_config.get("business_type_transition", {})
         self._transition_enabled = bool(transition_config.get("enabled", True))
@@ -559,13 +586,11 @@ class IntradayResidualCorrector:
         forecasts: list[HourlyForecast],
         inference_features: pd.DataFrame | None,
         last_observed_hour: int | None,
-        usable_observed_hours: int,
     ) -> dict[int, float]:
         if (
             not self._transition_prior_enabled
             or inference_features is None
             or inference_features.empty
-            or usable_observed_hours >= self._min_observed_hours
         ):
             return {}
         if (
@@ -620,6 +645,63 @@ class IntradayResidualCorrector:
                 biases[hour] = round(float(bias), 1)
 
         return biases
+
+    def _positive_residual_multiplier_by_hour(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        last_observed_hour: int | None,
+    ) -> dict[int, float]:
+        if (
+            not self._transition_positive_mitigation_enabled
+            or inference_features is None
+            or inference_features.empty
+            or last_observed_hour is None
+            or last_observed_hour >= self._transition_min_observed_hour
+        ):
+            return {}
+
+        forecast_by_hour = {
+            pd.Timestamp(forecast.ts).hour: forecast
+            for forecast in forecasts
+        }
+        multipliers: dict[int, float] = {}
+        for _, row in inference_features.iterrows():
+            hour = int(row.get("hour", -1))
+            forecast = forecast_by_hour.get(hour)
+            if forecast is None or hour <= last_observed_hour:
+                continue
+
+            mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if mismatch is None or mismatch <= 0:
+                continue
+            if (
+                self._transition_prior_target_non_business_only
+                and is_non_business_day != 1.0
+            ):
+                continue
+
+            lag_24h = self._finite_float(row.get("lag_24h"))
+            recent_mean = self._finite_float(row.get("recent_same_business_type_mean"))
+            if lag_24h is None or recent_mean is None:
+                continue
+
+            lag_overheat_mw = lag_24h - recent_mean
+            if lag_overheat_mw <= self._transition_prior_lag_overheat_threshold_mw:
+                continue
+            if hour not in self._transition_positive_mitigation_hours:
+                continue
+
+            allowed_forecast_mw = (
+                recent_mean + self._transition_prior_base_allowed_excess_mw
+            )
+            if forecast.forecast_mw <= allowed_forecast_mw:
+                continue
+
+            multipliers[hour] = self._transition_positive_mitigation_multiplier
+
+        return multipliers
 
     def _apply_shape_guard(
         self,
@@ -804,7 +886,6 @@ class IntradayResidualCorrector:
                     calibrated_forecasts,
                     inference_features,
                     last_observed_hour,
-                    len(residuals_by_hour),
                 )
             )
             calibrated_forecasts, business_type_transition_prior_bias_mw = (
@@ -931,8 +1012,38 @@ class IntradayResidualCorrector:
         if business_type_transition_applied:
             applied_reasons.append("business_type_transition_lag_overheat")
 
+        transition_prior_bias_by_hour = (
+            self._business_type_transition_prior_bias_by_hour(
+                transition_guarded_forecasts,
+                inference_features,
+                last_observed_hour,
+            )
+        )
+        transition_prior_guarded_forecasts, business_type_transition_prior_bias_mw = (
+            self._apply_hourly_bias(
+                transition_guarded_forecasts,
+                transition_prior_bias_by_hour,
+                last_observed_hour,
+            )
+        )
+        business_type_transition_prior_applied = bool(
+            business_type_transition_prior_bias_mw != 0.0
+        )
+        if business_type_transition_prior_applied:
+            applied_reasons.append("business_type_transition_prior_lag_overheat")
+
+        positive_residual_multiplier_by_hour = (
+            self._positive_residual_multiplier_by_hour(
+                transition_prior_guarded_forecasts,
+                inference_features,
+                last_observed_hour,
+            )
+        )
+        positive_residual_mitigation_applied = False
+        positive_residual_mitigated_values: list[float] = []
+
         adjusted_forecasts: list[HourlyForecast] = []
-        for forecast in transition_guarded_forecasts:
+        for forecast in transition_prior_guarded_forecasts:
             forecast_hour = pd.Timestamp(forecast.ts).hour
             if forecast_hour <= last_observed_hour:
                 adjusted_forecasts.append(forecast)
@@ -943,6 +1054,21 @@ class IntradayResidualCorrector:
                 base_adjustment_mw * (self._decay_per_hour ** (lead_hours - 1)),
                 1,
             )
+            if decayed_adjustment_mw > 0.0:
+                positive_multiplier = positive_residual_multiplier_by_hour.get(
+                    forecast_hour,
+                )
+                if positive_multiplier is not None:
+                    mitigated_adjustment_mw = round(
+                        decayed_adjustment_mw * positive_multiplier,
+                        1,
+                    )
+                    if mitigated_adjustment_mw < decayed_adjustment_mw:
+                        positive_residual_mitigation_applied = True
+                        positive_residual_mitigated_values.append(
+                            decayed_adjustment_mw - mitigated_adjustment_mw,
+                        )
+                        decayed_adjustment_mw = mitigated_adjustment_mw
             adjusted_forecasts.append(HourlyForecast(
                 ts=forecast.ts,
                 forecast_mw=round(forecast.forecast_mw + decayed_adjustment_mw, 1),
@@ -951,6 +1077,8 @@ class IntradayResidualCorrector:
                 p99_lower_mw=round(forecast.p99_lower_mw + decayed_adjustment_mw, 1),
                 p99_upper_mw=round(forecast.p99_upper_mw + decayed_adjustment_mw, 1),
             ))
+        if positive_residual_mitigation_applied:
+            applied_reasons.append("positive_residual_mitigation")
 
         adjusted_forecasts, shape_guard_applied = self._apply_shape_guard(
             adjusted_forecasts,
@@ -980,10 +1108,12 @@ class IntradayResidualCorrector:
             0.0,
             None,
             0.0,
-            0.0,
-            False,
+            round(business_type_transition_prior_bias_mw, 1),
+            business_type_transition_prior_applied,
             round(business_type_transition_bias_mw, 1),
             business_type_transition_applied,
             source_confidence,
             tuple(applied_reasons),
+            positive_residual_mitigation_applied,
+            round(max(positive_residual_mitigated_values or [0.0]), 1),
         )

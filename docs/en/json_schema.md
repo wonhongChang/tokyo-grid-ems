@@ -315,7 +315,7 @@ Internal diagnostics JSON for tracking how the operational calibration layer mov
 - `applied_regime_reason`: list of applied calibration reasons
 - `applied_day_bias`: average day-level scale adjustment
 - `forecast_build.stageSummary`: stage summary from raw model to pre-calibration
-- `correction`: residual-correction metadata, including day-boundary carry-over, day-level bias, and business-type transition calibration flags such as `businessTypeTransitionPriorApplied`, `businessTypeTransitionPriorBiasMw`, `businessTypeTransitionApplied`, and `businessTypeTransitionBiasMw`
+- `correction`: residual-correction metadata, including day-boundary carry-over, day-level bias, business-type transition calibration flags such as `businessTypeTransitionPriorApplied`, `businessTypeTransitionPriorBiasMw`, `businessTypeTransitionApplied`, and `businessTypeTransitionBiasMw`, plus handoff mitigation fields such as `positiveResidualMitigationApplied` and `positiveResidualMitigationMaxMw`
 - `hourlyDiagnostics[]`: per-hour actual, TEPCO, stage forecasts, pre/post calibration forecast, calibration delta, and residuals
 
 ---

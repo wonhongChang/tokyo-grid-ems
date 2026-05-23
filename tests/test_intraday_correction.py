@@ -313,6 +313,135 @@ def test_intraday_correction_turns_transition_prior_off_at_morning_cutoff():
     assert result.forecasts == forecasts
 
 
+def test_intraday_correction_keeps_transition_prior_alive_until_handoff_hour():
+    target = date(2026, 5, 23)  # Saturday after a business day
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[7] = HourlyForecast(
+        ts=f"{target.isoformat()}T07:00:00+09:00",
+        forecast_mw=24_000.0,
+        p95_lower_mw=23_500.0,
+        p95_upper_mw=24_500.0,
+        p99_lower_mw=23_200.0,
+        p99_upper_mw=24_800.0,
+    )
+    actual_series = [
+        _actual_point(target, hour, 20_100.0)
+        for hour in range(5)
+    ]
+    inference_features = pd.DataFrame([{
+        "hour": 7,
+        "is_non_business_day": 1,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h": 28_500.0,
+        "recent_same_business_type_mean": 22_000.0,
+    }])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "decay_per_hour": 1.0,
+            "operational_calibration": {
+                "day_boundary_carryover": {"enabled": False},
+                "day_level_scale": {"enabled": False},
+                "business_type_transition_prior": {
+                    "enabled": True,
+                    "force_off_hour": 6,
+                    "lag_overheat_threshold_mw": 1_500.0,
+                    "base_allowed_excess_mw": 900.0,
+                    "shrinkage": 0.25,
+                    "max_abs_bias_mw": 500.0,
+                    "positive_residual_mitigation": {
+                        "enabled": True,
+                        "hours": [6, 7, 8, 9, 10, 11],
+                        "multiplier": 0.0,
+                    },
+                },
+                "business_type_transition": {
+                    "enabled": True,
+                    "min_observed_hour": 6,
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.last_observed_hour == 4
+    assert result.base_adjustment_mw == pytest.approx(100.0)
+    assert result.business_type_transition_prior_applied is True
+    assert result.business_type_transition_prior_bias_mw == pytest.approx(-275.0)
+    assert result.positive_residual_mitigation_applied is True
+    assert result.positive_residual_mitigation_max_mw == pytest.approx(100.0)
+    assert result.business_type_transition_applied is False
+    assert result.forecasts[7].forecast_mw == pytest.approx(23_725.0)
+    assert "business_type_transition_prior_lag_overheat" in result.applied_regime_reason
+    assert "positive_residual_mitigation" in result.applied_regime_reason
+
+
+def test_intraday_correction_keeps_positive_residual_when_weekend_anchor_has_room():
+    target = date(2026, 5, 23)  # Saturday after a business day
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[7] = HourlyForecast(
+        ts=f"{target.isoformat()}T07:00:00+09:00",
+        forecast_mw=22_800.0,
+        p95_lower_mw=22_300.0,
+        p95_upper_mw=23_300.0,
+        p99_lower_mw=22_000.0,
+        p99_upper_mw=23_600.0,
+    )
+    actual_series = [
+        _actual_point(target, hour, 20_100.0)
+        for hour in range(5)
+    ]
+    inference_features = pd.DataFrame([{
+        "hour": 7,
+        "is_non_business_day": 1,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h": 28_500.0,
+        "recent_same_business_type_mean": 22_000.0,
+    }])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "decay_per_hour": 1.0,
+            "operational_calibration": {
+                "day_boundary_carryover": {"enabled": False},
+                "day_level_scale": {"enabled": False},
+                "business_type_transition_prior": {
+                    "enabled": True,
+                    "force_off_hour": 6,
+                    "lag_overheat_threshold_mw": 1_500.0,
+                    "base_allowed_excess_mw": 900.0,
+                    "shrinkage": 0.25,
+                    "max_abs_bias_mw": 500.0,
+                    "positive_residual_mitigation": {
+                        "enabled": True,
+                        "hours": [6, 7, 8, 9, 10, 11],
+                        "multiplier": 0.0,
+                    },
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.business_type_transition_prior_applied is False
+    assert result.positive_residual_mitigation_applied is False
+    assert result.forecasts[7].forecast_mw == pytest.approx(22_900.0)
+
+
 def test_intraday_correction_clips_large_adjustment():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)
