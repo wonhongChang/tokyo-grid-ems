@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-05
 
+- [2026-05-23 negative residual recovery damping](model-improvement-2026-05-23-negative-residual-recovery-damping.md)
 - [2026-05-23 non-business transition calibration](model-improvement-2026-05-23-non-business-transition-calibration.md)
 - [2026-05-22 validation metrics scorecard](model-improvement-2026-05-22-validation-metrics-scorecard.md)
 - [2026-05-22 operational calibration layer](model-improvement-2026-05-22-operational-calibration-layer.md)

@@ -442,6 +442,182 @@ def test_intraday_correction_keeps_positive_residual_when_weekend_anchor_has_roo
     assert result.forecasts[7].forecast_mw == pytest.approx(22_900.0)
 
 
+def test_intraday_correction_damps_negative_residual_when_weekend_demand_recovers():
+    target = date(2026, 5, 23)  # Saturday after a business day
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[7] = HourlyForecast(
+        ts=f"{target.isoformat()}T07:00:00+09:00",
+        forecast_mw=23_700.0,
+        p95_lower_mw=23_200.0,
+        p95_upper_mw=24_200.0,
+        p99_lower_mw=22_900.0,
+        p99_upper_mw=24_500.0,
+    )
+    forecasts[8] = HourlyForecast(
+        ts=f"{target.isoformat()}T08:00:00+09:00",
+        forecast_mw=24_800.0,
+        p95_lower_mw=24_300.0,
+        p95_upper_mw=25_300.0,
+        p99_lower_mw=24_000.0,
+        p99_upper_mw=25_600.0,
+    )
+    forecasts[9] = HourlyForecast(
+        ts=f"{target.isoformat()}T09:00:00+09:00",
+        forecast_mw=25_400.0,
+        p95_lower_mw=24_900.0,
+        p95_upper_mw=25_900.0,
+        p99_lower_mw=24_600.0,
+        p99_upper_mw=26_200.0,
+    )
+    forecasts[11] = HourlyForecast(
+        ts=f"{target.isoformat()}T11:00:00+09:00",
+        forecast_mw=25_569.0,
+        p95_lower_mw=25_069.0,
+        p95_upper_mw=26_069.0,
+        p99_lower_mw=24_769.0,
+        p99_upper_mw=26_369.0,
+    )
+    actual_series = [
+        _actual_point(target, 7, 21_000.0),
+        _actual_point(target, 8, 22_600.0),
+        _actual_point(target, 9, 24_200.0),
+    ]
+    inference_features = pd.DataFrame([{
+        "hour": 9,
+        "is_non_business_day": 1,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h": 30_000.0,
+        "recent_same_business_type_mean": 24_000.0,
+    }])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "decay_per_hour": 1.0,
+            "operational_calibration": {
+                "day_boundary_carryover": {"enabled": False},
+                "day_level_scale": {"enabled": False},
+                "business_type_transition_prior": {"enabled": False},
+                "business_type_transition": {"enabled": False},
+            },
+            "negative_residual_recovery_damping": {
+                "enabled": True,
+                "recovery_slope_base_mw": 1_000.0,
+                "anchor_proximity_tolerance_mw": 1_200.0,
+                "damping_factor_default": 0.4,
+                "damping_factor_strong": 0.2,
+                "strong_recovery_mean_slope_mw": 500.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.neg_residual_recovery_damping_applied is True
+    assert result.neg_residual_recovery_damping_factor == pytest.approx(0.2)
+    assert result.metadata()["negResidualRecoveryDampingApplied"] is True
+    assert result.metadata()["negResidualRecoveryDampingFactor"] == pytest.approx(0.2)
+    assert result.base_adjustment_mw == pytest.approx(-1_200.0)
+    assert result.forecasts[11].forecast_mw == pytest.approx(25_329.0, abs=0.1)
+    assert (
+        "negative_residual_recovery_damping_triggered"
+        in result.applied_regime_reason
+    )
+
+
+def test_intraday_correction_keeps_negative_residual_when_recovery_is_false():
+    target = date(2026, 5, 23)  # Saturday after a business day
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[7] = HourlyForecast(
+        ts=f"{target.isoformat()}T07:00:00+09:00",
+        forecast_mw=21_300.0,
+        p95_lower_mw=20_800.0,
+        p95_upper_mw=21_800.0,
+        p99_lower_mw=20_500.0,
+        p99_upper_mw=22_100.0,
+    )
+    forecasts[8] = HourlyForecast(
+        ts=f"{target.isoformat()}T08:00:00+09:00",
+        forecast_mw=24_000.0,
+        p95_lower_mw=23_500.0,
+        p95_upper_mw=24_500.0,
+        p99_lower_mw=23_200.0,
+        p99_upper_mw=24_800.0,
+    )
+    forecasts[9] = HourlyForecast(
+        ts=f"{target.isoformat()}T09:00:00+09:00",
+        forecast_mw=26_000.0,
+        p95_lower_mw=25_500.0,
+        p95_upper_mw=26_500.0,
+        p99_lower_mw=25_200.0,
+        p99_upper_mw=26_800.0,
+    )
+    forecasts[11] = HourlyForecast(
+        ts=f"{target.isoformat()}T11:00:00+09:00",
+        forecast_mw=25_569.0,
+        p95_lower_mw=25_069.0,
+        p95_upper_mw=26_069.0,
+        p99_lower_mw=24_769.0,
+        p99_upper_mw=26_369.0,
+    )
+    actual_series = [
+        _actual_point(target, 7, 21_000.0),
+        _actual_point(target, 8, 22_600.0),
+        _actual_point(target, 9, 24_200.0),
+    ]
+    inference_features = pd.DataFrame([{
+        "hour": 9,
+        "is_non_business_day": 1,
+        "lag_24h_business_type_mismatch": 1,
+        "lag_24h": 30_000.0,
+        "recent_same_business_type_mean": 24_000.0,
+    }])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "decay_per_hour": 1.0,
+            "operational_calibration": {
+                "day_boundary_carryover": {"enabled": False},
+                "day_level_scale": {"enabled": False},
+                "business_type_transition_prior": {"enabled": False},
+                "business_type_transition": {"enabled": False},
+            },
+            "negative_residual_recovery_damping": {
+                "enabled": True,
+                "recovery_slope_base_mw": 1_000.0,
+                "anchor_proximity_tolerance_mw": 1_200.0,
+                "damping_factor_default": 0.4,
+                "damping_factor_strong": 0.2,
+                "strong_recovery_mean_slope_mw": 500.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.neg_residual_recovery_damping_applied is False
+    assert result.neg_residual_recovery_damping_factor == pytest.approx(1.0)
+    assert result.metadata()["negResidualRecoveryDampingApplied"] is False
+    assert result.metadata()["negResidualRecoveryDampingFactor"] == pytest.approx(1.0)
+    assert result.base_adjustment_mw == pytest.approx(-1_166.7, abs=0.1)
+    assert result.forecasts[11].forecast_mw == pytest.approx(24_402.3, abs=0.1)
+    assert (
+        "negative_residual_recovery_damping_triggered"
+        not in result.applied_regime_reason
+    )
+
+
 def test_intraday_correction_clips_large_adjustment():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)

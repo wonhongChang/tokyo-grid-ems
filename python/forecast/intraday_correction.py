@@ -35,6 +35,8 @@ class IntradayCorrectionResult:
     applied_regime_reason: tuple[str, ...] = ()
     positive_residual_mitigation_applied: bool = False
     positive_residual_mitigation_max_mw: float = 0.0
+    neg_residual_recovery_damping_applied: bool = False
+    neg_residual_recovery_damping_factor: float = 1.0
 
     def metadata(self) -> dict:
         return {
@@ -64,6 +66,13 @@ class IntradayCorrectionResult:
             "positiveResidualMitigationMaxMw": round(
                 float(self.positive_residual_mitigation_max_mw),
                 1,
+            ),
+            "negResidualRecoveryDampingApplied": (
+                self.neg_residual_recovery_damping_applied
+            ),
+            "negResidualRecoveryDampingFactor": round(
+                float(self.neg_residual_recovery_damping_factor),
+                3,
             ),
             "sourceConfidence": self.source_confidence or {},
             "appliedRegimeReason": list(self.applied_regime_reason),
@@ -205,6 +214,30 @@ class IntradayResidualCorrector:
         )
         negative_damping_multiplier = float(negative_damping_config.get("multiplier", 1.0))
         self._negative_damping_multiplier = min(max(negative_damping_multiplier, 0.0), 1.0)
+        recovery_damping_config = correction_config.get(
+            "negative_residual_recovery_damping",
+            {},
+        )
+        self._recovery_damping_enabled = bool(
+            recovery_damping_config.get("enabled", True)
+        )
+        self._recovery_slope_base_mw = float(
+            recovery_damping_config.get("recovery_slope_base_mw", 1_000.0)
+        )
+        self._recovery_anchor_tolerance_mw = float(
+            recovery_damping_config.get("anchor_proximity_tolerance_mw", 1_200.0)
+        )
+        self._recovery_damping_factor_default = min(
+            max(float(recovery_damping_config.get("damping_factor_default", 0.4)), 0.0),
+            1.0,
+        )
+        self._recovery_damping_factor_strong = min(
+            max(float(recovery_damping_config.get("damping_factor_strong", 0.2)), 0.0),
+            1.0,
+        )
+        self._recovery_strong_mean_slope_mw = float(
+            recovery_damping_config.get("strong_recovery_mean_slope_mw", 500.0)
+        )
         midday_deweight_config = correction_config.get("midday_residual_deweight", {})
         self._midday_deweight_enabled = bool(
             midday_deweight_config.get("enabled", True)
@@ -703,6 +736,94 @@ class IntradayResidualCorrector:
 
         return multipliers
 
+    def _feature_row_for_hour(
+        self,
+        inference_features: pd.DataFrame | None,
+        hour: int,
+    ) -> pd.Series | None:
+        if inference_features is None or inference_features.empty:
+            return None
+        if "hour" not in inference_features.columns:
+            return None
+        hour_values = pd.to_numeric(inference_features["hour"], errors="coerce")
+        rows = inference_features[hour_values == hour]
+        if rows.empty:
+            return None
+        return rows.iloc[0]
+
+    def _negative_residual_recovery_damping_factor(
+        self,
+        inference_features: pd.DataFrame | None,
+        actual_mw_by_hour: dict[int, float],
+        residuals_by_hour: list[_ResidualPoint],
+        last_observed_hour: int | None,
+        base_adjustment_mw: float,
+    ) -> float:
+        if (
+            not self._recovery_damping_enabled
+            or base_adjustment_mw >= 0.0
+            or last_observed_hour is None
+            or len(residuals_by_hour) < 3
+        ):
+            return 1.0
+
+        required_hours = [
+            last_observed_hour - 2,
+            last_observed_hour - 1,
+            last_observed_hour,
+        ]
+        if any(hour not in actual_mw_by_hour for hour in required_hours):
+            return 1.0
+
+        actual_values = [actual_mw_by_hour[hour] for hour in required_hours]
+        recent_slopes = [
+            actual_values[1] - actual_values[0],
+            actual_values[2] - actual_values[1],
+        ]
+        mean_slope = float(np.mean(recent_slopes))
+        if mean_slope <= 0.0 or max(recent_slopes) < self._recovery_slope_base_mw:
+            return 1.0
+
+        row = self._feature_row_for_hour(inference_features, last_observed_hour)
+        if row is None:
+            return 1.0
+        is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+        mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+        if is_non_business_day != 1.0 or mismatch is None or mismatch <= 0.0:
+            return 1.0
+
+        recent_mean = self._finite_float(row.get("recent_same_business_type_mean"))
+        lag_24h = self._finite_float(row.get("lag_24h"))
+        if recent_mean is None or lag_24h is None:
+            return 1.0
+        if lag_24h <= recent_mean:
+            return 1.0
+
+        last_actual_mw = actual_mw_by_hour[last_observed_hour]
+        if last_actual_mw < recent_mean - self._recovery_anchor_tolerance_mw:
+            return 1.0
+
+        recent_residuals = sorted(residuals_by_hour, key=lambda point: point.hour)[-3:]
+        if any(point.residual_mw >= 0.0 for point in recent_residuals):
+            return 1.0
+        residual_values = [point.residual_mw for point in recent_residuals]
+        residual_strictly_improving = (
+            residual_values[0] < residual_values[1] < residual_values[2]
+        )
+        if not residual_strictly_improving:
+            return 1.0
+
+        strong_recovery = (
+            mean_slope >= self._recovery_strong_mean_slope_mw
+            and last_actual_mw >= recent_mean
+        )
+        if strong_recovery:
+            return min(
+                self._recovery_damping_factor_default,
+                self._recovery_damping_factor_strong,
+            )
+        return self._recovery_damping_factor_default
+
     def _apply_shape_guard(
         self,
         forecasts: list[HourlyForecast],
@@ -1041,6 +1162,16 @@ class IntradayResidualCorrector:
         )
         positive_residual_mitigation_applied = False
         positive_residual_mitigated_values: list[float] = []
+        recovery_damping_factor = self._negative_residual_recovery_damping_factor(
+            inference_features,
+            actual_mw_by_hour,
+            residuals_by_hour,
+            last_observed_hour,
+            base_adjustment_mw,
+        )
+        recovery_damping_applied = recovery_damping_factor < 1.0
+        if recovery_damping_applied:
+            applied_reasons.append("negative_residual_recovery_damping_triggered")
 
         adjusted_forecasts: list[HourlyForecast] = []
         for forecast in transition_prior_guarded_forecasts:
@@ -1050,8 +1181,13 @@ class IntradayResidualCorrector:
                 continue
 
             lead_hours = forecast_hour - last_observed_hour
+            adjustment_base_mw = (
+                base_adjustment_mw * recovery_damping_factor
+                if base_adjustment_mw < 0.0
+                else base_adjustment_mw
+            )
             decayed_adjustment_mw = round(
-                base_adjustment_mw * (self._decay_per_hour ** (lead_hours - 1)),
+                adjustment_base_mw * (self._decay_per_hour ** (lead_hours - 1)),
                 1,
             )
             if decayed_adjustment_mw > 0.0:
@@ -1116,4 +1252,6 @@ class IntradayResidualCorrector:
             tuple(applied_reasons),
             positive_residual_mitigation_applied,
             round(max(positive_residual_mitigated_values or [0.0]), 1),
+            recovery_damping_applied,
+            round(recovery_damping_factor, 3),
         )

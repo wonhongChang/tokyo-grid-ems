@@ -71,6 +71,13 @@ intraday_correction:
     enabled: false
     min_reference_hour: 12   # after midday, avoid over-chasing negative residuals
     multiplier: 0.5          # retain half of the downward residual correction
+  negative_residual_recovery_damping:
+    enabled: true
+    recovery_slope_base_mw: 1000
+    anchor_proximity_tolerance_mw: 1200
+    damping_factor_default: 0.4
+    damping_factor_strong: 0.2
+    strong_recovery_mean_slope_mw: 500
   midday_residual_deweight:
     enabled: false
     hours: [12]              # lunch bucket only; applies on business days

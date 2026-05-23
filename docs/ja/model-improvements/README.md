@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-05
 
+- [2026-05-23 負の残差回復ダンピング](model-improvement-2026-05-23-negative-residual-recovery-damping.md)
 - [2026-05-23 非営業日遷移補正](model-improvement-2026-05-23-non-business-transition-calibration.md)
 - [2026-05-22 検証指標スコアカード](model-improvement-2026-05-22-validation-metrics-scorecard.md)
 - [2026-05-22 運用補正レイヤー](model-improvement-2026-05-22-operational-calibration-layer.md)
