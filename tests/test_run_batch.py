@@ -21,6 +21,7 @@ from python.etl.run_batch import (
     _load_existing_forecast,
     _reserve_risk_severity_from_alerts_payload,
     _write_forecast_snapshot,
+    _write_operational_calibration_snapshot,
     build_actual_json,
     build_alerts_json,
     build_forecast_json,
@@ -729,6 +730,110 @@ def test_write_forecast_snapshot_can_include_build_stage_diagnostics(tmp_path):
     assert snapshot["forecastBuild"]["stageSummary"]["raw_lgbm"]["hours"] == 2
     assert snapshot["forecastBuild"]["series"][0]["forecastMwByStage"]["raw_lgbm"] == 29_500.0
     assert snapshot["forecastBuild"]["series"][0]["forecastMwByStage"]["pre_calibration"] == 30_000.0
+
+
+def test_write_operational_calibration_snapshot_indexes_intraday_history(tmp_path):
+    target = date(2024, 1, 2)
+    config = {
+        "operational_calibration_snapshots": {
+            "enabled": True,
+            "retention_days": 2,
+            "max_per_day": 2,
+        },
+    }
+
+    def payload(generated_at: str, base_adjustment_mw: float) -> dict:
+        return {
+            "schemaVersion": "1.0.0",
+            "timezone": "Asia/Tokyo",
+            "date": target.isoformat(),
+            "generatedAt": generated_at,
+            "model": "lgbm_quantile_q50",
+            "source_confidence": {"residual": "observed"},
+            "applied_regime_reason": ["intraday_observed_residual"],
+            "applied_day_bias": 0.0,
+            "correction": {
+                "applied": True,
+                "observedHours": 5,
+                "lastObservedHour": 4,
+                "baseAdjustmentMw": base_adjustment_mw,
+                "appliedDayBiasMw": 0.0,
+                "appliedRegimeReason": ["intraday_observed_residual"],
+                "businessTypeTransitionPriorApplied": False,
+                "businessTypeTransitionApplied": False,
+                "positiveResidualMitigationApplied": False,
+                "negResidualRecoveryDampingApplied": True,
+            },
+            "hourlyDiagnostics": [
+                {
+                    "hour": 4,
+                    "actualMw": 24_000.0,
+                    "actualSource": "observed",
+                    "calibrationDeltaMw": None,
+                },
+                {
+                    "hour": 8,
+                    "actualMw": None,
+                    "actualSource": None,
+                    "calibrationDeltaMw": base_adjustment_mw,
+                },
+            ],
+        }
+
+    _write_operational_calibration_snapshot(
+        tmp_path,
+        target,
+        payload("2024-01-03T00:00:00+09:00", -300.0),
+        config,
+    )
+    _write_operational_calibration_snapshot(
+        tmp_path,
+        target,
+        payload("2024-01-03T01:00:00+09:00", -400.0),
+        config,
+    )
+    _write_operational_calibration_snapshot(
+        tmp_path,
+        target,
+        payload("2024-01-03T02:00:00+09:00", -500.0),
+        config,
+    )
+    _write_operational_calibration_snapshot(
+        tmp_path,
+        date(2024, 1, 1),
+        {**payload("2024-01-03T02:30:00+09:00", -200.0), "date": "2024-01-01"},
+        config,
+    )
+
+    target_dir = (
+        tmp_path
+        / "reports"
+        / "internal"
+        / "operational-calibration"
+        / "snapshots"
+        / "2024-01-02"
+    )
+    snapshot_files = sorted(
+        path.name for path in target_dir.glob("*.json") if path.name != "index.json"
+    )
+    assert len(snapshot_files) == 2
+
+    root_index = json.loads(
+        (
+            tmp_path
+            / "reports"
+            / "internal"
+            / "operational-calibration"
+            / "snapshots"
+            / "index.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert root_index["retentionDays"] == 2
+    assert root_index["maxPerDay"] == 2
+    assert root_index["dates"][0]["date"] == "2024-01-02"
+    assert root_index["dates"][0]["snapshotCount"] == 2
+    assert root_index["dates"][0]["latest"]["lastObservedHour"] == 4
+    assert root_index["dates"][0]["latest"]["negResidualRecoveryDampingApplied"] is True
 
 
 def _recent_supply_cache(supply_mw: float = 34_000.0) -> pd.DataFrame:

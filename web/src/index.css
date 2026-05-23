@@ -95,8 +95,11 @@ body {
   padding: 0 24px;
   display: flex;
   gap: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .tab-btn {
+  flex: 0 0 auto;
   padding: 12px 20px;
   border: none;
   background: none;
@@ -105,6 +108,7 @@ body {
   font-weight: 500;
   color: var(--text-secondary);
   border-bottom: 2px solid transparent;
+  white-space: nowrap;
   transition: color 0.15s, border-color 0.15s;
 }
 .tab-btn:hover { color: var(--text); }
@@ -331,4 +335,188 @@ body {
 }
 .operation-insight.muted {
   color: var(--text-secondary);
+}
+
+/* Ops Report */
+.ops-report-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.ops-report-badges {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.ops-provider-badge {
+  text-transform: none;
+  font-weight: 700;
+}
+.ops-provider-badge.fallback {
+  background: #eef2ff;
+  color: #334155;
+  border-color: #c7d2fe;
+}
+.ops-provider-badge.openai {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border-color: #c4b5fd;
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.06), 0 0 18px rgba(124, 58, 237, 0.14);
+}
+.ops-report-heading h3 {
+  font-size: 20px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+.ops-report-text {
+  color: var(--text);
+  margin-bottom: 14px;
+}
+.ops-provider-note {
+  margin: 0 0 14px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.ops-report-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.ops-report-controls label {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ops-report-controls select {
+  min-width: 0;
+  width: min(520px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.ops-list {
+  display: grid;
+  gap: 12px;
+}
+.ops-list-item {
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.ops-list-item.evidence-confirmed {
+  background: linear-gradient(90deg, rgba(209, 250, 229, 0.62), var(--bg) 34%);
+  border-color: var(--ok-border);
+}
+.ops-list-item.evidence-partial {
+  background: linear-gradient(90deg, rgba(254, 243, 199, 0.58), var(--bg) 34%);
+  border-color: var(--warning-border);
+}
+.ops-list-item.evidence-not-observed {
+  background: linear-gradient(90deg, rgba(219, 234, 254, 0.6), var(--bg) 34%);
+  border-color: var(--info-border);
+}
+.ops-list-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ops-list-head strong {
+  font-size: 14px;
+  line-height: 1.35;
+  min-width: 0;
+}
+.ops-evidence-badge {
+  flex: 0 0 auto;
+}
+.ops-evidence-badge.confirmed::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.ops-evidence-badge.partial::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.ops-evidence-badge.not-observed::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.ops-list-item p {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.ops-muted {
+  color: var(--text-secondary) !important;
+}
+.ops-chip-row,
+.ops-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ops-section-kicker {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.ops-bullet-list {
+  margin: 0 0 0 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.ops-bullet-list li + li {
+  margin-top: 4px;
+}
+.ops-limits-title {
+  margin-top: 14px;
+}
+
+@media (max-width: 640px) {
+  .ops-report-heading,
+  .ops-list-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ops-report-badges {
+    justify-content: flex-start;
+  }
+  .ops-report-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .ops-report-controls label {
+    white-space: normal;
+  }
 }

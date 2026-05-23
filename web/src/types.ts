@@ -265,6 +265,137 @@ export interface DailyOperationReportIndex {
   }>
 }
 
+export type AIDailyReportConfidence = 'low' | 'medium' | 'high'
+export type AIDailyReportEvidenceStatus = 'confirmed' | 'partial' | 'not_observed'
+export type AIDailyReportPriority = 'low' | 'medium' | 'high'
+export type AIDailyReportRecommendationType =
+  | 'feature_engineering'
+  | 'calibration'
+  | 'data_quality'
+  | 'evaluation'
+  | 'monitoring'
+
+export interface AIDailyReportEvidence {
+  source: string
+  metric: string
+  value: string | number | null
+  unit?: string
+  hour?: number | null
+  timeBand?: string | null
+  note?: string
+}
+
+export interface AIDailyReportHypothesis {
+  id: string
+  severity: Severity
+  confidence: AIDailyReportConfidence
+  evidenceStatus: AIDailyReportEvidenceStatus
+  title: string
+  explanation: string
+  evidence: AIDailyReportEvidence[]
+  relatedHours: number[]
+  relatedTimeBands: string[]
+  relatedFeatures: string[]
+  counterEvidence?: string[]
+}
+
+export interface AIDailyReportFeatureRecommendation {
+  id: string
+  priority: AIDailyReportPriority
+  type: AIDailyReportRecommendationType
+  target: string
+  suggestion: string
+  expectedEffect: string
+  risk: string
+  validationPlan: string
+  linkedHypotheses: string[]
+  autoApply: false
+}
+
+export interface AIDailyReport {
+  schemaVersion: string
+  reportType: 'ai_daily_operation_report'
+  timezone: string
+  date: string
+  generatedAt: string
+  availability: Availability | 'insufficient'
+  language: 'en' | 'ko' | 'ja'
+  contentLanguage?: 'en' | 'ko' | 'ja'
+  generator: {
+    provider: 'openai' | 'fallback'
+    model: string | null
+    localizationModel?: string | null
+    localizationStatus?: 'ok' | 'fallback_en' | 'not_requested'
+    localizationFallback?: 'en' | null
+    promptVersion: string
+    schemaVersion: string
+  }
+  inputRefs: {
+    operationReport: string
+    internalDiagnostics?: string | null
+    operationalCalibration?: string | null
+    operationalCalibrationHistory?: string | null
+    alerts?: string | null
+    forecast?: string | null
+    actual?: string | null
+    metrics?: string | null
+  }
+  inputSnapshot?: {
+    schemaVersion: string
+    createdAt: string
+    fingerprint: string
+    sources: Record<string, {
+      path: string | null
+      exists: boolean
+      date: string | null
+      generatedAt: string | null
+      fingerprint: string | null
+    }>
+  }
+  dataQuality: {
+    comparableHours: number
+    observedHours: number
+    fallbackActualHours: number
+    calibrationSnapshotCount?: number
+    limitations: string[]
+  }
+  executiveSummary: {
+    severity: Severity
+    headline: string
+    summary: string
+    modelVerdict: DailyOperationVerdict
+    confidence: AIDailyReportConfidence
+  }
+  performance: DailyOperationReport['summary']
+  rootCauseHypotheses: AIDailyReportHypothesis[]
+  featureRecommendations: AIDailyReportFeatureRecommendation[]
+  operatorNotes: string[]
+  limitations: string[]
+}
+
+export interface AIDailyReportIndex {
+  schemaVersion: string
+  timezone: string
+  generatedAt: string
+  availability: Availability
+  latest: {
+    date: string
+    availability: Availability | 'insufficient'
+    severity?: Severity
+    headline?: string
+    modelVerdict?: DailyOperationVerdict
+  } | null
+  reports: Array<{
+    date: string
+    availability: Availability | 'insufficient'
+    severity?: Severity
+    headline?: string
+    modelVerdict?: DailyOperationVerdict
+    modelMaeMw?: number | null
+    tepcoMaeMw?: number | null
+  }>
+}
+
 export interface BacktestMetrics {
   rmse: number | null
   mae: number | null

@@ -30,6 +30,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 | ダッシュボード | React + Vite |
 | 配布 | GitHub Pages (静的 JSON) |
 | 自動更新 | GitHub Actions (毎日 + 2時間ごと) |
+| 運用レポート | Pythonルールベースfallback + 任意のOpenAI解説/翻訳 |
 
 ---
 
@@ -39,7 +40,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 
 - **ETL**: TEPCO月次ZIPを毎日ダウンロード → 確定済み履歴データをパース → JSON生成 → GitHub Pages へデプロイ
 - **Intraday**: 2時間ごとに当日のTEPCO intraday CSVを取得・更新
-- **検証**: 前日運用レポート、TEPCO予測比較、LightGBMバックテスト、UIには表示しない内部診断JSONを生成
+- **検証 / 運用レポート**: 前日運用レポート、TEPCO予測比較、LightGBMバックテスト、UIには表示しない内部診断JSON、任意のAI解説レポートを生成
 
 ---
 
@@ -48,7 +49,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 **ステータスバー（常時表示）**
 - 最終更新時刻 / データ取得状況
 
-**タブ 4種**
+**タブ 5種**
 
 1. **昨日** — 前日の実績 + 異常イベント
    - Spike / Drop: 予測区間（95/99%）超過
@@ -60,6 +61,11 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 3. **明日** — 時間別予測 + 予測区間 + ピーク予測（時刻・値）
 
 4. **検証** — 前日運用レポート + 自社モデルとTEPCO予測の比較 + LightGBMバックテスト
+
+5. **運用レポート** — deterministic指標をもとに生成する日次運用解説
+   - 前日指標、主要な外れ、データ品質、運用補正メタデータを使用
+   - OpenAIキーがない場合はルールベースfallbackレポートを表示
+   - `OPENAI_API_KEY`がある場合は英語マスター分析を作成し、韓国語/日本語にローカライズ
 
 ---
 
@@ -117,6 +123,12 @@ python python/etl/fetch_tepco.py
 # ETL実行 → web/public/ 以下にJSON生成
 python python/etl/run_batch.py --input data/raw --out web/public
 
+# 任意: OpenAIベースの日次運用レポートを有効化
+# Windows PowerShell:
+# $env:OPENAI_API_KEY="..."
+# $env:OPENAI_DAILY_REPORT_MODEL="gpt-5.4-mini"
+# $env:OPENAI_DAILY_REPORT_LOCALIZATION_MODEL="gpt-4o-mini"
+
 # ダッシュボード ローカルプレビュー
 cd web && npm install && npm run dev
 ```
@@ -141,10 +153,19 @@ ETLが `web/public/` 以下に生成するファイルです。
 | `metrics/forecast_accuracy.json` | TEPCO予測に対する運用精度 |
 | `metrics/model_backtest.json` | ベースラインに対するLightGBMバックテスト |
 | `reports/daily/*.json` | 検証タブに表示する前日運用サマリー |
+| `reports/ai/daily/{ko,en,ja}/*.json` | 運用レポートタブの日次解説。OpenAI設定時はAI解説、未設定時はdeterministic fallbackを使用 |
 | `reports/internal/daily-diagnostics/*.json` | 運用出力と一緒に保存する内部向けlag/気温/shape診断（UIからはリンクしない） |
 | `reports/internal/operational-calibration/*.json` | 運用デバッグ用の source confidence と補正メタデータ |
 
 > タイムスタンプはすべて `Asia/Tokyo (+09:00)` 基準のISO 8601形式で出力します。
+
+### AI運用レポートの動作
+
+- AIレポートはETL実行時のみ生成し、intraday/status-only実行では本文を書き換えません。
+- 同じ日付/言語のレポートJSONが既にある場合、後続のETL再試行でも保持し、APIコストが繰り返し発生しないようにします。
+- OpenAI呼び出しは既定で2回に制限します。1回目は英語マスター分析（`OPENAI_DAILY_REPORT_MODEL`, 既定値 `gpt-5.4-mini`）、2回目は韓国語/日本語ローカライズ（`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 既定値 `gpt-4o-mini`）です。
+- GitHub Actions向けtimeoutの既定値は `OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90`, `OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180` です。GitHub repository variablesを設定しなくてもPython側の既定値が使われます。
+- 翻訳が失敗またはtimeoutした場合、その言語パスは英語マスター本文へfallbackし、`localizationStatus: "fallback_en"` を記録します。
 
 ---
 

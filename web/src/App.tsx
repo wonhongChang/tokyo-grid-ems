@@ -4,6 +4,7 @@ import { StatusBar } from './components/StatusBar'
 import { ForecastChart } from './components/ForecastChart'
 import { AlertsList } from './components/AlertsList'
 import { ValidationPanel } from './components/ValidationPanel'
+import { OpsReportPanel } from './components/OpsReportPanel'
 import { useT, LOCALE_LABELS, type Locale } from './i18n'
 import { formatPowerParts } from './units'
 import type {
@@ -15,7 +16,7 @@ const BASE = import.meta.env.BASE_URL
 const USAGE_WARNING_PCT = 92
 const USAGE_CRITICAL_PCT = 97
 
-type TabId = 'yesterday' | 'today' | 'tomorrow' | 'validation'
+type TabId = 'yesterday' | 'today' | 'tomorrow' | 'validation' | 'opsReport'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -379,6 +380,7 @@ export default function App({ locale, setLocale }: AppProps) {
     today: t.tabToday,
     tomorrow: t.tabTomorrow,
     validation: t.tabValidation,
+    opsReport: t.tabOpsReport,
   }
 
   return (
@@ -413,7 +415,7 @@ export default function App({ locale, setLocale }: AppProps) {
             <div className="inner">
             {(() => {
               const yesterdaySev = usageSeverity(status.latest?.peakUsagePct)
-              return (['yesterday', 'today', 'tomorrow', 'validation'] as TabId[]).map(tab => (
+              return (['yesterday', 'today', 'tomorrow', 'validation', 'opsReport'] as TabId[]).map(tab => (
                 <button
                   key={tab}
                   className={`tab-btn${activeTab === tab ? ' active' : ''}`}
@@ -456,6 +458,9 @@ export default function App({ locale, setLocale }: AppProps) {
             )}
             {activeTab === 'validation' && (
               <ValidationPanel baseUrl={BASE} />
+            )}
+            {activeTab === 'opsReport' && (
+              <OpsReportPanel baseUrl={BASE} />
             )}
           </main>
         </>

@@ -55,6 +55,9 @@ _LGBM_MODEL_NAME = ".lgbm_model.pkl"
 _LGBM_MIN_ROWS   = 90 * 24
 _TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
 _FORECAST_SNAPSHOT_PATH_NAME = "forecast_snapshots"
+_OPERATIONAL_CALIBRATION_SNAPSHOT_PATH_NAME = (
+    "reports/internal/operational-calibration/snapshots"
+)
 
 
 @dataclass(frozen=True)
@@ -134,6 +137,11 @@ def load_config(config_path: Path) -> dict:
             "enabled": True,
             "retention_days": 21,
             "max_per_day": 16,
+        },
+        "operational_calibration_snapshots": {
+            "enabled": True,
+            "retention_days": 14,
+            "max_per_day": 24,
         },
         "anomaly": {
             "reserve_risk": {
@@ -1566,6 +1574,224 @@ def _operational_calibration_rows(
     return rows
 
 
+def _operational_calibration_snapshot_config(config: dict) -> dict:
+    snapshot_config = config.get("operational_calibration_snapshots", {})
+    return {
+        "enabled": bool(snapshot_config.get("enabled", True)),
+        "retention_days": max(int(snapshot_config.get("retention_days", 14)), 1),
+        "max_per_day": max(int(snapshot_config.get("max_per_day", 24)), 1),
+    }
+
+
+def _operational_calibration_snapshot_entry(path: Path, out_dir: Path) -> dict | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[WARN] Failed to read operational calibration snapshot {path}: {e}", file=sys.stderr)
+        return None
+
+    correction = payload.get("correction") or {}
+    hourly_rows = payload.get("hourlyDiagnostics") or []
+    observed_hours = [
+        row.get("hour")
+        for row in hourly_rows
+        if row.get("actualMw") is not None
+        and row.get("actualSource") != _TEPCO_FORECAST_FALLBACK_SOURCE
+    ]
+    fallback_hours = [
+        row.get("hour")
+        for row in hourly_rows
+        if row.get("actualMw") is not None
+        and row.get("actualSource") == _TEPCO_FORECAST_FALLBACK_SOURCE
+    ]
+    deltas = [
+        abs(float(row["calibrationDeltaMw"]))
+        for row in hourly_rows
+        if row.get("calibrationDeltaMw") is not None
+    ]
+    applied_regime_reason = (
+        payload.get("applied_regime_reason")
+        or correction.get("appliedRegimeReason")
+        or []
+    )
+
+    return {
+        "date": payload.get("date"),
+        "generatedAt": payload.get("generatedAt"),
+        "path": path.relative_to(out_dir).as_posix(),
+        "model": payload.get("model"),
+        "applied": correction.get("applied"),
+        "observedHours": correction.get("observedHours", len(observed_hours)),
+        "fallbackActualHours": len(fallback_hours),
+        "lastObservedHour": correction.get(
+            "lastObservedHour",
+            max(observed_hours) if observed_hours else None,
+        ),
+        "baseAdjustmentMw": correction.get("baseAdjustmentMw"),
+        "appliedDayBiasMw": correction.get(
+            "appliedDayBiasMw",
+            payload.get("applied_day_bias"),
+        ),
+        "appliedRegimeReason": applied_regime_reason,
+        "sourceConfidence": payload.get("source_confidence") or correction.get("sourceConfidence"),
+        "businessTypeTransitionPriorApplied": correction.get(
+            "businessTypeTransitionPriorApplied",
+        ),
+        "businessTypeTransitionApplied": correction.get("businessTypeTransitionApplied"),
+        "positiveResidualMitigationApplied": correction.get(
+            "positiveResidualMitigationApplied",
+        ),
+        "negResidualRecoveryDampingApplied": correction.get(
+            "negResidualRecoveryDampingApplied",
+        ),
+        "changedForecastHours": len(deltas),
+        "maxAbsCalibrationDeltaMw": round(max(deltas), 1) if deltas else 0.0,
+    }
+
+
+def _prune_operational_calibration_snapshots(
+    out_dir: Path,
+    current_date: date,
+    retention_days: int,
+    max_per_day: int,
+) -> None:
+    snapshot_root = out_dir / _OPERATIONAL_CALIBRATION_SNAPSHOT_PATH_NAME
+    if not snapshot_root.exists():
+        return
+
+    cutoff_date = current_date - timedelta(days=retention_days - 1)
+    for date_dir in snapshot_root.iterdir():
+        if not date_dir.is_dir():
+            continue
+        try:
+            target_date = date.fromisoformat(date_dir.name)
+        except ValueError:
+            continue
+        if target_date < cutoff_date:
+            shutil.rmtree(date_dir)
+            continue
+
+        snapshot_files = sorted(
+            [
+                path for path in date_dir.glob("*.json")
+                if path.name != "index.json"
+            ],
+            key=_snapshot_sort_key,
+        )
+        for stale_file in snapshot_files[:-max_per_day]:
+            stale_file.unlink()
+
+
+def _write_operational_calibration_snapshot_indexes(
+    out_dir: Path,
+    generated_at: str,
+    config: dict,
+) -> None:
+    snapshot_root = out_dir / _OPERATIONAL_CALIBRATION_SNAPSHOT_PATH_NAME
+    if not snapshot_root.exists():
+        return
+
+    snapshot_config = _operational_calibration_snapshot_config(config)
+    dates: list[dict] = []
+    for date_dir in sorted(path for path in snapshot_root.iterdir() if path.is_dir()):
+        snapshot_files = sorted(
+            [
+                path for path in date_dir.glob("*.json")
+                if path.name != "index.json"
+            ],
+            key=_snapshot_sort_key,
+        )
+        entries = [
+            entry for entry in (
+                _operational_calibration_snapshot_entry(path, out_dir)
+                for path in snapshot_files
+            )
+            if entry is not None
+        ]
+        if not entries:
+            continue
+
+        date_index = {
+            "schemaVersion": "1.0.0",
+            "timezone": "Asia/Tokyo",
+            "generatedAt": generated_at,
+            "date": date_dir.name,
+            "snapshots": entries,
+        }
+        write_json(date_dir / "index.json", date_index)
+        dates.append({
+            "date": date_dir.name,
+            "path": (date_dir / "index.json").relative_to(out_dir).as_posix(),
+            "snapshotCount": len(entries),
+            "latest": entries[-1],
+        })
+
+    write_json(snapshot_root / "index.json", {
+        "schemaVersion": "1.0.0",
+        "timezone": "Asia/Tokyo",
+        "generatedAt": generated_at,
+        "retentionDays": snapshot_config["retention_days"],
+        "maxPerDay": snapshot_config["max_per_day"],
+        "dates": dates,
+    })
+
+
+def _write_operational_calibration_snapshot(
+    out_dir: Path,
+    target_date: date,
+    calibration_payload: dict,
+    config: dict,
+) -> Path | None:
+    snapshot_config = _operational_calibration_snapshot_config(config)
+    if not snapshot_config["enabled"]:
+        return None
+
+    generated_at = str(calibration_payload.get("generatedAt") or ts_now())
+    try:
+        current_date = datetime.fromisoformat(generated_at).date()
+    except ValueError:
+        current_date = datetime.now(tz=JST).date()
+
+    _prune_operational_calibration_snapshots(
+        out_dir,
+        current_date,
+        snapshot_config["retention_days"],
+        snapshot_config["max_per_day"],
+    )
+
+    cutoff_date = current_date - timedelta(days=snapshot_config["retention_days"] - 1)
+    if target_date < cutoff_date:
+        _write_operational_calibration_snapshot_indexes(out_dir, generated_at, config)
+        return None
+
+    snapshot_dir = (
+        out_dir
+        / _OPERATIONAL_CALIBRATION_SNAPSHOT_PATH_NAME
+        / target_date.isoformat()
+    )
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    base_name = _snapshot_filename(generated_at)
+    snapshot_path = snapshot_dir / f"{base_name}.json"
+    suffix = 2
+    while snapshot_path.exists():
+        snapshot_path = snapshot_dir / f"{base_name}-{suffix}.json"
+        suffix += 1
+
+    write_json(snapshot_path, calibration_payload)
+    _prune_operational_calibration_snapshots(
+        out_dir,
+        current_date,
+        snapshot_config["retention_days"],
+        snapshot_config["max_per_day"],
+    )
+    _write_operational_calibration_snapshot_indexes(out_dir, generated_at, config)
+    print(
+        "[SNAPSHOT] Operational calibration snapshot "
+        f"{target_date.isoformat()} -> {snapshot_path.relative_to(out_dir)}"
+    )
+    return snapshot_path
+
+
 def _apply_intraday_residual_correction(
     out_dir: Path,
     target_date: date,
@@ -1610,27 +1836,39 @@ def _apply_intraday_residual_correction(
     calibration_metadata = correction.metadata()
     effective_stage_forecasts = dict(stage_forecasts or {})
     effective_stage_forecasts.setdefault("pre_calibration", forecasts)
-    write_json(
-        out_dir / "reports" / "internal" / "operational-calibration" / f"{target_date.isoformat()}.json",
-        {
-            "schemaVersion": "1.0.0",
-            "timezone": "Asia/Tokyo",
-            "date": target_date.isoformat(),
-            "generatedAt": ts_now(),
-            "model": model_name,
-            "source_confidence": calibration_metadata.get("sourceConfidence"),
-            "applied_regime_reason": calibration_metadata.get("appliedRegimeReason"),
-            "applied_day_bias": calibration_metadata.get("appliedDayBiasMw"),
-            "forecast_build": {
-                "stageSummary": _forecast_stage_summary(effective_stage_forecasts),
-            },
-            "correction": calibration_metadata,
-            "hourlyDiagnostics": _operational_calibration_rows(
-                actual_series,
-                effective_stage_forecasts,
-                correction.forecasts,
-            ),
+    generated_at = ts_now()
+    calibration_payload = {
+        "schemaVersion": "1.0.0",
+        "timezone": "Asia/Tokyo",
+        "date": target_date.isoformat(),
+        "generatedAt": generated_at,
+        "model": model_name,
+        "source_confidence": calibration_metadata.get("sourceConfidence"),
+        "applied_regime_reason": calibration_metadata.get("appliedRegimeReason"),
+        "applied_day_bias": calibration_metadata.get("appliedDayBiasMw"),
+        "forecast_build": {
+            "stageSummary": _forecast_stage_summary(effective_stage_forecasts),
         },
+        "correction": calibration_metadata,
+        "hourlyDiagnostics": _operational_calibration_rows(
+            actual_series,
+            effective_stage_forecasts,
+            correction.forecasts,
+        ),
+    }
+    write_json(
+        out_dir
+        / "reports"
+        / "internal"
+        / "operational-calibration"
+        / f"{target_date.isoformat()}.json",
+        calibration_payload,
+    )
+    _write_operational_calibration_snapshot(
+        out_dir,
+        target_date,
+        calibration_payload,
+        config,
     )
 
     if not correction.applied:
@@ -1749,6 +1987,63 @@ def _write_internal_daily_diagnostics(
         )
     except Exception as e:
         print(f"[WARN] Internal daily diagnostics failed: {e}", file=sys.stderr)
+
+
+def _write_ai_daily_reports(out_dir: Path) -> None:
+    try:
+        from python.eval.ai_daily_report import (
+            OPENAI_DEFAULT_LOCALES,
+            OPENAI_DEFAULT_MAX_CALLS_PER_RUN,
+            _env_csv,
+            _env_int,
+            build_ai_daily_reports_multilingual,
+        )
+        generated_at = ts_now()
+        report_dir = out_dir / "reports" / "ai" / "daily"
+        latest = {}
+        openai_budget = {
+            "remaining": _env_int(
+                "OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN",
+                OPENAI_DEFAULT_MAX_CALLS_PER_RUN,
+            ),
+            "used": 0,
+        }
+        openai_locales = _env_csv("OPENAI_DAILY_REPORT_LOCALES", OPENAI_DEFAULT_LOCALES)
+        languages = ("ko", "en", "ja")
+        indexes, reports_by_language, openai_budget = build_ai_daily_reports_multilingual(
+            out_dir,
+            generated_at=generated_at,
+            languages=languages,
+            existing_report_root=report_dir,
+            skip_existing=True,
+            openai_budget=openai_budget,
+            openai_locales=openai_locales,
+        )
+        total_reports = 0
+        for language in ("ko", "en", "ja"):
+            language_dir = report_dir / language
+            index = indexes[language]
+            reports = reports_by_language[language]
+            write_json(language_dir / "index.json", index)
+            for report in reports:
+                report_path = language_dir / f"{report['date']}.json"
+                if not report_path.exists():
+                    write_json(report_path, report)
+            if language == "ko":
+                write_json(report_dir / "index.json", index)
+                for report in reports:
+                    report_path = report_dir / f"{report['date']}.json"
+                    if not report_path.exists():
+                        write_json(report_path, report)
+                latest = index.get("latest") or {}
+            total_reports += len(reports)
+        print(
+            "[AI-REPORT] Daily operation reports updated "
+            f"({total_reports} localized reports, latest={latest.get('date')}, "
+            f"openai_attempts={openai_budget.get('used', 0)})"
+        )
+    except Exception as e:
+        print(f"[WARN] AI daily report failed: {e}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -2253,6 +2548,7 @@ def main() -> None:
     _write_daily_operation_reports(out_dir)
     if internal_diagnostics_out is not None:
         _write_internal_daily_diagnostics(out_dir, hourly_cache, config, internal_diagnostics_out)
+    _write_ai_daily_reports(out_dir)
 
     coverage_to = max(ok_set) if ok_set else None
     print(
