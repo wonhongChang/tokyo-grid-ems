@@ -2,18 +2,17 @@
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-23",
-  "generatedAt": "2026-05-23T12:32:28+09:00",
+  "generatedAt": "2026-05-23T13:27:57+09:00",
   "model": "lgbm_quantile_q50",
   "source_confidence": {
     "level": "observed",
-    "actualHours": 12,
-    "usableObservedHours": 12,
+    "actualHours": 13,
+    "usableObservedHours": 13,
     "fallbackIgnoredHours": 0,
-    "missingHours": 12
+    "missingHours": 11
   },
   "applied_regime_reason": [
-    "intraday_observed_residual",
-    "business_type_transition_lag_overheat"
+    "intraday_observed_residual"
   ],
   "applied_day_bias": 0.0,
   "forecast_build": {
@@ -77,27 +76,28 @@
   },
   "correction": {
     "applied": true,
-    "observedHours": 12,
-    "lastObservedHour": 11,
-    "baseAdjustmentMw": -638.2,
+    "observedHours": 13,
+    "lastObservedHour": 12,
+    "baseAdjustmentMw": -168.0,
     "fallbackResidualsIgnored": 0,
     "carryoverAdjustmentMw": 0.0,
     "carryoverSourceHour": null,
     "appliedDayBiasMw": 0.0,
     "businessTypeTransitionPriorBiasMw": 0.0,
     "businessTypeTransitionPriorApplied": false,
-    "businessTypeTransitionBiasMw": -86.0,
-    "businessTypeTransitionApplied": true,
+    "businessTypeTransitionBiasMw": 0.0,
+    "businessTypeTransitionApplied": false,
+    "positiveResidualMitigationApplied": false,
+    "positiveResidualMitigationMaxMw": 0.0,
     "sourceConfidence": {
       "level": "observed",
-      "actualHours": 12,
-      "usableObservedHours": 12,
+      "actualHours": 13,
+      "usableObservedHours": 13,
       "fallbackIgnoredHours": 0,
-      "missingHours": 12
+      "missingHours": 11
     },
     "appliedRegimeReason": [
-      "intraday_observed_residual",
-      "business_type_transition_lag_overheat"
+      "intraday_observed_residual"
     ]
   },
   "hourlyDiagnostics": [
@@ -344,8 +344,8 @@
     {
       "hour": 12,
       "ts": "2026-05-23T12:00:00+09:00",
-      "actualMw": null,
-      "actualSource": null,
+      "actualMw": 25350.0,
+      "actualSource": "observed",
       "tepcoForecastMw": 24970.0,
       "forecastMwByStage": {
         "raw_lgbm": 24837.5,
@@ -355,28 +355,28 @@
         "pre_calibration": 25105.0
       },
       "preCalibrationForecastMw": 25105.0,
-      "postCalibrationForecastMw": 24466.8,
-      "calibrationDeltaMw": -638.2,
-      "actualVsPreCalibrationResidualMw": null,
-      "actualVsPostCalibrationResidualMw": null,
-      "tepcoErrorMw": null
+      "postCalibrationForecastMw": 25105.0,
+      "calibrationDeltaMw": 0.0,
+      "actualVsPreCalibrationResidualMw": 245.0,
+      "actualVsPostCalibrationResidualMw": 245.0,
+      "tepcoErrorMw": -380.0
     },
     {
       "hour": 13,
       "ts": "2026-05-23T13:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 25040.0,
+      "tepcoForecastMw": 25140.0,
       "forecastMwByStage": {
-        "raw_lgbm": 25254.1,
-        "analog_adjusted": 25376.1,
-        "post_holiday_guarded": 25376.1,
-        "midday_guarded": 25376.1,
-        "pre_calibration": 25376.1
+        "raw_lgbm": 25325.2,
+        "analog_adjusted": 25447.2,
+        "post_holiday_guarded": 25447.2,
+        "midday_guarded": 25447.2,
+        "pre_calibration": 25447.2
       },
-      "preCalibrationForecastMw": 25376.1,
-      "postCalibrationForecastMw": 24789.0,
-      "calibrationDeltaMw": -587.1,
+      "preCalibrationForecastMw": 25447.2,
+      "postCalibrationForecastMw": 25279.2,
+      "calibrationDeltaMw": -168.0,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -386,17 +386,17 @@
       "ts": "2026-05-23T14:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 24650.0,
+      "tepcoForecastMw": 24730.0,
       "forecastMwByStage": {
-        "raw_lgbm": 25255.8,
-        "analog_adjusted": 25554.0,
-        "post_holiday_guarded": 25554.0,
-        "midday_guarded": 25554.0,
-        "pre_calibration": 25554.0
+        "raw_lgbm": 25259.9,
+        "analog_adjusted": 25558.1,
+        "post_holiday_guarded": 25558.1,
+        "midday_guarded": 25558.1,
+        "pre_calibration": 25558.1
       },
-      "preCalibrationForecastMw": 25554.0,
-      "postCalibrationForecastMw": 24896.2,
-      "calibrationDeltaMw": -657.8,
+      "preCalibrationForecastMw": 25558.1,
+      "postCalibrationForecastMw": 25403.5,
+      "calibrationDeltaMw": -154.6,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -406,17 +406,17 @@
       "ts": "2026-05-23T15:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 24500.0,
+      "tepcoForecastMw": 24550.0,
       "forecastMwByStage": {
-        "raw_lgbm": 25414.9,
-        "analog_adjusted": 25676.8,
-        "post_holiday_guarded": 25676.8,
-        "midday_guarded": 25676.8,
-        "pre_calibration": 25676.8
+        "raw_lgbm": 25428.3,
+        "analog_adjusted": 25690.2,
+        "post_holiday_guarded": 25690.2,
+        "midday_guarded": 25690.2,
+        "pre_calibration": 25690.2
       },
-      "preCalibrationForecastMw": 25676.8,
-      "postCalibrationForecastMw": 25005.7,
-      "calibrationDeltaMw": -671.1,
+      "preCalibrationForecastMw": 25690.2,
+      "postCalibrationForecastMw": 25548.0,
+      "calibrationDeltaMw": -142.2,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -426,17 +426,17 @@
       "ts": "2026-05-23T16:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 24980.0,
+      "tepcoForecastMw": 25070.0,
       "forecastMwByStage": {
-        "raw_lgbm": 25689.8,
-        "analog_adjusted": 25848.2,
-        "post_holiday_guarded": 25848.2,
-        "midday_guarded": 25848.2,
-        "pre_calibration": 25848.2
+        "raw_lgbm": 25685.5,
+        "analog_adjusted": 25843.9,
+        "post_holiday_guarded": 25843.9,
+        "midday_guarded": 25843.9,
+        "pre_calibration": 25843.9
       },
-      "preCalibrationForecastMw": 25848.2,
-      "postCalibrationForecastMw": 25339.7,
-      "calibrationDeltaMw": -508.5,
+      "preCalibrationForecastMw": 25843.9,
+      "postCalibrationForecastMw": 25713.1,
+      "calibrationDeltaMw": -130.8,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -446,17 +446,17 @@
       "ts": "2026-05-23T17:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 25730.0,
+      "tepcoForecastMw": 25810.0,
       "forecastMwByStage": {
-        "raw_lgbm": 25963.8,
-        "analog_adjusted": 26140.7,
-        "post_holiday_guarded": 26140.7,
-        "midday_guarded": 26140.7,
-        "pre_calibration": 26140.7
+        "raw_lgbm": 25968.1,
+        "analog_adjusted": 26145.0,
+        "post_holiday_guarded": 26145.0,
+        "midday_guarded": 26145.0,
+        "pre_calibration": 26145.0
       },
-      "preCalibrationForecastMw": 26140.7,
-      "postCalibrationForecastMw": 25720.1,
-      "calibrationDeltaMw": -420.6,
+      "preCalibrationForecastMw": 26145.0,
+      "postCalibrationForecastMw": 26024.6,
+      "calibrationDeltaMw": -120.4,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -466,7 +466,7 @@
       "ts": "2026-05-23T18:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 26630.0,
+      "tepcoForecastMw": 26610.0,
       "forecastMwByStage": {
         "raw_lgbm": 26644.0,
         "analog_adjusted": 27078.5,
@@ -475,8 +475,8 @@
         "pre_calibration": 27078.5
       },
       "preCalibrationForecastMw": 27078.5,
-      "postCalibrationForecastMw": 26691.5,
-      "calibrationDeltaMw": -387.0,
+      "postCalibrationForecastMw": 26967.8,
+      "calibrationDeltaMw": -110.7,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -486,7 +486,7 @@
       "ts": "2026-05-23T19:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 26670.0,
+      "tepcoForecastMw": 26630.0,
       "forecastMwByStage": {
         "raw_lgbm": 26818.5,
         "analog_adjusted": 27108.7,
@@ -495,8 +495,8 @@
         "pre_calibration": 27108.7
       },
       "preCalibrationForecastMw": 27108.7,
-      "postCalibrationForecastMw": 26752.7,
-      "calibrationDeltaMw": -356.0,
+      "postCalibrationForecastMw": 27006.8,
+      "calibrationDeltaMw": -101.9,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -506,7 +506,7 @@
       "ts": "2026-05-23T20:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 25760.0,
+      "tepcoForecastMw": 25740.0,
       "forecastMwByStage": {
         "raw_lgbm": 25559.5,
         "analog_adjusted": 25866.2,
@@ -515,8 +515,8 @@
         "pre_calibration": 25866.2
       },
       "preCalibrationForecastMw": 25866.2,
-      "postCalibrationForecastMw": 25538.7,
-      "calibrationDeltaMw": -327.5,
+      "postCalibrationForecastMw": 25772.5,
+      "calibrationDeltaMw": -93.7,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -526,7 +526,7 @@
       "ts": "2026-05-23T21:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 24530.0,
+      "tepcoForecastMw": 24510.0,
       "forecastMwByStage": {
         "raw_lgbm": 24461.0,
         "analog_adjusted": 24705.9,
@@ -535,8 +535,8 @@
         "pre_calibration": 24705.9
       },
       "preCalibrationForecastMw": 24705.9,
-      "postCalibrationForecastMw": 24404.6,
-      "calibrationDeltaMw": -301.3,
+      "postCalibrationForecastMw": 24619.7,
+      "calibrationDeltaMw": -86.2,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -546,7 +546,7 @@
       "ts": "2026-05-23T22:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 23380.0,
+      "tepcoForecastMw": 23340.0,
       "forecastMwByStage": {
         "raw_lgbm": 23723.6,
         "analog_adjusted": 23865.4,
@@ -555,8 +555,8 @@
         "pre_calibration": 23865.4
       },
       "preCalibrationForecastMw": 23865.4,
-      "postCalibrationForecastMw": 23588.2,
-      "calibrationDeltaMw": -277.2,
+      "postCalibrationForecastMw": 23786.1,
+      "calibrationDeltaMw": -79.3,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
@@ -566,7 +566,7 @@
       "ts": "2026-05-23T23:00:00+09:00",
       "actualMw": null,
       "actualSource": null,
-      "tepcoForecastMw": 22300.0,
+      "tepcoForecastMw": 22290.0,
       "forecastMwByStage": {
         "raw_lgbm": 22888.0,
         "analog_adjusted": 22991.2,
@@ -575,8 +575,8 @@
         "pre_calibration": 22991.2
       },
       "preCalibrationForecastMw": 22991.2,
-      "postCalibrationForecastMw": 22735.5,
-      "calibrationDeltaMw": -255.7,
+      "postCalibrationForecastMw": 22918.2,
+      "calibrationDeltaMw": -73.0,
       "actualVsPreCalibrationResidualMw": null,
       "actualVsPostCalibrationResidualMw": null,
       "tepcoErrorMw": null
