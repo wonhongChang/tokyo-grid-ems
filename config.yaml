@@ -43,6 +43,18 @@ intraday_correction:
       max_abs_bias_mw: 700
       observed_fade_hours: 3 # fade out once real same-day observations are available
       max_heating_degree: 7.0
+    business_type_transition:
+      enabled: true          # when Fri/Sat or holiday boundaries make lag_24h too business-day-like
+      target_non_business_only: true
+      min_observed_hour: 6   # require same-day evidence before correcting the remaining weekend curve
+      max_recent_residual_mw: -300
+      lag_overheat_threshold_mw: 1500
+      base_allowed_excess_mw: 900
+      temp_anomaly_allowance_mw_per_c: 120
+      cooling_allowance_mw_per_c: 160
+      max_weather_allowance_mw: 900
+      shrinkage: 0.55
+      max_abs_bias_mw: 1200
   negative_residual_damping:
     enabled: false
     min_reference_hour: 12   # after midday, avoid over-chasing negative residuals

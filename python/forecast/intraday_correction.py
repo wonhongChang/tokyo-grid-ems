@@ -27,6 +27,8 @@ class IntradayCorrectionResult:
     carryover_adjustment_mw: float = 0.0
     carryover_source_hour: int | None = None
     applied_day_bias_mw: float = 0.0
+    business_type_transition_bias_mw: float = 0.0
+    business_type_transition_applied: bool = False
     source_confidence: dict | None = None
     applied_regime_reason: tuple[str, ...] = ()
 
@@ -40,6 +42,8 @@ class IntradayCorrectionResult:
             "carryoverAdjustmentMw": round(float(self.carryover_adjustment_mw), 1),
             "carryoverSourceHour": self.carryover_source_hour,
             "appliedDayBiasMw": round(float(self.applied_day_bias_mw), 1),
+            "businessTypeTransitionBiasMw": round(float(self.business_type_transition_bias_mw), 1),
+            "businessTypeTransitionApplied": self.business_type_transition_applied,
             "sourceConfidence": self.source_confidence or {},
             "appliedRegimeReason": list(self.applied_regime_reason),
         }
@@ -97,6 +101,38 @@ class IntradayResidualCorrector:
         )
         self._day_scale_max_heating_degree = float(
             scale_config.get("max_heating_degree", 7.0)
+        )
+        transition_config = calibration_config.get("business_type_transition", {})
+        self._transition_enabled = bool(transition_config.get("enabled", True))
+        self._transition_target_non_business_only = bool(
+            transition_config.get("target_non_business_only", True)
+        )
+        self._transition_min_observed_hour = int(
+            transition_config.get("min_observed_hour", 6)
+        )
+        self._transition_max_recent_residual_mw = float(
+            transition_config.get("max_recent_residual_mw", -300.0)
+        )
+        self._transition_lag_overheat_threshold_mw = float(
+            transition_config.get("lag_overheat_threshold_mw", 1_500.0)
+        )
+        self._transition_base_allowed_excess_mw = float(
+            transition_config.get("base_allowed_excess_mw", 900.0)
+        )
+        self._transition_temp_anomaly_allowance_mw_per_c = float(
+            transition_config.get("temp_anomaly_allowance_mw_per_c", 120.0)
+        )
+        self._transition_cooling_allowance_mw_per_c = float(
+            transition_config.get("cooling_allowance_mw_per_c", 160.0)
+        )
+        self._transition_max_weather_allowance_mw = float(
+            transition_config.get("max_weather_allowance_mw", 900.0)
+        )
+        self._transition_shrinkage = float(
+            transition_config.get("shrinkage", 0.55)
+        )
+        self._transition_max_abs_bias_mw = float(
+            transition_config.get("max_abs_bias_mw", 1_200.0)
         )
         negative_damping_config = correction_config.get("negative_residual_damping", {})
         self._negative_damping_enabled = bool(negative_damping_config.get("enabled", False))
@@ -388,6 +424,99 @@ class IntradayResidualCorrector:
             return result, 0.0
         return result, float(np.mean(applied_values))
 
+    @staticmethod
+    def _finite_float(value) -> float | None:
+        if value is None or pd.isna(value):
+            return None
+        parsed = float(value)
+        if not np.isfinite(parsed):
+            return None
+        return parsed
+
+    def _business_type_transition_bias_by_hour(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        last_observed_hour: int | None,
+        recent_residuals: list[_ResidualPoint],
+    ) -> dict[int, float]:
+        if (
+            not self._transition_enabled
+            or inference_features is None
+            or inference_features.empty
+            or last_observed_hour is None
+            or last_observed_hour < self._transition_min_observed_hour
+            or not recent_residuals
+        ):
+            return {}
+
+        recent_residual_mean = float(
+            np.mean([point.residual_mw for point in recent_residuals])
+        )
+        if recent_residual_mean > self._transition_max_recent_residual_mw:
+            return {}
+
+        forecast_by_hour = {
+            pd.Timestamp(forecast.ts).hour: forecast
+            for forecast in forecasts
+        }
+        biases: dict[int, float] = {}
+        for _, row in inference_features.iterrows():
+            hour = int(row.get("hour", -1))
+            forecast = forecast_by_hour.get(hour)
+            if forecast is None or hour <= last_observed_hour:
+                continue
+
+            mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if mismatch is None or mismatch <= 0:
+                continue
+            if (
+                self._transition_target_non_business_only
+                and is_non_business_day != 1.0
+            ):
+                continue
+
+            lag_24h = self._finite_float(row.get("lag_24h"))
+            recent_mean = self._finite_float(row.get("recent_same_business_type_mean"))
+            if lag_24h is None or recent_mean is None:
+                continue
+
+            lag_overheat_mw = lag_24h - recent_mean
+            if lag_overheat_mw <= self._transition_lag_overheat_threshold_mw:
+                continue
+
+            temp_anomaly_7d = max(
+                0.0,
+                self._finite_float(row.get("temp_anomaly_7d")) or 0.0,
+            )
+            cooling_degree = max(
+                0.0,
+                self._finite_float(row.get("cooling_degree")) or 0.0,
+            )
+            weather_allowance = min(
+                self._transition_max_weather_allowance_mw,
+                temp_anomaly_7d * self._transition_temp_anomaly_allowance_mw_per_c
+                + cooling_degree * self._transition_cooling_allowance_mw_per_c,
+            )
+            allowed_forecast_mw = (
+                recent_mean
+                + self._transition_base_allowed_excess_mw
+                + weather_allowance
+            )
+            excess_mw = forecast.forecast_mw - allowed_forecast_mw
+            if excess_mw <= 0.0:
+                continue
+
+            bias = -min(
+                self._transition_max_abs_bias_mw,
+                excess_mw * self._transition_shrinkage,
+            )
+            if bias != 0.0:
+                biases[hour] = round(float(bias), 1)
+
+        return biases
+
     def _apply_shape_guard(
         self,
         forecasts: list[HourlyForecast],
@@ -597,6 +726,8 @@ class IntradayResidualCorrector:
                 round(carryover_adjustment_mw, 1),
                 carryover_source_hour,
                 round(applied_day_bias_mw, 1),
+                0.0,
+                False,
                 source_confidence,
                 tuple(applied_reasons),
             )
@@ -618,6 +749,8 @@ class IntradayResidualCorrector:
                 0.0,
                 None,
                 0.0,
+                0.0,
+                False,
                 source_confidence,
                 tuple(applied_reasons),
             )
@@ -651,8 +784,25 @@ class IntradayResidualCorrector:
         if base_adjustment_mw != 0.0:
             applied_reasons.append("intraday_observed_residual")
 
+        transition_bias_by_hour = self._business_type_transition_bias_by_hour(
+            forecasts,
+            inference_features,
+            last_observed_hour,
+            recent_residuals,
+        )
+        transition_guarded_forecasts, business_type_transition_bias_mw = (
+            self._apply_hourly_bias(
+                forecasts,
+                transition_bias_by_hour,
+                last_observed_hour,
+            )
+        )
+        business_type_transition_applied = bool(business_type_transition_bias_mw != 0.0)
+        if business_type_transition_applied:
+            applied_reasons.append("business_type_transition_lag_overheat")
+
         adjusted_forecasts: list[HourlyForecast] = []
-        for forecast in forecasts:
+        for forecast in transition_guarded_forecasts:
             forecast_hour = pd.Timestamp(forecast.ts).hour
             if forecast_hour <= last_observed_hour:
                 adjusted_forecasts.append(forecast)
@@ -700,6 +850,8 @@ class IntradayResidualCorrector:
             0.0,
             None,
             0.0,
+            round(business_type_transition_bias_mw, 1),
+            business_type_transition_applied,
             source_confidence,
             tuple(applied_reasons),
         )

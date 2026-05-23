@@ -363,6 +363,66 @@ def test_intraday_correction_keeps_morning_negative_residual():
     assert result.forecasts[10].forecast_mw == pytest.approx(19_000.0)
 
 
+def test_intraday_correction_dampens_non_business_day_lag_overheat_after_observed_evidence():
+    target = date(2026, 5, 23)  # Saturday after a business day
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[8] = HourlyForecast(
+        ts=f"{target.isoformat()}T08:00:00+09:00",
+        forecast_mw=26_000.0,
+        p95_lower_mw=25_500.0,
+        p95_upper_mw=26_500.0,
+        p99_lower_mw=25_200.0,
+        p99_upper_mw=26_800.0,
+    )
+    actual_series = [
+        _actual_point(target, 5, 19_000.0),
+        _actual_point(target, 6, 19_000.0),
+        _actual_point(target, 7, 19_000.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": 8,
+            "is_non_business_day": 1,
+            "lag_24h_business_type_mismatch": 1,
+            "lag_24h": 30_000.0,
+            "recent_same_business_type_mean": 22_000.0,
+            "temp_anomaly_7d": -3.0,
+            "cooling_degree": 0.0,
+        }
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "decay_per_hour": 1.0,
+            "operational_calibration": {
+                "business_type_transition": {
+                    "enabled": True,
+                    "min_observed_hour": 6,
+                    "max_recent_residual_mw": -300.0,
+                    "lag_overheat_threshold_mw": 1_500.0,
+                    "base_allowed_excess_mw": 900.0,
+                    "shrinkage": 0.5,
+                    "max_abs_bias_mw": 1_200.0,
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.business_type_transition_applied is True
+    assert result.business_type_transition_bias_mw == pytest.approx(-1_200.0)
+    assert result.forecasts[7].forecast_mw == pytest.approx(20_000.0)
+    assert result.forecasts[8].forecast_mw == pytest.approx(24_800.0)
+    assert "business_type_transition_lag_overheat" in result.applied_regime_reason
+
+
 def test_intraday_shape_guard_caps_afternoon_drop():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)
