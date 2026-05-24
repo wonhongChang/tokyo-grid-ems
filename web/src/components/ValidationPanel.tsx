@@ -188,6 +188,9 @@ const DAILY_REPORT_COPY = {
     largestMiss: '최대 오차',
     insights: '주요 코멘트',
     noInsight: '특별히 큰 패턴 이탈은 감지되지 않았습니다.',
+    severityInfo: '참고',
+    severityWarning: '검토 필요',
+    severityCritical: '우선 점검',
     model: '모델',
     tepco: 'TEPCO',
     mixed: '혼재',
@@ -224,6 +227,9 @@ const DAILY_REPORT_COPY = {
     largestMiss: 'Largest miss',
     insights: 'Key comments',
     noInsight: 'No major recurring pattern was detected.',
+    severityInfo: 'Info',
+    severityWarning: 'Needs Review',
+    severityCritical: 'Priority Review',
     model: 'Model',
     tepco: 'TEPCO',
     mixed: 'Mixed',
@@ -260,6 +266,9 @@ const DAILY_REPORT_COPY = {
     largestMiss: '最大誤差',
     insights: '主なコメント',
     noInsight: '大きな継続パターンのずれは検出されませんでした。',
+    severityInfo: '情報',
+    severityWarning: '要確認',
+    severityCritical: '優先確認',
     model: 'モデル',
     tepco: 'TEPCO',
     mixed: '混在',
@@ -302,6 +311,12 @@ function fmtPowerMaybe(value: number | null | undefined, locale: Locale): string
 function fmtMape(value: number | null | undefined): string {
   if (value == null) return '-'
   return `${value.toFixed(2)}%`
+}
+
+function severityLabel(severity: DailyOperationReport['insights'][number]['severity'], labels: typeof DAILY_REPORT_COPY.ko): string {
+  if (severity === 'critical') return labels.severityCritical
+  if (severity === 'warning') return labels.severityWarning
+  return labels.severityInfo
 }
 
 type AccuracyVerdict = NonNullable<ForecastAccuracyDaily['verdict']>
@@ -518,7 +533,7 @@ function OperationReportCard({
         ) : (
           report.insights.map(item => (
             <div key={item.code} className="operation-insight">
-              <span className={`badge ${item.severity}`}>{item.severity}</span>
+              <span className={`badge ${item.severity}`}>{severityLabel(item.severity, labels)}</span>
               <span>{insightText(item.code, labels)}</span>
             </div>
           ))
