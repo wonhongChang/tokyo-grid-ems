@@ -1,0 +1,304 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-24",
+  "generatedAt": "2026-05-25T07:52:03+09:00",
+  "availability": "ok",
+  "language": "ja",
+  "contentLanguage": "ja",
+  "generator": {
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "promptVersion": "openai_ops_report_v2",
+    "schemaVersion": "1.0.0",
+    "localizationModel": "gpt-4o-mini",
+    "localizationStatus": "ok"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-24.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-24.json",
+    "operationalCalibration": "reports/internal/operational-calibration/2026-05-24.json",
+    "operationalCalibrationHistory": "reports/internal/operational-calibration/snapshots/2026-05-24/index.json",
+    "alerts": "alerts/2026-05-24.json",
+    "forecast": "forecast/2026-05-24.json",
+    "actual": "actual/2026-05-24.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-25T07:52:03+09:00",
+    "fingerprint": "sha256:aeeb2f5a88234f6d2d0df34c52a4212691d3bf43bca01e8218be6476a0578cfd",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": "2026-05-25T07:51:05+09:00",
+        "fingerprint": "sha256:4b3f6104e39f4d733ce415277c97e6bfcbc7a8f7f915ac1e579986757a1474ac"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": "2026-05-25T07:51:05+09:00",
+        "fingerprint": "sha256:b85c30f1ffcfa2628c462ec8ae68362239ef3a5e1a98a45d9e288ebd33df4405"
+      },
+      "operationalCalibration": {
+        "path": "reports/internal/operational-calibration/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": "2026-05-24T21:43:39+09:00",
+        "fingerprint": "sha256:332fa18162a875b5c00025f0b1194416a51375795fa03d0d941fbe68bb8afcbf"
+      },
+      "operationalCalibrationHistory": {
+        "path": "reports/internal/operational-calibration/snapshots/2026-05-24/index.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": "2026-05-25T07:40:57+09:00",
+        "fingerprint": "sha256:2ebcb0ea62fdc79cc72747f3da6e1ad2d39ce971c4cf1c92aeda31fd7cefc372"
+      },
+      "alerts": {
+        "path": "alerts/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": null,
+        "fingerprint": "sha256:adafadd150d314a63a18bebf4038e52e13564d3135307b17a308f440887a91e6"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": null,
+        "fingerprint": "sha256:d121cd870d32090f6cf7fe0039db50d6e504dee12f972e38736ac8824c3e376d"
+      },
+      "actual": {
+        "path": "actual/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": null,
+        "fingerprint": "sha256:a88671ce0356e2422ac4268f9a1ff81038672c2193045bc500235702ce79acc4"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-25T07:41:36+09:00",
+        "fingerprint": "sha256:7a059ccd2cc0b6065c27f5bc7d5f89f16a9536f464071fc0bec584248f193c3c"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 16,
+    "limitations": [
+      "決定論的なJSON事実のみが利用可能であり、原データの時間系列は提供されませんでした。",
+      "中間の取引時における実行は保管されているキャリブレーションスナップショットから再構成されているため、遷移効果の因果関係は部分的なままです。",
+      "観察されたキャリブレーションカバレッジから3時間が抜け落ちているため、日終わりのハンドオフ行動の直接的な検証が制限されています。"
+    ]
+  },
+  "executiveSummary": {
+    "severity": "info",
+    "headline": "モデルは全体的にTEPCOに近かったが、夜間および夕方の時間帯で劣っていた",
+    "summary": "モデルは日次誤差でほぼ平衡を保って終了しました：MAEは319.6 MW、TEPCOは310.4 MW、WAPEはそれぞれ1.36%対1.33%で、近接な判定を受けました。モデルは24時間中14時間で勝利し、RMSEも良好でTEPCOより最大誤差ははるかに低かったが、00-05および16-18の時間帯では劣っており、大きな17->18のランプミスが最大の形状誤差を引き起こしました。",
+    "modelVerdict": "close",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 319.6,
+    "tepcoMaeMw": 310.4,
+    "modelWapePct": 1.36,
+    "tepcoWapePct": 1.33,
+    "modelRmseMw": 389.6,
+    "tepcoRmseMw": 451.1,
+    "modelMaxErrorMw": 734.0,
+    "tepcoMaxErrorMw": 1520.0,
+    "modelMaxErrorHour": 14,
+    "tepcoMaxErrorHour": 11,
+    "maeGapMw": 9.2,
+    "wapeGapPct": 0.03,
+    "verdict": "close",
+    "modelWins": 14,
+    "tepcoWins": 10,
+    "ties": 0,
+    "modelAdvantageHours": 14,
+    "tepcoAdvantageHours": 10,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.583
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "H1",
+      "severity": "warning",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "夜間carryoverがモデルを低く偏向させた",
+      "explanation": "00-05ではモデルMAEが220.1 MWでTEPCOの121.7 MWと比べ、モデルの偏向は-220.1 MWでした。キャリブレーションでもcarryoverAdjustmentMwは0.0で、日中のバイアス補正が適用されていませんでした。",
+      "evidence": [
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "overnight modelBiasMw",
+          "value": -220.1,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "00-05"
+        },
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "overnight modelMaeMw",
+          "value": 220.1,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "00-05"
+        }
+      ],
+      "relatedHours": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "relatedTimeBands": [
+        "00-05"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "日次判定は全体的に近接しており、重大な劣化ではありません。",
+        "キャリブレーションではいかなるcarryoverも適用されていなかったため、問題は誤って適用されたのではなく、見逃されたことにあります。"
+      ]
+    },
+    {
+      "id": "H2",
+      "severity": "warning",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "昼間およびピーク時間は持続的に過小予測された",
+      "explanation": "11-15の時間帯は最も悪いバンドMAEで502.8 MW、および-502.8 MWの偏向を持ち、時間12および14の最大ミスは両方とも大きな負の誤差でした。ピーク時間19も728.7 MWの過小予測がありました。",
+      "evidence": [
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "daytime modelMaeMw",
+          "value": 502.8,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "11-15"
+        },
+        {
+          "source": "operationFacts.topMisses",
+          "metric": "hour 14 modelErrorMw",
+          "value": -734.0,
+          "unit": "MW",
+          "hour": 14,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        12,
+        14,
+        19
+      ],
+      "relatedTimeBands": [
+        "11-15",
+        "19-23"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.day_level_scale",
+        "intraday_correction.positive_residual_mitigation"
+      ],
+      "counterEvidence": [
+        "TEPCOは12時においてモデルよりも劣っていましたので、偏向はすべての比較対象に均一ではありません。",
+        "RMSEはTEPCOよりも良好でしたので、ミスは局所化されており、国内的に不安定ではありません。"
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "info",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "朝のランプは気象よりも遷移の慣性を反映するかもしれない",
+      "explanation": "06-10ではモデルの性能が良く、-27.0 MWの小さな偏向を持っていましたが、診断ではlag24HourlyDeltaByBandが666.0 MW、recentSameBusinessTypeDeltaByBandが867.8 MWであることが示されています。これの日は営業日から非営業日への遷移を含んでおり、lag_24hの慣性あるいはランプの汚染がランプ形状の寄与者となる可能性があります。",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24HourlyDeltaByBand morning_ramp mean",
+          "value": 666.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        },
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "recentSameBusinessTypeDeltaByBand morning_ramp mean",
+          "value": 867.8,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        }
+      ],
+      "relatedHours": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "relatedTimeBands": [
+        "06-10"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.business_type_transition"
+      ],
+      "counterEvidence": [
+        "朝のランプモデルの偏向は-27.0 MWのみであったため、証拠は大きな直接の偏向信号ではありません。",
+        "天候診断は中立的であり、遷移による説明が天候駆動のものよりも強いが、依然として間接的です。"
+      ]
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "R1",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.day_boundary_carryover",
+      "suggestion": "00-05帯でモデルの偏向が-150 MW未満で3つ以上の連続スナップショットを示す場合、次の日に対して0.6の減衰を使用してcarryoverを有効化します。",
+      "expectedEffect": "夜間の過小予測を減少させ、早朝のハンドオフの安定性を改善するはずです。",
+      "risk": "次の日が構造的に低い負荷のレジームで始まる場合、過剰にcarryoverする可能性があります。",
+      "validationPlan": "保持された16のキャリブレーションスナップショットを再生し、carryoverトリガー前後の00-05 MAEと次のバンドの偏向を比較します。",
+      "linkedHypotheses": [
+        "H1"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "R2",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.day_level_scale",
+      "suggestion": "11-15の残差が-400 MW未満で、最新の観測時間調整が300 MWを超えた場合に、昼間のスケールアップトリガーを追加し、0.85の縮小キャップを設けます。",
+      "expectedEffect": "繰り返される昼間の過小予測を改善し、最大の日次ミスを縮小するはずです。",
+      "risk": "スケールアップがあまりにも攻撃的すぎる場合、寒い日や低負荷の日に過剰になる可能性があります。",
+      "validationPlan": "11-15の時間帯および14-19に焦点を当てたスナップショットの再生を実行し、MAE、偏向、最大誤差を現在のキャリブレーション経路に対して測定します。",
+      "linkedHypotheses": [
+        "H2"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "天候診断はすべての帯域で中立的であり、したがって誤差パターンは温度ショックよりも体制および日次の形状問題とより一貫しています。",
+    "モデルはRMSEおよびピーク時間のタイミングにおいてTEPCOよりも優れていますが、日次勝利は夜間および昼間の過小予測のためにまだ狭いものでした。",
+    "21時間からのキャリブレーションが観察され、415.5 MWの基準調整が適用されましたが、ビジネスタイプの遷移や残差減衰の制御は適用されていません。"
+  ],
+  "limitations": [
+    "決定論的なJSON事実のみが利用可能であり、原データの時間系列は提供されませんでした。",
+    "中間の取引時における実行は保管されているキャリブレーションスナップショットから再構成されているため、遷移効果の因果関係は部分的なままです。",
+    "観察されたキャリブレーションカバレッジから3時間が抜け落ちているため、日終わりのハンドオフ行動の直接的な検証が制限されています。"
+  ]
+}

@@ -1,0 +1,303 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-24",
+  "generatedAt": "2026-05-25T07:52:03+09:00",
+  "availability": "ok",
+  "language": "en",
+  "contentLanguage": "en",
+  "generator": {
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "promptVersion": "openai_ops_report_v2",
+    "schemaVersion": "1.0.0",
+    "localizationStatus": "not_requested"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-24.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-24.json",
+    "operationalCalibration": "reports/internal/operational-calibration/2026-05-24.json",
+    "operationalCalibrationHistory": "reports/internal/operational-calibration/snapshots/2026-05-24/index.json",
+    "alerts": "alerts/2026-05-24.json",
+    "forecast": "forecast/2026-05-24.json",
+    "actual": "actual/2026-05-24.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-25T07:52:03+09:00",
+    "fingerprint": "sha256:aeeb2f5a88234f6d2d0df34c52a4212691d3bf43bca01e8218be6476a0578cfd",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": "2026-05-25T07:51:05+09:00",
+        "fingerprint": "sha256:4b3f6104e39f4d733ce415277c97e6bfcbc7a8f7f915ac1e579986757a1474ac"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": "2026-05-25T07:51:05+09:00",
+        "fingerprint": "sha256:b85c30f1ffcfa2628c462ec8ae68362239ef3a5e1a98a45d9e288ebd33df4405"
+      },
+      "operationalCalibration": {
+        "path": "reports/internal/operational-calibration/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": "2026-05-24T21:43:39+09:00",
+        "fingerprint": "sha256:332fa18162a875b5c00025f0b1194416a51375795fa03d0d941fbe68bb8afcbf"
+      },
+      "operationalCalibrationHistory": {
+        "path": "reports/internal/operational-calibration/snapshots/2026-05-24/index.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": "2026-05-25T07:40:57+09:00",
+        "fingerprint": "sha256:2ebcb0ea62fdc79cc72747f3da6e1ad2d39ce971c4cf1c92aeda31fd7cefc372"
+      },
+      "alerts": {
+        "path": "alerts/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": null,
+        "fingerprint": "sha256:adafadd150d314a63a18bebf4038e52e13564d3135307b17a308f440887a91e6"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": null,
+        "fingerprint": "sha256:d121cd870d32090f6cf7fe0039db50d6e504dee12f972e38736ac8824c3e376d"
+      },
+      "actual": {
+        "path": "actual/2026-05-24.json",
+        "exists": true,
+        "date": "2026-05-24",
+        "generatedAt": null,
+        "fingerprint": "sha256:a88671ce0356e2422ac4268f9a1ff81038672c2193045bc500235702ce79acc4"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-25T07:41:36+09:00",
+        "fingerprint": "sha256:7a059ccd2cc0b6065c27f5bc7d5f89f16a9536f464071fc0bec584248f193c3c"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 16,
+    "limitations": [
+      "Only deterministic JSON facts were available; no raw hourly series were provided.",
+      "Intermediate intraday runs are reconstructed from retained calibration snapshots, so causality for transition effects remains partial.",
+      "Three hours were missing from observed calibration coverage, which limits direct verification of late-day handoff behavior."
+    ]
+  },
+  "executiveSummary": {
+    "severity": "info",
+    "headline": "Model was close to TEPCO overall, but trailed in overnight and late-afternoon bands",
+    "summary": "The model finished with near-parity on daily error: MAE was 319.6 MW vs TEPCO 310.4 MW and WAPE was 1.36% vs 1.33%, with a close verdict. The model won 14 of 24 hours and had better RMSE and much lower max error than TEPCO, but it underperformed in 00-05 and 16-18, while a large 17->18 ramp miss drove the biggest shape error.",
+    "modelVerdict": "close",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 319.6,
+    "tepcoMaeMw": 310.4,
+    "modelWapePct": 1.36,
+    "tepcoWapePct": 1.33,
+    "modelRmseMw": 389.6,
+    "tepcoRmseMw": 451.1,
+    "modelMaxErrorMw": 734.0,
+    "tepcoMaxErrorMw": 1520.0,
+    "modelMaxErrorHour": 14,
+    "tepcoMaxErrorHour": 11,
+    "maeGapMw": 9.2,
+    "wapeGapPct": 0.03,
+    "verdict": "close",
+    "modelWins": 14,
+    "tepcoWins": 10,
+    "ties": 0,
+    "modelAdvantageHours": 14,
+    "tepcoAdvantageHours": 10,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.583
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "H1",
+      "severity": "warning",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "Overnight carryover left the model biased low",
+      "explanation": "00-05 had model MAE 220.1 MW versus TEPCO 121.7 MW and model bias of -220.1 MW. Calibration also shows carryoverAdjustmentMw 0.0 and no day-bias correction applied.",
+      "evidence": [
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "overnight modelBiasMw",
+          "value": -220.1,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "00-05"
+        },
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "overnight modelMaeMw",
+          "value": 220.1,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "00-05"
+        }
+      ],
+      "relatedHours": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "relatedTimeBands": [
+        "00-05"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "Daily verdict was still close overall, not a severe degradation.",
+        "Calibration did not indicate any carryover was applied, so the issue is omission rather than misapplication."
+      ]
+    },
+    {
+      "id": "H2",
+      "severity": "warning",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "Daytime and peak hours were persistently under-forecast",
+      "explanation": "11-15 had the worst band MAE at 502.8 MW and a -502.8 MW bias, and the top misses at hours 12 and 14 were both large negative errors. The peak hour 19 was also under-forecast by 728.7 MW.",
+      "evidence": [
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "daytime modelMaeMw",
+          "value": 502.8,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "11-15"
+        },
+        {
+          "source": "operationFacts.topMisses",
+          "metric": "hour 14 modelErrorMw",
+          "value": -734.0,
+          "unit": "MW",
+          "hour": 14,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        12,
+        14,
+        19
+      ],
+      "relatedTimeBands": [
+        "11-15",
+        "19-23"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.day_level_scale",
+        "intraday_correction.positive_residual_mitigation"
+      ],
+      "counterEvidence": [
+        "TEPCO was worse than the model at hour 12, so the bias is not uniform across all comparators.",
+        "RMSE remained better than TEPCO, so the miss is localized rather than globally unstable."
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "info",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "Morning ramp may reflect transition inertia rather than weather",
+      "explanation": "06-10 had model-better performance with a small -27.0 MW bias, while diagnostics show lag24HourlyDeltaByBand of 666.0 MW and recentSameBusinessTypeDeltaByBand of 867.8 MW. Because the day involved a business-day to non-business-day transition, lag_24h inertia or ramp contamination is a plausible contributor to the ramp shape.",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24HourlyDeltaByBand morning_ramp mean",
+          "value": 666.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        },
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "recentSameBusinessTypeDeltaByBand morning_ramp mean",
+          "value": 867.8,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        }
+      ],
+      "relatedHours": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "relatedTimeBands": [
+        "06-10"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.business_type_transition"
+      ],
+      "counterEvidence": [
+        "Morning ramp model bias was only -27.0 MW, so the evidence is not a large direct bias signal.",
+        "Weather diagnostics were neutral, so the transition explanation is stronger than a weather-driven one but still indirect."
+      ]
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "R1",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.day_boundary_carryover",
+      "suggestion": "Enable carryover when the 00-05 band shows model bias below -150 MW for 3+ consecutive snapshots, using a 0.6 decay into the next day.",
+      "expectedEffect": "Should reduce overnight under-forecasting and improve early-hour handoff stability.",
+      "risk": "May over-carry if the next day starts with a structurally lower load regime.",
+      "validationPlan": "Replay the 16 retained calibration snapshots and compare 00-05 MAE and next-band bias before vs after the carryover trigger.",
+      "linkedHypotheses": [
+        "H1"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "R2",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.day_level_scale",
+      "suggestion": "Add a daytime scale-up trigger when 11-15 residuals stay below -400 MW and the latest observed-hour adjustment exceeds 300 MW, with a 0.85 shrinkage cap.",
+      "expectedEffect": "Should lift the repeated midday under-forecast and narrow the largest daily misses.",
+      "risk": "Could overshoot on cooler or low-load days if the scale-up is too aggressive.",
+      "validationPlan": "Run a snapshot replay focused on hours 11-15 and 14-19, measuring MAE, bias, and max error against the current calibration path.",
+      "linkedHypotheses": [
+        "H2"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "Weather diagnostics were neutral across all bands, so the error pattern is more consistent with regime and intraday shape issues than with temperature shocks.",
+    "The model outperformed TEPCO on RMSE and peak-hour timing, but the daily win was still narrow because of overnight and daytime under-forecasting.",
+    "Calibration was observed from 21 hours and applied a 415.5 MW base adjustment, but no business-type transition or residual-damping control was applied."
+  ],
+  "limitations": [
+    "Only deterministic JSON facts were available; no raw hourly series were provided.",
+    "Intermediate intraday runs are reconstructed from retained calibration snapshots, so causality for transition effects remains partial.",
+    "Three hours were missing from observed calibration coverage, which limits direct verification of late-day handoff behavior."
+  ]
+}
