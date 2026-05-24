@@ -177,6 +177,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [データ保持とアーカイブ戦略](docs/ja/data-retention-strategy.md)
 - [モデル評価リポート](docs/ja/model-evaluation.md)
 - [異常検知基準](docs/ja/anomaly-criteria.md)
+- [運用レポートタブ](docs/ja/ops-report-tab.md)
 - [JSONスキーマ契約](docs/ja/json_schema.md)
 
 ---
