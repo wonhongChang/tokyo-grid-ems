@@ -378,6 +378,7 @@ def _guard_config(
     dt_min_anomaly: float = 2.0,
     warm_day: bool = False,
     warm_day_offset: float = 0.0,
+    business_return_enabled: bool = True,
 ) -> dict:
     return {
         "adjustment": {
@@ -400,6 +401,21 @@ def _guard_config(
                     "warm_day_min_temp_anomaly_doy": 1.0,
                     "warm_day_upward_offset_mw": warm_day_offset,
                     "max_upward_offset_mw": 900.0,
+                },
+                "business_return_anchor_shortfall": {
+                    "enabled": business_return_enabled,
+                    "target_hours": [6, 7, 8, 9, 10, 11],
+                    "gap_threshold_mw": 6_000.0,
+                    "allowance_mw": 1_000.0,
+                    "max_clipping_mw": 1_000.0,
+                    "shrinkage_map": {
+                        6: 0.25,
+                        7: 0.35,
+                        8: 0.45,
+                        9: 0.50,
+                        10: 0.30,
+                        11: 0.20,
+                    },
                 },
             }
         }
@@ -831,6 +847,65 @@ def test_guard_skips_lag24_cap_when_previous_day_business_type_differs():
 
     assert result[11].forecast_mw == pytest.approx(33_200.0)
     assert result[11].p95_upper_mw == pytest.approx(34_200.0)
+
+
+def test_guard_lifts_business_return_anchor_shortfall():
+    """Business return guard restores part of a Monday 09:00 anchor shortfall."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 5, 25)
+    raw = _make_raw_forecasts(target, 29_570.0)
+    adj = _make_raw_forecasts(target, 29_570.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"] == 9, "lag_24h"] = 22_830.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_mean"] = 31_795.0
+    inf.loc[inf["hour"] == 9, "lag_24h_business_type_mismatch"] = 1
+
+    result = guard.apply(raw, adj, inf)
+
+    assert result[9].forecast_mw == pytest.approx(30_182.5)
+    assert result[9].p95_lower_mw == pytest.approx(29_182.5)
+    assert result[9].p95_upper_mw == pytest.approx(31_182.5)
+    assert result[8].forecast_mw == pytest.approx(29_570.0)
+
+
+def test_guard_does_not_lift_business_return_without_mismatch():
+    """Business return guard stays isolated on ordinary business-day sequences."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 5, 26)
+    raw = _make_raw_forecasts(target, 29_570.0)
+    adj = _make_raw_forecasts(target, 29_570.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"] == 9, "lag_24h"] = 22_830.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_mean"] = 31_795.0
+    inf.loc[inf["hour"] == 9, "lag_24h_business_type_mismatch"] = 0
+
+    result = guard.apply(raw, adj, inf)
+
+    assert result is adj
+    assert result[9].forecast_mw == pytest.approx(29_570.0)
+
+
+def test_guard_business_return_off_keeps_other_guards_active():
+    """Disabling business return shortfall must not disable the warm-day guard."""
+    guard = PostHolidayTimeBandGuard(_guard_config(
+        warm_day=True,
+        warm_day_offset=250.0,
+        business_return_enabled=False,
+    ))
+    target = date(2026, 5, 25)
+    raw = _make_raw_forecasts(target, 29_570.0)
+    adj = _make_raw_forecasts(target, 29_570.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"] == 9, "lag_24h"] = 22_830.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_mean"] = 31_795.0
+    inf.loc[inf["hour"] == 9, "lag_24h_business_type_mismatch"] = 1
+    inf.loc[inf["hour"] == 10, "temp_c"] = 28.0
+    inf.loc[inf["hour"] == 10, "temp_anomaly_doy"] = 4.0
+
+    result = guard.apply(raw, adj, inf)
+
+    assert result[9].forecast_mw == pytest.approx(29_570.0)
+    assert result[10].forecast_mw == pytest.approx(29_820.0)
 
 
 # ---------------------------------------------------------------------------

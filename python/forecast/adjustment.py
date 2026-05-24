@@ -298,6 +298,40 @@ class PostHolidayTimeBandGuard:
         self._lag24_warm_day_max_increase_mw = float(
             daytime_config.get("lag24_warm_day_max_increase_mw", 2500.0)
         )
+        business_return_config = guard_config.get("business_return_anchor_shortfall", {})
+        self._business_return_enabled = bool(
+            business_return_config.get("enabled", True)
+        )
+        self._business_return_hours: set[int] = set()
+        for hour in business_return_config.get("target_hours", [6, 7, 8, 9, 10, 11]):
+            try:
+                self._business_return_hours.add(int(hour))
+            except (TypeError, ValueError):
+                continue
+        self._business_return_gap_threshold_mw = float(
+            business_return_config.get("gap_threshold_mw", 6_000.0)
+        )
+        self._business_return_allowance_mw = float(
+            business_return_config.get("allowance_mw", 1_000.0)
+        )
+        self._business_return_max_clipping_mw = float(
+            business_return_config.get("max_clipping_mw", 1_000.0)
+        )
+        raw_shrinkage_map = business_return_config.get(
+            "shrinkage_map",
+            {6: 0.25, 7: 0.35, 8: 0.45, 9: 0.50, 10: 0.30, 11: 0.20},
+        )
+        self._business_return_shrinkage_by_hour: dict[int, float] = {}
+        shrinkage_items = (
+            raw_shrinkage_map.items()
+            if hasattr(raw_shrinkage_map, "items")
+            else []
+        )
+        for hour, shrinkage in shrinkage_items:
+            try:
+                self._business_return_shrinkage_by_hour[int(hour)] = float(shrinkage)
+            except (TypeError, ValueError):
+                continue
 
     @staticmethod
     def _shift_forecast(forecast, shift_mw: float):
@@ -311,6 +345,15 @@ class PostHolidayTimeBandGuard:
             p99_lower_mw=round(forecast.p99_lower_mw + shift_mw, 1),
             p99_upper_mw=round(forecast.p99_upper_mw + shift_mw, 1),
         )
+
+    @staticmethod
+    def _finite_float(value) -> float | None:
+        if value is None or pd.isna(value):
+            return None
+        parsed = float(value)
+        if not np.isfinite(parsed):
+            return None
+        return parsed
 
     def _cap_warm_day_lag24_increase(self, forecast, row, active: bool):
         if not (self._lag24_warm_day_cap_enabled and active):
@@ -329,6 +372,90 @@ class PostHolidayTimeBandGuard:
         if forecast.forecast_mw <= max_forecast_mw:
             return forecast
         return self._shift_forecast(forecast, max_forecast_mw - forecast.forecast_mw)
+
+    def _business_return_shortfall_may_apply(
+        self,
+        inference_features: pd.DataFrame,
+    ) -> bool:
+        if (
+            not self._business_return_enabled
+            or not self._business_return_hours
+            or inference_features is None
+            or inference_features.empty
+            or "hour" not in inference_features.columns
+        ):
+            return False
+
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is None or int(hour) not in self._business_return_hours:
+                continue
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+            if is_non_business_day == 0.0 and mismatch is not None and mismatch > 0.0:
+                return True
+        return False
+
+    def _apply_business_return_anchor_shortfall(
+        self,
+        forecasts: list,
+        inference_features: pd.DataFrame,
+    ) -> list:
+        if not self._business_return_shortfall_may_apply(inference_features):
+            return forecasts
+
+        rows_by_hour = {}
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is not None:
+                rows_by_hour[int(hour)] = row
+
+        result = []
+        changed = False
+        for forecast in forecasts:
+            hour = pd.Timestamp(forecast.ts).hour
+            row = rows_by_hour.get(hour)
+            shrinkage = self._business_return_shrinkage_by_hour.get(hour)
+            if row is None or shrinkage is None:
+                result.append(forecast)
+                continue
+
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+            if is_non_business_day != 0.0 or mismatch is None or mismatch <= 0.0:
+                result.append(forecast)
+                continue
+
+            recent_mean = self._finite_float(row.get("recent_same_business_type_mean"))
+            lag_24h = self._finite_float(row.get("lag_24h"))
+            forecast_mw = self._finite_float(forecast.forecast_mw)
+            if recent_mean is None or lag_24h is None or forecast_mw is None:
+                result.append(forecast)
+                continue
+
+            gap_mw = recent_mean - lag_24h
+            if gap_mw < self._business_return_gap_threshold_mw:
+                result.append(forecast)
+                continue
+
+            lower_bound_mw = recent_mean - self._business_return_allowance_mw
+            if forecast_mw >= lower_bound_mw:
+                result.append(forecast)
+                continue
+
+            shortfall_mw = lower_bound_mw - forecast_mw
+            adjustment_mw = min(
+                shortfall_mw * shrinkage,
+                self._business_return_max_clipping_mw,
+            )
+            if adjustment_mw <= 0.0:
+                result.append(forecast)
+                continue
+
+            result.append(self._shift_forecast(forecast, adjustment_mw))
+            changed = True
+
+        return result if changed else forecasts
 
     def apply(
         self,
@@ -357,7 +484,15 @@ class PostHolidayTimeBandGuard:
             and target_is_business_day
             and _is_nonworking(lag_168h_date)
         )
-        if not (post_holiday_active or lag_holiday_active or self._activate_on_warm_day):
+        business_return_shortfall_active = (
+            self._business_return_shortfall_may_apply(inference_features)
+        )
+        if not (
+            post_holiday_active
+            or lag_holiday_active
+            or self._activate_on_warm_day
+            or business_return_shortfall_active
+        ):
             return adjusted_forecasts
 
         from python.forecast.baseline import HourlyForecast
@@ -444,7 +579,7 @@ class PostHolidayTimeBandGuard:
 
             result.append(adjusted_forecast)
 
-        return result
+        return self._apply_business_return_anchor_shortfall(result, inference_features)
 
 
 # ---------------------------------------------------------------------------

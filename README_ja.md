@@ -186,11 +186,11 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-05-25 営業日復帰 anchor 不足分 guard](docs/ja/model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)
 - [2026-05-25 営業日復帰 lag24 cap 修正](docs/ja/model-improvements/model-improvement-2026-05-25-business-return-lag24-cap.md)
 - [2026-05-23 負の残差回復ダンピング](docs/ja/model-improvements/model-improvement-2026-05-23-negative-residual-recovery-damping.md)
 - [2026-05-23 非営業日遷移補正](docs/ja/model-improvements/model-improvement-2026-05-23-non-business-transition-calibration.md)
 - [2026-05-22 検証指標スコアカード](docs/ja/model-improvements/model-improvement-2026-05-22-validation-metrics-scorecard.md)
-- [2026-05-22 運用補正レイヤー](docs/ja/model-improvements/model-improvement-2026-05-22-operational-calibration-layer.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 

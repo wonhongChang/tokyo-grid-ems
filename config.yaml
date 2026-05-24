@@ -164,6 +164,20 @@ adjustment:
       lag24_warm_day_max_increase_mw: 2500
       max_upward_offset_mw: 900
 
+    business_return_anchor_shortfall:
+      enabled: true
+      target_hours: [6, 7, 8, 9, 10, 11]
+      gap_threshold_mw: 6000
+      allowance_mw: 1000
+      max_clipping_mw: 1000
+      shrinkage_map:
+        6: 0.25
+        7: 0.35
+        8: 0.45
+        9: 0.50
+        10: 0.30
+        11: 0.20
+
   midday_transition_guard:
     enabled: false
     hours: [12]
