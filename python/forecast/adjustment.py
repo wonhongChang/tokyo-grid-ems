@@ -315,6 +315,13 @@ class PostHolidayTimeBandGuard:
     def _cap_warm_day_lag24_increase(self, forecast, row, active: bool):
         if not (self._lag24_warm_day_cap_enabled and active):
             return forecast
+        business_type_mismatch = (
+            float(row.get("lag_24h_business_type_mismatch"))
+            if pd.notna(row.get("lag_24h_business_type_mismatch"))
+            else 0.0
+        )
+        if business_type_mismatch > 0.0:
+            return forecast
         lag_24h = float(row["lag_24h"]) if pd.notna(row.get("lag_24h")) else np.nan
         if np.isnan(lag_24h):
             return forecast

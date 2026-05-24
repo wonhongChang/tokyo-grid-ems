@@ -426,6 +426,8 @@ def _make_post_holiday_inf(
             "lag_168h": 20_000.0, "lag_336h": 20_000.0,
             "roll_4w_mean": 20_000.0, "roll_4w_std": 100.0,
             "lag_last_biz_hour": 20_000.0, "lag_last_nonhol_hour": 20_000.0,
+            "lag_24h_business_type_mismatch": 0,
+            "recent_same_business_type_mean": 20_000.0,
             "consec_holiday_len": consec,
             "days_since_holiday_end": dsh,
             "major_holiday_season": 1,
@@ -806,6 +808,29 @@ def test_guard_caps_warm_day_forecast_too_far_above_lag24():
     assert result[11].forecast_mw == pytest.approx(36_500.0)
     assert result[11].p95_upper_mw == pytest.approx(37_500.0)
     assert result[9].forecast_mw == pytest.approx(38_200.0)
+
+
+def test_guard_skips_lag24_cap_when_previous_day_business_type_differs():
+    """Do not cap a Monday business-day recovery against Sunday's low lag_24h."""
+    config = _guard_config(warm_day=True)
+    daytime_config = config["adjustment"]["post_holiday_timeband_guard"]["daytime"]
+    daytime_config["lag24_warm_day_cap_enabled"] = True
+    daytime_config["lag24_warm_day_max_increase_mw"] = 2500.0
+    guard = PostHolidayTimeBandGuard(config)
+    target = date(2026, 5, 25)  # Monday after a non-business day
+    raw = _make_raw_forecasts(target, 33_000.0)
+    adj = _make_raw_forecasts(target, 33_200.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"].between(10, 18), "temp_c"] = 28.0
+    inf.loc[inf["hour"].between(10, 18), "temp_anomaly_doy"] = 4.0
+    inf.loc[inf["hour"].between(10, 18), "lag_24h"] = 28_000.0
+    inf.loc[inf["hour"].between(10, 18), "lag_24h_business_type_mismatch"] = 1
+    inf.loc[inf["hour"].between(10, 18), "recent_same_business_type_mean"] = 32_000.0
+
+    result = guard.apply(raw, adj, inf)
+
+    assert result[11].forecast_mw == pytest.approx(33_200.0)
+    assert result[11].p95_upper_mw == pytest.approx(34_200.0)
 
 
 # ---------------------------------------------------------------------------

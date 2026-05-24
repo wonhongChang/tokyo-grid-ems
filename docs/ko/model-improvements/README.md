@@ -8,6 +8,7 @@
 
 ## 2026-05
 
+- [2026-05-25 영업일 복귀 lag24 cap 수정](model-improvement-2026-05-25-business-return-lag24-cap.md)
 - [2026-05-23 음수 잔차 회복 감쇄](model-improvement-2026-05-23-negative-residual-recovery-damping.md)
 - [2026-05-23 비영업일 전환 보정](model-improvement-2026-05-23-non-business-transition-calibration.md)
 - [2026-05-22 검증 지표 스코어카드](model-improvement-2026-05-22-validation-metrics-scorecard.md)
