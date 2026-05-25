@@ -31,6 +31,10 @@ OPENAI_DEFAULT_MAX_CALLS_PER_RUN = 2
 OPENAI_DEFAULT_ANALYSIS_TIMEOUT_SECONDS = 90
 OPENAI_DEFAULT_LOCALIZATION_TIMEOUT_SECONDS = 180
 REPORT_TYPE = "ai_daily_operation_report"
+FOCUSED_ROW_RADIUS_HOURS = 2
+MAX_FOCUSED_ROWS = 12
+FREEZE_GAP_THRESHOLD_MW = 500.0
+LARGE_CONTROL_DELTA_MW = 500.0
 
 FEATURE_CATALOG = [
     "intraday_correction.business_type_transition_prior",
@@ -40,6 +44,7 @@ FEATURE_CATALOG = [
     "intraday_correction.negative_residual_recovery_damping",
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
+    "serving.published_forecast_freeze",
 ]
 
 MESSAGES = {
@@ -1269,21 +1274,118 @@ def _sanitize_openai_context(context: dict) -> dict:
     return sanitized
 
 
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number:
+        return None
+    return number
+
+
+def _round_number(value: Any, digits: int = 1) -> float | None:
+    number = _as_float(value)
+    if number is None:
+        return None
+    return round(number, digits)
+
+
+def _hour_from_point(point: dict | None) -> int | None:
+    if not isinstance(point, dict):
+        return None
+    hour = point.get("hour")
+    if hour is not None:
+        try:
+            hour_int = int(hour)
+        except (TypeError, ValueError):
+            hour_int = -1
+        if 0 <= hour_int <= 23:
+            return hour_int
+
+    ts = point.get("ts")
+    if isinstance(ts, str):
+        match = re.search(r"T(\d{2}):", ts)
+        if match:
+            hour_int = int(match.group(1))
+            if 0 <= hour_int <= 23:
+                return hour_int
+    return None
+
+
+def _series_by_hour(payload: dict | None) -> dict[int, dict]:
+    if not isinstance(payload, dict):
+        return {}
+    by_hour: dict[int, dict] = {}
+    for point in payload.get("series") or []:
+        hour = _hour_from_point(point)
+        if hour is not None:
+            by_hour[hour] = point
+    return by_hour
+
+
+def _calibration_rows_by_hour(calibration: dict | None) -> dict[int, dict]:
+    if not isinstance(calibration, dict):
+        return {}
+    by_hour: dict[int, dict] = {}
+    for row in calibration.get("hourlyDiagnostics") or []:
+        hour = _hour_from_point(row)
+        if hour is not None:
+            by_hour[hour] = row
+    return by_hour
+
+
+def _compact_residual_carryover_item(item: dict | None) -> dict | None:
+    if not isinstance(item, dict):
+        return None
+    compact = {
+        "hour": item.get("hour"),
+        "leadHours": item.get("leadHours"),
+        "prePositiveDampingAdjustmentMw": _round_number(
+            item.get("prePositiveDampingAdjustmentMw")
+        ),
+        "positiveResidualSlopeDampingFactor": _round_number(
+            item.get("positiveResidualSlopeDampingFactor"),
+            digits=3,
+        ),
+        "finalAdjustmentMw": _round_number(item.get("finalAdjustmentMw")),
+    }
+    return {key: value for key, value in compact.items() if value is not None}
+
+
+def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) -> list[dict]:
+    compact_items = [
+        compact
+        for compact in (_compact_residual_carryover_item(item) for item in items)
+        if compact
+    ]
+    if len(compact_items) <= max_items:
+        return compact_items
+
+    def priority(item: dict) -> tuple[int, float]:
+        factor = _as_float(item.get("positiveResidualSlopeDampingFactor"))
+        final_adjustment = abs(_as_float(item.get("finalAdjustmentMw")) or 0.0)
+        damped = factor is not None and factor < 0.999
+        large = final_adjustment >= LARGE_CONTROL_DELTA_MW
+        return (1 if damped or large else 0, final_adjustment)
+
+    selected = sorted(compact_items, key=priority, reverse=True)[:max_items]
+    return sorted(selected, key=lambda item: int(item.get("hour", 99)))
+
+
+def _drop_none_values(payload: dict) -> dict:
+    return {key: value for key, value in payload.items() if value is not None}
+
+
 def _compact_calibration(calibration: dict | None) -> dict | None:
     if not calibration:
         return None
     correction = calibration.get("correction") or {}
-    residual_carryover = []
-    for item in correction.get("residualCarryoverByHour") or []:
-        residual_carryover.append({
-            "hour": item.get("hour"),
-            "leadHours": item.get("leadHours"),
-            "prePositiveDampingAdjustmentMw": item.get("prePositiveDampingAdjustmentMw"),
-            "positiveResidualSlopeDampingFactor": item.get(
-                "positiveResidualSlopeDampingFactor"
-            ),
-            "finalAdjustmentMw": item.get("finalAdjustmentMw"),
-        })
+    residual_carryover = _selected_residual_carryover_items(
+        correction.get("residualCarryoverByHour") or []
+    )
     return {
         "date": calibration.get("date"),
         "generatedAt": calibration.get("generatedAt"),
@@ -1325,6 +1427,301 @@ def _compact_calibration_history(calibration_history: dict | None) -> dict | Non
     }
 
 
+def _window_hours(center: int | None, radius: int = FOCUSED_ROW_RADIUS_HOURS) -> set[int]:
+    if center is None:
+        return set()
+    return {
+        hour
+        for hour in range(center - radius, center + radius + 1)
+        if 0 <= hour <= 23
+    }
+
+
+def _focused_hours_from_operation(operation: dict | None) -> set[int]:
+    if not isinstance(operation, dict):
+        return set()
+    hours: set[int] = set()
+    for miss in (operation.get("topMisses") or [])[:3]:
+        hours.update(_window_hours(_hour_from_point(miss)))
+
+    shape = operation.get("shape") or {}
+    largest_delta = shape.get("largestDeltaMiss") or {}
+    for key in ("fromHour", "toHour"):
+        hour = largest_delta.get(key)
+        if hour is not None:
+            try:
+                hours.update(_window_hours(int(hour), radius=1))
+            except (TypeError, ValueError):
+                pass
+    for item in (shape.get("largeShapeBreaks") or [])[:3]:
+        for key in ("fromHour", "toHour", "hour"):
+            hour = item.get(key)
+            if hour is not None:
+                try:
+                    hours.update(_window_hours(int(hour), radius=1))
+                except (TypeError, ValueError):
+                    pass
+    return hours
+
+
+def _focused_hours_from_calibration(calibration: dict | None) -> set[int]:
+    if not isinstance(calibration, dict):
+        return set()
+    hours: set[int] = set()
+    correction = calibration.get("correction") or {}
+    for item in correction.get("residualCarryoverByHour") or []:
+        hour = _hour_from_point(item)
+        factor = _as_float(item.get("positiveResidualSlopeDampingFactor"))
+        final_adjustment = abs(_as_float(item.get("finalAdjustmentMw")) or 0.0)
+        pre_adjustment = abs(_as_float(item.get("prePositiveDampingAdjustmentMw")) or 0.0)
+        if (
+            factor is not None
+            and factor < 0.999
+            or final_adjustment >= LARGE_CONTROL_DELTA_MW
+            or pre_adjustment >= LARGE_CONTROL_DELTA_MW
+        ):
+            hours.update(_window_hours(hour, radius=1))
+
+    for row in calibration.get("hourlyDiagnostics") or []:
+        hour = _hour_from_point(row)
+        calibration_delta = abs(_as_float(row.get("calibrationDeltaMw")) or 0.0)
+        post_residual = abs(_as_float(row.get("actualVsPostCalibrationResidualMw")) or 0.0)
+        if calibration_delta >= LARGE_CONTROL_DELTA_MW or post_residual >= 1000.0:
+            hours.update(_window_hours(hour, radius=1))
+    return hours
+
+
+def _forecast_freeze_gaps(
+    forecast: dict | None,
+    calibration: dict | None,
+) -> list[dict]:
+    forecast_by_hour = _series_by_hour(forecast)
+    calibration_by_hour = _calibration_rows_by_hour(calibration)
+    gaps = []
+    for hour, row in calibration_by_hour.items():
+        published = _round_number((forecast_by_hour.get(hour) or {}).get("forecastMw"))
+        recalculated = _round_number(row.get("postCalibrationForecastMw"))
+        pre_calibration = _round_number(row.get("preCalibrationForecastMw"))
+        if recalculated is None:
+            recalculated = pre_calibration
+        if published is None or recalculated is None:
+            continue
+        gap = round(published - recalculated, 1)
+        if abs(gap) < FREEZE_GAP_THRESHOLD_MW:
+            continue
+        gaps.append({
+            "hour": hour,
+            "publishedForecastMw": published,
+            "latestRecalculatedForecastMw": recalculated,
+            "freezeGapMw": gap,
+        })
+    return sorted(gaps, key=lambda item: abs(float(item["freezeGapMw"])), reverse=True)
+
+
+def _build_freeze_context(
+    forecast: dict | None,
+    calibration: dict | None,
+) -> dict | None:
+    gaps = _forecast_freeze_gaps(forecast, calibration)
+    if not gaps:
+        return None
+    return {
+        "thresholdMw": FREEZE_GAP_THRESHOLD_MW,
+        "largestGaps": gaps[:3],
+        "interpretation": (
+            "positive freezeGapMw means the published forecast is above the "
+            "latest recalculated post-calibration line"
+        ),
+    }
+
+
+def _build_control_context(
+    calibration: dict | None,
+    calibration_history: dict | None,
+) -> dict | None:
+    if not isinstance(calibration, dict):
+        return None
+    correction = calibration.get("correction") or {}
+    residual_items = _selected_residual_carryover_items(
+        correction.get("residualCarryoverByHour") or [],
+        max_items=6,
+    )
+    damped_items = [
+        item
+        for item in residual_items
+        if (_as_float(item.get("positiveResidualSlopeDampingFactor")) or 1.0) < 0.999
+    ]
+    snapshots = (calibration_history or {}).get("snapshots") or []
+    context = {
+        "sourceConfidence": correction.get("sourceConfidence")
+        or calibration.get("source_confidence"),
+        "observedHours": correction.get("observedHours"),
+        "lastObservedHour": correction.get("lastObservedHour"),
+        "appliedRegimeReason": correction.get("appliedRegimeReason")
+        or calibration.get("applied_regime_reason"),
+        "residualCarryover": _drop_none_values({
+            "baseAdjustmentMw": _round_number(correction.get("baseAdjustmentMw")),
+            "carryoverAdjustmentMw": _round_number(correction.get("carryoverAdjustmentMw")),
+            "affectedHours": [item.get("hour") for item in residual_items],
+            "sample": residual_items,
+        }),
+        "positiveResidualSlopeDamping": _drop_none_values({
+            "applied": correction.get("positiveResidualSlopeDampingApplied"),
+            "factor": _round_number(
+                correction.get("positiveResidualSlopeDampingFactor"),
+                digits=3,
+            ),
+            "maxReducedMw": _round_number(
+                correction.get("positiveResidualSlopeDampingMaxMw")
+            ),
+            "affectedHours": [item.get("hour") for item in damped_items],
+            "sample": damped_items,
+        }),
+        "positiveResidualMitigation": _drop_none_values({
+            "applied": correction.get("positiveResidualMitigationApplied"),
+            "maxReducedMw": _round_number(
+                correction.get("positiveResidualMitigationMaxMw")
+            ),
+        }),
+        "negativeResidualRecoveryDamping": _drop_none_values({
+            "applied": correction.get("negResidualRecoveryDampingApplied"),
+            "factor": _round_number(
+                correction.get("negResidualRecoveryDampingFactor"),
+                digits=3,
+            ),
+        }),
+        "businessTypeTransition": _drop_none_values({
+            "priorApplied": correction.get("businessTypeTransitionPriorApplied"),
+            "priorBiasMw": _round_number(
+                correction.get("businessTypeTransitionPriorBiasMw")
+            ),
+            "observedApplied": correction.get("businessTypeTransitionApplied"),
+            "observedBiasMw": _round_number(correction.get("businessTypeTransitionBiasMw")),
+        }),
+        "snapshotHistory": _drop_none_values({
+            "snapshotCount": len(snapshots),
+            "latestGeneratedAt": (snapshots[-1] or {}).get("generatedAt")
+            if snapshots
+            else None,
+        }),
+    }
+    return {
+        key: value
+        for key, value in context.items()
+        if value is not None and value != {} and value != []
+    }
+
+
+def _build_focused_rows(
+    operation: dict | None,
+    actual: dict | None,
+    forecast: dict | None,
+    calibration: dict | None,
+) -> list[dict]:
+    actual_by_hour = _series_by_hour(actual)
+    forecast_by_hour = _series_by_hour(forecast)
+    calibration_by_hour = _calibration_rows_by_hour(calibration)
+    freeze_hours = {
+        int(item["hour"])
+        for item in _forecast_freeze_gaps(forecast, calibration)
+        if item.get("hour") is not None
+    }
+    operation_hours = _focused_hours_from_operation(operation)
+    calibration_hours = _focused_hours_from_calibration(calibration)
+    freeze_window_hours = {
+        neighbor
+        for hour in freeze_hours
+        for neighbor in _window_hours(hour, radius=1)
+    }
+    hours = operation_hours | calibration_hours | freeze_window_hours
+    if not hours:
+        return []
+
+    def hour_priority(hour: int) -> tuple[int, int]:
+        score = 0
+        if hour in freeze_window_hours:
+            score += 4
+        if hour in calibration_hours:
+            score += 3
+        if hour in operation_hours:
+            score += 2
+        return (-score, hour)
+
+    selected_hours = sorted(sorted(hours, key=hour_priority)[:MAX_FOCUSED_ROWS])
+
+    miss_by_hour = {
+        _hour_from_point(miss): miss
+        for miss in ((operation or {}).get("topMisses") or [])
+        if _hour_from_point(miss) is not None
+    }
+    rows = []
+    for hour in selected_hours:
+        actual_point = actual_by_hour.get(hour) or {}
+        forecast_point = forecast_by_hour.get(hour) or {}
+        calibration_row = calibration_by_hour.get(hour) or {}
+        miss = miss_by_hour.get(hour) or {}
+        actual_mw = _round_number(
+            actual_point.get("actualMw")
+            if actual_point.get("actualMw") is not None
+            else calibration_row.get("actualMw")
+            if calibration_row.get("actualMw") is not None
+            else miss.get("actualMw")
+        )
+        published_forecast_mw = _round_number(
+            forecast_point.get("forecastMw")
+            if forecast_point
+            else miss.get("modelForecastMw")
+        )
+        pre_calibration_mw = _round_number(
+            calibration_row.get("preCalibrationForecastMw")
+        )
+        post_calibration_mw = _round_number(
+            calibration_row.get("postCalibrationForecastMw")
+        )
+        tepco_forecast_mw = _round_number(
+            actual_point.get("tepcoForecastMw")
+            if actual_point.get("tepcoForecastMw") is not None
+            else calibration_row.get("tepcoForecastMw")
+            if calibration_row.get("tepcoForecastMw") is not None
+            else miss.get("tepcoForecastMw")
+        )
+        row = _drop_none_values({
+            "hour": hour,
+            "ts": forecast_point.get("ts")
+            or actual_point.get("ts")
+            or calibration_row.get("ts"),
+            "actualMw": actual_mw,
+            "actualSource": actual_point.get("actualSource")
+            or calibration_row.get("actualSource"),
+            "publishedForecastMw": published_forecast_mw,
+            "preCalibrationForecastMw": pre_calibration_mw,
+            "postCalibrationForecastMw": post_calibration_mw,
+            "calibrationDeltaMw": _round_number(calibration_row.get("calibrationDeltaMw")),
+            "publishedVsLatestRecalculatedGapMw": (
+                round(published_forecast_mw - post_calibration_mw, 1)
+                if published_forecast_mw is not None and post_calibration_mw is not None
+                else None
+            ),
+            "modelErrorMw": (
+                round(published_forecast_mw - actual_mw, 1)
+                if published_forecast_mw is not None and actual_mw is not None
+                else _round_number(miss.get("modelErrorMw"))
+            ),
+            "modelAbsErrorMw": _round_number(miss.get("modelAbsErrorMw")),
+            "tepcoForecastMw": tepco_forecast_mw,
+            "tepcoErrorMw": (
+                round(tepco_forecast_mw - actual_mw, 1)
+                if tepco_forecast_mw is not None and actual_mw is not None
+                else _round_number(miss.get("tepcoErrorMw"))
+            ),
+            "residualCarryover": _compact_residual_carryover_item(
+                calibration_row.get("residualCarryover")
+            ),
+        })
+        rows.append(row)
+    return rows
+
+
 def _build_openai_fact_packet(
     public_dir: Path,
     fallback_reports: dict[str, dict],
@@ -1334,6 +1731,8 @@ def _build_openai_fact_packet(
     diagnostics = _load_ref_json(public_dir, primary, "internalDiagnostics")
     calibration = _load_ref_json(public_dir, primary, "operationalCalibration")
     calibration_history = _load_ref_json(public_dir, primary, "operationalCalibrationHistory")
+    actual = _load_ref_json(public_dir, primary, "actual")
+    forecast = _load_ref_json(public_dir, primary, "forecast")
 
     operation_facts = {}
     if operation:
@@ -1364,6 +1763,9 @@ def _build_openai_fact_packet(
         "diagnosticFacts": diagnostic_facts,
         "calibrationFacts": _compact_calibration(calibration),
         "calibrationHistoryFacts": _compact_calibration_history(calibration_history),
+        "focusedRows": _build_focused_rows(operation, actual, forecast, calibration),
+        "controlContext": _build_control_context(calibration, calibration_history),
+        "freezeContext": _build_freeze_context(forecast, calibration),
     }
     fact_packet["fingerprint"] = _fingerprint_json_values(fact_packet)
     return fact_packet
@@ -1538,7 +1940,11 @@ def _openai_domain_guidelines() -> str:
     return (
         "Reason like a power-demand operations analyst, not a text summarizer. "
         "Use only numeric facts, weather diagnostics, topMisses, timeBands, "
-        "and calibration flags from factPacket. If morning_ramp hours 06-10 "
+        "focusedRows, controlContext, freezeContext, and calibration flags "
+        "from factPacket. Treat focusedRows as the detailed window around "
+        "large misses or calibration-shape risk, not as a full-day table. "
+        "Use freezeContext only when it records a published-versus-recalculated "
+        "forecast gap; otherwise do not infer freeze effects. If morning_ramp hours 06-10 "
         "show large positive model bias and the data indicates a business-day "
         "to non-business-day transition, independently consider a lag_24h "
         "inertia or ramp contamination hypothesis. If observed demand slope "
@@ -1585,8 +1991,9 @@ def _openai_instructions(language: str) -> str:
         "hours, feature names, or calibration events. Keep deterministic "
         "metrics consistent with factPacket.performance. "
         "Use factPacket as the source of facts; it already contains summary "
-        "metrics, key miss windows, time-band statistics, calibration flags, "
-        "and snapshot summaries. "
+        "metrics, key miss windows, focused rows around abnormal windows, "
+        "time-band statistics, calibration flags, control context, freeze-gap "
+        "context, and snapshot summaries. "
         "Do not describe this as missing raw time-series data; instead, if a "
         "limitation is needed, say the analysis is based on summarized "
         "operational evidence and retained calibration snapshots. "
@@ -1639,8 +2046,9 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         f"all requested languages in one JSON response: {readable}. "
         "Return reports keyed by locale. Use only the provided factPacket; "
         "do not invent metrics, hours, feature names, or calibration events. "
-        "The factPacket contains summary metrics, key miss windows, time-band "
-        "statistics, calibration flags, and snapshot summaries. Do not describe "
+        "The factPacket contains summary metrics, key miss windows, focused "
+        "rows around abnormal windows, time-band statistics, calibration flags, "
+        "control context, freeze-gap context, and snapshot summaries. Do not describe "
         "this as missing raw time-series data; if a limitation is needed, say "
         "the analysis is based on summarized operational evidence and retained "
         "calibration snapshots. "

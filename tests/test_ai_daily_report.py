@@ -83,6 +83,16 @@ def _write_operation_fixture(tmp_path: Path, date_iso: str = "2026-05-23") -> No
             for hour in range(24)
         ],
     })
+    _write_json(tmp_path / "forecast" / f"{date_iso}.json", {
+        "date": date_iso,
+        "series": [
+            {
+                "ts": f"{date_iso}T{hour:02d}:00:00+09:00",
+                "forecastMw": 20_500.0 + hour * 10,
+            }
+            for hour in range(24)
+        ],
+    })
 
 
 def test_ai_daily_report_builds_korean_fallback_without_calibration(tmp_path):
@@ -302,6 +312,110 @@ def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
     assert report["executiveSummary"]["headline"] == "OpenAI 분석 헤드라인"
     assert report["rootCauseHypotheses"][0]["confidence"] == "low"
     assert report["featureRecommendations"][0]["autoApply"] is False
+
+
+def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, tmp_path):
+    date_iso = "2026-05-23"
+    _write_operation_fixture(tmp_path, date_iso)
+    _write_json(tmp_path / "forecast" / f"{date_iso}.json", {
+        "date": date_iso,
+        "series": [
+            {
+                "ts": f"{date_iso}T{hour:02d}:00:00+09:00",
+                "forecastMw": 33_923.0 if hour == 15 else 30_000.0 + hour,
+            }
+            for hour in range(24)
+        ],
+    })
+    _write_json(
+        tmp_path / "reports" / "internal" / "operational-calibration" / f"{date_iso}.json",
+        {
+            "schemaVersion": "1.0.0",
+            "date": date_iso,
+            "correction": {
+                "applied": True,
+                "observedHours": 15,
+                "lastObservedHour": 14,
+                "baseAdjustmentMw": 662.0,
+                "positiveResidualSlopeDampingApplied": True,
+                "positiveResidualSlopeDampingFactor": 0.4,
+                "positiveResidualSlopeDampingMaxMw": 596.0,
+                "appliedRegimeReason": [
+                    "positive_residual_slope_damping_triggered",
+                ],
+                "residualCarryoverByHour": [
+                    {
+                        "hour": 15,
+                        "leadHours": 1,
+                        "prePositiveDampingAdjustmentMw": 662.0,
+                        "positiveResidualSlopeDampingFactor": 0.4,
+                        "finalAdjustmentMw": 264.8,
+                    }
+                ],
+            },
+            "hourlyDiagnostics": [
+                {
+                    "hour": 15,
+                    "ts": f"{date_iso}T15:00:00+09:00",
+                    "actualMw": 32_400.0,
+                    "actualSource": "observed",
+                    "tepcoForecastMw": 32_800.0,
+                    "preCalibrationForecastMw": 33_049.2,
+                    "postCalibrationForecastMw": 33_314.0,
+                    "calibrationDeltaMw": 264.8,
+                    "actualVsPostCalibrationResidualMw": -914.0,
+                    "residualCarryover": {
+                        "hour": 15,
+                        "leadHours": 1,
+                        "prePositiveDampingAdjustmentMw": 662.0,
+                        "positiveResidualSlopeDampingFactor": 0.4,
+                        "finalAdjustmentMw": 264.8,
+                    },
+                }
+            ],
+        },
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    def fake_openai_analysis(context, api_key, model):
+        fact_packet = context["factPacket"]
+        focused_rows = fact_packet["focusedRows"]
+        focused_by_hour = {row["hour"]: row for row in focused_rows}
+        assert len(focused_rows) <= 12
+        assert focused_by_hour[15]["publishedVsLatestRecalculatedGapMw"] == 609.0
+        assert fact_packet["freezeContext"]["largestGaps"][0]["freezeGapMw"] == 609.0
+        damping = fact_packet["controlContext"]["positiveResidualSlopeDamping"]
+        assert damping["applied"] is True
+        assert damping["factor"] == 0.4
+        assert damping["affectedHours"] == [15]
+        return {
+            "executiveSummary": {
+                "severity": "warning",
+                "headline": "Focused rows were used.",
+                "summary": "The analysis used compact focused rows and calibration context.",
+                "modelVerdict": "tepco_better",
+                "confidence": "medium",
+            },
+            "rootCauseHypotheses": [],
+            "featureRecommendations": [],
+            "operatorNotes": [],
+            "limitations": [],
+        }
+
+    monkeypatch.setattr(
+        "python.eval.ai_daily_report._call_openai_analysis",
+        fake_openai_analysis,
+    )
+
+    report = build_ai_daily_report(
+        tmp_path,
+        date_iso,
+        generated_at="2026-05-24T08:20:00+09:00",
+        use_openai=True,
+    )
+
+    assert report["generator"]["provider"] == "openai"
+    assert report["executiveSummary"]["headline"] == "Focused rows were used."
 
 
 def test_ai_daily_report_rejects_empty_openai_sections(monkeypatch, tmp_path):
