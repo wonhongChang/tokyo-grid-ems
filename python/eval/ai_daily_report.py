@@ -23,7 +23,7 @@ TIMEZONE = "Asia/Tokyo"
 JST = ZoneInfo(TIMEZONE)
 SCHEMA_VERSION = "1.0.0"
 PROMPT_VERSION = "fallback_rules_v1"
-OPENAI_PROMPT_VERSION = "openai_ops_report_v2"
+OPENAI_PROMPT_VERSION = "openai_ops_report_v3"
 OPENAI_DEFAULT_MODEL = "gpt-5.4-mini"
 OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALES = "ko,en,ja"
@@ -1534,6 +1534,9 @@ def _openai_domain_guidelines() -> str:
         "a concrete target from featureCatalog when possible and must propose "
         "a specific trigger, threshold, decay, shrinkage, or validation replay; "
         "avoid generic wording such as merely reviewing a feature. Never return "
+        "sports-style wording such as win, lose, victory, defeat, or beat; use "
+        "operations wording such as lower error, model advantage hours, TEPCO "
+        "advantage hours, comparable performance, or underperformed. "
         "empty titles, explanations, suggestions, expected effects, risks, or "
         "validation plans. Keep each title under 90 characters, each explanation "
         "under two short sentences, and each recommendation under one concrete "
@@ -1568,11 +1571,13 @@ def _openai_instructions(language: str) -> str:
         "Use factPacket as the source of facts; raw 24-hour series rows are "
         "intentionally excluded for cost and stability. "
         f"{_openai_domain_guidelines()} "
-        "If operationalCalibration or snapshot data directly contains a flag "
-        "or numeric control value, evidenceStatus may be confirmed. If the "
-        "pattern is inferred only from daily diagnostics or metrics, use "
-        "partial. If the overwritten intraday timeline makes a claim "
-        "unverifiable, use not_observed and confidence low. "
+        "Use evidenceStatus conservatively: confirmed is only for direct input "
+        "records such as a true calibration-layer Applied flag, retained "
+        "snapshot-count/data-quality facts, or another explicitly observed "
+        "machine-readable event. Numeric errors, biases, top misses, diagnostic "
+        "patterns, or the absence of a calibration flag support only partial "
+        "root-cause evidence. If the overwritten intraday timeline makes a "
+        "claim unverifiable, use not_observed and confidence low. "
         "Every featureRecommendations item must set autoApply to false. "
         "The output language field in the final report is managed by code; "
         f"write narrative text for language={language}."
@@ -1617,12 +1622,14 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "calibration events. Raw 24-hour time-series rows are intentionally "
         "excluded, so do not claim evidence that is not present in the packet. "
         f"{_openai_domain_guidelines()} "
-        "Keep deterministic metrics consistent with factPacket.performance. If "
-        "calibration facts or snapshot facts directly contain a flag or numeric "
-        "control value, evidenceStatus may be confirmed. If the pattern is "
-        "inferred only from daily diagnostics or metrics, use partial. If the "
-        "overwritten intraday timeline makes a claim unverifiable, use "
-        "not_observed and confidence low. Return at most three hypotheses and "
+        "Keep deterministic metrics consistent with factPacket.performance. "
+        "Use evidenceStatus conservatively: confirmed is only for direct input "
+        "records such as a true calibration-layer Applied flag, retained "
+        "snapshot-count/data-quality facts, or another explicitly observed "
+        "machine-readable event. Numeric errors, biases, top misses, diagnostic "
+        "patterns, or the absence of a calibration flag support only partial "
+        "root-cause evidence. If the overwritten intraday timeline makes a "
+        "claim unverifiable, use not_observed and confidence low. Return at most three hypotheses and "
         "two recommendations per locale. Every featureRecommendations item "
         "must set autoApply to false. Output only the narrative layer for each "
         "locale; date, language, performance, inputRefs, dataQuality, and "
@@ -1739,8 +1746,10 @@ def _openai_localization_instructions(languages: list[str]) -> str:
         "translated cleanly, keep the original numeric fact and translate the "
         "surrounding explanation conservatively. For ko, write natural Korean "
         "using Hangul-based sentences; do not emit mojibake, pseudo-CJK, or "
-        "Chinese-only text. For ja, write natural modern Japanese; do not emit "
-        "mojibake or pseudo-CJK text."
+        "Chinese-only text, and avoid sports-style words such as 승리/패배 when "
+        "describing forecast comparison. For ja, write natural modern Japanese; "
+        "do not emit mojibake or pseudo-CJK text, and avoid 勝利/敗北 wording "
+        "when describing forecast comparison."
     )
 
 
@@ -1811,6 +1820,41 @@ def _normalize_evidence(value: Any) -> list[dict]:
     return result
 
 
+def _evidence_supports_confirmed_status(evidence: list[dict]) -> bool:
+    """Return true only when the evidence directly records an observed event.
+
+    Root-cause hypotheses are intentionally conservative: a large error or bias
+    can prove that a miss happened, but it should not by itself confirm why the
+    miss happened.  Confirmed status is reserved for machine-readable event
+    records, such as a calibration layer that explicitly applied.
+    """
+    for item in evidence:
+        source = str(item.get("source") or "").lower()
+        metric = str(item.get("metric") or "")
+        value = item.get("value")
+        source_is_calibration = (
+            "operational-calibration" in source
+            or "calibrationfacts" in source
+            or "calibrationhistoryfacts" in source
+        )
+        if source_is_calibration:
+            if metric.endswith("Applied") and value is True:
+                return True
+            if metric in {
+                "snapshotCount",
+                "appliedSnapshotCount",
+                "calibrationSnapshotCount",
+            }:
+                return True
+        if "dataquality" in source and metric in {
+            "observedHours",
+            "fallbackActualHours",
+            "comparableHours",
+        }:
+            return True
+    return False
+
+
 def _meaningful_text(value: Any) -> str:
     text = str(value or "").strip()
     if text.lower() in {"", "none", "null", "n/a", "-"}:
@@ -1853,6 +1897,14 @@ def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
         explanation = _meaningful_text(item.get("explanation"))
         if not title or _is_placeholder_title(title) or not explanation:
             continue
+        evidence = _normalize_evidence(item.get("evidence"))
+        if (
+            evidence_status == "confirmed"
+            and not _evidence_supports_confirmed_status(evidence)
+        ):
+            evidence_status = "partial"
+            if confidence == "high":
+                confidence = "medium"
         result.append({
             "id": str(item.get("id") or f"h{index}"),
             "severity": severity,
@@ -1860,7 +1912,7 @@ def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
             "evidenceStatus": evidence_status,
             "title": title,
             "explanation": explanation,
-            "evidence": _normalize_evidence(item.get("evidence")),
+            "evidence": evidence,
             "relatedHours": [
                 int(hour) for hour in (item.get("relatedHours") or [])
                 if isinstance(hour, int)

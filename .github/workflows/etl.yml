@@ -8,6 +8,12 @@ on:
     - cron: '20 23 * * *'
     - cron: '20 0 * * *'
   workflow_dispatch:
+    inputs:
+      force_historical_etl:
+        description: 'Fetch TEPCO ZIP and rerun historical ETL even if yesterday is already finalized'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -51,11 +57,78 @@ jobs:
           fi
 
       # ── Fetch TEPCO data ──────────────────────────────────────────────────
+      - name: Check historical ETL necessity
+        id: historical_etl
+        env:
+          FORCE_HISTORICAL_ETL: ${{ github.event_name == 'workflow_dispatch' && inputs.force_historical_etl || false }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          force = str(os.getenv("FORCE_HISTORICAL_ETL", "false")).lower() == "true"
+          yesterday = (datetime.now(ZoneInfo("Asia/Tokyo")).date() - timedelta(days=1)).isoformat()
+          public_dir = Path("web/public")
+          state_path = public_dir / ".etl_state.json"
+          actual_path = public_dir / "actual" / f"{yesterday}.json"
+          needed = True
+          reason = "missing_state_or_actual"
+
+          if force:
+              reason = "manual_force"
+          else:
+              try:
+                  state = json.loads(state_path.read_text(encoding="utf-8"))
+              except (FileNotFoundError, json.JSONDecodeError):
+                  state = {}
+
+              ok_dates = set(state.get("okDates") or [])
+              if yesterday not in ok_dates:
+                  reason = "yesterday_not_in_ok_dates"
+              elif not actual_path.exists():
+                  reason = "yesterday_actual_json_missing"
+              else:
+                  try:
+                      actual = json.loads(actual_path.read_text(encoding="utf-8"))
+                  except json.JSONDecodeError:
+                      actual = {}
+                  observed_hours = set()
+                  for point in actual.get("series") or []:
+                      if point.get("actualMw") is None:
+                          continue
+                      if point.get("actualSource") == "tepco_forecast_fallback":
+                          continue
+                      ts = str(point.get("ts") or "")
+                      if not ts.startswith(yesterday):
+                          continue
+                      try:
+                          observed_hours.add(int(ts[11:13]))
+                      except (ValueError, IndexError):
+                          continue
+                  if len(observed_hours) >= 24:
+                      needed = False
+                      reason = "yesterday_already_finalized"
+                  else:
+                      reason = f"only_{len(observed_hours)}_observed_hours"
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          with output.open("a", encoding="utf-8") as fh:
+              fh.write(f"needed={str(needed).lower()}\n")
+              fh.write(f"yesterday={yesterday}\n")
+              fh.write(f"reason={reason}\n")
+          print(f"[ETL-CHECK] yesterday={yesterday} needed={needed} reason={reason}")
+          PY
+
       - name: Fetch TEPCO CSVs
+        if: steps.historical_etl.outputs.needed == 'true'
         run: python python/etl/fetch_tepco.py
 
       # ── ETL ───────────────────────────────────────────────────────────────
       - name: Run ETL
+        if: steps.historical_etl.outputs.needed == 'true'
         run: python python/etl/run_batch.py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
