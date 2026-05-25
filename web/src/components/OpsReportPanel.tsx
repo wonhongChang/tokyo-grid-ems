@@ -254,6 +254,35 @@ function providerBadgeClass(provider: AIDailyReport['generator']['provider']): s
   return provider === 'openai' ? 'openai' : 'fallback'
 }
 
+function languageDisplayName(language: AIDailyReport['language'] | AIDailyReport['contentLanguage'] | undefined): string {
+  if (language === 'ko') return '한국어'
+  if (language === 'ja') return '日本語'
+  if (language === 'en') return 'English'
+  return '-'
+}
+
+function limitationText(item: string, locale: Locale): string {
+  const lower = item.toLowerCase()
+  const mentionsRawSeries = (
+    lower.includes('raw 24-hour')
+    || lower.includes('raw time-series')
+    || lower.includes('raw time series')
+    || lower.includes('time-series data')
+    || lower.includes('time series data')
+    || item.includes('원시 시간')
+    || item.includes('원본 행')
+    || item.includes('時系列')
+  )
+  if (!mentionsRawSeries) return item
+  if (locale === 'ja') {
+    return 'このレポートは、要約指標、主要な誤差時間帯、内部補正ログを基準に作成されています。'
+  }
+  if (locale === 'en') {
+    return 'This report is based on summary metrics, key miss windows, and internal calibration logs.'
+  }
+  return '이 리포트는 요약 지표, 주요 오차 구간, 내부 보정 로그를 기준으로 작성되었습니다.'
+}
+
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="validation-stat">
@@ -375,15 +404,12 @@ export function OpsReportPanel({ baseUrl }: Props) {
               <StatCard
                 label={labels.provider}
                 value={selectedReport.generator.provider === 'fallback' ? labels.fallback : labels.openai}
-                sub={[
-                  selectedReport.generator.model,
-                  selectedReport.generator.localizationModel,
-                ].filter(Boolean).join(' / ') || undefined}
+                sub={selectedReport.generator.model ?? undefined}
               />
               <StatCard
                 label={labels.language}
-                value={selectedReport.contentLanguage ?? selectedReport.language}
-                sub={usesEnglishFallback ? selectedReport.language : undefined}
+                value={languageDisplayName(selectedReport.contentLanguage ?? selectedReport.language)}
+                sub={usesEnglishFallback ? languageDisplayName(selectedReport.language) : undefined}
               />
               <StatCard label={labels.generatedAt} value={fmtDateTime(selectedReport.generatedAt, locale)} />
               <StatCard
@@ -491,7 +517,9 @@ export function OpsReportPanel({ baseUrl }: Props) {
                 <>
                   <div className="card-title ops-limits-title">{labels.limitations}</div>
                   <ul className="ops-bullet-list">
-                    {selectedReport.limitations.map(item => <li key={item}>{item}</li>)}
+                    {selectedReport.limitations.map(item => (
+                      <li key={item}>{limitationText(item, locale)}</li>
+                    ))}
                   </ul>
                 </>
               )}
