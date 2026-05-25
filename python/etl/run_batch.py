@@ -1501,6 +1501,7 @@ def _operational_calibration_rows(
     actual_series: list[dict],
     stage_forecasts: dict[str, list[HourlyForecast]],
     post_calibration_forecasts: list[HourlyForecast],
+    residual_adjustments_by_hour: list[dict] | None = None,
 ) -> list[dict]:
     actual_by_hour = _actual_series_by_hour(actual_series)
     stage_maps = {
@@ -1509,6 +1510,11 @@ def _operational_calibration_rows(
     }
     post_by_hour = _forecast_hour_map(post_calibration_forecasts)
     pre_by_hour = stage_maps.get("pre_calibration", {})
+    residual_adjustment_map = {
+        int(item["hour"]): item
+        for item in (residual_adjustments_by_hour or [])
+        if item.get("hour") is not None
+    }
     hours = sorted(
         set(actual_by_hour)
         | set(post_by_hour)
@@ -1569,6 +1575,7 @@ def _operational_calibration_rows(
                 if tepco_forecast_mw is not None and actual_mw is not None
                 else None
             ),
+            "residualCarryover": residual_adjustment_map.get(hour),
         }
         rows.append(row)
     return rows
@@ -1641,9 +1648,19 @@ def _operational_calibration_snapshot_entry(path: Path, out_dir: Path) -> dict |
         "positiveResidualMitigationApplied": correction.get(
             "positiveResidualMitigationApplied",
         ),
+        "positiveResidualSlopeDampingApplied": correction.get(
+            "positiveResidualSlopeDampingApplied",
+        ),
+        "positiveResidualSlopeDampingFactor": correction.get(
+            "positiveResidualSlopeDampingFactor",
+        ),
+        "positiveResidualSlopeDampingMaxMw": correction.get(
+            "positiveResidualSlopeDampingMaxMw",
+        ),
         "negResidualRecoveryDampingApplied": correction.get(
             "negResidualRecoveryDampingApplied",
         ),
+        "residualCarryoverHours": len(correction.get("residualCarryoverByHour") or []),
         "changedForecastHours": len(deltas),
         "maxAbsCalibrationDeltaMw": round(max(deltas), 1) if deltas else 0.0,
     }
@@ -1854,6 +1871,7 @@ def _apply_intraday_residual_correction(
             actual_series,
             effective_stage_forecasts,
             correction.forecasts,
+            calibration_metadata.get("residualCarryoverByHour"),
         ),
     }
     write_json(
@@ -1906,6 +1924,11 @@ def _apply_intraday_residual_correction(
         if getattr(correction, "applied_day_bias_mw", 0.0)
         else ""
     )
+    positive_slope_note = (
+        " positive_residual_slope_damping=applied"
+        if getattr(correction, "positive_residual_slope_damping_applied", False)
+        else ""
+    )
     print(
         "[INTRADAY] Residual correction "
         f"{target_date}: base={correction.base_adjustment_mw:+.1f} MW "
@@ -1917,6 +1940,7 @@ def _apply_intraday_residual_correction(
         f"{observed_drop_note}"
         f"{carryover_note}"
         f"{day_bias_note}"
+        f"{positive_slope_note}"
     )
     return correction.forecasts, corrected_model_name
 

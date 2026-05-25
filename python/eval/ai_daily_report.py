@@ -36,6 +36,7 @@ FEATURE_CATALOG = [
     "intraday_correction.business_type_transition_prior",
     "intraday_correction.business_type_transition",
     "intraday_correction.positive_residual_mitigation",
+    "intraday_correction.positive_residual_slope_damping",
     "intraday_correction.negative_residual_recovery_damping",
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
@@ -1272,6 +1273,17 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
     if not calibration:
         return None
     correction = calibration.get("correction") or {}
+    residual_carryover = []
+    for item in correction.get("residualCarryoverByHour") or []:
+        residual_carryover.append({
+            "hour": item.get("hour"),
+            "leadHours": item.get("leadHours"),
+            "prePositiveDampingAdjustmentMw": item.get("prePositiveDampingAdjustmentMw"),
+            "positiveResidualSlopeDampingFactor": item.get(
+                "positiveResidualSlopeDampingFactor"
+            ),
+            "finalAdjustmentMw": item.get("finalAdjustmentMw"),
+        })
     return {
         "date": calibration.get("date"),
         "generatedAt": calibration.get("generatedAt"),
@@ -1289,8 +1301,12 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
         "businessTypeTransitionBiasMw": correction.get("businessTypeTransitionBiasMw"),
         "positiveResidualMitigationApplied": correction.get("positiveResidualMitigationApplied"),
         "positiveResidualMitigationMaxMw": correction.get("positiveResidualMitigationMaxMw"),
+        "positiveResidualSlopeDampingApplied": correction.get("positiveResidualSlopeDampingApplied"),
+        "positiveResidualSlopeDampingFactor": correction.get("positiveResidualSlopeDampingFactor"),
+        "positiveResidualSlopeDampingMaxMw": correction.get("positiveResidualSlopeDampingMaxMw"),
         "negResidualRecoveryDampingApplied": correction.get("negResidualRecoveryDampingApplied"),
         "negResidualRecoveryDampingFactor": correction.get("negResidualRecoveryDampingFactor"),
+        "residualCarryoverByHour": residual_carryover,
     }
 
 

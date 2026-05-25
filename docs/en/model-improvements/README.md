@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-05
 
+- [2026-05-25 positive residual slope damping](model-improvement-2026-05-25-positive-residual-slope-damping.md)
 - [2026-05-25 business-return anchor shortfall guard](model-improvement-2026-05-25-business-return-anchor-shortfall.md)
 - [2026-05-25 business-day return lag24 cap fix](model-improvement-2026-05-25-business-return-lag24-cap.md)
 - [2026-05-23 negative residual recovery damping](model-improvement-2026-05-23-negative-residual-recovery-damping.md)

@@ -78,6 +78,19 @@ intraday_correction:
     damping_factor_default: 0.4
     damping_factor_strong: 0.2
     strong_recovery_mean_slope_mw: 500
+  positive_residual_slope_damping:
+    enabled: true
+    min_reference_hour: 12    # only after enough same-day shape evidence exists
+    max_lead_hours: 3         # damp only the nearest future carryover, not the whole day
+    min_base_adjustment_mw: 300
+    min_positive_residual_mw: 300
+    min_residual_improvement_mw: 300
+    min_slope_deceleration_mw: 500
+    drop_slope_threshold_mw: 300
+    latest_slope_max_mw: 400
+    anchor_proximity_tolerance_mw: 1200
+    peak_excess_allowance_mw: 300
+    damping_factor: 0.4       # keep 40% of the positive carryover when shape is rolling over
   midday_residual_deweight:
     enabled: false
     hours: [12]              # lunch bucket only; applies on business days
