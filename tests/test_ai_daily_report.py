@@ -823,6 +823,78 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
     assert "inputSnapshot" in reports_by_language["ko"][0]
 
 
+def test_ai_daily_reports_multilingual_retries_latest_existing_fallback(monkeypatch, tmp_path):
+    _write_operation_fixture(tmp_path, "2026-05-23")
+    report_root = tmp_path / "reports" / "ai" / "daily"
+    for language in ("ko", "en", "ja"):
+        fallback_report = build_ai_daily_report(
+            tmp_path,
+            "2026-05-23",
+            generated_at="2026-05-24T08:20:00+09:00",
+            language=language,
+            use_openai=False,
+        )
+        _write_json(report_root / language / "2026-05-23.json", fallback_report)
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    calls = []
+
+    def fake_master_localization_chain(
+        public_dir,
+        date_iso,
+        generated_at,
+        fallback_reports,
+        target_languages,
+        api_key,
+        model,
+        localization_model,
+        budget,
+    ):
+        calls.append({
+            "date": date_iso,
+            "target_languages": list(target_languages),
+        })
+        budget["remaining"] = max(0, budget["remaining"] - 2)
+        budget["used"] += 2
+        merged = {}
+        for language, report in fallback_reports.items():
+            merged_report = json.loads(json.dumps(report))
+            merged_report["generator"] = {
+                "provider": "openai",
+                "model": model,
+                "promptVersion": "openai_ops_report_v3",
+                "schemaVersion": "1.0.0",
+            }
+            merged_report["executiveSummary"]["headline"] = f"OpenAI {language}"
+            merged[language] = merged_report
+        return merged
+
+    monkeypatch.setattr(
+        "python.eval.ai_daily_report._run_openai_master_localization_chain",
+        fake_master_localization_chain,
+    )
+
+    indexes, reports_by_language, budget = build_ai_daily_reports_multilingual(
+        tmp_path,
+        generated_at="2026-05-24T09:20:00+09:00",
+        languages=("ko", "en", "ja"),
+        existing_report_root=report_root,
+        skip_existing=True,
+        openai_budget={"remaining": 2, "used": 0},
+        openai_locales={"ko", "en", "ja"},
+    )
+
+    assert calls == [{
+        "date": "2026-05-23",
+        "target_languages": ["ko", "en", "ja"],
+    }]
+    assert budget == {"remaining": 0, "used": 2}
+    assert reports_by_language["ko"][0]["generator"]["provider"] == "openai"
+    assert reports_by_language["en"][0]["generator"]["provider"] == "openai"
+    assert reports_by_language["ja"][0]["generator"]["provider"] == "openai"
+    assert indexes["ko"]["latest"]["headline"] == "OpenAI ko"
+
+
 def test_ai_daily_reports_multilingual_falls_back_to_english_when_localization_fails(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path, "2026-05-23")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")

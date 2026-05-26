@@ -3064,6 +3064,24 @@ def build_ai_daily_reports_multilingual(
                     language,
                 )
             if existing_report:
+                existing_provider = (
+                    (existing_report.get("generator") or {}).get("provider")
+                )
+                should_retry_latest_fallback = (
+                    bool(api_key)
+                    and bool(should_use_openai)
+                    and date_iso == latest_date
+                    and latest_only
+                    and language in allowed_locales
+                    and existing_provider != "openai"
+                    and budget.get("remaining", 0) > 0
+                )
+                if should_retry_latest_fallback:
+                    existing_report = None
+                else:
+                    date_reports[language] = existing_report
+                    continue
+            if existing_report:
                 date_reports[language] = existing_report
                 continue
 

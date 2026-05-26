@@ -2044,6 +2044,11 @@ def _write_ai_daily_reports(out_dir: Path) -> None:
             openai_locales=openai_locales,
         )
         total_reports = 0
+        def should_write_report(path: Path, report: dict) -> bool:
+            if not path.exists():
+                return True
+            return (report.get("generator") or {}).get("provider") == "openai"
+
         for language in ("ko", "en", "ja"):
             language_dir = report_dir / language
             index = indexes[language]
@@ -2051,13 +2056,13 @@ def _write_ai_daily_reports(out_dir: Path) -> None:
             write_json(language_dir / "index.json", index)
             for report in reports:
                 report_path = language_dir / f"{report['date']}.json"
-                if not report_path.exists():
+                if should_write_report(report_path, report):
                     write_json(report_path, report)
             if language == "ko":
                 write_json(report_dir / "index.json", index)
                 for report in reports:
                     report_path = report_dir / f"{report['date']}.json"
-                    if not report_path.exists():
+                    if should_write_report(report_path, report):
                         write_json(report_path, report)
                 latest = index.get("latest") or {}
             total_reports += len(reports)
