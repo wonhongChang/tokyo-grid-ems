@@ -5,11 +5,12 @@ on:
     # Midnight rollover (JST 00:10) so the dashboard switches dates before the first intraday refresh.
     - cron: '10 15 * * *'
     # Every 2 hours after TEPCO's hourly refresh has settled.
-    # Morning 07:20/08:20/09:20 JST are handled by ETL + Deploy to avoid duplicate Pages deployments.
+    # Morning 07:30/08:30/09:30 JST are handled by the local Docker ETL
+    # scheduler to avoid duplicate historical ETL and Pages deployments.
     # JST: 01:20, 03:20, 05:20, 11:20, 13:20, 15:20, 17:20, 19:20, 21:20
     - cron: '20 2-12/2 * * *'
     - cron: '20 16-20/2 * * *'
-    # Morning ramp refreshes. Together with ETL at 07:20/08:20/09:20 JST,
+    # Morning ramp refreshes. Together with local ETL at 07:30/08:30/09:30 JST,
     # this gives hourly coverage from 06:20 through 11:20 JST.
     # JST: 06:20, 10:20
     - cron: '20 21 * * *'

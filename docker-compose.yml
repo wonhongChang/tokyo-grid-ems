@@ -1,0 +1,17 @@
+services:
+  etl:
+    build:
+      context: .
+    working_dir: /app
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: Asia/Tokyo
+    volumes:
+      - .:/app
+    command: >
+      sh -lc "export OPENAI_API_KEY=$$(printf '%s' \"$${OPENAI_API_KEY:-}\" | tr -d '\r') &&
+      export OPENAI_DAILY_REPORT_LATEST_ONLY=$${OPENAI_DAILY_REPORT_LATEST_ONLY:-true} &&
+      python python/etl/fetch_tepco.py &&
+      python python/etl/run_batch.py --input data/raw --out web/public"

@@ -1,0 +1,59 @@
+name: Deploy Only
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Restore web/public from data branch
+        run: |
+          git fetch origin data 2>/dev/null || true
+          if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
+            git worktree add --detach /tmp/data-wt origin/data
+            mkdir -p web/public
+            rsync -a --exclude='.git' /tmp/data-wt/ web/public/
+            git worktree remove /tmp/data-wt --force
+          else
+            echo "[ERROR] data branch is required for deploy-only"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build
+        run: npm run build
+        working-directory: web
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
+      - uses: actions/deploy-pages@v5
+        id: deploy

@@ -479,6 +479,23 @@ def _now_jst() -> str:
     return datetime.now(tz=JST).isoformat(timespec="seconds")
 
 
+def _clean_env_value(name: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        return ""
+    cleaned = value.strip().strip('"').strip("'")
+    if cleaned != value:
+        os.environ[name] = cleaned
+    return cleaned
+
+
+def _redact_error(error: Exception | str) -> str:
+    text = str(error)
+    text = re.sub(r"sk-[A-Za-z0-9_\-]+", "sk-***", text)
+    text = re.sub(r"Bearer\s+[A-Za-z0-9_\-\.]+", "Bearer ***", text)
+    return text
+
+
 def _env_int(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is None or value.strip() == "":
@@ -2809,7 +2826,7 @@ def _openai_failure_reports(
         if language in languages:
             messages = MESSAGES.get(language, MESSAGES["ko"])
             report["operatorNotes"] = [
-                messages["openai_failed_template"].format(error=error),
+                messages["openai_failed_template"].format(error=_redact_error(error)),
                 *report.get("operatorNotes", []),
             ]
         reports[language] = report
@@ -2833,7 +2850,7 @@ def build_ai_daily_report(
     if fallback_report.get("availability") != "ok":
         return fallback_report
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = _clean_env_value("OPENAI_API_KEY")
     should_use_openai = bool(api_key) if use_openai is None else use_openai
     if not should_use_openai or not api_key:
         return fallback_report
@@ -2848,7 +2865,7 @@ def build_ai_daily_report(
     except (OSError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as e:
         messages = MESSAGES.get(fallback_report.get("language"), MESSAGES["ko"])
         fallback_report["operatorNotes"] = [
-            messages["openai_failed_template"].format(error=e),
+            messages["openai_failed_template"].format(error=_redact_error(e)),
             *fallback_report.get("operatorNotes", []),
         ]
         return fallback_report
@@ -2926,7 +2943,7 @@ def build_ai_daily_reports(
         else _env_csv("OPENAI_DAILY_REPORT_LOCALES", OPENAI_DEFAULT_LOCALES)
     )
     latest_only = _env_bool("OPENAI_DAILY_REPORT_LATEST_ONLY", openai_latest_only)
-    api_key_available = bool(os.getenv("OPENAI_API_KEY"))
+    api_key_available = bool(_clean_env_value("OPENAI_API_KEY"))
     reports = []
     for date_iso in dates:
         existing_report = None
@@ -3023,7 +3040,7 @@ def build_ai_daily_reports_multilingual(
         else _env_csv("OPENAI_DAILY_REPORT_LOCALES", OPENAI_DEFAULT_LOCALES)
     )
     latest_only = _env_bool("OPENAI_DAILY_REPORT_LATEST_ONLY", openai_latest_only)
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = _clean_env_value("OPENAI_API_KEY")
     should_use_openai = bool(api_key) if use_openai is None else use_openai
     model = os.getenv("OPENAI_DAILY_REPORT_MODEL") or OPENAI_DEFAULT_MODEL
     localization_model = (

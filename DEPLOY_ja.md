@@ -1,84 +1,82 @@
 # GitHub Pages デプロイガイド
 
-言語: [English](DEPLOY.md) · [한국어](DEPLOY_ko.md)
+言語: [English](DEPLOY.md) / [한국어](DEPLOY_ko.md)
 
 ## 前提条件
 
-- GitHubアカウント
-- **Publicリポジトリ** (PrivateはGitHub Pro以上が必要)
-- ローカルで全コードが正常動作することを確認済み
+- GitHub アカウント
+- Public repository、または private Pages を利用できる GitHub プラン
+- GitHub Pages Source を **GitHub Actions** に設定
+- Actions workflow permissions を **Read and write permissions** に設定
+- ローカル historical ETL 用の Docker Desktop
 
----
+`web/public/` 以下の生成データは `main` にはコミットしません。生成データは `data` ブランチへ publish し、Pages デプロイ workflow がそのブランチを復元してから Vite アプリをビルドします。
 
-## Step 1: リポジトリ作成とコードのプッシュ
+## 運用構成
 
-```bash
-# GitHubで新しいリポジトリを作成後
-git init
-git remote add origin https://github.com/<USERNAME>/<REPO_NAME>.git
-git add .
-git commit -m "initial commit"
-git push -u origin main
+TEPCO 月次 ZIP の取得は GitHub-hosted runner から HTTP 403 になる可能性があるため、ローカル PC の Docker ETL で処理します。当日 intraday 更新は GitHub Actions のまま維持します。
+
+```text
+Windows タスク スケジューラ
+  -> scripts/local_etl.ps1 -Publish
+    -> origin/data を web/public に復元
+    -> Docker ETL と OpenAI 日次レポート生成
+    -> web/public を origin/data に push
+    -> Deploy Only workflow を呼び出し
 ```
 
-> `web/public/` 以下の生成データは `main` にコミットしません。
-> ワークフローが `data` ブランチへ保存したうえでGitHub Pagesへデプロイします。
+## Workflows
 
----
-
-## Step 2: GitHub Pages の有効化
-
-1. リポジトリ → **Settings** → **Pages**
-2. **Source**: `GitHub Actions` を選択して保存
-
----
-
-## Step 3: Actions 権限の確認
-
-1. リポジトリ → **Settings** → **Actions** → **General**
-2. **Workflow permissions**: `Read and write permissions` を選択
-3. `Allow GitHub Actions to create and approve pull requests` にチェック
-
-> ワークフローが生成JSON/cache出力を `data` ブランチにコミット・プッシュするため、書き込み権限が必要です。
-
----
-
-## Step 4: 初回デプロイ（手動実行）
-
-1. リポジトリ → **Actions** → **ETL + Deploy**
-2. **Run workflow** → `main` ブランチ → **Run workflow**
-3. 約2〜3分後に完了
-4. Pages URLを確認: `https://<USERNAME>.github.io/<REPO_NAME>/`
-
----
-
-## ワークフロー構成
-
-| ワークフロー | 実行時刻 | 役割 |
+| Workflow | Trigger | 役割 |
 |---|---|---|
-| `ETL + Deploy` | 毎日 07:20, 08:20, 09:20 JST | TEPCO月次ZIPダウンロード → 確定済み履歴データ処理 → metrics → デプロイ。ZIP公開遅延を吸収するための複数回実行で、冪等に動作 |
-| `Intraday Update` | 00:10 JST + 01:40〜23:40 JST 2時間ごと | 当日TEPCO intraday CSV更新 → 予測/status → デプロイ |
+| `Manual ETL + Deploy` | 手動のみ | 緊急用 historical ETL。GitHub-hosted runner では TEPCO ZIP fetch がブロックされる可能性があるため schedule は無効化しています。 |
+| `Intraday Update` | スケジュール + 手動 | 当日実績、予測、status の更新とデプロイ。 |
+| `Deploy Only` | 手動 dispatch | ETL を実行せず `origin/data` を復元し、Vite アプリだけをビルド/デプロイ。ローカル ETL スクリプトが data publish 後に呼び出します。 |
 
----
+## ローカル Docker ETL
 
-## 確認事項
+初回実行:
 
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -Build
 ```
-Actionsタブ → ワークフロー実行 → 各Stepのログを確認
+
+通常実行:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
 ```
 
-よくある問題:
+推奨ローカルスケジュール、07:30 / 08:30 / 09:30 JST を登録:
 
-| エラー | 原因 | 解決方法 |
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\register_local_etl_task.ps1
+```
+
+スケジュール削除:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl_task.ps1
+```
+
+## モニタリング
+
+- Windows タスク スケジューラ: `LastRunTime`, `LastTaskResult`, `NextRunTime`
+- ローカルログ: `logs/local_etl/*.log`
+- ローカル状態 JSON: `web/public/ops/local_etl_status.json`
+- GitHub: `data` ブランチの最新コミットと `Deploy Only` workflow 結果
+- Docker Desktop: ETL はバッチ処理なので、完了後に `Exited` になるのが正常
+
+## トラブルシューティング
+
+| 問題 | 原因 | 対応 |
 |---|---|---|
-| `Permission denied` on git push | Workflow permissions 未設定 | Step 3を再確認 |
-| ビルド後404 | Pages Sourceが `Actions` になっていない | Step 2を再確認 |
-| `ModuleNotFoundError` | requirements.txtにパッケージが不足 | ローカルで `pip install` 後にrequirements.txtを更新 |
-| チャートデータなし | dataブランチがまだ作成・更新されていない | `ETL + Deploy` を実行し、当日データが必要なら `Intraday Update` も実行 |
+| Actions で TEPCO 月次 ZIP が `403` | GitHub-hosted runner の IP が TEPCO 側でブロック | ローカル Docker ETL を実行: `scripts\local_etl.ps1 -Publish` |
+| Deploy Only 呼び出し失敗 | ローカルで GitHub token が見つからない | `GH_TOKEN` または `GITHUB_TOKEN` を設定、GitHub CLI にログイン、または Actions で `Deploy Only` を手動実行 |
+| OpenAI レポートが fallback | API キー不足、認証失敗、timeout | `.env` と `logs/local_etl/*.log` を確認して再実行 |
+| チャートが古い | `data` ブランチは更新済みだが Pages が未デプロイ | `Deploy Only` を手動実行 |
+| data push 権限エラー | ホスト側 Git 認証がない | Windows の GitHub 認証を再設定 |
 
----
+## Vite Base Path
 
-## Vite BASE_URL
-
-ワークフロー内で `VITE_BASE_PATH: /${{ github.event.repository.name }}/` として自動設定されます。
-リポジトリ名を変更しても自動的に追従するため、個別の修正は不要です。
+workflow は `VITE_BASE_PATH: /${{ github.event.repository.name }}/` を設定します。リポジトリ名を変更すると、base path もリポジトリ名に追従します。

@@ -133,6 +133,20 @@ python python/etl/run_batch.py --input data/raw --out web/public
 cd web && npm install && npm run dev
 ```
 
+### Docker local ETL
+
+When GitHub-hosted runners cannot download the TEPCO monthly ZIP, run the ETL locally in Docker and publish the generated static JSON from your machine:
+
+```powershell
+# First run: build the image, fetch TEPCO ZIP, run ETL, and publish data
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build -Publish
+
+# Later runs: reuse the image, rerun ETL, and publish data
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
+```
+
+Docker handles the Python runtime, TEPCO fetch, and OpenAI report generation. The publish and deploy-dispatch steps run on the host so they can reuse your existing Git credentials.
+
 ### GitHub Pages deployment
 
 See [DEPLOY.md](DEPLOY.md).

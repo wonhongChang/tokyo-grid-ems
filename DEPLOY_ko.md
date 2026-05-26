@@ -1,84 +1,82 @@
 # GitHub Pages 배포 가이드
 
-언어: [English](DEPLOY.md) · [日本語](DEPLOY_ja.md)
+언어: [English](DEPLOY.md) / [日本語](DEPLOY_ja.md)
 
-## 전제 조건
+## 사전 준비
 
 - GitHub 계정
-- **Public 저장소** (Private은 GitHub Pro 필요)
-- 로컬에서 모든 코드가 정상 동작 확인된 상태
+- Public repository, 또는 private Pages를 지원하는 GitHub 플랜
+- GitHub Pages Source를 **GitHub Actions**로 설정
+- Actions workflow permissions를 **Read and write permissions**로 설정
+- 로컬 historical ETL용 Docker Desktop 설치
 
----
+`web/public/` 아래의 생성 데이터는 `main`에 커밋하지 않습니다. 생성 데이터는 `data` 브랜치에 publish하고, Pages 배포 workflow가 이 브랜치를 복원한 뒤 Vite 앱을 빌드합니다.
 
-## 1단계: 저장소 생성 및 코드 푸시
+## 운영 구조
 
-```bash
-# GitHub에서 새 저장소 생성 후
-git init
-git remote add origin https://github.com/<USERNAME>/<REPO_NAME>.git
-git add .
-git commit -m "initial commit"
-git push -u origin main
+TEPCO 월별 ZIP 다운로드는 GitHub-hosted runner에서 HTTP 403이 발생할 수 있으므로 로컬 PC의 Docker ETL로 처리합니다. 당일 intraday 갱신은 GitHub Actions에서 계속 처리합니다.
+
+```text
+Windows 작업 스케줄러
+  -> scripts/local_etl.ps1 -Publish
+    -> origin/data 를 web/public 로 복원
+    -> Docker ETL 및 OpenAI 일일 리포트 생성
+    -> web/public 을 origin/data 로 push
+    -> Deploy Only workflow 호출
 ```
 
-> `web/public/` 아래 생성 데이터는 `main`에 커밋하지 않습니다.
-> 워크플로가 `data` 브랜치에 저장한 뒤 GitHub Pages에 배포합니다.
+## Workflows
 
----
-
-## 2단계: GitHub Pages 활성화
-
-1. 저장소 → **Settings** → **Pages**
-2. **Source**: `GitHub Actions` 선택 후 저장
-
----
-
-## 3단계: Actions 권한 확인
-
-1. 저장소 → **Settings** → **Actions** → **General**
-2. **Workflow permissions**: `Read and write permissions` 선택
-3. `Allow GitHub Actions to create and approve pull requests` 체크
-
-> 워크플로가 생성 JSON/cache 산출물을 `data` 브랜치에 커밋하고 push하기 때문에 쓰기 권한이 필요합니다.
-
----
-
-## 4단계: 첫 배포 (수동 실행)
-
-1. 저장소 → **Actions** → **ETL + Deploy**
-2. **Run workflow** → `main` 브랜치 → **Run workflow**
-3. 약 2~3분 후 완료
-4. Pages URL 확인: `https://<USERNAME>.github.io/<REPO_NAME>/`
-
----
-
-## 워크플로 구조
-
-| 워크플로 | 실행 시각 | 역할 |
+| Workflow | Trigger | 역할 |
 |---|---|---|
-| `ETL + Deploy` | 매일 07:20, 08:20, 09:20 JST | TEPCO 월별 ZIP 다운로드 → 확정 이력 데이터 처리 → metrics → 배포. ZIP 공개 지연을 흡수하기 위한 반복 실행이며 멱등적으로 동작 |
-| `Intraday Update` | 00:10 JST + 01:40~23:40 JST 2시간마다 | 당일 TEPCO intraday CSV 갱신 → 예측/status → 배포 |
+| `Manual ETL + Deploy` | 수동 실행만 | 비상용 historical ETL. GitHub-hosted runner에서 TEPCO ZIP fetch가 막힐 수 있으므로 schedule은 비활성화했습니다. |
+| `Intraday Update` | 스케줄 + 수동 | 당일 실측, 예측, status 갱신 및 배포. |
+| `Deploy Only` | 수동 dispatch | ETL 없이 `origin/data`를 복원하고 Vite 앱만 빌드/배포. 로컬 ETL 스크립트가 data publish 후 호출합니다. |
 
----
+## 로컬 Docker ETL
 
-## 확인 사항
+첫 실행:
 
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -Build
 ```
-Actions 탭 → 워크플로 실행 → 각 Step 로그 확인
+
+평소 실행:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
 ```
 
-자주 발생하는 문제:
+권장 로컬 스케줄, 07:30 / 08:30 / 09:30 JST 등록:
 
-| 오류 | 원인 | 해결 |
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\register_local_etl_task.ps1
+```
+
+스케줄 삭제:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl_task.ps1
+```
+
+## 모니터링
+
+- Windows 작업 스케줄러: `LastRunTime`, `LastTaskResult`, `NextRunTime` 확인
+- 로컬 로그: `logs/local_etl/*.log`
+- 로컬 상태 JSON: `web/public/ops/local_etl_status.json`
+- GitHub: `data` 브랜치 최신 커밋과 `Deploy Only` workflow 결과 확인
+- Docker Desktop: ETL은 배치 작업이므로 완료 후 `Exited` 상태가 정상
+
+## 문제 해결
+
+| 문제 | 원인 | 해결 |
 |---|---|---|
-| `Permission denied` on git push | Workflow permissions 미설정 | 3단계 재확인 |
-| 빌드 후 404 | Pages Source가 `Actions`가 아님 | 2단계 재확인 |
-| `ModuleNotFoundError` | requirements.txt 누락 패키지 | 로컬에서 `pip install` 후 requirements.txt 업데이트 |
-| 차트 데이터 없음 | data 브랜치가 아직 채워지지 않음 | `ETL + Deploy` 실행 후 당일 데이터가 필요하면 `Intraday Update` 실행 |
+| Actions에서 TEPCO 월별 ZIP이 `403` 반환 | GitHub-hosted runner IP가 TEPCO에서 차단됨 | 로컬 Docker ETL 실행: `scripts\local_etl.ps1 -Publish` |
+| Deploy Only 호출 실패 | 로컬에서 GitHub token을 찾지 못함 | `GH_TOKEN` 또는 `GITHUB_TOKEN` 설정, GitHub CLI 로그인, 또는 Actions에서 `Deploy Only` 수동 실행 |
+| OpenAI 리포트가 fallback | API 키 누락, 인증 실패, timeout | `.env`와 `logs/local_etl/*.log` 확인 후 로컬 ETL 재실행 |
+| 차트가 오래된 데이터 표시 | `data` 브랜치는 갱신됐지만 Pages 배포가 안 됨 | `Deploy Only` 수동 실행 |
+| data push 권한 오류 | 호스트 Git 인증 없음 | Windows GitHub 인증 재설정 |
 
----
+## Vite Base Path
 
-## Vite BASE_URL
-
-워크플로에서 `VITE_BASE_PATH: /${{ github.event.repository.name }}/` 로 자동 설정됩니다.
-저장소 이름을 바꾸면 이 값도 자동으로 바뀌므로 별도 수정 불필요합니다.
+workflow는 `VITE_BASE_PATH: /${{ github.event.repository.name }}/`를 설정합니다. 저장소 이름을 바꾸면 base path도 저장소 이름을 따라갑니다.
