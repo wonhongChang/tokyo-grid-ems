@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import io
 import sys
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -38,6 +39,7 @@ _REQUEST_HEADERS = {
         "Chrome/125.0 Safari/537.36"
     ),
     "Accept": "application/zip,application/octet-stream,*/*",
+    "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
     "Referer": "https://www.tepco.co.jp/forecast/",
 }
 
@@ -79,6 +81,67 @@ def _open_with_retry(url: str):
     raise RuntimeError("TEPCO fetch failed without an exception")
 
 
+def _download_with_curl(url: str) -> bytes:
+    """Fallback downloader for environments where urllib is blocked by the edge."""
+    cmd = [
+        "curl",
+        "--fail",
+        "--location",
+        "--silent",
+        "--show-error",
+        "--retry",
+        "3",
+        "--retry-delay",
+        "2",
+        "--max-time",
+        str(_HTTP_TIMEOUT_SECONDS),
+    ]
+    for key, value in _REQUEST_HEADERS.items():
+        cmd.extend(["-H", f"{key}: {value}"])
+    cmd.append(url)
+
+    completed = subprocess.run(
+        cmd,
+        check=True,
+        capture_output=True,
+    )
+    return completed.stdout
+
+
+def _download_zip_bytes(url: str) -> bytes:
+    try:
+        with _open_with_retry(url) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise
+        if e.code in _RETRYABLE_HTTP_CODES:
+            print(
+                f"[WARN] TEPCO urllib fetch ended with HTTP {e.code}; "
+                "trying curl fallback",
+                file=sys.stderr,
+            )
+            try:
+                return _download_with_curl(url)
+            except (FileNotFoundError, subprocess.CalledProcessError) as curl_error:
+                raise RuntimeError(
+                    f"TEPCO ZIP fetch failed after urllib and curl fallback "
+                    f"(last HTTP {e.code})"
+                ) from curl_error
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        print(
+            f"[WARN] TEPCO urllib fetch failed ({e}); trying curl fallback",
+            file=sys.stderr,
+        )
+        try:
+            return _download_with_curl(url)
+        except (FileNotFoundError, subprocess.CalledProcessError) as curl_error:
+            raise RuntimeError(
+                "TEPCO ZIP fetch failed after urllib and curl fallback"
+            ) from curl_error
+
+
 def fetch_month(yyyymm: str, raw_dir: Path = _RAW_DIR) -> int:
     """Download and extract one monthly ZIP. Returns count of newly written CSVs."""
     year = int(yyyymm[:4])
@@ -88,27 +151,12 @@ def fetch_month(yyyymm: str, raw_dir: Path = _RAW_DIR) -> int:
 
     print(f"[FETCH] {url}")
     try:
-        with _open_with_retry(url) as resp:
-            data = resp.read()
+        data = _download_zip_bytes(url)
     except urllib.error.HTTPError as e:
         if e.code == 404:
             print(f"[FETCH] {yyyymm}: not yet published (404), skipping")
             return 0
-        if e.code in _RETRYABLE_HTTP_CODES:
-            print(
-                f"[WARN] {yyyymm}: TEPCO ZIP unavailable after retries "
-                f"(HTTP {e.code}); continuing without historical CSV update",
-                file=sys.stderr,
-            )
-            return 0
         raise
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        print(
-            f"[WARN] {yyyymm}: TEPCO ZIP fetch failed after retries ({e}); "
-            "continuing without historical CSV update",
-            file=sys.stderr,
-        )
-        return 0
 
     new_count = 0
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
