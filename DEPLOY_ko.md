@@ -47,6 +47,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publi
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
 ```
 
+publish 전에는 로컬 스크립트가 `web/public`을 검증합니다.
+
+- `status.json`이 `availability: ok`여야 합니다.
+- `coverageTo`가 어제 날짜 이상이어야 합니다.
+- 어제 `actual/YYYY-MM-DD.json`에 실제 관측 24시간이 있어야 합니다.
+- 오늘/내일 forecast JSON에 24시간 예측 행이 있어야 합니다.
+
+Docker fetch 단계는 TEPCO의 지연 수정분을 흡수하기 위해 최근 3일 JST CSV를 `data/raw`에서 덮어씁니다.
+
 권장 로컬 스케줄, 07:30 / 08:30 / 09:30 JST 등록:
 
 ```powershell

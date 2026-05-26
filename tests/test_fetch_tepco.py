@@ -88,7 +88,7 @@ def test_fetch_month_uses_curl_fallback_after_forbidden(monkeypatch, tmp_path):
     monkeypatch.setattr(fetch_tepco, "_open_with_retry", fake_open_with_retry)
     monkeypatch.setattr(fetch_tepco, "_download_with_curl", lambda url: _zip_bytes())
 
-    assert fetch_tepco.fetch_month("202605", tmp_path) == 1
+    assert fetch_tepco.fetch_month("202605", tmp_path) == (1, 0)
     assert (
         tmp_path / "2026" / "202605_power_usage" / "20260525_power_usage.csv"
     ).exists()
@@ -114,4 +114,19 @@ def test_fetch_month_still_skips_not_found(monkeypatch, tmp_path):
 
     monkeypatch.setattr(fetch_tepco, "_open_with_retry", fake_open_with_retry)
 
-    assert fetch_tepco.fetch_month("202605", tmp_path) == 0
+    assert fetch_tepco.fetch_month("202605", tmp_path) == (0, 0)
+
+
+def test_fetch_month_can_overwrite_recent_csv(monkeypatch, tmp_path):
+    monkeypatch.setattr(fetch_tepco, "_download_zip_bytes", lambda url: _zip_bytes())
+    target = tmp_path / "2026" / "202605_power_usage" / "20260525_power_usage.csv"
+    target.parent.mkdir(parents=True)
+    target.write_text("stale", encoding="utf-8")
+
+    assert fetch_tepco.fetch_month(
+        "202605",
+        tmp_path,
+        overwrite_recent_days=2,
+        today=fetch_tepco.date(2026, 5, 26),
+    ) == (0, 1)
+    assert target.read_text(encoding="utf-8") == "DATE,TIME,POWER\n"

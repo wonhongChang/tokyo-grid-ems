@@ -13,5 +13,5 @@ services:
     command: >
       sh -lc "export OPENAI_API_KEY=$$(printf '%s' \"$${OPENAI_API_KEY:-}\" | tr -d '\r') &&
       export OPENAI_DAILY_REPORT_LATEST_ONLY=$${OPENAI_DAILY_REPORT_LATEST_ONLY:-true} &&
-      python python/etl/fetch_tepco.py &&
+      python python/etl/fetch_tepco.py --overwrite-recent-days 3 &&
       python python/etl/run_batch.py --input data/raw --out web/public"

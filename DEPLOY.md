@@ -47,6 +47,15 @@ Normal run:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
 ```
 
+Before publish, the local script validates `web/public`:
+
+- `status.json` must be `availability: ok`.
+- `coverageTo` must include yesterday.
+- Yesterday's `actual/YYYY-MM-DD.json` must have 24 observed hours.
+- Today and tomorrow forecast JSONs must contain 24 forecast rows.
+
+The Docker fetch step overwrites the most recent 3 JST dates in `data/raw` so delayed TEPCO CSV corrections can be absorbed before ETL.
+
 Register the recommended local schedule, 07:30 / 08:30 / 09:30 JST:
 
 ```powershell

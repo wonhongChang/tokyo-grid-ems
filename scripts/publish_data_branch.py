@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -51,9 +52,22 @@ def _copy_public_to_worktree(worktree: Path) -> None:
             shutil.copy2(child, target)
 
 
-def publish(commit_message: str | None = None) -> None:
+def _validate_public(min_yesterday_hours: int = 24) -> None:
+    from scripts.validate_public_before_publish import validate
+
+    result = validate(PUBLIC_DIR, min_yesterday_hours=min_yesterday_hours)
+    print("[DATA] Publish validation passed: " + json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
+def publish(
+    commit_message: str | None = None,
+    skip_validation: bool = False,
+    min_yesterday_hours: int = 24,
+) -> None:
     if not PUBLIC_DIR.exists():
         raise FileNotFoundError(f"Missing generated public directory: {PUBLIC_DIR}")
+    if not skip_validation:
+        _validate_public(min_yesterday_hours=min_yesterday_hours)
 
     subprocess.run(
         ["git", "fetch", "origin", DATA_BRANCH],
@@ -96,10 +110,25 @@ def publish(commit_message: str | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--message", help="Commit message for the data branch update")
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Publish without validating generated web/public first. Use only for emergency manual work.",
+    )
+    parser.add_argument(
+        "--min-yesterday-hours",
+        type=int,
+        default=24,
+        help="Required observed hours in yesterday's actual JSON before publish.",
+    )
     args = parser.parse_args()
 
     try:
-        publish(args.message)
+        publish(
+            args.message,
+            skip_validation=args.skip_validation,
+            min_yesterday_hours=args.min_yesterday_hours,
+        )
     except subprocess.CalledProcessError as exc:
         print(f"[ERROR] command failed: {' '.join(exc.cmd)}", file=sys.stderr)
         raise SystemExit(exc.returncode) from exc

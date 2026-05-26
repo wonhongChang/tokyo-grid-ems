@@ -3,6 +3,7 @@ param(
     [switch]$Build,
     [switch]$SkipRestore,
     [switch]$SkipDeploy,
+    [switch]$SkipValidation,
     [string]$LogDir = "logs/local_etl"
 )
 
@@ -69,8 +70,17 @@ try {
     $published = $false
     $deployTriggered = $false
     if ($Publish) {
+        if (-not $SkipValidation) {
+            Write-LocalEtlStatus -Status "running" -Stage "validate_public" -Message "Validating web/public before publish"
+            Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/validate_public_before_publish.py")
+        }
+
         Write-LocalEtlStatus -Status "running" -Stage "publish_data_branch" -Message "Publishing web/public to origin/data"
-        Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/publish_data_branch.py")
+        $publishArgs = @("-3.14", "scripts/publish_data_branch.py")
+        if ($SkipValidation) {
+            $publishArgs += "--skip-validation"
+        }
+        Invoke-Native -FilePath "py" -Arguments $publishArgs
         $published = $true
 
         if (-not $SkipDeploy) {

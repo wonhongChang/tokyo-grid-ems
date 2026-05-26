@@ -23,7 +23,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 _BASE_URL = "https://www.tepco.co.jp/forecast/html/images"
@@ -142,8 +142,26 @@ def _download_zip_bytes(url: str) -> bytes:
             ) from curl_error
 
 
-def fetch_month(yyyymm: str, raw_dir: Path = _RAW_DIR) -> int:
-    """Download and extract one monthly ZIP. Returns count of newly written CSVs."""
+def _recent_csv_names(today: date, days: int) -> set[str]:
+    if days <= 0:
+        return set()
+    return {
+        f"{(today - timedelta(days=offset)).strftime('%Y%m%d')}_power_usage.csv"
+        for offset in range(days)
+    }
+
+
+def fetch_month(
+    yyyymm: str,
+    raw_dir: Path = _RAW_DIR,
+    overwrite_recent_days: int = 0,
+    today: date | None = None,
+) -> tuple[int, int]:
+    """Download and extract one monthly ZIP.
+
+    Returns (new_count, overwritten_count). Existing files are normally kept, but
+    recent dates can be overwritten to absorb TEPCO's delayed corrections.
+    """
     year = int(yyyymm[:4])
     url = _zip_url(yyyymm)
     dest_dir = raw_dir / str(year) / f"{yyyymm}_power_usage"
@@ -155,24 +173,39 @@ def fetch_month(yyyymm: str, raw_dir: Path = _RAW_DIR) -> int:
     except urllib.error.HTTPError as e:
         if e.code == 404:
             print(f"[FETCH] {yyyymm}: not yet published (404), skipping")
-            return 0
+            return 0, 0
         raise
 
+    if today is None:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        today = datetime.now(tz=ZoneInfo("Asia/Tokyo")).date()
+    overwrite_names = _recent_csv_names(today, overwrite_recent_days)
+
     new_count = 0
+    overwritten_count = 0
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         for entry in zf.namelist():
             fname = Path(entry).name
             if not fname.endswith(".csv"):
                 continue
             target = dest_dir / fname
-            if target.exists():
+            should_overwrite = target.exists() and fname in overwrite_names
+            if target.exists() and not should_overwrite:
                 continue
             target.write_bytes(zf.read(entry))
-            print(f"[FETCH]   + {fname}")
-            new_count += 1
+            if should_overwrite:
+                print(f"[FETCH]   ~ {fname}")
+                overwritten_count += 1
+            else:
+                print(f"[FETCH]   + {fname}")
+                new_count += 1
 
-    print(f"[FETCH] {yyyymm}: {new_count} new file(s)")
-    return new_count
+    print(
+        f"[FETCH] {yyyymm}: {new_count} new file(s), "
+        f"{overwritten_count} overwritten recent file(s)"
+    )
+    return new_count, overwritten_count
 
 
 def months_to_fetch(today: date | None = None) -> list[str]:
@@ -203,19 +236,38 @@ def main() -> None:
         help="Month(s) to fetch (e.g. 202605). Defaults to current month.",
     )
     ap.add_argument("--out", default=str(_RAW_DIR), help="Root data/raw directory")
+    ap.add_argument(
+        "--overwrite-recent-days",
+        type=int,
+        default=0,
+        help=(
+            "Overwrite already-downloaded CSVs for the last N JST dates. "
+            "Use this for local operational ETL to absorb delayed TEPCO corrections."
+        ),
+    )
     args = ap.parse_args()
 
     raw_dir = Path(args.out)
     targets = args.month if args.month else months_to_fetch()
 
     total_new = 0
+    total_overwritten = 0
     for yyyymm in targets:
         if len(yyyymm) != 6 or not yyyymm.isdigit():
             print(f"[ERROR] Invalid month format: {yyyymm} (expected YYYYMM)", file=sys.stderr)
             sys.exit(1)
-        total_new += fetch_month(yyyymm, raw_dir)
+        new_count, overwritten_count = fetch_month(
+            yyyymm,
+            raw_dir,
+            overwrite_recent_days=max(0, args.overwrite_recent_days),
+        )
+        total_new += new_count
+        total_overwritten += overwritten_count
 
-    print(f"[FETCH] Done -- {total_new} new CSV(s) across {len(targets)} month(s)")
+    print(
+        f"[FETCH] Done -- {total_new} new CSV(s), "
+        f"{total_overwritten} overwritten recent CSV(s) across {len(targets)} month(s)"
+    )
 
 
 if __name__ == "__main__":
