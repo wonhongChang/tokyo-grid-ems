@@ -3,17 +3,15 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-23",
-  "generatedAt": "2026-05-24T07:53:06+09:00",
+  "generatedAt": "2026-05-26T11:56:04+09:00",
   "availability": "ok",
   "language": "ja",
   "contentLanguage": "ja",
   "generator": {
-    "provider": "openai",
-    "model": "gpt-5.4-mini",
-    "promptVersion": "openai_ops_report_v2",
-    "schemaVersion": "1.0.0",
-    "localizationModel": "gpt-4o-mini",
-    "localizationStatus": "ok"
+    "provider": "fallback",
+    "model": null,
+    "promptVersion": "fallback_rules_v1",
+    "schemaVersion": "1.0.0"
   },
   "inputRefs": {
     "operationReport": "reports/daily/2026-05-23.json",
@@ -27,22 +25,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-05-24T07:53:06+09:00",
-    "fingerprint": "sha256:9935fdeb420afef11ba3ecae4af7b2a4db73902906ef35915a3e0a477bfb91e0",
+    "createdAt": "2026-05-26T11:56:04+09:00",
+    "fingerprint": "sha256:90b85853c2e4057ef1f6852eca72e101ea2aa3b6af5cab3515b7eccac4c0252f",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-05-23.json",
         "exists": true,
         "date": "2026-05-23",
-        "generatedAt": "2026-05-24T07:52:09+09:00",
-        "fingerprint": "sha256:d96305a4f0ade1f91ab5ed5be1a130559ea877c4a64224763c31b560a0c30adc"
+        "generatedAt": "2026-05-26T11:29:36+09:00",
+        "fingerprint": "sha256:dce51062230ebd689d2757407d2f5fd5e5c93f1f903522b8d84b5c57da384f2b"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-05-23.json",
         "exists": true,
         "date": "2026-05-23",
-        "generatedAt": "2026-05-24T07:52:09+09:00",
-        "fingerprint": "sha256:9fd5c601a64bf04a2f0ee69f43313880e3be4c9842c8715fa6bb384d39644490"
+        "generatedAt": "2026-05-26T11:24:51+09:00",
+        "fingerprint": "sha256:275eb915a4f8416bd312bf85bdd0b92699c58f9032e2d9e89acde7269e0fb6c4"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-05-23.json",
@@ -83,8 +81,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-05-24T07:42:45+09:00",
-        "fingerprint": "sha256:aca147d02d32a123a797ea923536bc3952a08f028c579446288757e188a76c58"
+        "generatedAt": "2026-05-26T11:29:36+09:00",
+        "fingerprint": "sha256:7170ee6e0b47c14808f7378c1d0c0189fb4b5f27ceb51de80079a4e3b261cbf7"
       }
     }
   },
@@ -94,15 +92,14 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 0,
     "limitations": [
-      "公開JSONから中間のintraday実行履歴は完全に再構築できない。",
-      "営業日から非営業日へのラベル変更の直接のスナップショット証拠が提供されていないため、移行因果関係は解釈されたままとなる。",
-      "上書きされたintradayタイムラインにより、最終診断やキャリブレーションスナップショットを超えた時間単位での検証が妨げられる。"
+      "このレポートはOpenAIを呼び出さず、deterministic JSONのみから生成したfallback解説です。",
+      "公開JSONは主に最終実行分を保持するため、中間intraday実行履歴を完全には復元できません。"
     ]
   },
   "executiveSummary": {
-    "severity": "critical",
-    "headline": "モデルはTEPCOのパフォーマンスに及ばず、厳しい朝のラ ramp 漠が原因である。",
-    "summary": "TEPCOはMAE、WAPE、RMSE、及び最大誤差でモデルを上回った。最大の失敗は07-08 JSTであり、モデルは早い時間帯のラ ramp を過大予測した後、08-09の形状を逆転させ、実際の+1,560 MWの増加を1,910.3 MWも逃した。",
+    "severity": "warning",
+    "headline": "この日はTEPCOの精度が優勢でした。",
+    "summary": "比較可能時間は24時間です。モデルMAEは489.0 MW、TEPCO MAEは292.5 MWでした。WAPEはモデル2.03%、TEPCO 1.22%です。",
     "modelVerdict": "tepco_better",
     "confidence": "high"
   },
@@ -131,176 +128,184 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "H1",
-      "severity": "critical",
-      "confidence": "high",
-      "evidenceStatus": "confirmed",
-      "title": "朝のラ ramp の転換が大きく誤ってモデル化された",
-      "explanation": "モデルは07-08および08-09を過大予測しており、実際の需要は08-09に急激に上昇した。これが支配的な形状の崩壊であり、最悪の時間あたり誤差を説明している。",
-      "evidence": [
-        {
-          "source": "topMisses",
-          "metric": "hour_8_model_error_mw",
-          "value": 1908.3,
-          "unit": "MW",
-          "hour": 8,
-          "timeBand": "morning_ramp"
-        },
-        {
-          "source": "topMisses",
-          "metric": "hour_7_model_error_mw",
-          "value": 1626.5,
-          "unit": "MW",
-          "hour": 7,
-          "timeBand": "morning_ramp"
-        }
-      ],
-      "relatedHours": [
-        7,
-        8,
-        9
-      ],
-      "relatedTimeBands": [
-        "morning_ramp"
-      ],
-      "relatedFeatures": [
-        "intraday_correction.business_type_transition",
-        "intraday_correction.business_type_transition_prior"
-      ],
-      "counterEvidence": [
-        "TEPCOもラ rampを逃したが、モデルよりも少ない量である。"
-      ]
-    },
-    {
-      "id": "H2",
+      "id": "h1",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "営業日から非営業日への移行がラ ramp の慣性を汚染した可能性がある",
-      "explanation": "診断結果は、朝のラ ramp に大きなlag24のギャップが見られ、開発者ルールは06-10の傾向が大きいときに移行による慣性を指摘している。朝のラ rampにおけるモデルのバイアスは強くプラスであり、これは古いキャリーオーバー効果と一致する。",
+      "title": "日次誤差はTEPCOより大きくなりました。",
+      "explanation": "日次MAE/WAPEではTEPCO予測のほうが近い結果でした。詳細時間帯と内部特徴量を併せて確認する必要があります。",
       "evidence": [
         {
-          "source": "diagnosticFacts.diagnosticSummary",
-          "metric": "lag24HourlyDeltaByBand_morning_ramp_mean",
-          "value": 1430.0,
-          "unit": "MW",
-          "hour": null,
-          "timeBand": "morning_ramp"
-        },
-        {
-          "source": "operationFacts.timeBands",
-          "metric": "morning_ramp_model_bias_mw",
-          "value": 659.9,
-          "unit": "MW",
-          "hour": null,
-          "timeBand": "morning_ramp"
-        }
-      ],
-      "relatedHours": [
-        6,
-        7,
-        8,
-        9,
-        10
-      ],
-      "relatedTimeBands": [
-        "morning_ramp"
-      ],
-      "relatedFeatures": [
-        "intraday_correction.business_type_transition_prior",
-        "intraday_correction.business_type_transition",
-        "intraday_correction.day_boundary_carryover"
-      ],
-      "counterEvidence": [
-        "スナップショットでは営業日から非営業日へのラベル変更が明示的に示されていないため、移行自体は直接観察されず、推測されている。"
-      ]
-    },
-    {
-      "id": "H3",
-      "severity": "warning",
-      "confidence": "medium",
-      "evidenceStatus": "partial",
-      "title": "日レベルの慣性が観測されたレジームに対して強すぎた",
-      "explanation": "日レベルのレジームは最近の同業種に対してlag24が4,007 MW上回り、かつその日は最近の週よりも涼しかった。この組み合わせは、モデルが現在のレジームに対して前日の需要レベルに過度に依存していたことを示唆している。",
-      "evidence": [
-        {
-          "source": "diagnosticFacts.diagnosticSummary",
-          "metric": "lag24ToSameBusinessTypeGapMeanMw",
-          "value": -4007.0,
+          "source": "reports/daily",
+          "metric": "maeGapMw",
+          "value": 196.5,
           "unit": "MW",
           "hour": null,
           "timeBand": null
         },
         {
-          "source": "diagnosticFacts.diagnosticSummary",
-          "metric": "dayLevelRegime.flags",
-          "value": "lag24_above_recent_same_business_type",
+          "source": "reports/daily",
+          "metric": "wapeGapPct",
+          "value": 0.81,
           "unit": null,
           "hour": null,
           "timeBand": null
         }
       ],
-      "relatedHours": [
-        0,
-        1,
-        2,
-        3,
-        4
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "lag_24h",
+        "temp_c",
+        "humidity_pct"
       ],
+      "counterEvidence": []
+    },
+    {
+      "id": "h2",
+      "severity": "info",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "朝ramp帯で需要を高く見た可能性があります。",
+      "explanation": "朝ramp帯の平均biasが正の値でした。前日lagの慣性や営業/非営業遷移シグナルを確認する必要があります。",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "modelBiasMw",
+          "value": 659.9,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        }
+      ],
+      "relatedHours": [],
       "relatedTimeBands": [
-        "overnight",
-        "morning_ramp",
-        "daytime"
+        "06-10"
       ],
       "relatedFeatures": [
-        "intraday_correction.day_level_scale",
+        "lag_24h",
+        "lag_24h_business_type_mismatch",
+        "recent_same_business_type_mean",
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.positive_residual_mitigation"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "h3",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "特定時間で大きな単発誤差が発生しました。",
+      "explanation": "最大誤差時間が日次指標を大きく動かしました。その時刻のlag、天候、補正レイヤーメタデータを優先して確認する必要があります。",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "modelAbsErrorMw",
+          "value": 1908.3,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        8
+      ],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "lag_24h",
+        "temp_c",
         "intraday_correction.day_boundary_carryover"
       ],
-      "counterEvidence": [
-        "最終日次バイアスは-42.7 MW近くでほぼ中立であったため、これは1日のレベルよりも日内の形状に関することだ。"
-      ]
+      "counterEvidence": []
+    },
+    {
+      "id": "h4",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "モデル曲線が実需より急に下がった可能性があります。",
+      "explanation": "時間差分ベースでモデルの低下幅と実需の低下幅に大きな差がありました。負の残差carry-overとshape guardの動作を確認する必要があります。",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "modelDeltaMw",
+          "value": -350.3,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        },
+        {
+          "source": "reports/daily",
+          "metric": "actualDeltaMw",
+          "value": 1560.0,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        8,
+        9
+      ],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "intraday_correction.negative_residual_recovery_damping",
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": []
     }
   ],
   "featureRecommendations": [
     {
-      "id": "R1",
-      "priority": "high",
+      "id": "r1",
+      "priority": "medium",
       "type": "feature_engineering",
-      "target": "intraday_correction.business_type_transition_prior",
-      "suggestion": "ビジネスタイプ変更インジケーターがアクティブで、朝のラ ramp が500 MWを2時間連続して超えるときのみ、以前のものを有効にし、0.35で上限を設定し、10:00 JST以降は50%減少させる。",
-      "expectedEffect": "ビジネスタイプの移行中に古いラ ramp のキャリーオーバーを減少させ、06-10の形状の整合性を改善する。",
-      "risk": "トリガーが広すぎると、平常の平日に過少補正される可能性がある。",
-      "validationPlan": "最近の30日の類似の移行日を再生し、06-10のMAEと08-09のデルタエラーを現在の設定に対して比較する。",
+      "target": "lag_24h",
+      "suggestion": "「日次誤差はTEPCOより大きくなりました。」仮説を基準に、lag_24hの影響を再確認します。",
+      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
+      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
+      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
       "linkedHypotheses": [
-        "H1",
-        "H2"
+        "h1"
       ],
       "autoApply": false
     },
     {
-      "id": "R2",
-      "priority": "high",
+      "id": "r2",
+      "priority": "low",
       "type": "feature_engineering",
-      "target": "intraday_correction.business_type_transition",
-      "suggestion": "朝のラ ramp モデルバイアスが+400 MWを超え、07-09の残差が2時間同じサインを維持する場合にトランジションオーバーライドを追加し、08:00 JSTで確実にハンドオフを行う。",
-      "expectedEffect": "ラ ramp のハンドオフを改善し、モデルが観測された08-09の増加を逆転するのを防ぐ。",
-      "risk": "ハードハンドオフは、朝のラ ramp が遅延するとノイズを追加する可能性がある。",
-      "validationPlan": "トランジション日でバックテストを実行し、08-09の最大delta_missが1,200 MW未満になるかを測定する。",
+      "target": "lag_24h",
+      "suggestion": "「朝ramp帯で需要を高く見た可能性があります。」仮説を基準に、lag_24hの影響を再確認します。",
+      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
+      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
+      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
       "linkedHypotheses": [
-        "H1",
-        "H2"
+        "h2"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "r3",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "lag_24h",
+      "suggestion": "「特定時間で大きな単発誤差が発生しました。」仮説を基準に、lag_24hの影響を再確認します。",
+      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
+      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
+      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
+      "linkedHypotheses": [
+        "h3"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
-    "TEPCOは全体的に優れたパフォーマンスを示した: MAE 292.5 MW対489.0 MW, WAPE 1.22%対2.03%, 及び最大誤差1,010.0 MW対1,908.3 MW。",
-    "主要な運用失敗は天候によるものではなく、すべてのweatherDeltaRisk評価が中立的であり、冷却デeltaがすべての帯域で0.0であった。",
-    "キャリブレーションが適用されたが、businessTypeTransitionPriorとbusinessTypeTransitionの両方が偽であったため、朝のラ ramp ギャップがこれらの制御によって減衰されなかった。"
+    "featureRecommendationsはレビュー候補であり、自動適用されません。",
+    "運用補正シグナルカタログ: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
   ],
   "limitations": [
-    "公開JSONから中間のintraday実行履歴は完全に再構築できない。",
-    "営業日から非営業日へのラベル変更の直接のスナップショット証拠が提供されていないため、移行因果関係は解釈されたままとなる。",
-    "上書きされたintradayタイムラインにより、最終診断やキャリブレーションスナップショットを超えた時間単位での検証が妨げられる。"
+    "このレポートはOpenAIを呼び出さず、deterministic JSONのみから生成したfallback解説です。",
+    "公開JSONは主に最終実行分を保持するため、中間intraday実行履歴を完全には復元できません。"
   ]
 }

@@ -3,15 +3,17 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-25",
-  "generatedAt": "2026-05-26T11:25:11+09:00",
+  "generatedAt": "2026-05-26T12:03:22+09:00",
   "availability": "ok",
   "language": "ko",
   "contentLanguage": "ko",
   "generator": {
-    "provider": "fallback",
-    "model": null,
-    "promptVersion": "fallback_rules_v1",
-    "schemaVersion": "1.0.0"
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "promptVersion": "openai_ops_report_v3",
+    "schemaVersion": "1.0.0",
+    "localizationModel": "gpt-4o-mini",
+    "localizationStatus": "ok"
   },
   "inputRefs": {
     "operationReport": "reports/daily/2026-05-25.json",
@@ -25,15 +27,15 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-05-26T11:25:11+09:00",
-    "fingerprint": "sha256:7d6171fbf317655d77b9a430e1dc00ac0d34127dcb615b656073c58cfd3022a9",
+    "createdAt": "2026-05-26T12:03:22+09:00",
+    "fingerprint": "sha256:b883fbb706b6b067d594a83bd473eee7039b88860f7b96f0bd6410424257e387",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-05-25.json",
         "exists": true,
         "date": "2026-05-25",
-        "generatedAt": "2026-05-26T11:24:51+09:00",
-        "fingerprint": "sha256:96d309abe952b2444c9904894cdf464f71865445becdf24b3ac52a5f2e28ce01"
+        "generatedAt": "2026-05-26T11:29:36+09:00",
+        "fingerprint": "sha256:f1497ff3a481e0a6c9f93ceda099e2435f105bf22f72e55ae46c80bfb41a320e"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-05-25.json",
@@ -53,8 +55,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-05-25/index.json",
         "exists": true,
         "date": "2026-05-25",
-        "generatedAt": "2026-05-26T11:21:16+09:00",
-        "fingerprint": "sha256:abfc604e984433cf92510d39058c3d4d3afcd2659c9cac61ef2e7afb4516032c"
+        "generatedAt": "2026-05-26T11:28:56+09:00",
+        "fingerprint": "sha256:2342d8fbcd67fadec95854985d05be16057a2741c362f9ecf9ae7269c33d78da"
       },
       "alerts": {
         "path": "alerts/2026-05-25.json",
@@ -81,8 +83,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-05-26T11:21:34+09:00",
-        "fingerprint": "sha256:06489597e7698bd10fe263a73c4c1009c4e53d57234b56658e0d0b4de9b633df"
+        "generatedAt": "2026-05-26T11:29:36+09:00",
+        "fingerprint": "sha256:7170ee6e0b47c14808f7378c1d0c0189fb4b5f27ceb51de80079a4e3b261cbf7"
       }
     }
   },
@@ -92,14 +94,14 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 19,
     "limitations": [
-      "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
-      "intraday 중간 실행은 operational-calibration snapshot 기준으로 제한적으로 복원합니다."
+      "분석은 요약된 운영 증거 및 유지된 보정 스냅샷에 기반합니다.",
+      "아침 전환 가설은 제공된 사실이 비즈니스 일 상태 변화를 명시적으로 식별하지 않기 때문에 방향성이 있습니다."
     ]
   },
   "executiveSummary": {
-    "severity": "info",
-    "headline": "모델이 TEPCO보다 일일 오차를 낮췄습니다.",
-    "summary": "비교 가능 시간은 24시간이며, 모델 MAE는 453.9 MW, TEPCO MAE는 561.7 MW입니다. WAPE는 모델 1.65%, TEPCO 2.04%로 집계되었습니다.",
+    "severity": "warning",
+    "headline": "모델이 TEPCO를 전반적으로 초과 성능을 보였지만, 낮 시간대의 형태 오류가 여전히 중대함",
+    "summary": "모델은 24시간 중 16시간에서 TEPCO보다 낮은 일일 오류를 달성했으며, MAE는 453.9 MW, WAPE는 1.65%로 나타났습니다. 그러나 11-15 시간대에서는 TEPCO보다 성능이 떨어지며, 가장 큰 오류는 15시에서 발생했으며, 14시-15시 사이에 급격한 형태 반전 후 +1612.8 MW의 오류를 기록했습니다.",
     "modelVerdict": "model_better",
     "confidence": "high"
   },
@@ -128,195 +130,166 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "h1",
-      "severity": "info",
+      "id": "H1",
+      "severity": "critical",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "모델이 일일 기준으로 TEPCO보다 가까웠습니다.",
-      "explanation": "일일 MAE/WAPE 기준으로 모델 예측이 더 안정적이었습니다. 같은 조건의 반복 여부를 추적할 가치가 있습니다.",
+      "title": "낮 시간대 램프 반전이 포착되지 않음",
+      "explanation": "가장 큰 형태 단절은 14->15 시간대에서 발생했으며, 실제 수요는 970.0 MW 감소했으나 모델은 1195.9 MW 상승했습니다. 이로 인해 15시의 모델 오류가 가장 나빠졌고, 큰 델타 오류 2165.9 MW이 발생했습니다.",
       "evidence": [
         {
-          "source": "reports/daily",
-          "metric": "maeGapMw",
-          "value": -107.8,
-          "unit": "MW",
-          "hour": null,
-          "timeBand": null
-        },
-        {
-          "source": "reports/daily",
-          "metric": "wapeGapPct",
-          "value": -0.39,
-          "unit": null,
-          "hour": null,
-          "timeBand": null
-        }
-      ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "lgbm_quantile_q50",
-        "intraday_correction.day_level_scale"
-      ],
-      "counterEvidence": []
-    },
-    {
-      "id": "h2",
-      "severity": "warning",
-      "confidence": "medium",
-      "evidenceStatus": "partial",
-      "title": "특정 시간대의 단일 대형 오차가 발생했습니다.",
-      "explanation": "최대 오차 시간이 일일 지표를 크게 흔들었습니다. 해당 시각의 lag, 날씨, 보정 레이어 메타데이터를 우선 확인해야 합니다.",
-      "evidence": [
-        {
-          "source": "reports/daily",
-          "metric": "modelAbsErrorMw",
-          "value": 1612.8,
+          "source": "shape",
+          "metric": "largestDeltaMiss.actualDeltaMw",
+          "value": -970,
           "unit": "MW",
           "hour": 15,
-          "timeBand": null
-        }
-      ],
-      "relatedHours": [
-        15
-      ],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "lag_24h",
-        "temp_c",
-        "intraday_correction.day_boundary_carryover"
-      ],
-      "counterEvidence": []
-    },
-    {
-      "id": "h3",
-      "severity": "warning",
-      "confidence": "medium",
-      "evidenceStatus": "partial",
-      "title": "모델 곡선이 실제 수요보다 급하게 올라갔을 수 있습니다.",
-      "explanation": "시간 간 변화량 기준으로 모델 상승폭이 실제보다 컸습니다. 양수 잔차 전파와 ramp guard의 영향 범위를 확인해야 합니다.",
-      "evidence": [
-        {
-          "source": "reports/daily",
-          "metric": "modelDeltaMw",
-          "value": 1195.9,
-          "unit": "MW",
-          "hour": null,
-          "timeBand": null
+          "timeBand": "daytime"
         },
         {
-          "source": "reports/daily",
-          "metric": "actualDeltaMw",
-          "value": -970.0,
+          "source": "shape",
+          "metric": "largestDeltaMiss.modelDeltaMw",
+          "value": 1195.9,
           "unit": "MW",
-          "hour": null,
-          "timeBand": null
+          "hour": 15,
+          "timeBand": "daytime"
         }
       ],
       "relatedHours": [
         14,
         15
       ],
-      "relatedTimeBands": [],
+      "relatedTimeBands": [
+        "daytime"
+      ],
       "relatedFeatures": [
-        "intraday_correction.positive_residual_mitigation",
-        "lag_24h_hourly_delta"
+        "intraday_correction.positive_residual_slope_damping",
+        "intraday_correction.day_boundary_carryover"
       ],
       "counterEvidence": []
     },
     {
-      "id": "h60",
-      "severity": "info",
+      "id": "H2",
+      "severity": "warning",
       "confidence": "high",
-      "evidenceStatus": "confirmed",
-      "title": "intraday 보정 실행 이력이 스냅샷으로 보존되었습니다.",
-      "explanation": "operational-calibration snapshot index에 중간 실행 이력이 남아 있어 최종 덮어쓰기 JSON만 볼 때보다 보정 레이어 흐름을 더 잘 추적할 수 있습니다.",
+      "evidenceStatus": "partial",
+      "title": "낮 시간대의 과소 예측이 11-14 시간대에 지속됨",
+      "explanation": "모델은 11-14 시간대에 실제 수요보다 낮았으며, 특히 13시에는 -1524.4 MW, 14시에는 -553.1 MW의 오류가 발생했습니다. 이는 15시간대의 초과 예측을 하기 전 낮 시간의 수준이 너무 낮았음을 보여줍니다.",
       "evidence": [
         {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "snapshotCount",
-          "value": 19
+          "source": "topMisses",
+          "metric": "hour13.modelErrorMw",
+          "value": -1524.4,
+          "unit": "MW",
+          "hour": 13,
+          "timeBand": "daytime"
         },
         {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "dominantAppliedRegimeReason",
-          "value": "intraday_observed_residual"
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "dominantReasonCount",
-          "value": 15
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "latestGeneratedAt",
-          "value": "2026-05-25T22:31:10+09:00"
+          "source": "focusedRows",
+          "metric": "hour14.modelErrorMw",
+          "value": -553.1,
+          "unit": "MW",
+          "hour": 14,
+          "timeBand": "daytime"
         }
       ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
+      "relatedHours": [
+        11,
+        12,
+        13,
+        14
+      ],
+      "relatedTimeBands": [
+        "daytime"
+      ],
       "relatedFeatures": [
-        "intraday_correction.day_boundary_carryover",
-        "intraday_correction.business_type_transition_prior",
-        "intraday_correction.negative_residual_recovery_damping"
+        "intraday_correction.day_level_scale",
+        "intraday_correction.positive_residual_mitigation"
       ],
       "counterEvidence": [
-        "스냅샷은 보존된 19회 실행만 설명하며, 삭제된 이전 실행은 복원하지 않습니다.",
-        "보정이 실제로 적용된 스냅샷 수는 19회입니다."
+        "TEPCO 또한 13시에서 미달을 기록했으므로 이러한 문제는 모델만의 낮 시간대 수준 문제가 아닙니다."
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "아침 램프 편향은 전환 오염을 시사",
+      "explanation": "06-10 시간대 동안 모델은 MAE 617.0 MW와 -397.4 MW의 부정적 편향을 보였으며, 비즈니스 유형 진단에서는 06-10 동안 강한 동일 유형의 지연갭이 발견되었습니다. 이는 전환이나 지연 오염을 시사하며, 특히 비즈니스 일에서 비즈니스 외 일로의 변환이 포함된 경우 더 그럴 수 있지만, 이 전환은 이곳에서 직접적으로 관찰되지 않았습니다.",
+      "evidence": [
+        {
+          "source": "timeBands",
+          "metric": "morning_ramp.modelBiasMw",
+          "value": -397.4,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        },
+        {
+          "source": "diagnosticFacts",
+          "metric": "lag24ToSameBusinessTypeGapByBand.morning_ramp.mean",
+          "value": 6262.5,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        }
+      ],
+      "relatedHours": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.business_type_transition"
+      ],
+      "counterEvidence": [
+        "비즈니스 일에서 비즈니스 외 일로의 전환은 제공된 사실에서 명시적으로 기록되지 않았습니다."
       ]
     }
   ],
   "featureRecommendations": [
     {
-      "id": "r1",
-      "priority": "low",
+      "id": "R1",
+      "priority": "high",
       "type": "feature_engineering",
-      "target": "lgbm_quantile_q50",
-      "suggestion": "모델이 일일 기준으로 TEPCO보다 가까웠습니다. 가설을 기준으로 lgbm_quantile_q50의 영향도를 재검토합니다.",
-      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
-      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
-      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
+      "target": "intraday_correction.positive_residual_slope_damping",
+      "suggestion": "실제 수요가 감소하는 동안 2시간 예측 기울기가 양수로 전환될 때 감쇠를 활성화하고, 14-16 시간대에 대해 0.70의 계수 한계를 사용합니다.",
+      "expectedEffect": "급작스러운 낮 시간대 반전 시 초과 예측을 줄이고 15시 절대 오류를 낮춥니다.",
+      "risk": "감쇠가 지나치게 적용되면 정당한 늦은 오후의 반등이 평탄해질 수 있습니다.",
+      "validationPlan": "2026-05-25를 재생하고 현재 2165.9 MW의 단절보다 낮은 14-15 델타 오류를 요구하며 11-14 수준의 정확성을 유지합니다.",
       "linkedHypotheses": [
-        "h1"
+        "H1"
       ],
       "autoApply": false
     },
     {
-      "id": "r2",
-      "priority": "medium",
+      "id": "R2",
+      "priority": "high",
       "type": "feature_engineering",
-      "target": "lag_24h",
-      "suggestion": "특정 시간대의 단일 대형 오차가 발생했습니다. 가설을 기준으로 lag_24h의 영향도를 재검토합니다.",
-      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
-      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
-      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
+      "target": "intraday_correction.day_level_scale",
+      "suggestion": "11-14 누적 잔여가 두 시간 연속으로 -400 MW 아래로 유지될 때 낮 시간대 확대 트리거를 적용합니다.",
+      "expectedEffect": "15시 반전 전 낮 시간대 수준을 높이고 13-14과소 예측을 줄입니다.",
+      "risk": "이미 상승한 수요 일에 대해 과도하게 수정될 수 있습니다.",
+      "validationPlan": "11-14 잔여가 -400 MW 이하인 날을 재생하고 11-15 시간대에서 MAE 감소를 확인하되, 야간 오류는 증가시키지 않습니다.",
       "linkedHypotheses": [
-        "h2"
-      ],
-      "autoApply": false
-    },
-    {
-      "id": "r3",
-      "priority": "medium",
-      "type": "calibration",
-      "target": "intraday_correction.positive_residual_mitigation",
-      "suggestion": "모델 곡선이 실제 수요보다 급하게 올라갔을 수 있습니다. 가설을 기준으로 intraday_correction.positive_residual_mitigation의 영향도를 재검토합니다.",
-      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
-      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
-      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
-      "linkedHypotheses": [
-        "h3"
+        "H2"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
-    "OpenAI 리포트 생성에 실패해 fallback 해설로 대체했습니다: Invalid header value b'Bearer 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\\r'",
-    "featureRecommendations는 검토 후보이며 자동 적용되지 않습니다.",
-    "운영 보정 신호 카탈로그: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+    "일일 비교 가능한 커버리지는 24/24시간 동안 완전했으며, 22시간이 보정에 사용되고 19개의 보정 스냅샷이 유지되었습니다.",
+    "발표 대비 재계산된 간격은 14시와 15시 시간대에서 500 MW 동결 임계값을 초과했지만, 발표된 선은 여전히 동결된 제공 경로를 반영하고 있으며 보정 오류는 아닙니다.",
+    "TEPCO는 11-15 시간대에서 여전히 더 나은 성과를 보였으며 모델은 야간, 늦은 오후 및 저녁 시간대에 명확한 우위를 유지하고 있습니다."
   ],
   "limitations": [
-    "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
-    "intraday 중간 실행은 operational-calibration snapshot 기준으로 제한적으로 복원합니다."
+    "분석은 요약된 운영 증거 및 유지된 보정 스냅샷에 기반합니다.",
+    "아침 전환 가설은 제공된 사실이 비즈니스 일 상태 변화를 명시적으로 식별하지 않기 때문에 방향성이 있습니다."
   ]
 }
