@@ -75,7 +75,10 @@ try {
             Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/validate_public_before_publish.py")
         }
 
-        Write-LocalEtlStatus -Status "running" -Stage "publish_data_branch" -Message "Publishing web/public to origin/data"
+        # This status file is included in the data branch commit. If the publish
+        # succeeds, this snapshot is accurate; if it fails, catch{} overwrites the
+        # local copy with the failure details and no data-branch commit is made.
+        Write-LocalEtlStatus -Status "ok" -Stage "ready_to_publish" -Message "Generated artifacts validated; publishing this snapshot to origin/data" -Published $true
         $publishArgs = @("-3.14", "scripts/publish_data_branch.py")
         if ($SkipValidation) {
             $publishArgs += "--skip-validation"
