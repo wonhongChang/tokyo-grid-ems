@@ -91,6 +91,18 @@ intraday_correction:
     anchor_proximity_tolerance_mw: 1200
     peak_excess_allowance_mw: 300
     damping_factor: 0.4       # keep 40% of the positive carryover when shape is rolling over
+  morning_ramp_continuity_guard:
+    enabled: true
+    business_day_only: true
+    target_hours: [6, 7, 8, 9, 10, 11]
+    min_reference_hour: 7
+    max_lead_hours: 2          # protect only the nearest morning future buckets
+    min_recent_slope_mw: 1000  # require sustained same-day ramp-up evidence
+    min_mean_slope_mw: 1000
+    floor_slope_fraction: 0.25 # conservative fraction of the recent actual ramp
+    max_floor_delta_mw: 900
+    max_restore_mw: 700        # never lift above the pre-calibration forecast
+    min_restore_mw: 100
   midday_residual_deweight:
     enabled: false
     hours: [12]              # lunch bucket only; applies on business days

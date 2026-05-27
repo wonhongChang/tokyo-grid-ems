@@ -1502,6 +1502,7 @@ def _operational_calibration_rows(
     stage_forecasts: dict[str, list[HourlyForecast]],
     post_calibration_forecasts: list[HourlyForecast],
     residual_adjustments_by_hour: list[dict] | None = None,
+    inference_features: pd.DataFrame | None = None,
 ) -> list[dict]:
     actual_by_hour = _actual_series_by_hour(actual_series)
     stage_maps = {
@@ -1515,6 +1516,18 @@ def _operational_calibration_rows(
         for item in (residual_adjustments_by_hour or [])
         if item.get("hour") is not None
     }
+    feature_map: dict[int, pd.Series] = {}
+    if inference_features is not None and not inference_features.empty:
+        try:
+            for _, feature_row in inference_features.iterrows():
+                if "hour" not in feature_row:
+                    continue
+                hour_value = feature_row.get("hour")
+                if pd.isna(hour_value):
+                    continue
+                feature_map[int(hour_value)] = feature_row
+        except Exception:
+            feature_map = {}
     hours = sorted(
         set(actual_by_hour)
         | set(post_by_hour)
@@ -1546,6 +1559,16 @@ def _operational_calibration_rows(
         post_mw = _round_mw(
             post_forecast.forecast_mw if post_forecast is not None else None
         )
+        previous_pre = pre_by_hour.get(hour - 1)
+        previous_post = post_by_hour.get(hour - 1)
+        previous_pre_mw = _round_mw(
+            previous_pre.forecast_mw if previous_pre is not None else None
+        )
+        previous_post_mw = _round_mw(
+            previous_post.forecast_mw if previous_post is not None else None
+        )
+        feature_row = feature_map.get(hour)
+        residual_carryover = residual_adjustment_map.get(hour)
         row = {
             "hour": hour,
             "ts": ts,
@@ -1555,6 +1578,41 @@ def _operational_calibration_rows(
             "forecastMwByStage": forecasts_by_stage,
             "preCalibrationForecastMw": pre_mw,
             "postCalibrationForecastMw": post_mw,
+            "forecastDeltaMw": (
+                round(pre_mw - previous_pre_mw, 1)
+                if pre_mw is not None and previous_pre_mw is not None
+                else None
+            ),
+            "postCalibrationForecastDeltaMw": (
+                round(post_mw - previous_post_mw, 1)
+                if post_mw is not None and previous_post_mw is not None
+                else None
+            ),
+            "lag24DeltaMw": _round_mw(
+                feature_row.get("lag_24h_hourly_delta")
+                if feature_row is not None
+                else None
+            ),
+            "recentSameBusinessTypeDeltaMw": _round_mw(
+                feature_row.get("recent_same_business_type_delta_mean")
+                if feature_row is not None
+                else None
+            ),
+            "sameDayActualSlopeMw": _round_mw(
+                feature_row.get("same_day_latest_hourly_delta")
+                if feature_row is not None
+                else None
+            ),
+            "residualAdjustmentMw": _round_mw(
+                residual_carryover.get("finalAdjustmentMw")
+                if residual_carryover
+                else None
+            ),
+            "weatherDeltaC": _round_mw(
+                feature_row.get("temp_delta_24h")
+                if feature_row is not None
+                else None
+            ),
             "calibrationDeltaMw": (
                 round(post_mw - pre_mw, 1)
                 if post_mw is not None and pre_mw is not None
@@ -1575,7 +1633,7 @@ def _operational_calibration_rows(
                 if tepco_forecast_mw is not None and actual_mw is not None
                 else None
             ),
-            "residualCarryover": residual_adjustment_map.get(hour),
+            "residualCarryover": residual_carryover,
         }
         rows.append(row)
     return rows
@@ -1656,6 +1714,12 @@ def _operational_calibration_snapshot_entry(path: Path, out_dir: Path) -> dict |
         ),
         "positiveResidualSlopeDampingMaxMw": correction.get(
             "positiveResidualSlopeDampingMaxMw",
+        ),
+        "morningRampContinuityGuardApplied": correction.get(
+            "morningRampContinuityGuardApplied",
+        ),
+        "morningRampContinuityMaxRestoreMw": correction.get(
+            "morningRampContinuityMaxRestoreMw",
         ),
         "negResidualRecoveryDampingApplied": correction.get(
             "negResidualRecoveryDampingApplied",
@@ -1872,6 +1936,7 @@ def _apply_intraday_residual_correction(
             effective_stage_forecasts,
             correction.forecasts,
             calibration_metadata.get("residualCarryoverByHour"),
+            inference_features,
         ),
     }
     write_json(
@@ -1929,6 +1994,11 @@ def _apply_intraday_residual_correction(
         if getattr(correction, "positive_residual_slope_damping_applied", False)
         else ""
     )
+    morning_ramp_note = (
+        " morning_ramp_continuity=applied"
+        if getattr(correction, "morning_ramp_continuity_guard_applied", False)
+        else ""
+    )
     print(
         "[INTRADAY] Residual correction "
         f"{target_date}: base={correction.base_adjustment_mw:+.1f} MW "
@@ -1941,6 +2011,7 @@ def _apply_intraday_residual_correction(
         f"{carryover_note}"
         f"{day_bias_note}"
         f"{positive_slope_note}"
+        f"{morning_ramp_note}"
     )
     return correction.forecasts, corrected_model_name
 

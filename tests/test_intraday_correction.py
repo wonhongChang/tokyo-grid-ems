@@ -891,6 +891,133 @@ def test_intraday_correction_keeps_morning_negative_residual():
     assert result.forecasts[10].forecast_mw == pytest.approx(19_000.0)
 
 
+def test_intraday_correction_protects_strong_morning_ramp_from_negative_residual():
+    target = date(2026, 5, 27)  # Wednesday
+    forecasts = _make_forecasts(target, 20_000.0)
+    for hour, value in {
+        7: 26_000.0,
+        8: 29_000.0,
+        9: 32_000.0,
+        10: 31_400.0,
+        11: 34_400.0,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 7, 25_000.0),
+        _actual_point(target, 8, 28_000.0),
+        _actual_point(target, 9, 31_000.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 9, "is_non_business_day": 0},
+        {"hour": 10, "is_non_business_day": 0},
+        {"hour": 11, "is_non_business_day": 0},
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.6,
+            "decay_per_hour": 1.0,
+            "morning_ramp_continuity_guard": {
+                "enabled": True,
+                "target_hours": [10],
+                "min_reference_hour": 7,
+                "max_lead_hours": 1,
+                "min_recent_slope_mw": 1_000.0,
+                "min_mean_slope_mw": 1_000.0,
+                "floor_slope_fraction": 0.25,
+                "max_floor_delta_mw": 900.0,
+                "max_restore_mw": 700.0,
+                "min_restore_mw": 100.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.base_adjustment_mw == pytest.approx(-600.0)
+    assert result.morning_ramp_continuity_guard_applied is True
+    assert result.morning_ramp_continuity_max_restore_mw == pytest.approx(600.0)
+    assert result.forecasts[10].forecast_mw == pytest.approx(31_400.0)
+    assert result.forecasts[11].forecast_mw == pytest.approx(33_800.0)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_10 = next(item for item in residual_logs if item["hour"] == 10)
+    hour_11 = next(item for item in residual_logs if item["hour"] == 11)
+    assert hour_10["morningRampContinuityRestoreMw"] == pytest.approx(600.0)
+    assert hour_10["finalAdjustmentMw"] == pytest.approx(0.0)
+    assert hour_11["morningRampContinuityRestoreMw"] == pytest.approx(0.0)
+    assert "morning_ramp_continuity_guard" in result.applied_regime_reason
+
+
+def test_intraday_correction_does_not_apply_morning_ramp_guard_without_strong_ramp():
+    target = date(2026, 5, 27)
+    forecasts = _make_forecasts(target, 20_000.0)
+    for hour, value in {
+        7: 31_000.0,
+        8: 31_300.0,
+        9: 31_600.0,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    forecasts[10] = HourlyForecast(
+        ts=f"{target.isoformat()}T10:00:00+09:00",
+        forecast_mw=31_400.0,
+        p95_lower_mw=30_900.0,
+        p95_upper_mw=31_900.0,
+        p99_lower_mw=30_600.0,
+        p99_upper_mw=32_200.0,
+    )
+    actual_series = [
+        _actual_point(target, 7, 30_000.0),
+        _actual_point(target, 8, 30_300.0),
+        _actual_point(target, 9, 30_600.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 9, "is_non_business_day": 0},
+        {"hour": 10, "is_non_business_day": 0},
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.6,
+            "decay_per_hour": 1.0,
+            "morning_ramp_continuity_guard": {
+                "enabled": True,
+                "target_hours": [10],
+                "min_recent_slope_mw": 1_000.0,
+                "min_mean_slope_mw": 1_000.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.morning_ramp_continuity_guard_applied is False
+    assert result.forecasts[10].forecast_mw == pytest.approx(30_800.0)
+
+
 def test_intraday_correction_dampens_non_business_day_lag_overheat_after_observed_evidence():
     target = date(2026, 5, 23)  # Saturday after a business day
     forecasts = _make_forecasts(target, 20_000.0)
