@@ -47,6 +47,55 @@ FEATURE_CATALOG = [
     "serving.published_forecast_freeze",
 ]
 
+LOCALIZED_TEXT_REPLACEMENTS = {
+    "ko": [
+        ("중간의 행복한 실행", "중간에 덮어쓴 intraday 실행 내역"),
+        ("중간의 인트라데이 실행", "중간에 덮어쓴 intraday 실행 내역"),
+        ("중간 intraday 실행은", "중간에 덮어쓴 intraday 실행 내역은"),
+        ("인트라데이 실행", "intraday 실행"),
+        ("요약된 운영적 증거", "요약 운영 지표"),
+        ("보존된 캘리브레이션 스냅샷", "보존된 보정 스냅샷"),
+        ("캘리브레이션 스냅샷", "보정 스냅샷"),
+        ("스냅샷으로 재구성되었으므로, 덮어쓴 타임라인 세부정보는 직접 관찰되지 않음", "스냅샷으로만 재구성되므로, 전체 실행 타임라인은 직접 관찰되지 않음"),
+        ("잔여 감쇠", "잔차 감쇠"),
+        ("잔여 damping", "잔차 감쇠"),
+        ("잔여", "잔차"),
+        ("비즈니스 유형", "영업일 구분"),
+        ("비즈니스 타입", "영업일 구분"),
+        ("비즈니스 일", "영업일"),
+        ("램프 창", "램프업 구간"),
+        ("오전 램프와 늦은 오후 회복의 한 곳에 집중됨", "오전 램프업 구간과 늦은 오후 회복 구간에 집중됨"),
+        ("오전 램프 구간", "오전 램프업 구간"),
+        ("사전 적용", "prior 보정"),
+        ("델타 오류", "변화량 오차"),
+        ("긍정적인 불일치", "양수 오차"),
+        ("긍정적일 경우", "양수일 경우"),
+        ("긍정적이면", "양수이면"),
+        ("긍정적", "양수"),
+        ("2시간 감소", "2시간 감쇠"),
+        ("램프업업", "램프업"),
+    ],
+    "ja": [
+        ("インターデイ", "イントラデイ"),
+        ("イントラデイラン", "イントラデイ実行"),
+        ("ビジネスタイプ", "営業日/非営業日区分"),
+        ("ビジネス日", "営業日"),
+        ("ランプウィンドウ", "ランプアップ区間"),
+        ("朝のランプ区間", "朝のランプアップ区間"),
+        ("朝のランプと", "朝のランプアップと"),
+        ("ランプアップアップ", "ランプアップ"),
+        ("事前を有効", "prior補正を有効"),
+        ("要約された運用証拠", "要約された運用指標"),
+        ("保存されたキャリブレーションスナップショット", "保存された補正スナップショット"),
+        ("キャリブレーションスナップショット", "補正スナップショット"),
+        ("中間のイントラデイ実行はスナップショットから再構成されているため、上書きされたタイムラインの詳細は直接観察されない", "中間で上書きされたイントラデイ実行履歴はスナップショットからの再構成に限られるため、実行タイムライン全体は直接観測されない"),
+        ("実際vsモデルデルタ誤差", "実績とモデルの変化量誤差"),
+        ("残余ダンピング", "残差ダンピング"),
+        ("残余", "残差"),
+        ("正の不一致", "正方向の誤差"),
+    ],
+}
+
 MESSAGES = {
     "ko": {
         "headline_model_better": "모델이 TEPCO보다 일일 오차를 낮췄습니다.",
@@ -2195,9 +2244,15 @@ def _openai_localization_instructions(languages: list[str]) -> str:
         "surrounding explanation conservatively. For ko, write natural Korean "
         "using Hangul-based sentences; do not emit mojibake, pseudo-CJK, or "
         "Chinese-only text, and avoid sports-style words such as 승리/패배 when "
-        "describing forecast comparison. For ja, write natural modern Japanese; "
+        "describing forecast comparison. Use this Korean terminology: "
+        "'intraday execution' -> 'intraday 실행', 'residual damping' -> "
+        "'잔차 감쇠', 'business type' -> '영업일 구분', 'positive bias' -> "
+        "'양수 바이어스', and 'ramp window' -> '램프업 구간'. Never translate "
+        "intraday as a word related to happiness. For ja, write natural modern Japanese; "
         "do not emit mojibake or pseudo-CJK text, and avoid 勝利/敗北 wording "
-        "when describing forecast comparison."
+        "when describing forecast comparison. Use this Japanese terminology: "
+        "'intraday execution' -> 'イントラデイ実行', 'residual damping' -> "
+        "'残差ダンピング', and 'business type' -> '営業日/非営業日区分'."
     )
 
 
@@ -2483,7 +2538,7 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
             if item != fallback_note
         ]
     report["dataQuality"]["limitations"] = report["limitations"]
-    return report
+    return _polish_report_language(report)
 
 
 def _merge_openai_multilingual_analysis(
@@ -2536,6 +2591,60 @@ def _localized_text(source: dict, field: str, fallback: Any) -> Any:
         return localized if localized else fallback
     text = _meaningful_text(value)
     return text or fallback
+
+
+def _polish_localized_text(language: str, value: Any) -> Any:
+    if isinstance(value, str):
+        result = value
+        for old, new in LOCALIZED_TEXT_REPLACEMENTS.get(language, []):
+            result = result.replace(old, new)
+        return result
+    if isinstance(value, list):
+        return [_polish_localized_text(language, item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _polish_localized_text(language, item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _polish_report_language(report: dict) -> dict:
+    language = str(report.get("language") or "")
+    if language not in LOCALIZED_TEXT_REPLACEMENTS:
+        return report
+
+    summary = report.get("executiveSummary")
+    if isinstance(summary, dict):
+        for field in ("headline", "summary"):
+            summary[field] = _polish_localized_text(language, summary.get(field))
+
+    for hypothesis in report.get("rootCauseHypotheses") or []:
+        if not isinstance(hypothesis, dict):
+            continue
+        for field in ("title", "explanation", "counterEvidence"):
+            hypothesis[field] = _polish_localized_text(language, hypothesis.get(field))
+
+    for recommendation in report.get("featureRecommendations") or []:
+        if not isinstance(recommendation, dict):
+            continue
+        for field in ("suggestion", "expectedEffect", "risk", "validationPlan"):
+            recommendation[field] = _polish_localized_text(
+                language,
+                recommendation.get(field),
+            )
+
+    report["operatorNotes"] = _polish_localized_text(
+        language,
+        report.get("operatorNotes") or [],
+    )
+    report["limitations"] = _polish_localized_text(
+        language,
+        report.get("limitations") or [],
+    )
+    if isinstance(report.get("dataQuality"), dict):
+        report["dataQuality"]["limitations"] = report["limitations"]
+    return report
 
 
 def _items_by_id(items: Any) -> dict[str, dict]:

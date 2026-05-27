@@ -721,8 +721,8 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
                             "autoApply": True,
                         }
                     ],
-                    "operatorNotes": ["한국어 노트"],
-                    "limitations": ["한국어 제한"],
+                    "operatorNotes": ["비즈니스 유형 전환과 잔여 감쇠를 확인합니다."],
+                    "limitations": ["중간의 행복한 실행은 스냅샷으로 재구성되었습니다."],
                 },
                 "ja": {
                     "executiveSummary": {
@@ -761,7 +761,7 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
                             "autoApply": False,
                         }
                     ],
-                    "operatorNotes": ["日本語ノート"],
+                    "operatorNotes": ["朝のランプアップと残余ダンピングを確認します。"],
                     "limitations": ["日本語制約"],
                 },
             }
@@ -818,7 +818,16 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
         "intraday_correction.business_type_transition_prior"
     )
     assert reports_by_language["ko"][0]["featureRecommendations"][0]["autoApply"] is False
+    assert reports_by_language["ko"][0]["operatorNotes"] == [
+        "영업일 구분 전환과 잔차 감쇠를 확인합니다."
+    ]
+    assert reports_by_language["ko"][0]["limitations"] == [
+        "중간에 덮어쓴 intraday 실행 내역은 스냅샷으로 재구성되었습니다."
+    ]
     assert reports_by_language["ja"][0]["language"] == "ja"
+    assert reports_by_language["ja"][0]["operatorNotes"] == [
+        "朝のランプアップと残差ダンピングを確認します。"
+    ]
     assert indexes["ko"]["latest"]["date"] == "2026-05-23"
     assert "inputSnapshot" in reports_by_language["ko"][0]
 
