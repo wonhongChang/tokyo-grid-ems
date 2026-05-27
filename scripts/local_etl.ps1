@@ -5,6 +5,7 @@ param(
     [switch]$SkipDeploy,
     [switch]$SkipIntradayDispatch,
     [switch]$SkipValidation,
+    [switch]$ForceHistoricalEtl,
     [string]$LogDir = "logs/local_etl"
 )
 
@@ -33,7 +34,10 @@ function Write-LocalEtlStatus {
         [string]$Message = "",
         [bool]$Published = $false,
         [bool]$DeployTriggered = $false,
-        [bool]$IntradayTriggered = $false
+        [bool]$IntradayTriggered = $false,
+        [bool]$HistoricalEtlSkipped = $false,
+        [string]$HistoricalEtlDate = "",
+        [string]$HistoricalEtlReason = ""
     )
 
     $opsDir = Join-Path $RepoRoot "web/public/ops"
@@ -48,8 +52,121 @@ function Write-LocalEtlStatus {
         dataBranchPublished = $Published
         deployTriggered = $DeployTriggered
         intradayTriggered = $IntradayTriggered
+        historicalEtlSkipped = $HistoricalEtlSkipped
+        historicalEtlDate = $HistoricalEtlDate
+        historicalEtlReason = $HistoricalEtlReason
     }
     $payload | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $opsDir "local_etl_status.json") -Encoding UTF8
+}
+
+function Get-JstToday {
+    try {
+        $timezone = [System.TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
+        return ([System.TimeZoneInfo]::ConvertTime((Get-Date), $timezone)).Date
+    }
+    catch {
+        return (Get-Date).Date
+    }
+}
+
+function Test-HistoricalEtlNeeded {
+    if ($ForceHistoricalEtl) {
+        return [ordered]@{
+            Needed = $true
+            Yesterday = (Get-JstToday).AddDays(-1).ToString("yyyy-MM-dd")
+            Reason = "manual_force"
+        }
+    }
+
+    $yesterday = (Get-JstToday).AddDays(-1).ToString("yyyy-MM-dd")
+    $publicDir = Join-Path $RepoRoot "web/public"
+    $statePath = Join-Path $publicDir ".etl_state.json"
+    $actualPath = Join-Path $publicDir "actual/$yesterday.json"
+
+    if (-not (Test-Path -LiteralPath $statePath)) {
+        return [ordered]@{ Needed = $true; Yesterday = $yesterday; Reason = "missing_etl_state" }
+    }
+    if (-not (Test-Path -LiteralPath $actualPath)) {
+        return [ordered]@{ Needed = $true; Yesterday = $yesterday; Reason = "missing_yesterday_actual" }
+    }
+
+    try {
+        $state = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        return [ordered]@{ Needed = $true; Yesterday = $yesterday; Reason = "invalid_etl_state" }
+    }
+
+    $okDates = @($state.okDates)
+    if ($okDates -notcontains $yesterday) {
+        return [ordered]@{ Needed = $true; Yesterday = $yesterday; Reason = "yesterday_not_finalized" }
+    }
+
+    try {
+        $actual = Get-Content -LiteralPath $actualPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        return [ordered]@{ Needed = $true; Yesterday = $yesterday; Reason = "invalid_yesterday_actual" }
+    }
+
+    $observedHours = [System.Collections.Generic.HashSet[int]]::new()
+    foreach ($point in @($actual.series)) {
+        if ($null -eq $point.actualMw) {
+            continue
+        }
+        if ($point.actualSource -eq "tepco_forecast_fallback") {
+            continue
+        }
+
+        $ts = [string]$point.ts
+        if (-not $ts.StartsWith($yesterday) -or $ts.Length -lt 13) {
+            continue
+        }
+
+        $hour = 0
+        if ([int]::TryParse($ts.Substring(11, 2), [ref]$hour)) {
+            [void]$observedHours.Add($hour)
+        }
+    }
+
+    if ($observedHours.Count -ge 24) {
+        return [ordered]@{
+            Needed = $false
+            Yesterday = $yesterday
+            Reason = "yesterday_already_finalized"
+        }
+    }
+
+    return [ordered]@{
+        Needed = $true
+        Yesterday = $yesterday
+        Reason = "only_$($observedHours.Count)_observed_hours"
+    }
+}
+
+function Invoke-IntradayDispatch {
+    param(
+        [bool]$Published = $false,
+        [bool]$DeployTriggered = $false,
+        [bool]$HistoricalEtlSkipped = $false,
+        [string]$HistoricalEtlDate = "",
+        [string]$HistoricalEtlReason = ""
+    )
+
+    if ($SkipDeploy -or $SkipIntradayDispatch) {
+        return
+    }
+
+    Write-LocalEtlStatus `
+        -Status "running" `
+        -Stage "trigger_intraday" `
+        -Message "Triggering Intraday Update workflow" `
+        -Published $Published `
+        -DeployTriggered $DeployTriggered `
+        -HistoricalEtlSkipped $HistoricalEtlSkipped `
+        -HistoricalEtlDate $HistoricalEtlDate `
+        -HistoricalEtlReason $HistoricalEtlReason
+    Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/trigger_deploy_workflow.py", "--workflow", "intraday.yml")
 }
 
 Push-Location $RepoRoot
@@ -60,6 +177,42 @@ try {
     if (-not $SkipRestore) {
         Write-LocalEtlStatus -Status "running" -Stage "restore_data_branch" -Message "Restoring web/public from origin/data"
         Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/restore_public_from_data_branch.py")
+    }
+
+    $historicalCheck = Test-HistoricalEtlNeeded
+    if ($Publish -and -not $historicalCheck.Needed) {
+        Write-LocalEtlStatus `
+            -Status "running" `
+            -Stage "historical_etl_skipped" `
+            -Message "Yesterday is already finalized; skipping Docker ETL and dispatching intraday only" `
+            -HistoricalEtlSkipped $true `
+            -HistoricalEtlDate $historicalCheck.Yesterday `
+            -HistoricalEtlReason $historicalCheck.Reason
+
+        $intradayTriggered = $false
+        if (-not $SkipDeploy -and -not $SkipIntradayDispatch) {
+            Invoke-IntradayDispatch `
+                -HistoricalEtlSkipped $true `
+                -HistoricalEtlDate $historicalCheck.Yesterday `
+                -HistoricalEtlReason $historicalCheck.Reason
+            $intradayTriggered = $true
+        }
+        $completedMessage = if ($intradayTriggered) {
+            "Local ETL skipped because yesterday is already finalized; intraday dispatch queued current-day refresh"
+        }
+        else {
+            "Local ETL skipped because yesterday is already finalized; intraday dispatch was not requested"
+        }
+
+        Write-LocalEtlStatus `
+            -Status "ok" `
+            -Stage "completed" `
+            -Message $completedMessage `
+            -IntradayTriggered $intradayTriggered `
+            -HistoricalEtlSkipped $true `
+            -HistoricalEtlDate $historicalCheck.Yesterday `
+            -HistoricalEtlReason $historicalCheck.Reason
+        return
     }
 
     $composeArgs = @("compose", "up", "--force-recreate", "--exit-code-from", "etl")
@@ -96,8 +249,7 @@ try {
             $deployTriggered = $true
 
             if (-not $SkipIntradayDispatch) {
-                Write-LocalEtlStatus -Status "running" -Stage "trigger_intraday" -Message "Triggering Intraday Update workflow" -Published $published -DeployTriggered $deployTriggered
-                Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/trigger_deploy_workflow.py", "--workflow", "intraday.yml")
+                Invoke-IntradayDispatch -Published $published -DeployTriggered $deployTriggered
                 $intradayTriggered = $true
             }
         }

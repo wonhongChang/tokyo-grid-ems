@@ -24,7 +24,7 @@ Register-ScheduledTask `
     -Action $Action `
     -Trigger $Triggers `
     -Settings $Settings `
-    -Description "Run TokyoGridEMS local Docker ETL, publish data branch, and trigger Deploy Only." `
+    -Description "Run TokyoGridEMS local Docker ETL until yesterday is finalized; later morning runs dispatch Intraday Update only." `
     -Force | Out-Null
 
 Write-Host "[SCHEDULER] Registered '$TaskName' at $($Times -join ', ')"
