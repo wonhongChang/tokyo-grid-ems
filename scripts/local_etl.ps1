@@ -3,6 +3,7 @@ param(
     [switch]$Build,
     [switch]$SkipRestore,
     [switch]$SkipDeploy,
+    [switch]$SkipIntradayDispatch,
     [switch]$SkipValidation,
     [string]$LogDir = "logs/local_etl"
 )
@@ -31,7 +32,8 @@ function Write-LocalEtlStatus {
         [Parameter(Mandatory = $true)][string]$Stage,
         [string]$Message = "",
         [bool]$Published = $false,
-        [bool]$DeployTriggered = $false
+        [bool]$DeployTriggered = $false,
+        [bool]$IntradayTriggered = $false
     )
 
     $opsDir = Join-Path $RepoRoot "web/public/ops"
@@ -45,6 +47,7 @@ function Write-LocalEtlStatus {
         logPath = $LogPath
         dataBranchPublished = $Published
         deployTriggered = $DeployTriggered
+        intradayTriggered = $IntradayTriggered
     }
     $payload | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $opsDir "local_etl_status.json") -Encoding UTF8
 }
@@ -69,6 +72,7 @@ try {
 
     $published = $false
     $deployTriggered = $false
+    $intradayTriggered = $false
     if ($Publish) {
         if (-not $SkipValidation) {
             Write-LocalEtlStatus -Status "running" -Stage "validate_public" -Message "Validating web/public before publish"
@@ -90,10 +94,16 @@ try {
             Write-LocalEtlStatus -Status "running" -Stage "trigger_deploy" -Message "Triggering Deploy Only workflow" -Published $published
             Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/trigger_deploy_workflow.py", "--workflow", "deploy.yml")
             $deployTriggered = $true
+
+            if (-not $SkipIntradayDispatch) {
+                Write-LocalEtlStatus -Status "running" -Stage "trigger_intraday" -Message "Triggering Intraday Update workflow" -Published $published -DeployTriggered $deployTriggered
+                Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/trigger_deploy_workflow.py", "--workflow", "intraday.yml")
+                $intradayTriggered = $true
+            }
         }
     }
 
-    Write-LocalEtlStatus -Status "ok" -Stage "completed" -Message "Local ETL completed" -Published $published -DeployTriggered $deployTriggered
+    Write-LocalEtlStatus -Status "ok" -Stage "completed" -Message "Local ETL completed" -Published $published -DeployTriggered $deployTriggered -IntradayTriggered $intradayTriggered
 }
 catch {
     Write-LocalEtlStatus -Status "failed" -Stage "failed" -Message $_.Exception.Message

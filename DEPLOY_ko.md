@@ -23,6 +23,7 @@ Windows 작업 스케줄러
     -> Docker ETL 및 OpenAI 일일 리포트 생성
     -> web/public 을 origin/data 로 push
     -> Deploy Only workflow 호출
+    -> Intraday Update workflow 호출
 ```
 
 ## Workflows
@@ -30,7 +31,7 @@ Windows 작업 스케줄러
 | Workflow | Trigger | 역할 |
 |---|---|---|
 | `Manual ETL + Deploy` | 수동 실행만 | 비상용 historical ETL. GitHub-hosted runner에서 TEPCO ZIP fetch가 막힐 수 있으므로 schedule은 비활성화했습니다. |
-| `Intraday Update` | 스케줄 + 수동 | 당일 실측, 예측, status 갱신 및 배포. |
+| `Intraday Update` | 스케줄 + 수동 | 당일 실측, 예측, status 갱신 및 배포. 로컬 ETL 스크립트가 publish/deploy 후 호출하여 아침 차트를 최신 당일 CSV 기준으로 한 번 더 갱신합니다. |
 | `Deploy Only` | 수동 dispatch | ETL 없이 `origin/data`를 복원하고 Vite 앱만 빌드/배포. 로컬 ETL 스크립트가 data publish 후 호출합니다. |
 
 ## 로컬 Docker ETL
@@ -82,6 +83,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 |---|---|---|
 | Actions에서 TEPCO 월별 ZIP이 `403` 반환 | GitHub-hosted runner IP가 TEPCO에서 차단됨 | 로컬 Docker ETL 실행: `scripts\local_etl.ps1 -Publish` |
 | Deploy Only 호출 실패 | 로컬에서 GitHub token을 찾지 못함 | `GH_TOKEN` 또는 `GITHUB_TOKEN` 설정, GitHub CLI 로그인, 또는 Actions에서 `Deploy Only` 수동 실행 |
+| 로컬 ETL 후 Intraday 호출 실패 | 로컬 GitHub token 없음 또는 GitHub Actions dispatch 실패 | Actions에서 `Intraday Update`를 수동 실행하고 `logs/local_etl/*.log` 확인 |
 | OpenAI 리포트가 fallback | API 키 누락, 인증 실패, timeout | `.env`와 `logs/local_etl/*.log` 확인 후 로컬 ETL 재실행 |
 | 차트가 오래된 데이터 표시 | `data` 브랜치는 갱신됐지만 Pages 배포가 안 됨 | `Deploy Only` 수동 실행 |
 | data push 권한 오류 | 호스트 Git 인증 없음 | Windows GitHub 인증 재설정 |

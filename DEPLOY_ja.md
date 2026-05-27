@@ -23,6 +23,7 @@ Windows タスク スケジューラ
     -> Docker ETL と OpenAI 日次レポート生成
     -> web/public を origin/data に push
     -> Deploy Only workflow を呼び出し
+    -> Intraday Update workflow を呼び出し
 ```
 
 ## Workflows
@@ -30,7 +31,7 @@ Windows タスク スケジューラ
 | Workflow | Trigger | 役割 |
 |---|---|---|
 | `Manual ETL + Deploy` | 手動のみ | 緊急用 historical ETL。GitHub-hosted runner では TEPCO ZIP fetch がブロックされる可能性があるため schedule は無効化しています。 |
-| `Intraday Update` | スケジュール + 手動 | 当日実績、予測、status の更新とデプロイ。 |
+| `Intraday Update` | スケジュール + 手動 | 当日実績、予測、status の更新とデプロイ。ローカル ETL スクリプトが publish/deploy 後に呼び出し、朝のチャートを最新の当日 CSV 基準でもう一度更新します。 |
 | `Deploy Only` | 手動 dispatch | ETL を実行せず `origin/data` を復元し、Vite アプリだけをビルド/デプロイ。ローカル ETL スクリプトが data publish 後に呼び出します。 |
 
 ## ローカル Docker ETL
@@ -82,6 +83,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 |---|---|---|
 | Actions で TEPCO 月次 ZIP が `403` | GitHub-hosted runner の IP が TEPCO 側でブロック | ローカル Docker ETL を実行: `scripts\local_etl.ps1 -Publish` |
 | Deploy Only 呼び出し失敗 | ローカルで GitHub token が見つからない | `GH_TOKEN` または `GITHUB_TOKEN` を設定、GitHub CLI にログイン、または Actions で `Deploy Only` を手動実行 |
+| ローカル ETL 後の Intraday 呼び出し失敗 | ローカル GitHub token がない、または GitHub Actions dispatch に失敗 | Actions で `Intraday Update` を手動実行し、`logs/local_etl/*.log` を確認 |
 | OpenAI レポートが fallback | API キー不足、認証失敗、timeout | `.env` と `logs/local_etl/*.log` を確認して再実行 |
 | チャートが古い | `data` ブランチは更新済みだが Pages が未デプロイ | `Deploy Only` を手動実行 |
 | data push 権限エラー | ホスト側 Git 認証がない | Windows の GitHub 認証を再設定 |

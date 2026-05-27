@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trigger a GitHub Actions workflow_dispatch event for deploy-only runs."""
+"""Trigger a GitHub Actions workflow_dispatch event."""
 from __future__ import annotations
 
 import argparse
@@ -98,7 +98,7 @@ def dispatch(workflow: str, ref: str) -> None:
     except urllib.error.HTTPError as exc:
         detail = exc.read(500).decode("utf-8", errors="replace")
         raise RuntimeError(f"GitHub workflow dispatch failed: HTTP {exc.code} {detail}") from exc
-    print(f"[DEPLOY] Dispatched {workflow} on {repo}@{ref}")
+    print(f"[WORKFLOW] Dispatched {workflow} on {repo}@{ref}")
 
 
 def main() -> None:

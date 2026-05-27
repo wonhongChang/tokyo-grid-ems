@@ -23,6 +23,7 @@ Local Windows Task Scheduler
     -> run Docker ETL and OpenAI daily report generation
     -> push web/public to origin/data
     -> dispatch Deploy Only
+    -> dispatch Intraday Update
 ```
 
 ## Workflows
@@ -30,7 +31,7 @@ Local Windows Task Scheduler
 | Workflow | Trigger | Role |
 |---|---|---|
 | `Manual ETL + Deploy` | Manual only | Emergency historical ETL from GitHub Actions. Scheduled runs are disabled because TEPCO ZIP fetch can be blocked from GitHub-hosted runners. |
-| `Intraday Update` | Scheduled + manual | Refresh same-day actuals, forecasts, status, and deploy. |
+| `Intraday Update` | Scheduled + manual | Refresh same-day actuals, forecasts, status, and deploy. The local ETL script dispatches this after its own publish/deploy so the morning chart is refreshed with the latest same-day CSV. |
 | `Deploy Only` | Manual dispatch | Restore `origin/data`, build the Vite app, and deploy Pages without running ETL. The local ETL script dispatches this after publishing `data`. |
 
 ## Local Docker ETL
@@ -82,6 +83,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 |---|---|---|
 | TEPCO monthly ZIP returns `403` in Actions | GitHub-hosted runner IP is blocked by TEPCO | Use local Docker ETL: `scripts\local_etl.ps1 -Publish` |
 | Deploy Only dispatch fails | No GitHub token available locally | Set `GH_TOKEN` or `GITHUB_TOKEN`, sign in with GitHub CLI, or trigger `Deploy Only` manually in Actions |
+| Intraday dispatch fails after local ETL | No GitHub token available locally, or GitHub Actions dispatch failed | Run `Intraday Update` manually in Actions, then check `logs/local_etl/*.log` |
 | OpenAI report falls back | API key missing, invalid, or timed out | Check `.env` and `logs/local_etl/*.log`, then rerun local ETL |
 | Chart shows stale data | `data` branch was pushed but Pages was not deployed | Run `Deploy Only` manually |
 | `Permission denied` on data push | Git credentials are not available on the host | Re-authenticate Git for GitHub on Windows |
