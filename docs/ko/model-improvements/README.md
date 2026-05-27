@@ -8,6 +8,8 @@
 
 ## 2026-05
 
+- [2026-05-27 저녁 하락 연속성 가드](model-improvement-2026-05-27-evening-decline-continuity-guard.md)
+
 - [2026-05-25 양수 잔차 슬로프 감쇠](model-improvement-2026-05-25-positive-residual-slope-damping.md)
 
 - [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvement-2026-05-25-business-return-anchor-shortfall.md)

@@ -43,6 +43,8 @@ class IntradayCorrectionResult:
     residual_adjustments_by_hour: tuple[dict, ...] = ()
     morning_ramp_continuity_guard_applied: bool = False
     morning_ramp_continuity_max_restore_mw: float = 0.0
+    evening_decline_continuity_guard_applied: bool = False
+    evening_decline_continuity_max_reduction_mw: float = 0.0
 
     def metadata(self) -> dict:
         return {
@@ -96,6 +98,13 @@ class IntradayCorrectionResult:
             ),
             "morningRampContinuityMaxRestoreMw": round(
                 float(self.morning_ramp_continuity_max_restore_mw),
+                1,
+            ),
+            "eveningDeclineContinuityGuardApplied": (
+                self.evening_decline_continuity_guard_applied
+            ),
+            "eveningDeclineContinuityMaxReductionMw": round(
+                float(self.evening_decline_continuity_max_reduction_mw),
                 1,
             ),
             "residualCarryoverByHour": list(self.residual_adjustments_by_hour),
@@ -346,6 +355,65 @@ class IntradayResidualCorrector:
         )
         self._morning_ramp_min_restore_mw = max(
             float(morning_ramp_config.get("min_restore_mw", 100.0)),
+            0.0,
+        )
+        evening_decline_config = correction_config.get(
+            "evening_decline_continuity_guard",
+            {},
+        )
+        self._evening_decline_enabled = bool(
+            evening_decline_config.get("enabled", False)
+        )
+        self._evening_decline_business_day_only = bool(
+            evening_decline_config.get("business_day_only", False)
+        )
+        self._evening_decline_target_hours = {
+            int(hour)
+            for hour in evening_decline_config.get("target_hours", [16, 17, 18, 19, 20])
+        }
+        self._evening_decline_min_reference_hour = int(
+            evening_decline_config.get("min_reference_hour", 16)
+        )
+        self._evening_decline_max_lead_hours = max(
+            int(evening_decline_config.get("max_lead_hours", 2)),
+            1,
+        )
+        self._evening_decline_latest_slope_max_mw = float(
+            evening_decline_config.get("latest_slope_max_mw", -500.0)
+        )
+        self._evening_decline_mean_slope_max_mw = float(
+            evening_decline_config.get("mean_slope_max_mw", -300.0)
+        )
+        self._evening_decline_max_supporting_delta_mw = float(
+            evening_decline_config.get("max_supporting_delta_mw", 200.0)
+        )
+        self._evening_decline_min_forecast_rebound_mw = float(
+            evening_decline_config.get("min_forecast_rebound_mw", 800.0)
+        )
+        self._evening_decline_max_rebound_mw = float(
+            evening_decline_config.get("max_rebound_mw", 600.0)
+        )
+        self._evening_decline_actual_reference_slack_mw = max(
+            float(evening_decline_config.get("actual_reference_slack_mw", 300.0)),
+            0.0,
+        )
+        self._evening_decline_weather_allowance_mw_per_c = max(
+            float(evening_decline_config.get("weather_allowance_mw_per_c", 120.0)),
+            0.0,
+        )
+        self._evening_decline_hot_temp_c = float(
+            evening_decline_config.get("hot_temp_c", 30.0)
+        )
+        self._evening_decline_max_weather_allowance_mw = max(
+            float(evening_decline_config.get("max_weather_allowance_mw", 400.0)),
+            0.0,
+        )
+        self._evening_decline_max_reduction_mw = max(
+            float(evening_decline_config.get("max_reduction_mw", 900.0)),
+            0.0,
+        )
+        self._evening_decline_min_reduction_mw = max(
+            float(evening_decline_config.get("min_reduction_mw", 100.0)),
             0.0,
         )
         midday_deweight_config = correction_config.get("midday_residual_deweight", {})
@@ -1068,6 +1136,152 @@ class IntradayResidualCorrector:
             "floorDeltaMw": round(float(floor_delta_mw), 1),
         }
 
+    def _evening_decline_continuity_context(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        actual_mw_by_hour: dict[int, float],
+        last_observed_hour: int | None,
+    ) -> dict | None:
+        if (
+            not self._evening_decline_enabled
+            or last_observed_hour is None
+            or last_observed_hour < self._evening_decline_min_reference_hour
+            or self._evening_decline_max_reduction_mw <= 0.0
+        ):
+            return None
+
+        required_hours = [
+            last_observed_hour - 2,
+            last_observed_hour - 1,
+            last_observed_hour,
+        ]
+        if any(hour not in actual_mw_by_hour for hour in required_hours):
+            return None
+
+        if self._evening_decline_business_day_only:
+            row = self._feature_row_for_hour(inference_features, last_observed_hour)
+            if row is not None:
+                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+                if is_non_business_day == 1.0:
+                    return None
+            elif forecasts:
+                forecast_ts = pd.Timestamp(forecasts[0].ts)
+                if _is_nonworking_day(forecast_ts):
+                    return None
+
+        actual_values = [actual_mw_by_hour[hour] for hour in required_hours]
+        recent_slopes = [
+            actual_values[1] - actual_values[0],
+            actual_values[2] - actual_values[1],
+        ]
+        latest_slope_mw = recent_slopes[-1]
+        mean_slope_mw = float(np.mean(recent_slopes))
+        if (
+            latest_slope_mw > self._evening_decline_latest_slope_max_mw
+            or mean_slope_mw > self._evening_decline_mean_slope_max_mw
+        ):
+            return None
+
+        forecast_by_hour = {
+            pd.Timestamp(forecast.ts).hour: forecast
+            for forecast in forecasts
+        }
+        last_forecast = forecast_by_hour.get(last_observed_hour)
+        return {
+            "lastObservedHour": last_observed_hour,
+            "lastActualMw": round(actual_mw_by_hour[last_observed_hour], 1),
+            "lastForecastMw": (
+                round(last_forecast.forecast_mw, 1)
+                if last_forecast is not None
+                else None
+            ),
+            "previousSlopeMw": round(recent_slopes[0], 1),
+            "latestSlopeMw": round(latest_slope_mw, 1),
+            "meanSlopeMw": round(mean_slope_mw, 1),
+        }
+
+    def _evening_decline_continuity_reduction(
+        self,
+        context: dict | None,
+        inference_features: pd.DataFrame | None,
+        forecast_hour: int,
+        lead_hours: int,
+        previous_final_mw: float | None,
+        final_before_guard_mw: float,
+    ) -> dict | None:
+        if (
+            context is None
+            or forecast_hour not in self._evening_decline_target_hours
+            or lead_hours <= 0
+            or lead_hours > self._evening_decline_max_lead_hours
+            or previous_final_mw is None
+        ):
+            return None
+
+        row = self._feature_row_for_hour(inference_features, forecast_hour)
+        if row is None:
+            return None
+
+        lag_delta_mw = self._finite_float(row.get("lag_24h_hourly_delta"))
+        same_business_delta_mw = self._finite_float(
+            row.get("recent_same_business_type_delta_mean")
+        )
+        if lag_delta_mw is None or same_business_delta_mw is None:
+            return None
+        if (
+            lag_delta_mw > self._evening_decline_max_supporting_delta_mw
+            or same_business_delta_mw > self._evening_decline_max_supporting_delta_mw
+        ):
+            return None
+
+        forecast_rebound_mw = final_before_guard_mw - previous_final_mw
+        if forecast_rebound_mw <= self._evening_decline_min_forecast_rebound_mw:
+            return None
+
+        weather_delta_c = max(
+            0.0,
+            self._finite_float(row.get("temp_delta_1h")) or 0.0,
+            self._finite_float(row.get("cooling_delta_1h")) or 0.0,
+        )
+        temp_c = self._finite_float(row.get("temp_c"))
+        hot_excess_c = 0.0
+        if temp_c is not None and temp_c > self._evening_decline_hot_temp_c:
+            hot_excess_c = temp_c - self._evening_decline_hot_temp_c
+        weather_allowance_mw = min(
+            (weather_delta_c + hot_excess_c)
+            * self._evening_decline_weather_allowance_mw_per_c,
+            self._evening_decline_max_weather_allowance_mw,
+        )
+
+        last_actual_mw = float(context["lastActualMw"])
+        actual_reference_mw = last_actual_mw - self._evening_decline_actual_reference_slack_mw
+        reference_mw = max(previous_final_mw, actual_reference_mw)
+        cap_mw = (
+            reference_mw
+            + self._evening_decline_max_rebound_mw
+            + weather_allowance_mw
+        )
+        if final_before_guard_mw <= cap_mw:
+            return None
+
+        reduction_mw = min(
+            final_before_guard_mw - cap_mw,
+            self._evening_decline_max_reduction_mw,
+        )
+        reduction_mw = round(float(reduction_mw), 1)
+        if reduction_mw < self._evening_decline_min_reduction_mw:
+            return None
+
+        return {
+            "capMw": round(float(cap_mw), 1),
+            "reductionMw": reduction_mw,
+            "forecastReboundMw": round(float(forecast_rebound_mw), 1),
+            "weatherAllowanceMw": round(float(weather_allowance_mw), 1),
+            "lag24DeltaMw": round(float(lag_delta_mw), 1),
+            "recentSameBusinessDeltaMw": round(float(same_business_delta_mw), 1),
+        }
+
     def _apply_shape_guard(
         self,
         forecasts: list[HourlyForecast],
@@ -1431,8 +1645,16 @@ class IntradayResidualCorrector:
             last_observed_hour,
             base_adjustment_mw,
         )
+        evening_decline_context = self._evening_decline_continuity_context(
+            transition_prior_guarded_forecasts,
+            inference_features,
+            actual_mw_by_hour,
+            last_observed_hour,
+        )
         morning_ramp_guard_applied = False
         morning_ramp_restored_values: list[float] = []
+        evening_decline_guard_applied = False
+        evening_decline_reduced_values: list[float] = []
         positive_slope_damping_applied = False
         positive_slope_damped_values: list[float] = []
         residual_adjustment_logs: list[dict] = []
@@ -1457,6 +1679,11 @@ class IntradayResidualCorrector:
             positive_slope_damping_factor = 1.0
             morning_ramp_restore_mw = 0.0
             morning_ramp_floor_mw = None
+            pre_evening_decline_adjustment_mw = decayed_adjustment_mw
+            evening_decline_cap_mw = None
+            evening_decline_reduction_mw = 0.0
+            evening_decline_forecast_rebound_mw = None
+            evening_decline_weather_allowance_mw = None
             if decayed_adjustment_mw > 0.0:
                 positive_multiplier = positive_residual_multiplier_by_hour.get(
                     forecast_hour,
@@ -1532,6 +1759,38 @@ class IntradayResidualCorrector:
                             morning_ramp_restore_mw = restore_mw
                             morning_ramp_guard_applied = True
                             morning_ramp_restored_values.append(restore_mw)
+            pre_evening_decline_adjustment_mw = decayed_adjustment_mw
+            previous_final_mw = (
+                adjusted_forecasts[-1].forecast_mw
+                if adjusted_forecasts
+                else None
+            )
+            final_before_evening_guard_mw = forecast.forecast_mw + decayed_adjustment_mw
+            evening_decline_guard = self._evening_decline_continuity_reduction(
+                evening_decline_context,
+                inference_features,
+                forecast_hour,
+                lead_hours,
+                previous_final_mw,
+                final_before_evening_guard_mw,
+            )
+            if evening_decline_guard is not None:
+                evening_decline_reduction_mw = float(
+                    evening_decline_guard["reductionMw"]
+                )
+                decayed_adjustment_mw = round(
+                    decayed_adjustment_mw - evening_decline_reduction_mw,
+                    1,
+                )
+                evening_decline_cap_mw = evening_decline_guard["capMw"]
+                evening_decline_forecast_rebound_mw = (
+                    evening_decline_guard["forecastReboundMw"]
+                )
+                evening_decline_weather_allowance_mw = (
+                    evening_decline_guard["weatherAllowanceMw"]
+                )
+                evening_decline_guard_applied = True
+                evening_decline_reduced_values.append(evening_decline_reduction_mw)
             residual_adjustment_logs.append({
                 "hour": forecast_hour,
                 "leadHours": lead_hours,
@@ -1563,6 +1822,29 @@ class IntradayResidualCorrector:
                     morning_ramp_restore_mw,
                     1,
                 ),
+                "preEveningDeclineContinuityAdjustmentMw": round(
+                    pre_evening_decline_adjustment_mw,
+                    1,
+                ),
+                "eveningDeclineContinuityCapMw": (
+                    round(float(evening_decline_cap_mw), 1)
+                    if evening_decline_cap_mw is not None
+                    else None
+                ),
+                "eveningDeclineContinuityReductionMw": round(
+                    evening_decline_reduction_mw,
+                    1,
+                ),
+                "eveningDeclineContinuityForecastReboundMw": (
+                    round(float(evening_decline_forecast_rebound_mw), 1)
+                    if evening_decline_forecast_rebound_mw is not None
+                    else None
+                ),
+                "eveningDeclineContinuityWeatherAllowanceMw": (
+                    round(float(evening_decline_weather_allowance_mw), 1)
+                    if evening_decline_weather_allowance_mw is not None
+                    else None
+                ),
                 "finalAdjustmentMw": round(decayed_adjustment_mw, 1),
             })
             adjusted_forecasts.append(HourlyForecast(
@@ -1579,6 +1861,8 @@ class IntradayResidualCorrector:
             applied_reasons.append("positive_residual_slope_damping_triggered")
         if morning_ramp_guard_applied:
             applied_reasons.append("morning_ramp_continuity_guard")
+        if evening_decline_guard_applied:
+            applied_reasons.append("evening_decline_continuity_guard")
 
         adjusted_forecasts, shape_guard_applied = self._apply_shape_guard(
             adjusted_forecasts,
@@ -1631,4 +1915,6 @@ class IntradayResidualCorrector:
             tuple(residual_adjustment_logs),
             morning_ramp_guard_applied,
             round(max(morning_ramp_restored_values or [0.0]), 1),
+            evening_decline_guard_applied,
+            round(max(evening_decline_reduced_values or [0.0]), 1),
         )

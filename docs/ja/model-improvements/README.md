@@ -8,6 +8,8 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-05
 
+- [2026-05-27 夕方下落継続ガード](model-improvement-2026-05-27-evening-decline-continuity-guard.md)
+
 - [2026-05-25 正の残差スロープ減衰](model-improvement-2026-05-25-positive-residual-slope-damping.md)
 
 - [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvement-2026-05-25-business-return-anchor-shortfall.md)

@@ -103,6 +103,23 @@ intraday_correction:
     max_floor_delta_mw: 900
     max_restore_mw: 700        # never lift above the pre-calibration forecast
     min_restore_mw: 100
+  evening_decline_continuity_guard:
+    enabled: true
+    business_day_only: false
+    target_hours: [16, 17, 18, 19, 20]
+    min_reference_hour: 16
+    max_lead_hours: 2           # protect only near-term evening buckets
+    latest_slope_max_mw: -500   # require a clear same-day demand drop
+    mean_slope_max_mw: -300
+    max_supporting_delta_mw: 200 # lag/recent shape must not support a rebound
+    min_forecast_rebound_mw: 800
+    max_rebound_mw: 600
+    actual_reference_slack_mw: 300
+    weather_allowance_mw_per_c: 120
+    hot_temp_c: 30.0
+    max_weather_allowance_mw: 400
+    max_reduction_mw: 900
+    min_reduction_mw: 100
   midday_residual_deweight:
     enabled: false
     hours: [12]              # lunch bucket only; applies on business days

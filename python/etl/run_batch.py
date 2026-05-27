@@ -1721,6 +1721,12 @@ def _operational_calibration_snapshot_entry(path: Path, out_dir: Path) -> dict |
         "morningRampContinuityMaxRestoreMw": correction.get(
             "morningRampContinuityMaxRestoreMw",
         ),
+        "eveningDeclineContinuityGuardApplied": correction.get(
+            "eveningDeclineContinuityGuardApplied",
+        ),
+        "eveningDeclineContinuityMaxReductionMw": correction.get(
+            "eveningDeclineContinuityMaxReductionMw",
+        ),
         "negResidualRecoveryDampingApplied": correction.get(
             "negResidualRecoveryDampingApplied",
         ),
