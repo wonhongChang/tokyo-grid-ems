@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-05-27T18:33:26+09:00",
+  "generatedAt": "2026-05-27T19:21:47+09:00",
   "retentionDays": 14,
   "maxPerDay": 24,
   "dates": [
@@ -38,6 +38,8 @@
         "positiveResidualSlopeDampingMaxMw": null,
         "morningRampContinuityGuardApplied": null,
         "morningRampContinuityMaxRestoreMw": null,
+        "eveningDeclineContinuityGuardApplied": null,
+        "eveningDeclineContinuityMaxReductionMw": null,
         "negResidualRecoveryDampingApplied": false,
         "residualCarryoverHours": 0,
         "changedForecastHours": 24,
@@ -77,6 +79,8 @@
         "positiveResidualSlopeDampingMaxMw": 0.0,
         "morningRampContinuityGuardApplied": null,
         "morningRampContinuityMaxRestoreMw": null,
+        "eveningDeclineContinuityGuardApplied": null,
+        "eveningDeclineContinuityMaxReductionMw": null,
         "negResidualRecoveryDampingApplied": false,
         "residualCarryoverHours": 2,
         "changedForecastHours": 24,
@@ -116,6 +120,8 @@
         "positiveResidualSlopeDampingMaxMw": 0.0,
         "morningRampContinuityGuardApplied": null,
         "morningRampContinuityMaxRestoreMw": null,
+        "eveningDeclineContinuityGuardApplied": null,
+        "eveningDeclineContinuityMaxReductionMw": null,
         "negResidualRecoveryDampingApplied": false,
         "residualCarryoverHours": 2,
         "changedForecastHours": 24,
@@ -125,27 +131,27 @@
     {
       "date": "2026-05-27",
       "path": "reports/internal/operational-calibration/snapshots/2026-05-27/index.json",
-      "snapshotCount": 18,
+      "snapshotCount": 19,
       "latest": {
         "date": "2026-05-27",
-        "generatedAt": "2026-05-27T18:33:26+09:00",
-        "path": "reports/internal/operational-calibration/snapshots/2026-05-27/2026-05-27T18-33-26-09-00.json",
+        "generatedAt": "2026-05-27T19:21:47+09:00",
+        "path": "reports/internal/operational-calibration/snapshots/2026-05-27/2026-05-27T19-21-47-09-00.json",
         "model": "lgbm_quantile_q50",
         "applied": true,
-        "observedHours": 18,
+        "observedHours": 19,
         "fallbackActualHours": 0,
-        "lastObservedHour": 17,
-        "baseAdjustmentMw": 88.3,
+        "lastObservedHour": 18,
+        "baseAdjustmentMw": -203.1,
         "appliedDayBiasMw": 0.0,
         "appliedRegimeReason": [
           "intraday_observed_residual"
         ],
         "sourceConfidence": {
           "level": "observed",
-          "actualHours": 18,
-          "usableObservedHours": 18,
+          "actualHours": 19,
+          "usableObservedHours": 19,
           "fallbackIgnoredHours": 0,
-          "missingHours": 6
+          "missingHours": 5
         },
         "businessTypeTransitionPriorApplied": false,
         "businessTypeTransitionApplied": false,
@@ -155,10 +161,12 @@
         "positiveResidualSlopeDampingMaxMw": 0.0,
         "morningRampContinuityGuardApplied": false,
         "morningRampContinuityMaxRestoreMw": 0.0,
+        "eveningDeclineContinuityGuardApplied": false,
+        "eveningDeclineContinuityMaxReductionMw": 0.0,
         "negResidualRecoveryDampingApplied": false,
-        "residualCarryoverHours": 6,
+        "residualCarryoverHours": 5,
         "changedForecastHours": 24,
-        "maxAbsCalibrationDeltaMw": 88.3
+        "maxAbsCalibrationDeltaMw": 203.1
       }
     }
   ]
