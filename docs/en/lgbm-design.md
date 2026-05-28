@@ -1,6 +1,6 @@
 # LightGBM Forecast Model Design
 
-> Current production design: LightGBM quantile regression with calendar, lag, holiday, weather, and intraday correction features.
+> Current production design: LightGBM quantile regression with calendar, lag, holiday, weather, and operational calibration layers.
 
 Languages: [한국어](../ko/lgbm-design.md) · [日本語](../ja/lgbm-design.md)
 
@@ -51,11 +51,12 @@ Feature engineering lives in `python/forecast/feature_builder.py`.
 | Lag | 24h, 48h, 168h, 336h | captures demand persistence |
 | Rolling stats | 4-week same hour/weekday mean and std | provides stable local history |
 | Holiday correction | last business day, consecutive holidays, days since holiday end | avoids underestimating post-holiday demand |
-| Weather | temperature, apparent temperature, configurable cooling/heating degree, temperature anomalies, 24h/168h temperature and cooling deltas, 72h thermal memory | captures HVAC-driven demand and day-over-day/week-over-week regime changes |
+| Weather | temperature, apparent temperature, configurable cooling/heating degree, temperature anomalies, 1h/2h/24h/168h temperature and cooling deltas, 3h/6h/72h thermal memory | captures HVAC-driven demand, weather direction, and day-over-day/week-over-week regime changes |
 | Interactions | holiday x heat, post-holiday x heat | handles Golden Week and similar return-to-work spikes |
-| Lag context | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h business-type mismatch, recent same business-type mean | tells the model when lag values are holiday-contaminated or crossed a business/non-business boundary |
+| Business/weather interactions | business-morning x temperature delta/anomaly, late-afternoon x temperature/cooling delta | helps the model distinguish morning ramp-up, afternoon cooling decay, and hysteresis-like demand behavior |
+| Lag context | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h business-type mismatch, recent same business-type mean, lag-to-anchor gaps | tells the model when lag values are holiday-contaminated or crossed a business/non-business boundary |
 
-The current feature set has 50 explicit LightGBM training features.
+The current feature set has 56 explicit LightGBM training features.
 
 Cooling/heating degree balance points are configured in `config.yaml`:
 
@@ -65,11 +66,15 @@ weather_features:
   heating_base_temp_c: 18.0
 ```
 
-`temp_delta_24h` and `cooling_delta_24h` help the model decide how much to trust yesterday's same-hour demand when today's weather has shifted. `temp_delta_168h` and `cooling_delta_168h` do the same for the same-hour value from one week ago. `temp_72h_mean`, `cooling_degree_72h_mean`, and `heating_degree_72h_mean` capture sustained heat or cold. `apparent_temp_c` and `apparent_cooling_degree` add a feels-like temperature signal when the weather source provides one.
+Weather enrichment now prefers JMA AMeDAS observations for past/current hours and JMA official forecast temperatures for future hours. Open-Meteo JMA is kept as a humidity fallback only; it does not overwrite JMA forecast temperatures. Humidity-derived apparent temperature and discomfort index values are used to keep cooling-demand features stable when official forecast humidity is unavailable.
 
-`lag_24h_business_type_mismatch` and `lag_24h_mismatch_x_business_hour` help the model treat Friday-to-Saturday and Sunday-to-Monday lag values more carefully, especially during daytime business hours. `recent_same_business_type_mean` provides a broader same-hour anchor from recent business or non-business days.
+`temp_delta_24h` and `cooling_delta_24h` help the model decide how much to trust yesterday's same-hour demand when today's weather has shifted. `temp_delta_168h` and `cooling_delta_168h` do the same for the same-hour value from one week ago. `temp_delta_1h`, `temp_delta_2h`, `apparent_temp_delta_1h`, and `cooling_delta_1h` capture short-term weather direction. `cooling_degree_3h_mean`, `cooling_degree_6h_mean`, `heating_degree_3h_mean`, `heating_degree_6h_mean`, `temp_72h_mean`, `cooling_degree_72h_mean`, and `heating_degree_72h_mean` capture sustained heat or cold. `apparent_temp_c` and `apparent_cooling_degree` add a feels-like temperature signal when the weather source provides one.
 
-`lag_24h_hourly_delta`, `lag_168h_hourly_delta`, and `recent_same_business_type_delta_mean` are built as inference-only context for internal diagnostics and the noon transition guard. They are not part of the LightGBM training feature set because validation showed that global hourly-delta training features could disturb unrelated morning hours.
+`business_morning_x_temp_delta_24h`, `business_morning_x_temp_anomaly_7d`, and `business_morning_x_temp_anomaly_doy` help business-day morning ramps respond to weather regime changes. `business_late_afternoon_x_temp_delta_1h` and `business_late_afternoon_x_cooling_delta_1h` help the model avoid treating a cooling afternoon and a warming afternoon as the same demand state.
+
+`lag_24h_business_type_mismatch` and `lag_24h_mismatch_x_business_hour` help the model treat Friday-to-Saturday and Sunday-to-Monday lag values more carefully, especially during daytime business hours. `recent_same_business_type_mean`, `lag_24h_to_last_biz_gap`, `lag_24h_to_same_business_type_gap`, and `lag_24h_gap_x_business_hour` provide broader same-hour anchors and gap signals from recent business or non-business days.
+
+`lag_24h_hourly_delta`, `lag_168h_hourly_delta`, `recent_same_business_type_delta_mean`, `recent_same_business_type_delta_q25`, same-day latest actual hour/delta, and midday interaction context are built as inference-only context for internal diagnostics and local shape guards. They are not part of the LightGBM training feature set because validation showed that global hourly-delta training features could disturb unrelated morning hours.
 
 ---
 
@@ -82,6 +87,19 @@ residual = actualMw - modelForecastMw
 ```
 
 It uses the latest observed same-day hours, applies shrinkage, caps extreme adjustments, and decays the adjustment across future hours.
+
+The correction layer is no longer a plain residual carry-over. It also includes operational calibration rules for:
+
+- day-boundary residual carry-over that skips TEPCO forecast fallback rows,
+- day-level scale bias when overheated lag values conflict with cooler same-day conditions,
+- business/non-business transition priors and observed transition correction,
+- positive residual mitigation for overheated weekend ramps,
+- negative residual recovery damping when a non-business day recovers toward its anchor,
+- positive residual slope damping when recent actual demand is rolling over,
+- morning ramp continuity guard for business-day near-term dips,
+- evening decline continuity guard for near-term rebound spikes after actual demand starts falling.
+
+Per-hour residual carry-over and guard metadata are written into operational calibration snapshots so that daily AI/Ops reports can explain why a served forecast changed.
 
 At the final 23:00 hour, if TEPCO has not published the actual value by the 23:40 JST refresh, the pipeline may use TEPCO's forecast as a marked fallback:
 
@@ -107,14 +125,16 @@ See [24h Weather Delta and Apparent Temperature Features](model-improvements/mod
 
 See [Business-Type Lag Features](model-improvements/model-improvement-2026-05-16-business-type-lag-features.md) for the weekend/weekday transition follow-up.
 
-See [Midday Transition Guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) for the 12:00 lag-shape follow-up.
+See [Midday Transition Guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) and [Midday Transition Guard Re-enabled](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) for the 12:00 lag-shape follow-up.
+
+See [Business Return Anchor Shortfall Guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [Positive Residual Slope Damping](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [Morning Ramp Continuity Guard](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), and [Evening Decline Continuity Guard](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md) for the latest operational guard layers.
 
 ---
 
 ## Training and Inference Flow
 
 1. ETL loads confirmed historical TEPCO data from monthly ZIP files.
-2. Weather enrichment fills historical and forecast temperature / apparent-temperature features.
+2. Weather enrichment fills JMA AMeDAS observed weather, JMA official forecast temperatures, and humidity fallback fields.
 3. LightGBM is trained and saved to `web/public/.lgbm_model.pkl`.
 4. The status/intraday workflow reloads the model.
 5. Recent actual JSON files are injected into the cache to fill gaps before the monthly ZIP is updated.
@@ -129,6 +149,6 @@ See [Midday Transition Guard](model-improvements/model-improvement-2026-05-20-mi
 Two reports are generated:
 
 - `metrics/model_backtest.json`: offline LightGBM vs baseline backtest with train/test separation.
-- `metrics/forecast_accuracy.json`: operational comparison against TEPCO's published forecast.
+- `metrics/forecast_accuracy.json`: operational comparison against TEPCO's published forecast, including MAE, WAPE, RMSE, dominance hours, and max-error risk.
 
 The operational comparison is a scorecard, not a claim that the project always beats TEPCO. TEPCO may use internal information unavailable to this project.
