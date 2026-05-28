@@ -4,7 +4,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from python.eval.ai_daily_report import (
+    _validate_localized_analysis,
     build_ai_daily_report,
     build_ai_daily_reports,
     build_ai_daily_reports_multilingual,
@@ -800,7 +803,7 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
         {
             "stage": "localization",
             "languages": ["ko", "ja"],
-            "model": "gpt-5.4-mini",
+            "model": "gpt-4o-mini",
             "has_master_report": True,
             "has_fact_packet": False,
         },
@@ -808,7 +811,7 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
     assert budget == {"remaining": 0, "used": 2}
     assert reports_by_language["ko"][0]["generator"]["provider"] == "openai"
     assert reports_by_language["ko"][0]["contentLanguage"] == "ko"
-    assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-5.4-mini"
+    assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-4o-mini"
     assert reports_by_language["ko"][0]["generator"]["localizationStatus"] == "ok"
     assert reports_by_language["en"][0]["executiveSummary"]["headline"] == "English master headline"
     assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == "한국어 현지화 헤드라인"
@@ -984,11 +987,186 @@ def test_ai_daily_reports_multilingual_falls_back_to_english_when_localization_f
     assert reports_by_language["ko"][0]["language"] == "ko"
     assert reports_by_language["ko"][0]["contentLanguage"] == "en"
     assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == "English master headline"
-    assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-5.4-mini"
+    assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-4o-mini"
     assert reports_by_language["ko"][0]["generator"]["localizationStatus"] == "fallback_en"
     assert reports_by_language["ko"][0]["generator"]["localizationFallback"] == "en"
     assert "Localization failed" in reports_by_language["ko"][0]["operatorNotes"][0]
     assert reports_by_language["ja"][0]["contentLanguage"] == "en"
+
+
+def test_ai_daily_reports_multilingual_retries_invalid_localization_once(monkeypatch, tmp_path):
+    _write_operation_fixture(tmp_path, "2026-05-23")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    localization_calls = []
+
+    def fake_master_analysis(context, api_key, model):
+        return {
+            "executiveSummary": {
+                "severity": "warning",
+                "headline": "English master headline",
+                "summary": "English master summary",
+                "modelVerdict": "tepco_better",
+                "confidence": "medium",
+            },
+            "rootCauseHypotheses": [
+                {
+                    "id": "h-master",
+                    "severity": "warning",
+                    "confidence": "medium",
+                    "evidenceStatus": "partial",
+                    "title": "English master hypothesis",
+                    "explanation": "The model missed the evening shape.",
+                    "evidence": [],
+                    "relatedHours": [18],
+                    "relatedTimeBands": ["evening"],
+                    "relatedFeatures": ["intraday_correction.positive_residual_slope_damping"],
+                    "counterEvidence": [],
+                }
+            ],
+            "featureRecommendations": [
+                {
+                    "id": "r-master",
+                    "priority": "medium",
+                    "type": "calibration",
+                    "target": "intraday_correction.positive_residual_slope_damping",
+                    "suggestion": "Tune the evening damping trigger.",
+                    "expectedEffect": "Evening overshoot should shrink.",
+                    "risk": "Too much damping can underpredict a real rebound.",
+                    "validationPlan": "Replay recent evening misses.",
+                    "linkedHypotheses": ["h-master"],
+                    "autoApply": False,
+                }
+            ],
+            "operatorNotes": ["English operator note"],
+            "limitations": ["English limitation"],
+        }
+
+    def fake_localization_analysis(context, api_key, model, languages):
+        localization_calls.append(list(languages))
+        if len(localization_calls) == 1:
+            return {
+                "reports": {
+                    "ko": {
+                        "executiveSummary": {
+                            "headline": "TEPCO陛 24偃曖 綠掖 陛棟フ",
+                            "summary": "賅筐 濰薄 衛除擎 8衛除 絮薄瞳戲煎",
+                        }
+                    },
+                    "ja": {
+                        "executiveSummary": {
+                            "headline": "TEPCO肢24肥楑昳呇窆羌蒢忺",
+                            "summary": "徉室恨肥跂屪蒢忺肢8蒢忺竺",
+                        }
+                    },
+                }
+            }
+        return {
+            "reports": {
+                "ko": {
+                    "executiveSummary": {
+                        "headline": "TEPCO가 저녁 형태에서 더 안정적이었습니다",
+                        "summary": "모델은 18시 주변에서 과대예측을 보였고 보정 가드 재검토가 필요합니다.",
+                    },
+                    "rootCauseHypotheses": [
+                        {
+                            "id": "h-master",
+                            "title": "저녁 형태 오차가 관측되었습니다.",
+                            "explanation": "모델은 저녁 반등을 크게 보았습니다.",
+                        }
+                    ],
+                    "featureRecommendations": [
+                        {
+                            "id": "r-master",
+                            "suggestion": "저녁 감쇠 트리거를 재생 검증합니다.",
+                            "expectedEffect": "과대예측이 줄어듭니다.",
+                            "risk": "진짜 반등을 낮게 볼 수 있습니다.",
+                            "validationPlan": "최근 저녁 오차를 replay합니다.",
+                        }
+                    ],
+                    "operatorNotes": ["한국어 현지화 재시도 성공"],
+                    "limitations": ["요약 지표 기준입니다."],
+                },
+                "ja": {
+                    "executiveSummary": {
+                        "headline": "TEPCOは夕方の形状でより安定していました",
+                        "summary": "モデルは18時付近で過大予測となり、補正ガードの再確認が必要です。",
+                    },
+                    "rootCauseHypotheses": [
+                        {
+                            "id": "h-master",
+                            "title": "夕方の形状誤差が観測されました。",
+                            "explanation": "モデルは夕方の反発を大きく見積もりました。",
+                        }
+                    ],
+                    "featureRecommendations": [
+                        {
+                            "id": "r-master",
+                            "suggestion": "夕方の減衰トリガーを再生検証します。",
+                            "expectedEffect": "過大予測を抑えます。",
+                            "risk": "本当の反発を低く見る可能性があります。",
+                            "validationPlan": "直近の夕方誤差をreplayします。",
+                        }
+                    ],
+                    "operatorNotes": ["日本語ローカライズ再試行成功"],
+                    "limitations": ["要約指標に基づきます。"],
+                },
+            }
+        }
+
+    monkeypatch.setattr(
+        "python.eval.ai_daily_report._call_openai_analysis",
+        fake_master_analysis,
+    )
+    monkeypatch.setattr(
+        "python.eval.ai_daily_report._call_openai_localization_analysis",
+        fake_localization_analysis,
+    )
+
+    _, reports_by_language, budget = build_ai_daily_reports_multilingual(
+        tmp_path,
+        generated_at="2026-05-24T09:20:00+09:00",
+        languages=("ko", "en", "ja"),
+        openai_budget={"remaining": 3, "used": 0},
+        openai_locales={"ko", "en", "ja"},
+    )
+
+    assert localization_calls == [["ko", "ja"], ["ko", "ja"]]
+    assert budget == {"remaining": 0, "used": 3}
+    assert reports_by_language["ko"][0]["contentLanguage"] == "ko"
+    assert reports_by_language["ko"][0]["generator"]["localizationStatus"] == "ok"
+    assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == (
+        "TEPCO가 저녁 형태에서 더 안정적이었습니다"
+    )
+    assert reports_by_language["ja"][0]["contentLanguage"] == "ja"
+    assert reports_by_language["ja"][0]["generator"]["localizationStatus"] == "ok"
+
+
+def test_localized_analysis_rejects_cjk_corrupted_korean_payload():
+    payload = {
+        "executiveSummary": {
+            "headline": "TEPCO陛 24偃曖 綠掖 陛棟フ 衛除 醞 16偃縑憮",
+            "summary": "賅筐 濰薄 衛除擎 8衛除 絮薄瞳戲煎 TEPCO 濰薄 衛除擎 16薄戲煎",
+        },
+        "rootCauseHypotheses": [],
+        "featureRecommendations": [],
+    }
+
+    with pytest.raises(ValueError, match="Korean localization"):
+        _validate_localized_analysis("ko", payload)
+
+
+def test_localized_analysis_rejects_cjk_corrupted_japanese_payload():
+    payload = {
+        "executiveSummary": {
+            "headline": "TEPCO肢24肥楑昳呇窆羌蒢忺肥爬祀16蒢忺",
+            "summary": "徉室恨肥跂屪蒢忺肢8蒢忺竺 TEPCO肥跂屪蒢忺肢16蒢忺竺",
+        },
+        "rootCauseHypotheses": [],
+        "featureRecommendations": [],
+    }
+
+    with pytest.raises(ValueError, match="Japanese localization"):
+        _validate_localized_analysis("ja", payload)
 
 
 def test_ai_daily_report_index_points_to_latest(tmp_path):

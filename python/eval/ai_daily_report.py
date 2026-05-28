@@ -25,9 +25,9 @@ SCHEMA_VERSION = "1.0.0"
 PROMPT_VERSION = "fallback_rules_v1"
 OPENAI_PROMPT_VERSION = "openai_ops_report_v3"
 OPENAI_DEFAULT_MODEL = "gpt-5.4-mini"
-OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-5.4-mini"
+OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALES = "ko,en,ja"
-OPENAI_DEFAULT_MAX_CALLS_PER_RUN = 2
+OPENAI_DEFAULT_MAX_CALLS_PER_RUN = 3
 OPENAI_DEFAULT_ANALYSIS_TIMEOUT_SECONDS = 90
 OPENAI_DEFAULT_LOCALIZATION_TIMEOUT_SECONDS = 180
 REPORT_TYPE = "ai_daily_operation_report"
@@ -2772,11 +2772,46 @@ def _analysis_text_blob(analysis: dict) -> str:
     return "\n".join(parts)
 
 
+def _critical_analysis_text_blob(analysis: dict) -> str:
+    """Return prose fields that must be readable in the target language."""
+    parts: list[str] = []
+    summary = analysis.get("executiveSummary") or {}
+    if isinstance(summary, dict):
+        parts.extend([
+            str(summary.get("headline") or ""),
+            str(summary.get("summary") or ""),
+        ])
+    for hypothesis in analysis.get("rootCauseHypotheses") or []:
+        if isinstance(hypothesis, dict):
+            parts.extend([
+                str(hypothesis.get("title") or ""),
+                str(hypothesis.get("explanation") or ""),
+            ])
+    for recommendation in analysis.get("featureRecommendations") or []:
+        if isinstance(recommendation, dict):
+            parts.extend([
+                str(recommendation.get("suggestion") or ""),
+                str(recommendation.get("expectedEffect") or ""),
+                str(recommendation.get("risk") or ""),
+                str(recommendation.get("validationPlan") or ""),
+            ])
+    return "\n".join(parts)
+
+
+def _count_pattern(pattern: str, text: str) -> int:
+    return len(re.findall(pattern, text))
+
+
 def _validate_localized_analysis(language: str, analysis: dict) -> None:
-    text = _analysis_text_blob(analysis)
-    if language == "ko" and not re.search(r"[\uac00-\ud7a3]", text):
+    text = _critical_analysis_text_blob(analysis) or _analysis_text_blob(analysis)
+    hangul_count = _count_pattern(r"[\uac00-\ud7a3]", text)
+    kana_count = _count_pattern(r"[\u3040-\u30ff]", text)
+    cjk_count = _count_pattern(r"[\u4e00-\u9fff]", text)
+    if language == "ko" and hangul_count < 8:
         raise ValueError("Korean localization did not contain Hangul text")
-    if language == "ja" and not re.search(r"[\u3040-\u30ff]", text):
+    if language == "ko" and cjk_count >= 8 and cjk_count > hangul_count * 2:
+        raise ValueError("Korean localization looked CJK-corrupted")
+    if language == "ja" and kana_count < 8:
         raise ValueError("Japanese localization did not contain kana text")
 
 
@@ -2813,6 +2848,36 @@ def _consume_openai_budget(budget: dict[str, int]) -> bool:
     budget["remaining"] = max(0, budget.get("remaining", 0) - 1)
     budget["used"] = budget.get("used", 0) + 1
     return True
+
+
+def _merge_localized_reports_from_payload(
+    fallback_reports: dict[str, dict],
+    master_layer: dict,
+    localized_payload: dict,
+    localization_targets: list[str],
+    analysis_model: str,
+    localization_model: str,
+) -> dict[str, dict]:
+    localized_reports = localized_payload.get("reports")
+    if not isinstance(localized_reports, dict):
+        localized_reports = {}
+
+    merged_reports: dict[str, dict] = {}
+    for language in localization_targets:
+        aligned_analysis = _align_localized_analysis(
+            master_layer,
+            localized_reports.get(language) or {},
+        )
+        _validate_localized_analysis(language, aligned_analysis)
+        merged_reports[language] = _merge_openai_analysis(
+            fallback_reports[language],
+            aligned_analysis,
+            analysis_model,
+        )
+        merged_reports[language]["contentLanguage"] = language
+        merged_reports[language]["generator"]["localizationModel"] = localization_model
+        merged_reports[language]["generator"]["localizationStatus"] = "ok"
+    return merged_reports
 
 
 def _run_openai_master_localization_chain(
@@ -2882,44 +2947,57 @@ def _run_openai_master_localization_chain(
         "featureCatalog": FEATURE_CATALOG,
         "masterReport": master_layer,
     }
-    try:
-        localized_payload = _call_openai_localization_analysis(
-            localization_context,
-            api_key,
-            localization_model,
-            localization_targets,
-        )
-        localized_reports = localized_payload.get("reports")
-        if not isinstance(localized_reports, dict):
-            localized_reports = {}
-        for language in localization_targets:
-            aligned_analysis = _align_localized_analysis(
-                master_layer,
-                localized_reports.get(language) or {},
+    localization_error: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            localized_payload = _call_openai_localization_analysis(
+                localization_context,
+                api_key,
+                localization_model,
+                localization_targets,
             )
-            _validate_localized_analysis(language, aligned_analysis)
-            merged_reports[language] = _merge_openai_analysis(
-                fallback_reports[language],
-                aligned_analysis,
-                analysis_model,
+            merged_reports.update(
+                _merge_localized_reports_from_payload(
+                    fallback_reports,
+                    master_layer,
+                    localized_payload,
+                    localization_targets,
+                    analysis_model,
+                    localization_model,
+                )
             )
-            merged_reports[language]["contentLanguage"] = language
-            merged_reports[language]["generator"]["localizationModel"] = localization_model
-            merged_reports[language]["generator"]["localizationStatus"] = "ok"
-    except (
-        OSError,
-        urllib.error.URLError,
-        TimeoutError,
-        ValueError,
-        json.JSONDecodeError,
-    ) as e:
+            localization_error = None
+            break
+        except (
+            OSError,
+            urllib.error.URLError,
+            TimeoutError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as e:
+            localization_error = e
+            if attempt == 1 and _consume_openai_budget(budget):
+                print(
+                    "[WARN] OpenAI localization failed "
+                    f"for {date_iso} ({','.join(localization_targets)}): "
+                    f"{_redact_error(e)}; retrying once with {localization_model}"
+                )
+                continue
+            print(
+                "[WARN] OpenAI localization failed "
+                f"for {date_iso} ({','.join(localization_targets)}): "
+                f"{_redact_error(e)}; using English master fallback"
+            )
+            break
+
+    if localization_error is not None:
         for language in localization_targets:
             merged_reports[language] = _english_master_localization_fallback_report(
                 fallback_reports[language],
                 master_report,
                 analysis_model,
                 localization_model,
-                e,
+                localization_error,
             )
     return merged_reports
 
@@ -3240,6 +3318,10 @@ def build_ai_daily_reports_multilingual(
                 ValueError,
                 json.JSONDecodeError,
             ) as e:
+                print(
+                    "[WARN] OpenAI daily report failed "
+                    f"for {date_iso}: {_redact_error(e)}; using fallback reports"
+                )
                 merged_reports = _openai_failure_reports(
                     {
                         language: missing_reports[language]
