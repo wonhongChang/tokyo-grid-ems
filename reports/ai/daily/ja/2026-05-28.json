@@ -1,0 +1,319 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-28",
+  "generatedAt": "2026-05-29T07:34:36+09:00",
+  "availability": "ok",
+  "language": "ja",
+  "contentLanguage": "ja",
+  "generator": {
+    "provider": "fallback",
+    "model": null,
+    "promptVersion": "fallback_rules_v1",
+    "schemaVersion": "1.0.0"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-28.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-28.json",
+    "operationalCalibration": "reports/internal/operational-calibration/2026-05-28.json",
+    "operationalCalibrationHistory": "reports/internal/operational-calibration/snapshots/2026-05-28/index.json",
+    "alerts": "alerts/2026-05-28.json",
+    "forecast": "forecast/2026-05-28.json",
+    "actual": "actual/2026-05-28.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-29T07:34:36+09:00",
+    "fingerprint": "sha256:73d84ca4e754ce3fcec2c869caa6627f0d6d2052effa7603bcf2e35b882dfafd",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": "2026-05-29T07:34:16+09:00",
+        "fingerprint": "sha256:40199563e3c63033938e184a09f565680b752b254cb6624eed4696086e198b6a"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": "2026-05-29T07:34:16+09:00",
+        "fingerprint": "sha256:68493b4c42ef63315c8ebd8f475d05ebba05067797f07c000ae7e0d934ae55f1"
+      },
+      "operationalCalibration": {
+        "path": "reports/internal/operational-calibration/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": "2026-05-28T22:39:31+09:00",
+        "fingerprint": "sha256:6642ce54280a8147c07ed8f1f75839476e472e4f8943544bb135b87b0a93abb7"
+      },
+      "operationalCalibrationHistory": {
+        "path": "reports/internal/operational-calibration/snapshots/2026-05-28/index.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": "2026-05-29T07:30:39+09:00",
+        "fingerprint": "sha256:8cc0b4ded9962d1e8f5cc4d9057a3d3eb922011a58310bd44d47807de630284f"
+      },
+      "alerts": {
+        "path": "alerts/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": null,
+        "fingerprint": "sha256:de1aa29d94b6e4d58f71f8d44c52c92e23fcf2b4c5c811dde3bf2c9ddc43d778"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": null,
+        "fingerprint": "sha256:aebbfd5e50472f4988f24b060b972dce011d6d6beecaa4e13de1ef6e18aa1ea7"
+      },
+      "actual": {
+        "path": "actual/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": null,
+        "fingerprint": "sha256:db5973ec8a15c55e03c2d1400abebefa212c83c204afc0065a19b1599cb80354"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-29T07:30:59+09:00",
+        "fingerprint": "sha256:b776adf5f4f9d770c76f84bfcd37a337077a428b9d619e0b1e7acc5394c76868"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 17,
+    "limitations": [
+      "このレポートはOpenAIを呼び出さず、deterministic JSONのみから生成したfallback解説です。",
+      "中間intraday実行はoperational-calibration snapshotに基づいて限定的に復元します。"
+    ]
+  },
+  "executiveSummary": {
+    "severity": "warning",
+    "headline": "この日はTEPCOの精度が優勢でした。",
+    "summary": "比較可能時間は24時間です。モデルMAEは403.3 MW、TEPCO MAEは242.5 MWでした。WAPEはモデル1.33%、TEPCO 0.80%です。",
+    "modelVerdict": "tepco_better",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 403.3,
+    "tepcoMaeMw": 242.5,
+    "modelWapePct": 1.33,
+    "tepcoWapePct": 0.8,
+    "modelRmseMw": 498.3,
+    "tepcoRmseMw": 306.8,
+    "modelMaxErrorMw": 1124.9,
+    "tepcoMaxErrorMw": 770.0,
+    "modelMaxErrorHour": 12,
+    "tepcoMaxErrorHour": 19,
+    "maeGapMw": 160.8,
+    "wapeGapPct": 0.53,
+    "verdict": "tepco_better",
+    "modelWins": 9,
+    "tepcoWins": 15,
+    "ties": 0,
+    "modelAdvantageHours": 9,
+    "tepcoAdvantageHours": 15,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.375
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "h1",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "日次誤差はTEPCOより大きくなりました。",
+      "explanation": "日次MAE/WAPEではTEPCO予測のほうが近い結果でした。詳細時間帯と内部特徴量を併せて確認する必要があります。",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "maeGapMw",
+          "value": 160.8,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        },
+        {
+          "source": "reports/daily",
+          "metric": "wapeGapPct",
+          "value": 0.53,
+          "unit": null,
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "lag_24h",
+        "temp_c",
+        "humidity_pct"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "h2",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "実ピーク水準を低く見ました。",
+      "explanation": "実ピーク時刻でモデル予測が低くなりました。冷暖房負荷と最近の同一営業形態anchorを確認する必要があります。",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "errorAtActualPeakMw",
+          "value": -933.1,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "cooling_degree",
+        "heating_degree",
+        "recent_same_business_type_mean"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "h20",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "11-15帯で気象変化とモデルbiasが重なりました。",
+      "explanation": "気温/冷房負荷の変化方向とモデルbiasが同じ時間帯で観測されました。この時間帯は気象感度特徴量の検討候補です。",
+      "evidence": [
+        {
+          "source": "reports/internal/daily-diagnostics",
+          "metric": "coolingDelta24hMean",
+          "value": -1.1,
+          "unit": "C",
+          "timeBand": "daytime"
+        },
+        {
+          "source": "reports/internal/daily-diagnostics",
+          "metric": "modelBiasMw",
+          "value": -629.0,
+          "unit": "MW",
+          "timeBand": "daytime"
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [
+        "daytime"
+      ],
+      "relatedFeatures": [
+        "cooling_delta_24h",
+        "temp_delta_24h",
+        "weather_source"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "h60",
+      "severity": "info",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "intraday補正の実行履歴がスナップショットとして保存されました。",
+      "explanation": "operational-calibration snapshot indexに中間実行履歴が残っているため、最終上書きJSONだけを見る場合より補正レイヤーの流れを追跡しやすくなります。",
+      "evidence": [
+        {
+          "source": "reports/internal/operational-calibration/snapshots",
+          "metric": "snapshotCount",
+          "value": 17
+        },
+        {
+          "source": "reports/internal/operational-calibration/snapshots",
+          "metric": "dominantAppliedRegimeReason",
+          "value": "intraday_observed_residual"
+        },
+        {
+          "source": "reports/internal/operational-calibration/snapshots",
+          "metric": "dominantReasonCount",
+          "value": 14
+        },
+        {
+          "source": "reports/internal/operational-calibration/snapshots",
+          "metric": "latestGeneratedAt",
+          "value": "2026-05-28T22:39:31+09:00"
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "intraday_correction.day_boundary_carryover",
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.negative_residual_recovery_damping"
+      ],
+      "counterEvidence": [
+        "スナップショットは保存された17回の実行のみを説明し、削除済みの過去実行は復元できません。",
+        "補正が実際に適用されたスナップショット数は17回です。"
+      ]
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "r1",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "lag_24h",
+      "suggestion": "「日次誤差はTEPCOより大きくなりました。」仮説を基準に、lag_24hの影響を再確認します。",
+      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
+      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
+      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
+      "linkedHypotheses": [
+        "h1"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "r2",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "cooling_degree",
+      "suggestion": "「実ピーク水準を低く見ました。」仮説を基準に、cooling_degreeの影響を再確認します。",
+      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
+      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
+      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
+      "linkedHypotheses": [
+        "h2"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "r3",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "cooling_delta_24h",
+      "suggestion": "「11-15帯で気象変化とモデルbiasが重なりました。」仮説を基準に、cooling_delta_24hの影響を再確認します。",
+      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
+      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
+      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
+      "linkedHypotheses": [
+        "h20"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "OpenAIレポート生成に失敗したため、fallback解説を使用しました: HTTP Error 401: Unauthorized",
+    "featureRecommendationsはレビュー候補であり、自動適用されません。",
+    "運用補正シグナルカタログ: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+  ],
+  "limitations": [
+    "このレポートはOpenAIを呼び出さず、deterministic JSONのみから生成したfallback解説です。",
+    "中間intraday実行はoperational-calibration snapshotに基づいて限定的に復元します。"
+  ]
+}

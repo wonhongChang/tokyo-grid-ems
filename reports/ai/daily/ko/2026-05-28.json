@@ -1,0 +1,319 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-05-28",
+  "generatedAt": "2026-05-29T07:34:36+09:00",
+  "availability": "ok",
+  "language": "ko",
+  "contentLanguage": "ko",
+  "generator": {
+    "provider": "fallback",
+    "model": null,
+    "promptVersion": "fallback_rules_v1",
+    "schemaVersion": "1.0.0"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-05-28.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-05-28.json",
+    "operationalCalibration": "reports/internal/operational-calibration/2026-05-28.json",
+    "operationalCalibrationHistory": "reports/internal/operational-calibration/snapshots/2026-05-28/index.json",
+    "alerts": "alerts/2026-05-28.json",
+    "forecast": "forecast/2026-05-28.json",
+    "actual": "actual/2026-05-28.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-05-29T07:34:36+09:00",
+    "fingerprint": "sha256:73d84ca4e754ce3fcec2c869caa6627f0d6d2052effa7603bcf2e35b882dfafd",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": "2026-05-29T07:34:16+09:00",
+        "fingerprint": "sha256:40199563e3c63033938e184a09f565680b752b254cb6624eed4696086e198b6a"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": "2026-05-29T07:34:16+09:00",
+        "fingerprint": "sha256:68493b4c42ef63315c8ebd8f475d05ebba05067797f07c000ae7e0d934ae55f1"
+      },
+      "operationalCalibration": {
+        "path": "reports/internal/operational-calibration/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": "2026-05-28T22:39:31+09:00",
+        "fingerprint": "sha256:6642ce54280a8147c07ed8f1f75839476e472e4f8943544bb135b87b0a93abb7"
+      },
+      "operationalCalibrationHistory": {
+        "path": "reports/internal/operational-calibration/snapshots/2026-05-28/index.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": "2026-05-29T07:30:39+09:00",
+        "fingerprint": "sha256:8cc0b4ded9962d1e8f5cc4d9057a3d3eb922011a58310bd44d47807de630284f"
+      },
+      "alerts": {
+        "path": "alerts/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": null,
+        "fingerprint": "sha256:de1aa29d94b6e4d58f71f8d44c52c92e23fcf2b4c5c811dde3bf2c9ddc43d778"
+      },
+      "forecast": {
+        "path": "forecast/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": null,
+        "fingerprint": "sha256:aebbfd5e50472f4988f24b060b972dce011d6d6beecaa4e13de1ef6e18aa1ea7"
+      },
+      "actual": {
+        "path": "actual/2026-05-28.json",
+        "exists": true,
+        "date": "2026-05-28",
+        "generatedAt": null,
+        "fingerprint": "sha256:db5973ec8a15c55e03c2d1400abebefa212c83c204afc0065a19b1599cb80354"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-05-29T07:30:59+09:00",
+        "fingerprint": "sha256:b776adf5f4f9d770c76f84bfcd37a337077a428b9d619e0b1e7acc5394c76868"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 17,
+    "limitations": [
+      "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
+      "intraday 중간 실행은 operational-calibration snapshot 기준으로 제한적으로 복원합니다."
+    ]
+  },
+  "executiveSummary": {
+    "severity": "warning",
+    "headline": "TEPCO가 일일 정확도에서 우세했습니다.",
+    "summary": "비교 가능 시간은 24시간이며, 모델 MAE는 403.3 MW, TEPCO MAE는 242.5 MW입니다. WAPE는 모델 1.33%, TEPCO 0.80%로 집계되었습니다.",
+    "modelVerdict": "tepco_better",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 403.3,
+    "tepcoMaeMw": 242.5,
+    "modelWapePct": 1.33,
+    "tepcoWapePct": 0.8,
+    "modelRmseMw": 498.3,
+    "tepcoRmseMw": 306.8,
+    "modelMaxErrorMw": 1124.9,
+    "tepcoMaxErrorMw": 770.0,
+    "modelMaxErrorHour": 12,
+    "tepcoMaxErrorHour": 19,
+    "maeGapMw": 160.8,
+    "wapeGapPct": 0.53,
+    "verdict": "tepco_better",
+    "modelWins": 9,
+    "tepcoWins": 15,
+    "ties": 0,
+    "modelAdvantageHours": 9,
+    "tepcoAdvantageHours": 15,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.375
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "h1",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "TEPCO 대비 일일 오차가 컸습니다.",
+      "explanation": "일일 MAE/WAPE 기준으로 TEPCO 예측이 더 가까웠습니다. 세부 시간대와 내부 피처를 함께 확인해야 합니다.",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "maeGapMw",
+          "value": 160.8,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        },
+        {
+          "source": "reports/daily",
+          "metric": "wapeGapPct",
+          "value": 0.53,
+          "unit": null,
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "lag_24h",
+        "temp_c",
+        "humidity_pct"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "h2",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "실제 피크 레벨을 낮게 봤습니다.",
+      "explanation": "실제 피크 시각에서 모델 예측이 낮았습니다. 냉난방 부하와 최근 같은 영업형태 anchor를 확인해야 합니다.",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "errorAtActualPeakMw",
+          "value": -933.1,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "cooling_degree",
+        "heating_degree",
+        "recent_same_business_type_mean"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "h20",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "11-15 구간의 기상 변화와 모델 bias가 맞물렸습니다.",
+      "explanation": "기온/냉방 부하 변화 방향과 모델 bias가 같은 구간에서 관측되었습니다. 해당 구간은 기상 민감도 피처 검토 후보입니다.",
+      "evidence": [
+        {
+          "source": "reports/internal/daily-diagnostics",
+          "metric": "coolingDelta24hMean",
+          "value": -1.1,
+          "unit": "C",
+          "timeBand": "daytime"
+        },
+        {
+          "source": "reports/internal/daily-diagnostics",
+          "metric": "modelBiasMw",
+          "value": -629.0,
+          "unit": "MW",
+          "timeBand": "daytime"
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [
+        "daytime"
+      ],
+      "relatedFeatures": [
+        "cooling_delta_24h",
+        "temp_delta_24h",
+        "weather_source"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "h60",
+      "severity": "info",
+      "confidence": "high",
+      "evidenceStatus": "confirmed",
+      "title": "intraday 보정 실행 이력이 스냅샷으로 보존되었습니다.",
+      "explanation": "operational-calibration snapshot index에 중간 실행 이력이 남아 있어 최종 덮어쓰기 JSON만 볼 때보다 보정 레이어 흐름을 더 잘 추적할 수 있습니다.",
+      "evidence": [
+        {
+          "source": "reports/internal/operational-calibration/snapshots",
+          "metric": "snapshotCount",
+          "value": 17
+        },
+        {
+          "source": "reports/internal/operational-calibration/snapshots",
+          "metric": "dominantAppliedRegimeReason",
+          "value": "intraday_observed_residual"
+        },
+        {
+          "source": "reports/internal/operational-calibration/snapshots",
+          "metric": "dominantReasonCount",
+          "value": 14
+        },
+        {
+          "source": "reports/internal/operational-calibration/snapshots",
+          "metric": "latestGeneratedAt",
+          "value": "2026-05-28T22:39:31+09:00"
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "intraday_correction.day_boundary_carryover",
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.negative_residual_recovery_damping"
+      ],
+      "counterEvidence": [
+        "스냅샷은 보존된 17회 실행만 설명하며, 삭제된 이전 실행은 복원하지 않습니다.",
+        "보정이 실제로 적용된 스냅샷 수는 17회입니다."
+      ]
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "r1",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "lag_24h",
+      "suggestion": "TEPCO 대비 일일 오차가 컸습니다. 가설을 기준으로 lag_24h의 영향도를 재검토합니다.",
+      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
+      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
+      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
+      "linkedHypotheses": [
+        "h1"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "r2",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "cooling_degree",
+      "suggestion": "실제 피크 레벨을 낮게 봤습니다. 가설을 기준으로 cooling_degree의 영향도를 재검토합니다.",
+      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
+      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
+      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
+      "linkedHypotheses": [
+        "h2"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "r3",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "cooling_delta_24h",
+      "suggestion": "11-15 구간의 기상 변화와 모델 bias가 맞물렸습니다. 가설을 기준으로 cooling_delta_24h의 영향도를 재검토합니다.",
+      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
+      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
+      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
+      "linkedHypotheses": [
+        "h20"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "OpenAI 리포트 생성에 실패해 fallback 해설로 대체했습니다: HTTP Error 401: Unauthorized",
+    "featureRecommendations는 검토 후보이며 자동 적용되지 않습니다.",
+    "운영 보정 신호 카탈로그: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+  ],
+  "limitations": [
+    "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
+    "intraday 중간 실행은 operational-calibration snapshot 기준으로 제한적으로 복원합니다."
+  ]
+}
