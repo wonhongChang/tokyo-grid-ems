@@ -800,7 +800,7 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
         {
             "stage": "localization",
             "languages": ["ko", "ja"],
-            "model": "gpt-4o-mini",
+            "model": "gpt-5.4-mini",
             "has_master_report": True,
             "has_fact_packet": False,
         },
@@ -808,7 +808,7 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
     assert budget == {"remaining": 0, "used": 2}
     assert reports_by_language["ko"][0]["generator"]["provider"] == "openai"
     assert reports_by_language["ko"][0]["contentLanguage"] == "ko"
-    assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-4o-mini"
+    assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-5.4-mini"
     assert reports_by_language["ko"][0]["generator"]["localizationStatus"] == "ok"
     assert reports_by_language["en"][0]["executiveSummary"]["headline"] == "English master headline"
     assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == "한국어 현지화 헤드라인"
@@ -984,7 +984,7 @@ def test_ai_daily_reports_multilingual_falls_back_to_english_when_localization_f
     assert reports_by_language["ko"][0]["language"] == "ko"
     assert reports_by_language["ko"][0]["contentLanguage"] == "en"
     assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == "English master headline"
-    assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-4o-mini"
+    assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-5.4-mini"
     assert reports_by_language["ko"][0]["generator"]["localizationStatus"] == "fallback_en"
     assert reports_by_language["ko"][0]["generator"]["localizationFallback"] == "en"
     assert "Localization failed" in reports_by_language["ko"][0]["operatorNotes"][0]
