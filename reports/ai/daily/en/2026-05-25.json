@@ -3,15 +3,16 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-25",
-  "generatedAt": "2026-05-28T09:02:45+09:00",
+  "generatedAt": "2026-05-26T12:03:22+09:00",
   "availability": "ok",
   "language": "en",
   "contentLanguage": "en",
   "generator": {
-    "provider": "fallback",
-    "model": null,
-    "promptVersion": "fallback_rules_v1",
-    "schemaVersion": "1.0.0"
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "promptVersion": "openai_ops_report_v3",
+    "schemaVersion": "1.0.0",
+    "localizationStatus": "not_requested"
   },
   "inputRefs": {
     "operationReport": "reports/daily/2026-05-25.json",
@@ -25,22 +26,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-05-28T09:02:45+09:00",
-    "fingerprint": "sha256:043e06bbcafed34f5f5b0db30fce908162c4002a692c267e57f2b021fd999e3a",
+    "createdAt": "2026-05-26T12:03:22+09:00",
+    "fingerprint": "sha256:b883fbb706b6b067d594a83bd473eee7039b88860f7b96f0bd6410424257e387",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-05-25.json",
         "exists": true,
         "date": "2026-05-25",
-        "generatedAt": "2026-05-28T07:34:12+09:00",
-        "fingerprint": "sha256:a64169b2842219515ab57a5336164b0d20821c1c037659d618d25e446b14301a"
+        "generatedAt": "2026-05-26T11:29:36+09:00",
+        "fingerprint": "sha256:f1497ff3a481e0a6c9f93ceda099e2435f105bf22f72e55ae46c80bfb41a320e"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-05-25.json",
         "exists": true,
         "date": "2026-05-25",
-        "generatedAt": "2026-05-28T07:34:12+09:00",
-        "fingerprint": "sha256:805f9a521ab196887ce38bc42023e5c9ef7e188385e067acec365b340f6b762e"
+        "generatedAt": "2026-05-26T11:24:51+09:00",
+        "fingerprint": "sha256:11928b67b3c28536bddca76fb7deb5cca04c0adf4e608e466fd2b7f3578ba6cc"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-05-25.json",
@@ -53,8 +54,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-05-25/index.json",
         "exists": true,
         "date": "2026-05-25",
-        "generatedAt": "2026-05-28T07:30:38+09:00",
-        "fingerprint": "sha256:7a17c040319332dfce205100ce308e1660abf9459077dd9f2951e3043be89994"
+        "generatedAt": "2026-05-26T11:28:56+09:00",
+        "fingerprint": "sha256:2342d8fbcd67fadec95854985d05be16057a2741c362f9ecf9ae7269c33d78da"
       },
       "alerts": {
         "path": "alerts/2026-05-25.json",
@@ -81,8 +82,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-05-28T07:30:58+09:00",
-        "fingerprint": "sha256:9dd032c3ab7ce996aa98ef7f56156135709bfbaad3b2b5090c3880acf230e715"
+        "generatedAt": "2026-05-26T11:29:36+09:00",
+        "fingerprint": "sha256:7170ee6e0b47c14808f7378c1d0c0189fb4b5f27ceb51de80079a4e3b261cbf7"
       }
     }
   },
@@ -92,14 +93,14 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 19,
     "limitations": [
-      "This report was generated from deterministic JSON without calling OpenAI.",
-      "Intermediate intraday runs are reconstructed only from retained operational-calibration snapshots."
+      "Analysis is based on summarized operational evidence and retained calibration snapshots.",
+      "The morning transition hypothesis is directional only because the provided facts do not explicitly identify the business-day state change."
     ]
   },
   "executiveSummary": {
-    "severity": "info",
-    "headline": "The model reduced daily error versus TEPCO.",
-    "summary": "24 comparable hours were available. Model MAE was 453.9 MW, TEPCO MAE was 561.7 MW. WAPE was 1.65% for the model and 2.04% for TEPCO.",
+    "severity": "warning",
+    "headline": "Model outperformed TEPCO overall, but midday shape errors remain material",
+    "summary": "The model achieved lower daily error than TEPCO on 16 of 24 hours, with MAE 453.9 MW vs 561.7 MW and WAPE 1.65% vs 2.04%. However, the 11-15 band underperformed TEPCO, and the largest miss occurred at hour 15 with a +1612.8 MW error after a sharp shape reversal around 14-15.",
     "modelVerdict": "model_better",
     "confidence": "high"
   },
@@ -128,194 +129,166 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "h1",
-      "severity": "info",
+      "id": "H1",
+      "severity": "critical",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "The model was closer than TEPCO on the daily view.",
-      "explanation": "The model was more stable by daily MAE/WAPE. Track whether the same condition repeats.",
+      "title": "Midday ramp reversal was not captured",
+      "explanation": "The largest shape break was 14->15: actual demand fell 970.0 MW while the model rose 1195.9 MW. This produced the day’s worst model miss at hour 15 and a large delta error of 2165.9 MW.",
       "evidence": [
         {
-          "source": "reports/daily",
-          "metric": "maeGapMw",
-          "value": -107.8,
-          "unit": "MW",
-          "hour": null,
-          "timeBand": null
-        },
-        {
-          "source": "reports/daily",
-          "metric": "wapeGapPct",
-          "value": -0.39,
-          "unit": null,
-          "hour": null,
-          "timeBand": null
-        }
-      ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "lgbm_quantile_q50",
-        "intraday_correction.day_level_scale"
-      ],
-      "counterEvidence": []
-    },
-    {
-      "id": "h2",
-      "severity": "warning",
-      "confidence": "medium",
-      "evidenceStatus": "partial",
-      "title": "A large single-hour miss occurred.",
-      "explanation": "The max-error hour had a large impact on daily metrics. Inspect lag, weather, and calibration metadata for that hour first.",
-      "evidence": [
-        {
-          "source": "reports/daily",
-          "metric": "modelAbsErrorMw",
-          "value": 1612.8,
+          "source": "shape",
+          "metric": "largestDeltaMiss.actualDeltaMw",
+          "value": -970,
           "unit": "MW",
           "hour": 15,
-          "timeBand": null
-        }
-      ],
-      "relatedHours": [
-        15
-      ],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "lag_24h",
-        "temp_c",
-        "intraday_correction.day_boundary_carryover"
-      ],
-      "counterEvidence": []
-    },
-    {
-      "id": "h3",
-      "severity": "warning",
-      "confidence": "medium",
-      "evidenceStatus": "partial",
-      "title": "The model curve may have risen faster than actual demand.",
-      "explanation": "The hour-to-hour model rise exceeded actual movement. Check positive residual propagation and ramp-guard scope.",
-      "evidence": [
-        {
-          "source": "reports/daily",
-          "metric": "modelDeltaMw",
-          "value": 1195.9,
-          "unit": "MW",
-          "hour": null,
-          "timeBand": null
+          "timeBand": "daytime"
         },
         {
-          "source": "reports/daily",
-          "metric": "actualDeltaMw",
-          "value": -970.0,
+          "source": "shape",
+          "metric": "largestDeltaMiss.modelDeltaMw",
+          "value": 1195.9,
           "unit": "MW",
-          "hour": null,
-          "timeBand": null
+          "hour": 15,
+          "timeBand": "daytime"
         }
       ],
       "relatedHours": [
         14,
         15
       ],
-      "relatedTimeBands": [],
+      "relatedTimeBands": [
+        "daytime"
+      ],
       "relatedFeatures": [
-        "intraday_correction.positive_residual_mitigation",
-        "lag_24h_hourly_delta"
+        "intraday_correction.positive_residual_slope_damping",
+        "intraday_correction.day_boundary_carryover"
       ],
       "counterEvidence": []
     },
     {
-      "id": "h60",
-      "severity": "info",
+      "id": "H2",
+      "severity": "warning",
       "confidence": "high",
-      "evidenceStatus": "confirmed",
-      "title": "Intraday calibration execution history was preserved as snapshots.",
-      "explanation": "The operational-calibration snapshot index retains intermediate runs, so the calibration-layer timeline is easier to trace than with final-run JSON alone.",
+      "evidenceStatus": "partial",
+      "title": "Daytime underprediction persisted through 11-14",
+      "explanation": "The model was below actual demand at hours 11-14, including -1524.4 MW at hour 13 and -553.1 MW at hour 14. This shows the daytime level was too low before the hour-15 overshoot.",
       "evidence": [
         {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "snapshotCount",
-          "value": 19
+          "source": "topMisses",
+          "metric": "hour13.modelErrorMw",
+          "value": -1524.4,
+          "unit": "MW",
+          "hour": 13,
+          "timeBand": "daytime"
         },
         {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "dominantAppliedRegimeReason",
-          "value": "intraday_observed_residual"
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "dominantReasonCount",
-          "value": 15
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "latestGeneratedAt",
-          "value": "2026-05-25T22:31:10+09:00"
+          "source": "focusedRows",
+          "metric": "hour14.modelErrorMw",
+          "value": -553.1,
+          "unit": "MW",
+          "hour": 14,
+          "timeBand": "daytime"
         }
       ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
+      "relatedHours": [
+        11,
+        12,
+        13,
+        14
+      ],
+      "relatedTimeBands": [
+        "daytime"
+      ],
       "relatedFeatures": [
-        "intraday_correction.day_boundary_carryover",
-        "intraday_correction.business_type_transition_prior",
-        "intraday_correction.negative_residual_recovery_damping"
+        "intraday_correction.day_level_scale",
+        "intraday_correction.positive_residual_mitigation"
       ],
       "counterEvidence": [
-        "The snapshots explain only the 19 retained runs; deleted older runs cannot be reconstructed.",
-        "Calibration was actually applied in 19 retained snapshots."
+        "TEPCO also missed hour 13, so this is not a model-only daytime level issue."
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "Morning ramp bias suggests transition contamination",
+      "explanation": "In 06-10, the model had MAE 617.0 MW and a negative bias of -397.4 MW, while the business-type diagnostics show a strong 06-10 lag24 same-type gap and recent same-type delta. This is consistent with transition or lag contamination, especially if the day included a business-day to non-business-day regime change, but that transition is not directly observed here.",
+      "evidence": [
+        {
+          "source": "timeBands",
+          "metric": "morning_ramp.modelBiasMw",
+          "value": -397.4,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        },
+        {
+          "source": "diagnosticFacts",
+          "metric": "lag24ToSameBusinessTypeGapByBand.morning_ramp.mean",
+          "value": 6262.5,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "06-10"
+        }
+      ],
+      "relatedHours": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.business_type_transition"
+      ],
+      "counterEvidence": [
+        "The business-day to non-business-day transition itself is not explicitly recorded in the provided facts."
       ]
     }
   ],
   "featureRecommendations": [
     {
-      "id": "r1",
-      "priority": "low",
+      "id": "R1",
+      "priority": "high",
       "type": "feature_engineering",
-      "target": "lgbm_quantile_q50",
-      "suggestion": "Review the impact of lgbm_quantile_q50 based on the hypothesis: The model was closer than TEPCO on the daily view.",
-      "expectedEffect": "Check whether MAE, WAPE, and RMSE improve together under repeated hour-band and business-type conditions.",
-      "risk": "Overfitting a single-day pattern can cause over-correction in other seasons or day types.",
-      "validationPlan": "Compare WAPE, RMSE, and max error against TEPCO using recent 2-4 week replay and backtests.",
+      "target": "intraday_correction.positive_residual_slope_damping",
+      "suggestion": "Activate damping when the 2-hour forecast slope turns positive while actual demand is falling, using a factor cap of 0.70 for hours 14-16.",
+      "expectedEffect": "Reduce overshoot on rapid midday reversals and lower hour-15 absolute error.",
+      "risk": "Too much damping could flatten legitimate late-afternoon rebounds.",
+      "validationPlan": "Replay 2026-05-25 and require lower 14-15 delta error versus the current 2165.9 MW break while preserving 11-14 level accuracy.",
       "linkedHypotheses": [
-        "h1"
+        "H1"
       ],
       "autoApply": false
     },
     {
-      "id": "r2",
-      "priority": "medium",
+      "id": "R2",
+      "priority": "high",
       "type": "feature_engineering",
-      "target": "lag_24h",
-      "suggestion": "Review the impact of lag_24h based on the hypothesis: A large single-hour miss occurred.",
-      "expectedEffect": "Check whether MAE, WAPE, and RMSE improve together under repeated hour-band and business-type conditions.",
-      "risk": "Overfitting a single-day pattern can cause over-correction in other seasons or day types.",
-      "validationPlan": "Compare WAPE, RMSE, and max error against TEPCO using recent 2-4 week replay and backtests.",
+      "target": "intraday_correction.day_level_scale",
+      "suggestion": "Apply a daytime scale-up trigger when 11-14 cumulative residual stays below -400 MW for two consecutive hours.",
+      "expectedEffect": "Lift daytime level before the hour-15 reversal and cut the 13-14 underprediction.",
+      "risk": "Could overcorrect on already elevated demand days.",
+      "validationPlan": "Replay days with 11-14 residuals below -400 MW and check MAE reduction in the 11-15 band without increasing overnight error.",
       "linkedHypotheses": [
-        "h2"
-      ],
-      "autoApply": false
-    },
-    {
-      "id": "r3",
-      "priority": "medium",
-      "type": "calibration",
-      "target": "intraday_correction.positive_residual_mitigation",
-      "suggestion": "Review the impact of intraday_correction.positive_residual_mitigation based on the hypothesis: The model curve may have risen faster than actual demand.",
-      "expectedEffect": "Check whether MAE, WAPE, and RMSE improve together under repeated hour-band and business-type conditions.",
-      "risk": "Overfitting a single-day pattern can cause over-correction in other seasons or day types.",
-      "validationPlan": "Compare WAPE, RMSE, and max error against TEPCO using recent 2-4 week replay and backtests.",
-      "linkedHypotheses": [
-        "h3"
+        "H2"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
-    "featureRecommendations are review candidates and are never applied automatically.",
-    "Operational calibration signal catalog: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+    "Daily comparable coverage was complete at 24/24 hours, with 22 observed hours used in calibration and 19 retained calibration snapshots.",
+    "Published-vs-recalculated gaps exceeded the 500 MW freeze threshold at hours 14 and 15, but the published line still reflects a frozen serving path rather than a calibration fault.",
+    "TEPCO remained better in the 11-15 band, while the model retained clear advantage overnight, late afternoon, and evening."
   ],
   "limitations": [
-    "This report was generated from deterministic JSON without calling OpenAI.",
-    "Intermediate intraday runs are reconstructed only from retained operational-calibration snapshots."
+    "Analysis is based on summarized operational evidence and retained calibration snapshots.",
+    "The morning transition hypothesis is directional only because the provided facts do not explicitly identify the business-day state change."
   ]
 }
