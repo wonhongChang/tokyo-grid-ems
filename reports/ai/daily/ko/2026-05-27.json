@@ -3,15 +3,17 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-27",
-  "generatedAt": "2026-05-28T07:34:32+09:00",
+  "generatedAt": "2026-05-28T09:02:45+09:00",
   "availability": "ok",
   "language": "ko",
   "contentLanguage": "ko",
   "generator": {
-    "provider": "fallback",
-    "model": null,
-    "promptVersion": "fallback_rules_v1",
-    "schemaVersion": "1.0.0"
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "promptVersion": "openai_ops_report_v3",
+    "schemaVersion": "1.0.0",
+    "localizationModel": "gpt-5.4-mini",
+    "localizationStatus": "ok"
   },
   "inputRefs": {
     "operationReport": "reports/daily/2026-05-27.json",
@@ -25,7 +27,7 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-05-28T07:34:32+09:00",
+    "createdAt": "2026-05-28T09:02:45+09:00",
     "fingerprint": "sha256:923dd2630c02d18a5f4b50009d456c76ac4373acf7b33b67c7492ccff6c4900a",
     "sources": {
       "operationReport": {
@@ -92,14 +94,14 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 21,
     "limitations": [
-      "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
-      "intraday 중간 실행은 operational-calibration snapshot 기준으로 제한적으로 복원합니다."
+      "이 분석은 요약된 운영 증거와 보관된 calibration 스냅샷을 기반으로 합니다.",
+      "중간 intraday 동작은 스냅샷에서 재구성된 것이므로, 관측되지 않은 트리거 시점은 보수적으로 해석해야 합니다."
     ]
   },
   "executiveSummary": {
     "severity": "warning",
-    "headline": "TEPCO가 일일 정확도에서 우세했습니다.",
-    "summary": "비교 가능 시간은 24시간이며, 모델 MAE는 380.2 MW, TEPCO MAE는 272.1 MW입니다. WAPE는 모델 1.30%, TEPCO 0.93%로 집계되었습니다.",
+    "headline": "TEPCO가 수준과 형태 모두에서 모델보다 우수했습니다",
+    "summary": "모델은 비교 가능한 24개 시간 중 16개에서 뒤졌고, 핵심 지표도 모두 더 나빴습니다. MAE는 380.2 MW 대 272.1 MW, WAPE는 1.30% 대 0.93%, RMSE는 484.3 MW 대 318.8 MW였습니다. 가장 큰 운영상 약점은 늦은 오후/저녁의 형태 오차였으며, 특히 17-18 구간의 꺾임과 18:00 시점의 미스가 두드러졌습니다.",
     "modelVerdict": "tepco_better",
     "confidence": "high"
   },
@@ -128,168 +130,176 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "h1",
-      "severity": "warning",
-      "confidence": "medium",
+      "id": "H1",
+      "severity": "critical",
+      "confidence": "high",
       "evidenceStatus": "partial",
-      "title": "TEPCO 대비 일일 오차가 컸습니다.",
-      "explanation": "일일 MAE/WAPE 기준으로 TEPCO 예측이 더 가까웠습니다. 세부 시간대와 내부 피처를 함께 확인해야 합니다.",
+      "title": "늦은 오후 램프 반전이 추적되지 않았습니다",
+      "explanation": "가장 큰 형태 괴리는 17-18 구간에서 나타났습니다. 실제 수요는 230 MW 하락했지만 모델은 1,352.3 MW 상승했습니다. 이는 18:00의 최악 시간과도 맞물리며, 그 시점의 모델 오차는 1,134.1 MW에 달했습니다.",
       "evidence": [
         {
-          "source": "reports/daily",
-          "metric": "maeGapMw",
-          "value": 108.1,
-          "unit": "MW",
+          "source": "performance",
+          "metric": "modelWins_vs_TEPCOWins",
+          "value": "8_vs_16",
+          "unit": "hours",
           "hour": null,
           "timeBand": null
         },
         {
-          "source": "reports/daily",
-          "metric": "wapeGapPct",
-          "value": 0.37,
-          "unit": null,
-          "hour": null,
-          "timeBand": null
-        }
-      ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "lag_24h",
-        "temp_c",
-        "humidity_pct"
-      ],
-      "counterEvidence": []
-    },
-    {
-      "id": "h2",
-      "severity": "warning",
-      "confidence": "medium",
-      "evidenceStatus": "partial",
-      "title": "모델 곡선이 실제 수요보다 급하게 올라갔을 수 있습니다.",
-      "explanation": "시간 간 변화량 기준으로 모델 상승폭이 실제보다 컸습니다. 양수 잔차 전파와 ramp guard의 영향 범위를 확인해야 합니다.",
-      "evidence": [
-        {
-          "source": "reports/daily",
-          "metric": "modelDeltaMw",
-          "value": 1352.3,
+          "source": "operationFacts.shape",
+          "metric": "largestDeltaMiss.modelDeltaErrorMw",
+          "value": 1582.3,
           "unit": "MW",
-          "hour": null,
-          "timeBand": null
-        },
-        {
-          "source": "reports/daily",
-          "metric": "actualDeltaMw",
-          "value": -230.0,
-          "unit": "MW",
-          "hour": null,
-          "timeBand": null
+          "hour": 18,
+          "timeBand": "late_afternoon"
         }
       ],
       "relatedHours": [
         17,
-        18
+        18,
+        19
       ],
-      "relatedTimeBands": [],
+      "relatedTimeBands": [
+        "late_afternoon",
+        "evening"
+      ],
       "relatedFeatures": [
-        "intraday_correction.positive_residual_mitigation",
-        "lag_24h_hourly_delta"
-      ],
-      "counterEvidence": []
-    },
-    {
-      "id": "h60",
-      "severity": "info",
-      "confidence": "high",
-      "evidenceStatus": "confirmed",
-      "title": "intraday 보정 실행 이력이 스냅샷으로 보존되었습니다.",
-      "explanation": "operational-calibration snapshot index에 중간 실행 이력이 남아 있어 최종 덮어쓰기 JSON만 볼 때보다 보정 레이어 흐름을 더 잘 추적할 수 있습니다.",
-      "evidence": [
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "snapshotCount",
-          "value": 21
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "dominantAppliedRegimeReason",
-          "value": "intraday_observed_residual"
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "dominantReasonCount",
-          "value": 18
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "latestGeneratedAt",
-          "value": "2026-05-27T22:37:18+09:00"
-        }
-      ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "intraday_correction.day_boundary_carryover",
-        "intraday_correction.business_type_transition_prior",
-        "intraday_correction.negative_residual_recovery_damping"
+        "intraday_correction.positive_residual_slope_damping",
+        "intraday_correction.negative_residual_recovery_damping",
+        "intraday_correction.day_boundary_carryover"
       ],
       "counterEvidence": [
-        "스냅샷은 보존된 21회 실행만 설명하며, 삭제된 이전 실행은 복원하지 않습니다.",
-        "보정이 실제로 적용된 스냅샷 수는 21회입니다."
+        "TEPCO도 같은 전환을 놓쳤지만, 그 규모는 훨씬 작았습니다.",
+        "전환 전용 보정이 적용되었다는 calibration 플래그는 보이지 않습니다."
+      ]
+    },
+    {
+      "id": "H2",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "아침 램프는 전일 관성의 영향을 받았을 수 있습니다",
+      "explanation": "06-10 시간대에는 lag-24 동일 영업일 구분 간 격차가 양(+)으로 나타났고, 진단 평균은 338.0 MW였습니다. 반면 모델 바이어스는 -148.0 MW로 음수였습니다. 이 구간의 진단에 영업일에서 비영업일로의 전환 신호가 포함되어 있으므로, lag-24 관성이 개입했을 가능성이 있습니다.",
+      "evidence": [
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24ToSameBusinessTypeGapByBand.morning_ramp.mean",
+          "value": 338,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "diagnosticFacts.diagnosticSummary",
+          "metric": "lag24HourlyDeltaByBand.morning_ramp.mean",
+          "value": 1994,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "morning_ramp"
+        }
+      ],
+      "relatedHours": [
+        8,
+        9,
+        10
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.business_type_transition_prior",
+        "intraday_correction.business_type_transition",
+        "intraday_correction.day_boundary_carryover"
+      ],
+      "counterEvidence": [
+        "06-10의 시간대 판정은 명확한 실패라기보다 close 수준이었습니다.",
+        "calibration 사실에서는 직접적인 영업일 구분 전환 적용이 관측되지 않았습니다."
+      ]
+    },
+    {
+      "id": "H3",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "강한 상승 바이어스가 있었는데도 양수 잔차 감쇠가 없었습니다",
+      "explanation": "모델은 낮 시간대와 늦은 오후에 양수 바이어스를 보였으며, 11-15에서는 279.0 MW, 16-18에서는 317.4 MW였습니다. calibration 사실상 positiveResidualMitigationApplied=false 및 positiveResidualSlopeDampingApplied=false로 기록되어 있어, 예측이 상승하는 잔차 형태를 잔차 감쇠하지 못했습니다.",
+      "evidence": [
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "daytime.modelBiasMw",
+          "value": 279,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "11-15"
+        },
+        {
+          "source": "operationFacts.timeBands",
+          "metric": "late_afternoon.modelBiasMw",
+          "value": 317.4,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "16-18"
+        }
+      ],
+      "relatedHours": [
+        11,
+        12,
+        16,
+        17,
+        18
+      ],
+      "relatedTimeBands": [
+        "daytime",
+        "late_afternoon"
+      ],
+      "relatedFeatures": [
+        "intraday_correction.positive_residual_mitigation",
+        "intraday_correction.positive_residual_slope_damping"
+      ],
+      "counterEvidence": [
+        "calibration 계층에서 양수 잔차 감쇠 적용은 기록되지 않았지만, 그것만으로 트리거가 작동했어야 했다고 단정할 수는 없습니다.",
+        "가장 큰 미스는 단순한 수준 편향뿐 아니라 형태 반전도 함께 포함합니다."
       ]
     }
   ],
   "featureRecommendations": [
     {
-      "id": "r1",
+      "id": "R1",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "intraday_correction.positive_residual_slope_damping",
+      "suggestion": "16-18 잔차 기울기가 2시간 연속으로 +200 MW/h보다 더 양의 방향으로 돌아설 때 감쇠를 활성화하고, 조정치는 300 MW로 제한하십시오.",
+      "expectedEffect": "늦은 오후 과상승을 줄이고 17-18 형태 붕괴를 완화할 수 있습니다.",
+      "risk": "실제 부하의 급변에는 과소반응할 수 있습니다.",
+      "validationPlan": "보관된 calibration 스냅샷을 재생하고, 06-10이 25 MW 이상 악화되지 않으면서 16-18 MAE가 더 낮아지는지 확인하십시오.",
+      "linkedHypotheses": [
+        "H1",
+        "H3"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "R2",
       "priority": "medium",
       "type": "feature_engineering",
-      "target": "lag_24h",
-      "suggestion": "TEPCO 대비 일일 오차가 컸습니다. 가설을 기준으로 lag_24h의 영향도를 재검토합니다.",
-      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
-      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
-      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
+      "target": "intraday_correction.business_type_transition_prior",
+      "suggestion": "lag24 동일 영업일 구분 격차가 +250 MW를 초과하고 해당 날이 영업일에서 비영업일로 전환되는 경우에만 06-10에 전환 prior를 적용하십시오.",
+      "expectedEffect": "전일 관성으로 인한 아침 램프 오염을 줄일 수 있습니다.",
+      "risk": "안정적인 램프업 구간에서는 과보정이 발생할 수 있습니다.",
+      "validationPlan": "전환 라벨이 있는 날을 재생하여 06-10 바이어스와 MAE를 현재 기준선과 비교하십시오.",
       "linkedHypotheses": [
-        "h1"
-      ],
-      "autoApply": false
-    },
-    {
-      "id": "r2",
-      "priority": "medium",
-      "type": "calibration",
-      "target": "intraday_correction.positive_residual_mitigation",
-      "suggestion": "모델 곡선이 실제 수요보다 급하게 올라갔을 수 있습니다. 가설을 기준으로 intraday_correction.positive_residual_mitigation의 영향도를 재검토합니다.",
-      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
-      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
-      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
-      "linkedHypotheses": [
-        "h2"
-      ],
-      "autoApply": false
-    },
-    {
-      "id": "r3",
-      "priority": "low",
-      "type": "calibration",
-      "target": "intraday_correction.day_boundary_carryover",
-      "suggestion": "intraday 보정 실행 이력이 스냅샷으로 보존되었습니다. 가설을 기준으로 intraday_correction.day_boundary_carryover의 영향도를 재검토합니다.",
-      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
-      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
-      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
-      "linkedHypotheses": [
-        "h60"
+        "H2"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
-    "OpenAI 리포트 생성에 실패해 fallback 해설로 대체했습니다: HTTP Error 401: Unauthorized",
-    "featureRecommendations는 검토 후보이며 자동 적용되지 않습니다.",
-    "운영 보정 신호 카탈로그: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+    "TEPCO는 야간, 늦은 오후, 저녁에서 우위를 보였고, 모델은 11-15에서만 약간 더 좋았으며 어느 구간도 비기지 못했습니다.",
+    "calibration 스냅샷은 observed hours 22와 baseAdjustmentMw -357.6으로 적용되었지만, 영업일 구분 전환이나 잔차 감쇠 플래그는 적용되지 않았습니다.",
+    "21:00의 published-versus-recalculated gap은 -878.0 MW였으며, 이는 freeze-gap 맥락에 해당하고 published forecast와는 materially 다른 최신 recalculated line을 시사합니다."
   ],
   "limitations": [
-    "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
-    "intraday 중간 실행은 operational-calibration snapshot 기준으로 제한적으로 복원합니다."
+    "이 분석은 요약된 운영 증거와 보관된 calibration 스냅샷을 기반으로 합니다.",
+    "중간 intraday 동작은 스냅샷에서 재구성된 것이므로, 관측되지 않은 트리거 시점은 보수적으로 해석해야 합니다."
   ]
 }
