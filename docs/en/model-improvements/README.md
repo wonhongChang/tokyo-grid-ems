@@ -9,6 +9,8 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 ## 2026-05
 
 - [2026-05-27 evening decline continuity guard](model-improvement-2026-05-27-evening-decline-continuity-guard.md)
+- [2026-05-27 morning ramp continuity guard](model-improvement-2026-05-27-morning-ramp-continuity-guard.md)
+- [2026-05-27 midday transition guard re-enabled](model-improvement-2026-05-27-midday-transition-guard-reenabled.md)
 
 - [2026-05-25 positive residual slope damping](model-improvement-2026-05-25-positive-residual-slope-damping.md)
 - [2026-05-25 business-return anchor shortfall guard](model-improvement-2026-05-25-business-return-anchor-shortfall.md)

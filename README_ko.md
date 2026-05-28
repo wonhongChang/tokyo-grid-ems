@@ -156,19 +156,19 @@ python python/etl/run_batch.py --input data/raw --out web/public
 cd web && npm install && npm run dev
 ```
 
-### Docker ?? ETL
+### Docker 로컬 ETL
 
-GitHub-hosted runner?? TEPCO ?? ZIP ????? ?? ?? ?? Docker?? ETL? ????, ??? ?? JSON? ? PC?? `data` ???? publish???.
+GitHub-hosted runner가 TEPCO 월별 ZIP을 다운로드하지 못하는 경우, Docker로 로컬 ETL을 실행하고 생성된 정적 JSON을 내 PC에서 `data` 브랜치로 publish합니다.
 
 ```powershell
-# ? ??: ??? ?? + TEPCO ZIP ?? + ETL ?? + OpenAI ??? + data ??? publish + Deploy Only ??
+# 첫 실행: 이미지 빌드 + TEPCO ZIP 취득 + ETL 실행 + OpenAI 리포트 + data 브랜치 publish + Deploy Only 호출
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build -Publish
 
-# ?? ??: ?? ??? ??? + ETL ?? + data ??? publish + Deploy Only ??
+# 이후 실행: 기존 이미지 재사용 + ETL 실행 + data 브랜치 publish + Deploy Only 호출
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
 ```
 
-Docker? Python ????, TEPCO fetch, OpenAI ??? ??? ????, publish? deploy-dispatch ??? ???? ?? Git ??? ??? ?????.
+Docker는 Python 런타임, TEPCO fetch, OpenAI 리포트 생성을 담당합니다. publish와 deploy-dispatch 단계는 기존 Git 인증 정보를 재사용할 수 있도록 호스트에서 실행합니다.
 
 ### GitHub Pages 배포
 
@@ -200,7 +200,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 - AI 리포트는 ETL 실행에서만 생성하며, intraday/status-only 실행은 리포트 본문을 다시 쓰지 않습니다.
 - 같은 날짜/언어의 리포트 JSON이 이미 있으면 후속 ETL 재시도에서도 보존하여 API 비용이 반복 발생하지 않게 합니다.
-- OpenAI 호출은 기본 2회로 제한합니다. 1차는 영어 마스터 분석(`OPENAI_DAILY_REPORT_MODEL`, 기본값 `gpt-5.4-mini`), 2차는 한국어/일본어 현지화(`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 기본값 `gpt-4o-mini`)입니다.
+- OpenAI 호출은 기본 최대 3회로 제한합니다. 1차는 영어 마스터 분석(`OPENAI_DAILY_REPORT_MODEL`, 기본값 `gpt-5.4-mini`), 2차는 한국어/일본어 현지화(`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 기본값 `gpt-4o-mini`), 3차는 현지화 결과 검증 실패 시 같은 저비용 모델로 한 번 더 재시도하는 용도입니다.
 - GitHub Actions용 timeout 기본값은 `OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90`, `OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180`입니다. GitHub repository variables를 설정하지 않아도 Python 기본값이 적용됩니다.
 - 번역이 실패하거나 timeout되면 해당 언어 경로는 영어 마스터 본문으로 fallback하고 `localizationStatus: "fallback_en"`을 기록합니다.
 
@@ -223,11 +223,12 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-05-27 저녁 하락 연속성 가드](docs/ko/model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)
+- [2026-05-27 오전 램프 연속성 가드](docs/ko/model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)
+- [2026-05-27 점심 전환 가드 재활성화](docs/ko/model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md)
+- [2026-05-25 양수 잔차 슬로프 감쇠](docs/ko/model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)
 - [2026-05-25 영업일 복귀 anchor 부족분 가드](docs/ko/model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)
 - [2026-05-25 영업일 복귀 lag24 cap 수정](docs/ko/model-improvements/model-improvement-2026-05-25-business-return-lag24-cap.md)
-- [2026-05-23 음수 잔차 회복 감쇄](docs/ko/model-improvements/model-improvement-2026-05-23-negative-residual-recovery-damping.md)
-- [2026-05-23 비영업일 전환 보정](docs/ko/model-improvements/model-improvement-2026-05-23-non-business-transition-calibration.md)
-- [2026-05-22 검증 지표 스코어카드](docs/ko/model-improvements/model-improvement-2026-05-22-validation-metrics-scorecard.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 

@@ -133,19 +133,19 @@ python python/etl/run_batch.py --input data/raw --out web/public
 cd web && npm install && npm run dev
 ```
 
-### Docker ????ETL
+### Docker ローカルETL
 
-GitHub-hosted runner ?? TEPCO ??ZIP??????????????? Docker ? ETL ????????????JSON????PC?? `data` ????? publish ????
+GitHub-hosted runner が TEPCO 月次ZIPを取得できない場合は、DockerでローカルETLを実行し、生成された静的JSONを自分のPCから `data` ブランチへ publish します。
 
 ```powershell
-# ??: ??????? + TEPCO ZIP?? + ETL?? + OpenAI???? + data???? publish + Deploy Only ????
+# 初回: イメージビルド + TEPCO ZIP取得 + ETL実行 + OpenAIレポート + dataブランチpublish + Deploy Only呼び出し
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build -Publish
 
-# 2????: ?????????? + ETL?? + data???? publish + Deploy Only ????
+# 2回目以降: 既存イメージを再利用 + ETL実行 + dataブランチpublish + Deploy Only呼び出し
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
 ```
 
-Docker ? Python ?????TEPCO fetch?OpenAI ???????????publish ? deploy-dispatch ???????? Git ?????????????
+Docker は Python ランタイム、TEPCO fetch、OpenAI レポート生成を担当します。publish と deploy-dispatch は既存の Git 認証情報を再利用できるようホスト側で実行します。
 
 ### GitHub Pages デプロイ
 
@@ -177,7 +177,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 - AIレポートはETL実行時のみ生成し、intraday/status-only実行では本文を書き換えません。
 - 同じ日付/言語のレポートJSONが既にある場合、後続のETL再試行でも保持し、APIコストが繰り返し発生しないようにします。
-- OpenAI呼び出しは既定で2回に制限します。1回目は英語マスター分析（`OPENAI_DAILY_REPORT_MODEL`, 既定値 `gpt-5.4-mini`）、2回目は韓国語/日本語ローカライズ（`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 既定値 `gpt-4o-mini`）です。
+- OpenAI呼び出しは既定で最大3回に制限します。1回目は英語マスター分析（`OPENAI_DAILY_REPORT_MODEL`, 既定値 `gpt-5.4-mini`）、2回目は韓国語/日本語ローカライズ（`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 既定値 `gpt-4o-mini`）、3回目はローカライズ検証に失敗した場合に同じ低コストモデルで一度だけ再試行するためのものです。
 - GitHub Actions向けtimeoutの既定値は `OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90`, `OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180` です。GitHub repository variablesを設定しなくてもPython側の既定値が使われます。
 - 翻訳が失敗またはtimeoutした場合、その言語パスは英語マスター本文へfallbackし、`localizationStatus: "fallback_en"` を記録します。
 
@@ -200,11 +200,12 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-05-27 夕方下落継続ガード](docs/ja/model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)
+- [2026-05-27 朝ランプ継続ガード](docs/ja/model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)
+- [2026-05-27 昼休み遷移ガード再有効化](docs/ja/model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md)
+- [2026-05-25 正の残差スロープ減衰](docs/ja/model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)
 - [2026-05-25 営業日復帰 anchor 不足分 guard](docs/ja/model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)
 - [2026-05-25 営業日復帰 lag24 cap 修正](docs/ja/model-improvements/model-improvement-2026-05-25-business-return-lag24-cap.md)
-- [2026-05-23 負の残差回復ダンピング](docs/ja/model-improvements/model-improvement-2026-05-23-negative-residual-recovery-damping.md)
-- [2026-05-23 非営業日遷移補正](docs/ja/model-improvements/model-improvement-2026-05-23-non-business-transition-calibration.md)
-- [2026-05-22 検証指標スコアカード](docs/ja/model-improvements/model-improvement-2026-05-22-validation-metrics-scorecard.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 
