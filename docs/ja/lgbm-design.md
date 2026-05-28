@@ -4,6 +4,8 @@
 
 言語: [English](../en/lgbm-design.md) · [한국어](../ko/lgbm-design.md)
 
+運用参考文書: [モデル運用仕様](model-operations-spec.md)
+
 ---
 
 ## システム内の役割

@@ -4,6 +4,8 @@
 
 언어: [English](../en/lgbm-design.md) · [日本語](../ja/lgbm-design.md)
 
+운영 참고 문서: [모델 운영 명세](model-operations-spec.md)
+
 ---
 
 ## 시스템에서의 역할

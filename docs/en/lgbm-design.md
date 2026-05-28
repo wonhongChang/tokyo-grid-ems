@@ -4,6 +4,8 @@
 
 Languages: [한국어](../ko/lgbm-design.md) · [日本語](../ja/lgbm-design.md)
 
+Operational reference: [Model operations specification](model-operations-spec.md)
+
 ---
 
 ## Role in the System

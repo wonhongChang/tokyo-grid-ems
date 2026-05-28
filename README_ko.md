@@ -210,6 +210,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 - [학생을 위한 프로젝트 전체 설명](docs/ko/project-walkthrough.md)
 - [LightGBM 모델 설계](docs/ko/lgbm-design.md)
+- [모델 운영 명세](docs/ko/model-operations-spec.md)
 - [기온 데이터 연동 설계](docs/ko/weather-integration.md)
 - [데이터 보존 및 아카이브 전략](docs/ko/data-retention-strategy.md)
 - [모델 평가 리포트](docs/ko/model-evaluation.md)
