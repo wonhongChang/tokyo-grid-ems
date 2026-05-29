@@ -8,6 +8,7 @@ import pytest
 
 from python.eval.ai_daily_report import (
     _build_openai_fact_packet,
+    _merge_openai_analysis,
     _openai_analysis_schema,
     _validate_localized_analysis,
     build_ai_daily_report,
@@ -455,6 +456,76 @@ def test_openai_analysis_schema_requires_nullable_recommendation_fields():
     assert "commandStatus" in recommendation_schema["properties"]
     assert "proposedReplayCommand" in recommendation_schema["required"]
     assert "commandStatus" in recommendation_schema["required"]
+
+
+def test_openai_merge_normalizes_empty_command_and_mw_unit(tmp_path):
+    _write_operation_fixture(tmp_path)
+    fallback = build_ai_daily_report(
+        tmp_path,
+        "2026-05-23",
+        generated_at="2026-05-24T08:20:00+09:00",
+        use_openai=False,
+    )
+
+    report = _merge_openai_analysis(
+        fallback,
+        {
+            "executiveSummary": {
+                "severity": "warning",
+                "headline": "TEPCO had lower daily error in daytime hours.",
+                "summary": "The model miss was concentrated in the daytime band.",
+                "modelVerdict": "tepco_better",
+                "confidence": "medium",
+            },
+            "rootCauseHypotheses": [
+                {
+                    "id": "h1",
+                    "severity": "warning",
+                    "confidence": "medium",
+                    "evidenceStatus": "partial",
+                    "title": "Daytime forecast bias remained visible.",
+                    "explanation": "The largest miss was in the daytime band.",
+                    "evidence": [
+                        {
+                            "source": "topMisses",
+                            "metric": "modelAbsErrorMw",
+                            "value": 1000,
+                            "unit": "Mw",
+                            "hour": 12,
+                            "timeBand": "daytime",
+                        }
+                    ],
+                    "relatedHours": [12],
+                    "relatedTimeBands": ["daytime"],
+                    "relatedFeatures": ["serving.published_forecast_freeze"],
+                    "counterEvidence": [],
+                }
+            ],
+            "featureRecommendations": [
+                {
+                    "id": "r1",
+                    "priority": "medium",
+                    "type": "evaluation",
+                    "target": "serving.published_forecast_freeze",
+                    "suggestion": "Compare published and recalculated forecast gaps.",
+                    "expectedEffect": "This separates raw model error from serving freeze effects.",
+                    "risk": "Single-day analysis may overstate the serving effect.",
+                    "validationPlan": "Replay recent business days with freeze impact reporting.",
+                    "proposedReplayCommand": "",
+                    "commandStatus": "proposed_not_implemented",
+                    "linkedHypotheses": ["h1"],
+                    "autoApply": False,
+                }
+            ],
+            "operatorNotes": [],
+            "limitations": [],
+        },
+        "gpt-4o-mini",
+    )
+
+    assert report["rootCauseHypotheses"][0]["evidence"][0]["unit"] == "MW"
+    assert "proposedReplayCommand" not in report["featureRecommendations"][0]
+    assert "commandStatus" not in report["featureRecommendations"][0]
 
 
 def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, tmp_path):

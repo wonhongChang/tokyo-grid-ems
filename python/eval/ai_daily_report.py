@@ -78,6 +78,12 @@ LOCALIZED_TEXT_REPLACEMENTS = {
         ("긍정적일 경우", "양수일 경우"),
         ("긍정적이면", "양수이면"),
         ("긍정적", "양수"),
+        ("notable한", "유의미한"),
+        ("notable", "유의미한"),
+        ("TEPCO 모델", "TEPCO 예측"),
+        ("일일 오류", "일일 오차"),
+        ("평균 절대 오류", "평균 절대 오차"),
+        ("피크 수요 시간", "피크 수요 시간대"),
         ("2시간 감소", "2시간 감쇠"),
         ("램프업업", "램프업"),
     ],
@@ -2640,10 +2646,25 @@ def _openai_domain_guidelines() -> str:
     return (
         "Reason like a power-demand operations analyst, not a text summarizer. "
         "Use only numeric facts, weather diagnostics, topMisses, timeBands, "
-        "focusedRows, controlContext, freezeContext, rollingPatternContext, "
-        "and calibration flags "
+        "focusedRows, controlContext, controllerDiagnosis, stageAttribution, "
+        "bandQuality, freezeContext, rollingPatternContext, and calibration flags "
         "from factPacket. Treat focusedRows as the detailed window around "
         "large misses or calibration-shape risk, not as a full-day table. "
+        "The headline must state the operational result or risk, such as which "
+        "model had lower daily error and the main affected hour band; never use "
+        "generic headlines such as observations, status, or daily report. "
+        "When controllerDiagnosis, stageAttribution, or freezeImpact is present, "
+        "at least one hypothesis or recommendation should use one of those fields "
+        "unless the field is explicitly irrelevant. "
+        "If freezeImpact.largestGaps or stageAttribution.largestStageShifts show "
+        "a published-versus-recalculated gap above the threshold, include a "
+        "serving.published_forecast_freeze hypothesis or counter-evidence item. "
+        "If controllerDiagnosis.flags contains mismatchedGradient, explain the "
+        "residual direction versus latest actual slope conflict instead of giving "
+        "only a generic time-band bias. "
+        "When both topMisses and stage/freeze diagnostics exist, return at least "
+        "two hypotheses: one for forecast accuracy and one for serving/calibration "
+        "shape risk. "
         "Use freezeContext only when it records a published-versus-recalculated "
         "forecast gap; otherwise do not infer freeze effects. If morning_ramp hours 06-10 "
         "show large positive model bias and the data indicates a business-day "
@@ -2657,12 +2678,14 @@ def _openai_domain_guidelines() -> str:
         "a concrete target from featureCatalog when possible and must propose "
         "a specific trigger, threshold, decay, shrinkage, or validation replay; "
         "include proposedReplayCommand only when it is clearly a real or proposed "
-        "replay command, and set commandStatus to implemented, manual_validation, "
-        "or proposed_not_implemented rather than presenting invented commands as real. "
+        "replay command. If there is no concrete command, set proposedReplayCommand "
+        "and commandStatus to null. If a command is proposed but not implemented, "
+        "set commandStatus to proposed_not_implemented rather than presenting it as real. "
         "Use rollingPatternContext to decide whether a miss pattern is repeated "
         "or a single-day anomaly; if it is not repeated, recommend further "
         "observation before changing guards. "
-        "avoid generic wording such as merely reviewing a feature. Never return "
+        "Use the unit spelling MW, not Mw. Avoid generic wording such as merely "
+        "reviewing a feature. Never return "
         "sports-style wording such as win, lose, victory, defeat, or beat; use "
         "operations wording such as lower error, model advantage hours, TEPCO "
         "advantage hours, comparable performance, or underperformed. "
@@ -2983,11 +3006,14 @@ def _normalize_evidence(value: Any) -> list[dict]:
         metric = item.get("metric")
         if not source or not metric:
             continue
+        unit = item.get("unit")
+        if isinstance(unit, str) and unit.lower() == "mw":
+            unit = "MW"
         result.append({
             "source": str(source),
             "metric": str(metric),
             "value": item.get("value"),
-            "unit": item.get("unit"),
+            "unit": unit,
             "hour": item.get("hour"),
             "timeBand": item.get("timeBand"),
         })
@@ -3126,6 +3152,17 @@ def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
             or not validation_plan
         ):
             continue
+        proposed_replay_command = _meaningful_text(item.get("proposedReplayCommand"))
+        command_status = (
+            item.get("commandStatus")
+            if proposed_replay_command
+            and item.get("commandStatus") in {
+                "implemented",
+                "proposed_not_implemented",
+                "manual_validation",
+            }
+            else None
+        )
         recommendation = {
             "id": str(item.get("id") or f"r{index}"),
             "priority": priority,
@@ -3135,18 +3172,8 @@ def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
             "expectedEffect": expected_effect,
             "risk": risk,
             "validationPlan": validation_plan,
-            "proposedReplayCommand": _meaningful_text(
-                item.get("proposedReplayCommand")
-            ),
-            "commandStatus": (
-                item.get("commandStatus")
-                if item.get("commandStatus") in {
-                    "implemented",
-                    "proposed_not_implemented",
-                    "manual_validation",
-                }
-                else None
-            ),
+            "proposedReplayCommand": proposed_replay_command or None,
+            "commandStatus": command_status,
             "linkedHypotheses": _as_string_list(item.get("linkedHypotheses")),
             "autoApply": False,
         }
