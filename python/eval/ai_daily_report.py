@@ -23,7 +23,7 @@ TIMEZONE = "Asia/Tokyo"
 JST = ZoneInfo(TIMEZONE)
 SCHEMA_VERSION = "1.0.0"
 PROMPT_VERSION = "fallback_rules_v1"
-OPENAI_PROMPT_VERSION = "openai_ops_report_v3"
+OPENAI_PROMPT_VERSION = "openai_ops_report_v4"
 OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALES = "ko,en,ja"
@@ -59,6 +59,8 @@ LOCALIZED_TEXT_REPLACEMENTS = {
         ("중간의 인트라데이 실행", "중간에 덮어쓴 intraday 실행 내역"),
         ("중간 intraday 실행은", "중간에 덮어쓴 intraday 실행 내역은"),
         ("인트라데이 실행", "intraday 실행"),
+        ("인트라데이", "intraday"),
+        ("イントラデイ", "intraday"),
         ("요약된 운영적 증거", "요약 운영 지표"),
         ("보존된 캘리브레이션 스냅샷", "보존된 보정 스냅샷"),
         ("캘리브레이션 스냅샷", "보정 스냅샷"),
@@ -2650,6 +2652,9 @@ def _openai_domain_guidelines() -> str:
         "bandQuality, freezeContext, rollingPatternContext, and calibration flags "
         "from factPacket. Treat focusedRows as the detailed window around "
         "large misses or calibration-shape risk, not as a full-day table. "
+        "When citing hour bands, always use unambiguous clock labels such as "
+        "'hours 11:00-15:00 JST' or '11:00-15:00'. Do not write bare ranges "
+        "like '11-15' or date-like phrases such as 'on 11-15'. "
         "The headline must state the operational result or risk, such as which "
         "model had lower daily error and the main affected hour band; never use "
         "generic headlines such as observations, status, or daily report. "
@@ -2677,6 +2682,10 @@ def _openai_domain_guidelines() -> str:
         "not_observed with low confidence. Feature recommendations must name "
         "a concrete target from featureCatalog when possible and must propose "
         "a specific trigger, threshold, decay, shrinkage, or validation replay; "
+        "write recommendations as experiment candidates, not production commands. "
+        "Use wording like consider testing, backtest, evaluate, or make this a "
+        "candidate; do not say to add, freeze, disable, or change production "
+        "behavior directly unless the input includes explicit implemented evidence. "
         "include proposedReplayCommand only when it is clearly a real or proposed "
         "replay command. If there is no concrete command, set proposedReplayCommand "
         "and commandStatus to null. If a command is proposed but not implemented, "
@@ -2751,6 +2760,12 @@ def _openai_instructions(language: str) -> str:
         "Use rollingPatternContext to distinguish repeated operating patterns "
         "from single-day anomalies. "
         "Every featureRecommendations item must set autoApply to false. "
+        "FeatureRecommendations are experiment tickets, not direct production "
+        "instructions. The suggestion should describe what to test or review, "
+        "the expectedEffect should describe the desired metric movement, risk "
+        "should describe the failure mode, and validationPlan should describe "
+        "the replay or monitoring check. Avoid imperative wording that sounds "
+        "like immediate deployment. "
         "The output language field in the final report is managed by code; "
         f"write narrative text for language={language}."
     )
@@ -2938,13 +2953,26 @@ def _openai_localization_instructions(languages: list[str]) -> str:
         "surrounding explanation conservatively. For ko, write natural Korean "
         "using Hangul-based sentences; do not emit mojibake, pseudo-CJK, or "
         "Chinese-only text, and avoid sports-style words such as 승리/패배 when "
-        "describing forecast comparison. Use this Korean terminology: "
+        "describing forecast comparison. For Korean hour ranges, translate "
+        "'hours 11:00-15:00 JST' as '11~15시 구간' or an equivalent hour-band "
+        "phrase, never as a calendar day range such as '11-15일'. "
+        "For recommendations in Korean, phrase suggestions as experimental "
+        "review candidates such as '... 조건을 백테스트 후보로 검토합니다' "
+        "or '... 기준을 실험 후보로 둡니다', not as direct commands like "
+        "'추가합니다' or '동결합니다'. "
+        "Use this Korean terminology: "
         "'intraday execution' -> 'intraday 실행', 'residual damping' -> "
         "'잔차 감쇠', 'business type' -> '영업일 구분', 'positive bias' -> "
         "'양수 바이어스', and 'ramp window' -> '램프업 구간'. Never translate "
         "intraday as a word related to happiness. For ja, write natural modern Japanese; "
         "do not emit mojibake or pseudo-CJK text, and avoid 勝利/敗北 wording "
-        "when describing forecast comparison. Use this Japanese terminology: "
+        "when describing forecast comparison. For Japanese hour ranges, translate "
+        "'hours 11:00-15:00 JST' as '11〜15時台' or an equivalent hour-band "
+        "phrase, never as a calendar day range such as '11-15日'. "
+        "For recommendations in Japanese, phrase suggestions as experiment "
+        "candidates such as '検証候補とします' or 'バックテスト対象にします', "
+        "not as direct production commands. "
+        "Use this Japanese terminology: "
         "'intraday execution' -> 'イントラデイ実行', 'residual damping' -> "
         "'残差ダンピング', and 'business type' -> '営業日/非営業日区分'."
     )
@@ -3313,6 +3341,26 @@ def _polish_localized_text(language: str, value: Any) -> Any:
         result = value
         for old, new in LOCALIZED_TEXT_REPLACEMENTS.get(language, []):
             result = result.replace(old, new)
+        if language == "ko":
+            for old, new in (
+                ("11-15일", "11~15시 구간"),
+                ("11~15일", "11~15시 구간"),
+                ("11-18일", "11~18시 구간"),
+                ("11~18일", "11~18시 구간"),
+                ("15-17일", "15~17시 구간"),
+                ("15~17일", "15~17시 구간"),
+            ):
+                result = result.replace(old, new)
+        elif language == "ja":
+            for old, new in (
+                ("11-15日", "11〜15時台"),
+                ("11〜15日", "11〜15時台"),
+                ("11-18日", "11〜18時台"),
+                ("11〜18日", "11〜18時台"),
+                ("15-17日", "15〜17時台"),
+                ("15〜17日", "15〜17時台"),
+            ):
+                result = result.replace(old, new)
         return result
     if isinstance(value, list):
         return [_polish_localized_text(language, item) for item in value]
@@ -3393,9 +3441,117 @@ def _clarify_operator_notes_coverage(report: dict) -> dict:
     return report
 
 
+def _recommendation_copy_override(language: str, target: str) -> dict[str, str] | None:
+    """Keep high-risk recommendations framed as reviewable experiments."""
+    if target == "intraday_correction.day_level_scale":
+        if language == "en":
+            return {
+                "suggestion": (
+                    "Treat a daytime scale-up rule as a backtest candidate when "
+                    "hours 11:00-15:00 JST repeatedly show model bias below -500 MW."
+                ),
+                "expectedEffect": (
+                    "Check whether persistent daytime underprediction improves without "
+                    "pushing the evening curve upward."
+                ),
+                "risk": (
+                    "A broad scale-up rule can overcorrect mild-demand days or days "
+                    "with a sharp afternoon decline."
+                ),
+                "validationPlan": (
+                    "Replay the recent 7-14 days and compare daytime MAE/WAPE, evening "
+                    "MAE, and max-error hours before considering deployment."
+                ),
+            }
+        if language == "ja":
+            return {
+                "suggestion": (
+                    "11〜15時台でモデルバイアスが-500 MWを下回る状態が反復する場合、"
+                    "昼間スケール補正をバックテスト候補として扱います。"
+                ),
+                "expectedEffect": (
+                    "昼間の過小予測が改善し、夕方の曲線を過度に押し上げないかを確認します。"
+                ),
+                "risk": (
+                    "穏やかな需要日や午後に急低下する日では、過補正になる可能性があります。"
+                ),
+                "validationPlan": (
+                    "直近7〜14日をリプレイし、昼間MAE/WAPE、夕方MAE、最大誤差時間を比較してから採用を判断します。"
+                ),
+            }
+        return {
+            "suggestion": (
+                "11~15시 구간에서 모델 바이어스가 -500 MW 이하로 반복될 때, "
+                "낮 시간 스케일 보정을 백테스트 후보로 둡니다."
+            ),
+            "expectedEffect": (
+                "낮 시간 과소예측이 줄어드는지 보되, 저녁 예측선을 과하게 끌어올리지 않는지 함께 확인합니다."
+            ),
+            "risk": (
+                "수요가 온화한 날이나 오후에 급락하는 날에는 과보정으로 바뀔 수 있습니다."
+            ),
+            "validationPlan": (
+                "최근 7~14일 리플레이에서 낮 시간 MAE/WAPE, 저녁 MAE, 최대 오차 시간을 함께 비교합니다."
+            ),
+        }
+    if target == "serving.published_forecast_freeze":
+        if language == "en":
+            return {
+                "suggestion": (
+                    "Review the published-forecast freeze policy as an experiment when "
+                    "the published versus recalculated gap exceeds 500 MW in hours "
+                    "15:00-17:00 JST."
+                ),
+                "expectedEffect": (
+                    "Reduce visible serving drift when a later recalculation materially "
+                    "changes the afternoon line."
+                ),
+                "risk": (
+                    "Relaxing freeze behavior too much can make the public curve look "
+                    "unstable during intraday updates."
+                ),
+                "validationPlan": (
+                    "For the next 10 intraday runs, compare published/recalculated gaps, "
+                    "actual error, and whether a refresh would have improved the served line."
+                ),
+            }
+        if language == "ja":
+            return {
+                "suggestion": (
+                    "15〜17時台で公開線と再計算線の差が500 MWを超える場合、"
+                    "公開予測線の保持ポリシーを検証候補として見直します。"
+                ),
+                "expectedEffect": (
+                    "午後の再計算で曲線が大きく変わった場合の、画面上の乖離を抑えます。"
+                ),
+                "risk": (
+                    "保持を緩めすぎると、intraday更新時に公開曲線が不安定に見える可能性があります。"
+                ),
+                "validationPlan": (
+                    "次の10回のintraday実行で、公開線と再計算線の差、実誤差、再公開した場合の改善幅を比較します。"
+                ),
+            }
+        return {
+            "suggestion": (
+                "15~17시 구간에서 발표선과 재계산선의 차이가 500 MW를 넘는 경우, "
+                "예측선 보존 정책을 실험 후보로 재검토합니다."
+            ),
+            "expectedEffect": (
+                "오후 재계산 결과가 크게 달라졌을 때, 화면에 남는 예측선 괴리를 줄일 수 있는지 확인합니다."
+            ),
+            "risk": (
+                "보존 정책을 너무 느슨하게 하면 intraday 갱신 때 공개 곡선이 불안정해 보일 수 있습니다."
+            ),
+            "validationPlan": (
+                "다음 10회 intraday 실행에서 발표선-재계산선 갭, 실제 오차, 재공개 시 개선폭을 비교합니다."
+            ),
+        }
+    return None
+
+
 def _polish_report_language(report: dict) -> dict:
     language = str(report.get("language") or "")
-    if language not in LOCALIZED_TEXT_REPLACEMENTS:
+    if language not in MESSAGES:
         return _clarify_operator_notes_coverage(report)
 
     summary = report.get("executiveSummary")
@@ -3412,6 +3568,12 @@ def _polish_report_language(report: dict) -> dict:
     for recommendation in report.get("featureRecommendations") or []:
         if not isinstance(recommendation, dict):
             continue
+        override = _recommendation_copy_override(
+            language,
+            str(recommendation.get("target") or ""),
+        )
+        if override:
+            recommendation.update(override)
         for field in ("suggestion", "expectedEffect", "risk", "validationPlan"):
             recommendation[field] = _polish_localized_text(
                 language,

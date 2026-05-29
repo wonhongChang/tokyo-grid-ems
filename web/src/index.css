@@ -475,6 +475,30 @@ body {
   color: var(--text);
   margin-bottom: 8px;
 }
+.ops-rec-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ops-rec-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.ops-rec-row span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.ops-rec-row p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.ops-rec-row.primary p {
+  color: var(--text);
+  font-weight: 600;
+}
 .ops-muted {
   color: var(--text-secondary) !important;
 }
@@ -505,6 +529,62 @@ body {
 .ops-diagnostics {
   display: grid;
   gap: 16px;
+}
+.ops-diagnostics-lead {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.ops-diagnostic-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.ops-diagnostic-tile {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.ops-diagnostic-tile span,
+.ops-diagnostic-tile em,
+.ops-diagnostic-tile strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ops-diagnostic-tile span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.ops-diagnostic-tile strong {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.2;
+}
+.ops-diagnostic-tile em {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: normal;
+}
+.ops-diagnostic-details {
+  display: grid;
+  gap: 12px;
+}
+.ops-diagnostic-details > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.ops-diagnostic-details[open] > summary {
+  margin-bottom: 12px;
 }
 .ops-diagnostic-grid {
   display: grid;
@@ -632,8 +712,15 @@ body {
   .ops-diagnostic-grid {
     grid-template-columns: 1fr;
   }
+  .ops-diagnostic-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .ops-stage-row {
     grid-template-columns: 1fr;
+  }
+  .ops-rec-row {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
   .ops-stage-hour {
     width: fit-content;

@@ -99,6 +99,17 @@ Summarize model-vs-TEPCO performance.
 
 Power units follow the current UI locale. Japanese UI uses `万kW` to match TEPCO convention.
 
+### Ops Diagnostics
+
+Reports with `diagnosticContext` show a compact operational diagnostics summary.
+
+- Final actual coverage
+- Controller/base adjustment
+- Forecast band quality
+- Published forecast freeze impact
+
+This section avoids exposing long internal logs as the primary reading path. Operators get a quick explanation of why the served forecast curve looked the way it did, while stage attribution and freeze details stay in a collapsible detail area.
+
 ### Root-Cause Hypotheses
 
 `rootCauseHypotheses[]` cards explain likely causes. Each hypothesis includes:
@@ -130,6 +141,15 @@ Power units follow the current UI locale. Japanese UI uses `万kW` to match TEPC
 ```
 
 The report can suggest improvements, but never applies them automatically.
+
+The UI renders each recommendation as an experiment-style ticket.
+
+- Experiment candidate
+- Expected effect
+- Risk
+- Validation plan
+
+Recommendation copy should therefore stay in a backtest/replay candidate tone, not a production command tone.
 
 ### Date Selector
 
