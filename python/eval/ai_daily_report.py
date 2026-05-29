@@ -24,7 +24,7 @@ JST = ZoneInfo(TIMEZONE)
 SCHEMA_VERSION = "1.0.0"
 PROMPT_VERSION = "fallback_rules_v1"
 OPENAI_PROMPT_VERSION = "openai_ops_report_v3"
-OPENAI_DEFAULT_MODEL = "gpt-5.4-mini"
+OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALES = "ko,en,ja"
 OPENAI_DEFAULT_MAX_CALLS_PER_RUN = 3
@@ -35,6 +35,12 @@ FOCUSED_ROW_RADIUS_HOURS = 2
 MAX_FOCUSED_ROWS = 12
 FREEZE_GAP_THRESHOLD_MW = 500.0
 LARGE_CONTROL_DELTA_MW = 500.0
+DEFAULT_INTRADAY_MAX_ABS_ADJUSTMENT_MW = 1200.0
+LARGE_RESIDUAL_MW = 1000.0
+SLOPE_MISMATCH_THRESHOLD_MW = 500.0
+ROLLING_PATTERN_LOOKBACK_DAYS = 7
+ROLLING_PATTERN_MIN_DIRECTION_DAYS = 2
+ROLLING_PATTERN_MIN_MEAN_BIAS_MW = 300.0
 
 FEATURE_CATALOG = [
     "intraday_correction.business_type_transition_prior",
@@ -1198,6 +1204,7 @@ def _build_fallback_ai_daily_report(
         / "index.json"
     )
     actual = _load_json(public_dir / "actual" / f"{date_iso}.json")
+    forecast = _load_json(public_dir / "forecast" / f"{date_iso}.json")
 
     summary = operation.get("summary") or {}
     limitations = _build_limitations(messages, diagnostics, calibration, calibration_history)
@@ -1223,6 +1230,16 @@ def _build_fallback_ai_daily_report(
         }]
 
     input_refs = _input_refs(public_dir, date_iso)
+    data_quality = _data_quality(actual, operation, limitations, calibration_history)
+    diagnostic_context = _build_report_diagnostic_context(
+        public_dir,
+        date_iso,
+        data_quality,
+        calibration,
+        calibration_history,
+        actual,
+        forecast,
+    )
 
     return {
         "schemaVersion": SCHEMA_VERSION,
@@ -1241,7 +1258,8 @@ def _build_fallback_ai_daily_report(
         },
         "inputRefs": input_refs,
         "inputSnapshot": _input_snapshot(public_dir, input_refs, generated_at),
-        "dataQuality": _data_quality(actual, operation, limitations, calibration_history),
+        "dataQuality": data_quality,
+        "diagnosticContext": diagnostic_context,
         "executiveSummary": {
             "severity": _severity_from_summary(summary),
             "headline": _headline(summary, messages),
@@ -1493,6 +1511,52 @@ def _compact_calibration_history(calibration_history: dict | None) -> dict | Non
     }
 
 
+def _build_coverage_context(
+    data_quality: dict | None,
+    calibration_facts: dict | None,
+) -> dict:
+    """Separate final daily coverage from intraday calibration coverage.
+
+    Daily AI reports evaluate the completed previous day from finalized actual
+    JSON. Operational-calibration JSON may be the last retained intraday
+    snapshot before the final CSV arrived, so its observed/missing-hour counts
+    must not be interpreted as daily performance coverage.
+    """
+    data_quality = data_quality if isinstance(data_quality, dict) else {}
+    final_coverage = _drop_none_values({
+        "scope": "final_daily_actuals_for_performance",
+        "comparableHours": data_quality.get("comparableHours"),
+        "observedHours": data_quality.get("observedHours"),
+        "fallbackActualHours": data_quality.get("fallbackActualHours"),
+    })
+    context = {"finalActualCoverage": final_coverage}
+
+    if isinstance(calibration_facts, dict):
+        source_confidence = calibration_facts.get("sourceConfidence") or {}
+        if not isinstance(source_confidence, dict):
+            source_confidence = {}
+        intraday_observed = (
+            calibration_facts.get("observedHours")
+            if calibration_facts.get("observedHours") is not None
+            else source_confidence.get("usableObservedHours")
+        )
+        missing_hours = source_confidence.get("missingHours")
+        if missing_hours is None and intraday_observed is not None:
+            try:
+                missing_hours = max(0, 24 - int(intraday_observed))
+            except (TypeError, ValueError):
+                missing_hours = None
+        context["intradayCalibrationCoverage"] = _drop_none_values({
+            "scope": "retained_intraday_calibration_snapshot_not_final_actual_csv",
+            "observedHours": intraday_observed,
+            "missingHours": missing_hours,
+            "lastObservedHour": calibration_facts.get("lastObservedHour"),
+            "sourceConfidence": source_confidence.get("level"),
+        })
+
+    return context
+
+
 def _window_hours(center: int | None, radius: int = FOCUSED_ROW_RADIUS_HOURS) -> set[int]:
     if center is None:
         return set()
@@ -1598,6 +1662,545 @@ def _build_freeze_context(
             "positive freezeGapMw means the published forecast is above the "
             "latest recalculated post-calibration line"
         ),
+    }
+
+
+STAGE_ORDER = [
+    "raw_lgbm",
+    "analog_adjusted",
+    "post_holiday_guarded",
+    "midday_guarded",
+    "pre_calibration",
+    "post_calibration",
+    "published",
+]
+
+
+def _stage_label(stage: str) -> str:
+    return stage.replace("_", " ")
+
+
+def _stage_value_from_row(
+    stage: str,
+    row: dict,
+    published_forecast_mw: float | None,
+) -> float | None:
+    stage_values = row.get("forecastMwByStage") or {}
+    if stage in stage_values:
+        return _round_number(stage_values.get(stage))
+    if stage == "pre_calibration":
+        return _round_number(row.get("preCalibrationForecastMw"))
+    if stage == "post_calibration":
+        return _round_number(row.get("postCalibrationForecastMw"))
+    if stage == "published":
+        return published_forecast_mw
+    return None
+
+
+def _stage_impact_summary(
+    row: dict,
+    published_forecast_mw: float | None,
+) -> list[dict]:
+    summary = []
+    previous_stage = None
+    previous_value = None
+    for stage in STAGE_ORDER:
+        value = _stage_value_from_row(stage, row, published_forecast_mw)
+        if value is None:
+            continue
+        delta = 0.0 if previous_value is None else round(value - previous_value, 1)
+        summary.append(_drop_none_values({
+            "stage": stage,
+            "label": _stage_label(stage),
+            "value_mw": value,
+            "delta_mw": delta,
+            "delta_from": previous_stage,
+        }))
+        previous_stage = stage
+        previous_value = value
+    return summary
+
+
+def _largest_stage_delta(stage_summary: list[dict]) -> dict | None:
+    candidates = [
+        item
+        for item in stage_summary
+        if item.get("delta_from") is not None and item.get("delta_mw") is not None
+    ]
+    if not candidates:
+        return None
+    item = max(candidates, key=lambda value: abs(float(value.get("delta_mw") or 0.0)))
+    return {
+        "stage": item.get("stage"),
+        "delta_mw": item.get("delta_mw"),
+        "delta_from": item.get("delta_from"),
+    }
+
+
+def _build_stage_attribution(
+    forecast: dict | None,
+    calibration: dict | None,
+) -> dict | None:
+    if not isinstance(calibration, dict):
+        return None
+    forecast_by_hour = _series_by_hour(forecast)
+    rows = []
+    for row in calibration.get("hourlyDiagnostics") or []:
+        hour = _hour_from_point(row)
+        if hour is None:
+            continue
+        published = _round_number((forecast_by_hour.get(hour) or {}).get("forecastMw"))
+        stage_summary = _stage_impact_summary(row, published)
+        if len(stage_summary) < 2:
+            continue
+        first_value = _as_float(stage_summary[0].get("value_mw"))
+        final_value = _as_float(stage_summary[-1].get("value_mw"))
+        post_calibration = _round_number(row.get("postCalibrationForecastMw"))
+        latest_recalculated = post_calibration
+        if latest_recalculated is None:
+            latest_recalculated = _round_number(row.get("preCalibrationForecastMw"))
+        freeze_gap = (
+            round(published - latest_recalculated, 1)
+            if published is not None and latest_recalculated is not None
+            else None
+        )
+        largest_delta = _largest_stage_delta(stage_summary)
+        rows.append(_drop_none_values({
+            "hour": hour,
+            "ts": row.get("ts") or (forecast_by_hour.get(hour) or {}).get("ts"),
+            "actualMw": _round_number(row.get("actualMw")),
+            "actualSource": row.get("actualSource"),
+            "tepcoForecastMw": _round_number(row.get("tepcoForecastMw")),
+            "stageImpactSummary": stage_summary,
+            "netStageShiftMw": (
+                round(final_value - first_value, 1)
+                if first_value is not None and final_value is not None
+                else None
+            ),
+            "largestStageDelta": largest_delta,
+            "publishedVsLatestRecalculatedGapMw": freeze_gap,
+        }))
+
+    if not rows:
+        return None
+
+    def priority(item: dict) -> tuple[float, float]:
+        net_shift = abs(float(item.get("netStageShiftMw") or 0.0))
+        freeze_gap = abs(float(item.get("publishedVsLatestRecalculatedGapMw") or 0.0))
+        largest = item.get("largestStageDelta") or {}
+        stage_delta = abs(float(largest.get("delta_mw") or 0.0))
+        return (max(net_shift, stage_delta, freeze_gap), freeze_gap)
+
+    selected = sorted(rows, key=priority, reverse=True)[:5]
+    selected = sorted(selected, key=lambda item: int(item.get("hour", 99)))
+    top_stage_counts: dict[str, int] = {}
+    for item in rows:
+        largest = item.get("largestStageDelta") or {}
+        stage = largest.get("stage")
+        if isinstance(stage, str):
+            top_stage_counts[stage] = top_stage_counts.get(stage, 0) + 1
+    top_driver = None
+    if top_stage_counts:
+        top_driver = max(top_stage_counts.items(), key=lambda pair: pair[1])[0]
+    return _drop_none_values({
+        "source": "operationalCalibration.hourlyDiagnostics.forecastMwByStage",
+        "stageOrder": STAGE_ORDER,
+        "largestStageShifts": selected,
+        "topDriver": top_driver,
+    })
+
+
+def _latest_observed_calibration_row(calibration: dict | None) -> dict | None:
+    if not isinstance(calibration, dict):
+        return None
+    rows = [
+        row
+        for row in calibration.get("hourlyDiagnostics") or []
+        if _hour_from_point(row) is not None
+        and row.get("actualMw") is not None
+    ]
+    if not rows:
+        return None
+    return max(rows, key=lambda row: int(_hour_from_point(row) or -1))
+
+
+def _recent_residuals(calibration: dict | None, max_items: int = 6) -> list[float]:
+    if not isinstance(calibration, dict):
+        return []
+    rows = sorted(
+        [
+            row
+            for row in calibration.get("hourlyDiagnostics") or []
+            if _hour_from_point(row) is not None
+        ],
+        key=lambda row: int(_hour_from_point(row) or -1),
+    )
+    residuals = []
+    for row in rows:
+        residual = _as_float(row.get("actualVsPreCalibrationResidualMw"))
+        if residual is None:
+            residual = _as_float(row.get("actualVsPostCalibrationResidualMw"))
+        if residual is not None:
+            residuals.append(residual)
+    return residuals[-max_items:]
+
+
+def _same_direction_tail_count(values: list[float]) -> int:
+    if not values:
+        return 0
+    latest = values[-1]
+    if latest == 0:
+        return 0
+    direction = 1 if latest > 0 else -1
+    count = 0
+    for value in reversed(values):
+        if value == 0 or (1 if value > 0 else -1) != direction:
+            break
+        count += 1
+    return count
+
+
+def _build_controller_diagnosis(
+    calibration: dict | None,
+    freeze_impact: dict | None,
+) -> dict | None:
+    if not isinstance(calibration, dict):
+        return None
+    correction = calibration.get("correction") or {}
+    if not correction:
+        return None
+    base_adjustment = _round_number(correction.get("baseAdjustmentMw"))
+    carryover_adjustment = _round_number(correction.get("carryoverAdjustmentMw"))
+    cap_hit = (
+        abs(float(base_adjustment)) >= DEFAULT_INTRADAY_MAX_ABS_ADJUSTMENT_MW - 0.5
+        if base_adjustment is not None
+        else False
+    )
+    latest_row = _latest_observed_calibration_row(calibration)
+    latest_actual_slope = _round_number(
+        (latest_row or {}).get("sameDayActualSlopeMw")
+    )
+    latest_model_slope = _round_number(
+        (latest_row or {}).get("postCalibrationForecastDeltaMw")
+        if (latest_row or {}).get("postCalibrationForecastDeltaMw") is not None
+        else (latest_row or {}).get("forecastDeltaMw")
+    )
+    latest_post_residual = _round_number(
+        (latest_row or {}).get("actualVsPostCalibrationResidualMw")
+    )
+    recent_residuals = _recent_residuals(calibration)
+    recent_mean = (
+        round(sum(recent_residuals) / len(recent_residuals), 1)
+        if recent_residuals
+        else None
+    )
+    mismatched_gradient = False
+    if base_adjustment is not None and latest_actual_slope is not None:
+        mismatched_gradient = (
+            base_adjustment > 0 and latest_actual_slope < -SLOPE_MISMATCH_THRESHOLD_MW
+        ) or (
+            base_adjustment < 0 and latest_actual_slope > SLOPE_MISMATCH_THRESHOLD_MW
+        )
+    residual_direction = None
+    if base_adjustment is not None:
+        residual_direction = (
+            "upward" if base_adjustment > 0 else "downward" if base_adjustment < 0 else "neutral"
+        )
+    flags = []
+    if cap_hit:
+        flags.append("capHit")
+    if mismatched_gradient:
+        flags.append("mismatchedGradient")
+    if latest_post_residual is not None and latest_post_residual <= -LARGE_RESIDUAL_MW:
+        flags.append("modelStillAboveActualTrend")
+    if latest_post_residual is not None and latest_post_residual >= LARGE_RESIDUAL_MW:
+        flags.append("modelStillBelowActualTrend")
+    if freeze_impact:
+        flags.append("freezeLikelyVisibleInUi")
+    if correction.get("positiveResidualSlopeDampingApplied"):
+        flags.append("positiveResidualSlopeDampingApplied")
+    if correction.get("eveningDeclineContinuityGuardApplied"):
+        flags.append("eveningDeclineContinuityGuardApplied")
+    if correction.get("morningRampContinuityGuardApplied"):
+        flags.append("morningRampContinuityGuardApplied")
+
+    return _drop_none_values({
+        "source": "operationalCalibration.correction",
+        "applied": correction.get("applied"),
+        "baseAdjustmentMw": base_adjustment,
+        "carryoverAdjustmentMw": carryover_adjustment,
+        "maxAbsAdjustmentMw": DEFAULT_INTRADAY_MAX_ABS_ADJUSTMENT_MW,
+        "capHitLikely": cap_hit,
+        "direction": residual_direction,
+        "lastObservedHour": correction.get("lastObservedHour"),
+        "residualTrend": _drop_none_values({
+            "latestResidualMw": latest_post_residual,
+            "recentMeanResidualMw": recent_mean,
+            "sameDirectionHours": _same_direction_tail_count(recent_residuals),
+        }),
+        "slopeContext": _drop_none_values({
+            "latestActualSlopeMw": latest_actual_slope,
+            "latestModelSlopeMw": latest_model_slope,
+            "mismatchedGradient": mismatched_gradient,
+        }),
+        "guardSummary": _drop_none_values({
+            "positiveResidualSlopeDampingApplied": correction.get("positiveResidualSlopeDampingApplied"),
+            "positiveResidualSlopeDampingFactor": _round_number(
+                correction.get("positiveResidualSlopeDampingFactor"),
+                digits=3,
+            ),
+            "positiveResidualSlopeDampingMaxMw": _round_number(
+                correction.get("positiveResidualSlopeDampingMaxMw")
+            ),
+            "morningRampContinuityGuardApplied": correction.get("morningRampContinuityGuardApplied"),
+            "morningRampContinuityMaxRestoreMw": _round_number(
+                correction.get("morningRampContinuityMaxRestoreMw")
+            ),
+            "eveningDeclineContinuityGuardApplied": correction.get("eveningDeclineContinuityGuardApplied"),
+            "eveningDeclineContinuityMaxReductionMw": _round_number(
+                correction.get("eveningDeclineContinuityMaxReductionMw")
+            ),
+        }),
+        "flags": flags,
+    })
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    sorted_values = sorted(values)
+    middle = len(sorted_values) // 2
+    if len(sorted_values) % 2:
+        return sorted_values[middle]
+    return (sorted_values[middle - 1] + sorted_values[middle]) / 2.0
+
+
+def _build_band_quality(actual: dict | None, forecast: dict | None) -> dict | None:
+    actual_by_hour = _series_by_hour(actual)
+    forecast_by_hour = _series_by_hour(forecast)
+    rows = []
+    p95_half_widths = []
+    p99_half_widths = []
+    outside_p95 = []
+    outside_p99 = []
+    q50_large_miss_covered = []
+    for hour in sorted(set(actual_by_hour) & set(forecast_by_hour)):
+        actual_mw = _as_float(actual_by_hour[hour].get("actualMw"))
+        forecast_mw = _as_float(forecast_by_hour[hour].get("forecastMw"))
+        if actual_mw is None or forecast_mw is None:
+            continue
+        p95_lower = _as_float(forecast_by_hour[hour].get("p95LowerMw"))
+        p95_upper = _as_float(forecast_by_hour[hour].get("p95UpperMw"))
+        p99_lower = _as_float(forecast_by_hour[hour].get("p99LowerMw"))
+        p99_upper = _as_float(forecast_by_hour[hour].get("p99UpperMw"))
+        abs_error = abs(forecast_mw - actual_mw)
+        p95_covered = None
+        p99_covered = None
+        if p95_lower is not None and p95_upper is not None:
+            p95_covered = p95_lower <= actual_mw <= p95_upper
+            p95_half_widths.append((p95_upper - p95_lower) / 2.0)
+            if not p95_covered:
+                outside_p95.append(hour)
+        if p99_lower is not None and p99_upper is not None:
+            p99_covered = p99_lower <= actual_mw <= p99_upper
+            p99_half_widths.append((p99_upper - p99_lower) / 2.0)
+            if not p99_covered:
+                outside_p99.append(hour)
+        if (
+            abs_error >= LARGE_CONTROL_DELTA_MW
+            and p95_covered is True
+        ):
+            q50_large_miss_covered.append(hour)
+        rows.append(hour)
+
+    if not rows:
+        return None
+    return _drop_none_values({
+        "comparableHours": len(rows),
+        "p95CoverageHours": len(rows) - len(outside_p95) if p95_half_widths else None,
+        "p95CoverageRate": (
+            round((len(rows) - len(outside_p95)) / len(rows), 3)
+            if p95_half_widths
+            else None
+        ),
+        "p99CoverageHours": len(rows) - len(outside_p99) if p99_half_widths else None,
+        "p99CoverageRate": (
+            round((len(rows) - len(outside_p99)) / len(rows), 3)
+            if p99_half_widths
+            else None
+        ),
+        "outsideP95Hours": outside_p95,
+        "outsideP99Hours": outside_p99,
+        "medianP95HalfWidthMw": _round_number(_median(p95_half_widths)),
+        "medianP99HalfWidthMw": _round_number(_median(p99_half_widths)),
+        "q50LargeMissCoveredByP95Hours": q50_large_miss_covered,
+    })
+
+
+def _load_recent_operation_reports(
+    public_dir: Path,
+    date_iso: str | None,
+    lookback_days: int = ROLLING_PATTERN_LOOKBACK_DAYS,
+) -> list[dict]:
+    index = _load_json(public_dir / "reports" / "daily" / "index.json")
+    if not isinstance(index, dict):
+        return []
+    refs = []
+    for item in index.get("reports") or []:
+        report_date = item.get("date")
+        if not isinstance(report_date, str):
+            continue
+        if date_iso and report_date > date_iso:
+            continue
+        refs.append(report_date)
+    refs = sorted(set(refs))[-lookback_days:]
+    reports = []
+    for report_date in refs:
+        payload = _load_json(public_dir / "reports" / "daily" / f"{report_date}.json")
+        if isinstance(payload, dict):
+            reports.append(payload)
+    return reports
+
+
+def _band_direction(bias_mw: float | None) -> str | None:
+    if bias_mw is None:
+        return None
+    if bias_mw >= ROLLING_PATTERN_MIN_MEAN_BIAS_MW:
+        return "overprediction"
+    if bias_mw <= -ROLLING_PATTERN_MIN_MEAN_BIAS_MW:
+        return "underprediction"
+    return "neutral"
+
+
+def _build_rolling_pattern_context(
+    public_dir: Path,
+    date_iso: str | None,
+) -> dict | None:
+    reports = _load_recent_operation_reports(public_dir, date_iso)
+    if not reports:
+        return None
+
+    band_stats: dict[str, dict] = {}
+    for report in reports:
+        report_date = report.get("date")
+        for band in report.get("timeBands") or []:
+            code = band.get("code") or band.get("label")
+            if not isinstance(code, str):
+                continue
+            bias = _as_float(band.get("modelBiasMw"))
+            mae = _as_float(band.get("modelMaeMw"))
+            verdict = band.get("verdict")
+            stats = band_stats.setdefault(code, {
+                "band": code,
+                "label": band.get("label"),
+                "days": 0,
+                "biases": [],
+                "maes": [],
+                "verdicts": {},
+                "directionCounts": {
+                    "overprediction": 0,
+                    "underprediction": 0,
+                    "neutral": 0,
+                },
+                "sampleDates": [],
+            })
+            stats["days"] += 1
+            if isinstance(report_date, str):
+                stats["sampleDates"].append(report_date)
+            if bias is not None:
+                stats["biases"].append(bias)
+                direction = _band_direction(bias)
+                if direction:
+                    stats["directionCounts"][direction] += 1
+            if mae is not None:
+                stats["maes"].append(mae)
+            if isinstance(verdict, str):
+                stats["verdicts"][verdict] = stats["verdicts"].get(verdict, 0) + 1
+
+    repeated = []
+    summaries = []
+    for stats in band_stats.values():
+        biases = stats["biases"]
+        maes = stats["maes"]
+        mean_bias = round(sum(biases) / len(biases), 1) if biases else None
+        mean_mae = round(sum(maes) / len(maes), 1) if maes else None
+        dominant_direction = None
+        direction_count = 0
+        for direction, count in stats["directionCounts"].items():
+            if direction == "neutral":
+                continue
+            if count > direction_count:
+                dominant_direction = direction
+                direction_count = count
+        summary = _drop_none_values({
+            "band": stats["band"],
+            "label": stats.get("label"),
+            "days": stats["days"],
+            "meanModelBiasMw": mean_bias,
+            "meanModelMaeMw": mean_mae,
+            "dominantDirection": dominant_direction,
+            "sameDirectionMissDays": direction_count,
+            "verdictCounts": stats["verdicts"],
+            "sampleDates": stats["sampleDates"][-3:],
+        })
+        summaries.append(summary)
+        if (
+            dominant_direction
+            and direction_count >= ROLLING_PATTERN_MIN_DIRECTION_DAYS
+            and mean_bias is not None
+            and abs(mean_bias) >= ROLLING_PATTERN_MIN_MEAN_BIAS_MW
+        ):
+            repeated.append(summary)
+
+    repeated = sorted(
+        repeated,
+        key=lambda item: (
+            int(item.get("sameDirectionMissDays") or 0),
+            abs(float(item.get("meanModelBiasMw") or 0.0)),
+        ),
+        reverse=True,
+    )[:5]
+    verdict = "no_repeated_band_bias"
+    if repeated:
+        first = repeated[0]
+        verdict = f"{first.get('band')}_{first.get('dominantDirection')}_repeated"
+
+    return _drop_none_values({
+        "lookbackDays": len(reports),
+        "targetDate": date_iso,
+        "dateRange": _drop_none_values({
+            "from": reports[0].get("date") if reports else None,
+            "to": reports[-1].get("date") if reports else None,
+        }),
+        "bandSummaries": sorted(summaries, key=lambda item: str(item.get("band"))),
+        "sameBandRepeatedMisses": repeated,
+        "recentTrendVerdict": verdict,
+    })
+
+
+def _build_report_diagnostic_context(
+    public_dir: Path,
+    date_iso: str | None,
+    data_quality: dict | None,
+    calibration: dict | None,
+    calibration_history: dict | None,
+    actual: dict | None,
+    forecast: dict | None,
+) -> dict:
+    calibration_facts = _compact_calibration(calibration)
+    freeze_impact = _build_freeze_context(forecast, calibration)
+    context = {
+        "coverageContext": _build_coverage_context(data_quality, calibration_facts),
+        "controllerDiagnosis": _build_controller_diagnosis(calibration, freeze_impact),
+        "stageAttribution": _build_stage_attribution(forecast, calibration),
+        "bandQuality": _build_band_quality(actual, forecast),
+        "rollingPatternContext": _build_rolling_pattern_context(public_dir, date_iso),
+        "freezeImpact": freeze_impact,
+    }
+    return {
+        key: value
+        for key, value in context.items()
+        if value is not None and value != {} and value != []
     }
 
 
@@ -1819,19 +2422,38 @@ def _build_openai_fact_packet(
             "diagnosticSummary": diagnostics.get("diagnosticSummary"),
         }
 
+    calibration_facts = _compact_calibration(calibration)
+    diagnostic_context = primary.get("diagnosticContext")
+    if not isinstance(diagnostic_context, dict):
+        diagnostic_context = _build_report_diagnostic_context(
+            public_dir,
+            primary.get("date"),
+            primary.get("dataQuality"),
+            calibration,
+            calibration_history,
+            actual,
+            forecast,
+        )
+    freeze_impact = diagnostic_context.get("freezeImpact")
     fact_packet = {
         "date": primary.get("date"),
         "timezone": TIMEZONE,
         "inputSnapshot": primary.get("inputSnapshot"),
         "performance": primary.get("performance"),
         "dataQuality": primary.get("dataQuality"),
+        "coverageContext": diagnostic_context.get("coverageContext"),
         "operationFacts": operation_facts,
         "diagnosticFacts": diagnostic_facts,
-        "calibrationFacts": _compact_calibration(calibration),
+        "calibrationFacts": calibration_facts,
         "calibrationHistoryFacts": _compact_calibration_history(calibration_history),
         "focusedRows": _build_focused_rows(operation, actual, forecast, calibration),
         "controlContext": _build_control_context(calibration, calibration_history),
-        "freezeContext": _build_freeze_context(forecast, calibration),
+        "controllerDiagnosis": diagnostic_context.get("controllerDiagnosis"),
+        "stageAttribution": diagnostic_context.get("stageAttribution"),
+        "bandQuality": diagnostic_context.get("bandQuality"),
+        "rollingPatternContext": diagnostic_context.get("rollingPatternContext"),
+        "freezeImpact": freeze_impact,
+        "freezeContext": freeze_impact,
     }
     fact_packet["fingerprint"] = _fingerprint_json_values(fact_packet)
     return fact_packet
@@ -1923,6 +2545,16 @@ def _openai_analysis_schema() -> dict:
             "expectedEffect": {"type": "string"},
             "risk": {"type": "string"},
             "validationPlan": {"type": "string"},
+            "proposedReplayCommand": {"type": ["string", "null"]},
+            "commandStatus": {
+                "type": ["string", "null"],
+                "enum": [
+                    "implemented",
+                    "proposed_not_implemented",
+                    "manual_validation",
+                    None,
+                ],
+            },
             "linkedHypotheses": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -1939,6 +2571,8 @@ def _openai_analysis_schema() -> dict:
             "expectedEffect",
             "risk",
             "validationPlan",
+            "proposedReplayCommand",
+            "commandStatus",
             "linkedHypotheses",
             "autoApply",
         ],
@@ -2006,7 +2640,8 @@ def _openai_domain_guidelines() -> str:
     return (
         "Reason like a power-demand operations analyst, not a text summarizer. "
         "Use only numeric facts, weather diagnostics, topMisses, timeBands, "
-        "focusedRows, controlContext, freezeContext, and calibration flags "
+        "focusedRows, controlContext, freezeContext, rollingPatternContext, "
+        "and calibration flags "
         "from factPacket. Treat focusedRows as the detailed window around "
         "large misses or calibration-shape risk, not as a full-day table. "
         "Use freezeContext only when it records a published-versus-recalculated "
@@ -2021,6 +2656,12 @@ def _openai_domain_guidelines() -> str:
         "not_observed with low confidence. Feature recommendations must name "
         "a concrete target from featureCatalog when possible and must propose "
         "a specific trigger, threshold, decay, shrinkage, or validation replay; "
+        "include proposedReplayCommand only when it is clearly a real or proposed "
+        "replay command, and set commandStatus to implemented, manual_validation, "
+        "or proposed_not_implemented rather than presenting invented commands as real. "
+        "Use rollingPatternContext to decide whether a miss pattern is repeated "
+        "or a single-day anomaly; if it is not repeated, recommend further "
+        "observation before changing guards. "
         "avoid generic wording such as merely reviewing a feature. Never return "
         "sports-style wording such as win, lose, victory, defeat, or beat; use "
         "operations wording such as lower error, model advantage hours, TEPCO "
@@ -2059,10 +2700,23 @@ def _openai_instructions(language: str) -> str:
         "Use factPacket as the source of facts; it already contains summary "
         "metrics, key miss windows, focused rows around abnormal windows, "
         "time-band statistics, calibration flags, control context, freeze-gap "
-        "context, and snapshot summaries. "
+        "context, stage attribution, controller diagnosis, band-quality "
+        "coverage, rolling pattern context, and snapshot summaries. "
+        "Do not recompute deltas yourself: use stageAttribution stage "
+        "value_mw/delta_mw pairs, controllerDiagnosis flags, and bandQuality "
+        "coverage fields exactly as provided. "
         "Do not describe this as missing raw time-series data; instead, if a "
         "limitation is needed, say the analysis is based on summarized "
         "operational evidence and retained calibration snapshots. "
+        "Strictly separate final daily actual coverage from intraday "
+        "calibration coverage: factPacket.dataQuality and "
+        "factPacket.coverageContext.finalActualCoverage describe the finalized "
+        "daily CSV used for performance metrics, while calibrationFacts "
+        "observedHours/missingHours describe only the retained intraday "
+        "calibration snapshot before finalization. If finalActualCoverage has "
+        "24 observed hours and 0 fallback actual hours, say final daily "
+        "coverage is complete; never describe calibration missing hours as "
+        "missing actual/performance coverage. "
         f"{_openai_domain_guidelines()} "
         "Use evidenceStatus conservatively: confirmed is only for direct input "
         "records such as a true calibration-layer Applied flag, retained "
@@ -2071,6 +2725,8 @@ def _openai_instructions(language: str) -> str:
         "patterns, or the absence of a calibration flag support only partial "
         "root-cause evidence. If the overwritten intraday timeline makes a "
         "claim unverifiable, use not_observed and confidence low. "
+        "Use rollingPatternContext to distinguish repeated operating patterns "
+        "from single-day anomalies. "
         "Every featureRecommendations item must set autoApply to false. "
         "The output language field in the final report is managed by code; "
         f"write narrative text for language={language}."
@@ -2114,10 +2770,23 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "do not invent metrics, hours, feature names, or calibration events. "
         "The factPacket contains summary metrics, key miss windows, focused "
         "rows around abnormal windows, time-band statistics, calibration flags, "
-        "control context, freeze-gap context, and snapshot summaries. Do not describe "
+        "control context, freeze-gap context, stage attribution, controller "
+        "diagnosis, band-quality coverage, rolling pattern context, and snapshot summaries. Do not recompute "
+        "deltas yourself: use stageAttribution stage value_mw/delta_mw pairs, "
+        "controllerDiagnosis flags, and bandQuality coverage fields exactly as "
+        "provided. Do not describe "
         "this as missing raw time-series data; if a limitation is needed, say "
         "the analysis is based on summarized operational evidence and retained "
         "calibration snapshots. "
+        "Strictly separate final daily actual coverage from intraday "
+        "calibration coverage: factPacket.dataQuality and "
+        "factPacket.coverageContext.finalActualCoverage describe the finalized "
+        "daily CSV used for performance metrics, while calibrationFacts "
+        "observedHours/missingHours describe only the retained intraday "
+        "calibration snapshot before finalization. If finalActualCoverage has "
+        "24 observed hours and 0 fallback actual hours, say final daily "
+        "coverage is complete; never describe calibration missing hours as "
+        "missing actual/performance coverage. "
         f"{_openai_domain_guidelines()} "
         "Keep deterministic metrics consistent with factPacket.performance. "
         "Use evidenceStatus conservatively: confirmed is only for direct input "
@@ -2126,7 +2795,9 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "machine-readable event. Numeric errors, biases, top misses, diagnostic "
         "patterns, or the absence of a calibration flag support only partial "
         "root-cause evidence. If the overwritten intraday timeline makes a "
-        "claim unverifiable, use not_observed and confidence low. Return at most three hypotheses and "
+        "claim unverifiable, use not_observed and confidence low. Use "
+        "rollingPatternContext to distinguish repeated operating patterns from "
+        "single-day anomalies. Return at most three hypotheses and "
         "two recommendations per locale. Every featureRecommendations item "
         "must set autoApply to false. Output only the narrative layer for each "
         "locale; date, language, performance, inputRefs, dataQuality, and "
@@ -2455,7 +3126,7 @@ def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
             or not validation_plan
         ):
             continue
-        result.append({
+        recommendation = {
             "id": str(item.get("id") or f"r{index}"),
             "priority": priority,
             "type": rec_type,
@@ -2464,8 +3135,25 @@ def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
             "expectedEffect": expected_effect,
             "risk": risk,
             "validationPlan": validation_plan,
+            "proposedReplayCommand": _meaningful_text(
+                item.get("proposedReplayCommand")
+            ),
+            "commandStatus": (
+                item.get("commandStatus")
+                if item.get("commandStatus") in {
+                    "implemented",
+                    "proposed_not_implemented",
+                    "manual_validation",
+                }
+                else None
+            ),
             "linkedHypotheses": _as_string_list(item.get("linkedHypotheses")),
             "autoApply": False,
+        }
+        result.append({
+            key: val
+            for key, val in recommendation.items()
+            if val is not None
         })
     return result or fallback
 
@@ -2609,10 +3297,79 @@ def _polish_localized_text(language: str, value: Any) -> Any:
     return value
 
 
+def _looks_like_calibration_coverage_confusion(note: str) -> bool:
+    lowered = note.lower()
+    has_calibration = any(
+        token in lowered
+        for token in ("calibration", "보정", "キャリブレーション", "補正")
+    )
+    has_missing = any(
+        token in lowered
+        for token in ("missing", "누락", "欠落", "不足")
+    )
+    has_observed = any(
+        token in lowered
+        for token in ("observed", "관찰", "관측", "観察", "実測")
+    )
+    has_coverage = any(
+        token in lowered
+        for token in ("coverage", "커버리지", "カバレッジ")
+    )
+    return has_calibration and has_missing and has_observed and has_coverage
+
+
+def _final_actual_coverage_is_complete(report: dict) -> bool:
+    data_quality = report.get("dataQuality") or {}
+    return (
+        data_quality.get("observedHours") == 24
+        and data_quality.get("fallbackActualHours") == 0
+    )
+
+
+def _final_coverage_note(language: str) -> str:
+    if language == "en":
+        return (
+            "Performance metrics use the finalized 24-hour actual CSV; "
+            "intraday calibration snapshots are referenced only as pre-final "
+            "operational history."
+        )
+    if language == "ja":
+        return (
+            "性能評価は確定CSVの24時間実測値を基準にしており、intraday補正スナップショットは"
+            "確定前の運用履歴としてのみ参照しています。"
+        )
+    return (
+        "성능 평가는 확정 CSV의 24시간 실측을 기준으로 했고, intraday 보정 스냅샷은 "
+        "확정 전 운영 이력으로만 참고했습니다."
+    )
+
+
+def _clarify_operator_notes_coverage(report: dict) -> dict:
+    if not _final_actual_coverage_is_complete(report):
+        return report
+    notes = _as_string_list(report.get("operatorNotes"))
+    if not notes:
+        return report
+
+    language = str(report.get("language") or "ko")
+    replacement = _final_coverage_note(language)
+    result = []
+    replaced = False
+    for note in notes:
+        if _looks_like_calibration_coverage_confusion(note):
+            if not replaced:
+                result.append(replacement)
+                replaced = True
+            continue
+        result.append(note)
+    report["operatorNotes"] = result
+    return report
+
+
 def _polish_report_language(report: dict) -> dict:
     language = str(report.get("language") or "")
     if language not in LOCALIZED_TEXT_REPLACEMENTS:
-        return report
+        return _clarify_operator_notes_coverage(report)
 
     summary = report.get("executiveSummary")
     if isinstance(summary, dict):
@@ -2642,6 +3399,7 @@ def _polish_report_language(report: dict) -> dict:
         language,
         report.get("limitations") or [],
     )
+    report = _clarify_operator_notes_coverage(report)
     if isinstance(report.get("dataQuality"), dict):
         report["dataQuality"]["limitations"] = report["limitations"]
     return report
@@ -3366,12 +4124,12 @@ def main() -> None:
         "--openai-max-calls",
         type=int,
         default=None,
-        help="Maximum OpenAI report attempts in this run. Defaults to OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN or 2.",
+        help="Maximum OpenAI report attempts in this run. Defaults to OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN or 3.",
     )
     parser.add_argument(
         "--openai-languages",
         default=None,
-        help="Comma-separated locales allowed to use OpenAI. Defaults to OPENAI_DAILY_REPORT_LOCALES or ko.",
+        help="Comma-separated locales allowed to use OpenAI. Defaults to OPENAI_DAILY_REPORT_LOCALES or ko,en,ja.",
     )
     parser.add_argument(
         "--openai-all-dates",

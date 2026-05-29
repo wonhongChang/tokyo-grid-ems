@@ -43,7 +43,7 @@ Intraday/status-only runs update same-day data and forecasts, but do not rewrite
 | deterministic fallback | No OpenAI key or OpenAI disabled | Python rules summarize metrics and top misses |
 | OpenAI narrative | `OPENAI_API_KEY` is available | OpenAI writes the narrative layer from a compact fact packet |
 
-Even with OpenAI enabled, deterministic Python code owns the performance metrics, input references, and data-quality fields. OpenAI does not recompute metrics.
+Even with OpenAI enabled, deterministic Python code owns the performance metrics, input references, data-quality fields, coverage separation, stage attribution, controller diagnosis, and band quality. OpenAI does not recompute metrics.
 
 ---
 
@@ -57,7 +57,7 @@ OpenAI reports use a two-step chain.
 Default models:
 
 ```text
-OPENAI_DAILY_REPORT_MODEL=gpt-5.4-mini
+OPENAI_DAILY_REPORT_MODEL=gpt-4o-mini
 OPENAI_DAILY_REPORT_LOCALIZATION_MODEL=gpt-4o-mini
 ```
 
@@ -148,15 +148,16 @@ The UI does not scan the whole folder. The default index range is recent days, s
 ## Cost Control
 
 - Only the latest finalized date is eligible for OpenAI by default
-- Default maximum: 2 OpenAI calls per ETL run
+- Default maximum: 3 OpenAI calls per ETL run, including one localization validation retry
 - Existing report files are preserved
 - OpenAI receives a compact fact packet, not full hourly raw rows
+- The fact packet includes computed fields such as `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, and `rollingPatternContext`
 - Fallback narratives, full hourly diagnostics, SHA fingerprints, and file paths are excluded from the prompt
 
 Defaults:
 
 ```text
-OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
+OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=3
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180

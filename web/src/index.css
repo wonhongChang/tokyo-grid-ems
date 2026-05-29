@@ -502,6 +502,116 @@ body {
 .ops-limits-title {
   margin-top: 14px;
 }
+.ops-diagnostics {
+  display: grid;
+  gap: 16px;
+}
+.ops-diagnostic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.ops-mini-section {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.ops-kv-grid {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(0, 1.2fr);
+  gap: 7px 10px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.ops-kv-grid span {
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.ops-kv-grid strong {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.ops-diagnostic-detail {
+  display: grid;
+  gap: 14px;
+  padding-top: 4px;
+}
+.ops-stage-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+.ops-stage-row {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.ops-stage-hour {
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.ops-stage-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 6px;
+}
+.ops-stage-step {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 11px;
+}
+.ops-stage-step span,
+.ops-stage-step strong,
+.ops-stage-step em {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ops-stage-step span {
+  color: var(--text-secondary);
+}
+.ops-stage-step strong {
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 12px;
+}
+.ops-stage-step em {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-style: normal;
+}
+.ops-command {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.ops-command code {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  color: var(--text);
+}
 
 @media (max-width: 640px) {
   .ops-report-heading,
@@ -518,5 +628,14 @@ body {
   }
   .ops-report-controls label {
     white-space: normal;
+  }
+  .ops-diagnostic-grid {
+    grid-template-columns: 1fr;
+  }
+  .ops-stage-row {
+    grid-template-columns: 1fr;
+  }
+  .ops-stage-hour {
+    width: fit-content;
   }
 }

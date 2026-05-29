@@ -608,9 +608,9 @@ intraday実行ごとの運用補正状態を限定的に保存します。最新
 - `contentLanguage` は実際に画面へ表示される本文言語です。通常は `language` と一致しますが、ローカライズ呼び出しが失敗した場合、`ko`/`ja` パスでも `contentLanguage: "en"` として英語マスターレポートを表示できます。
 - AIレポートはETL実行時のみ生成します。intraday/status-only実行ではレポート本文を作成・更新しません。
 - 同じ日付/言語のレポートJSONが既に存在する場合、後続のETL再試行では既存ファイルを保持します。indexは再構築される場合がありますが、本文JSONとOpenAI呼び出しは再実行しません。
-- OpenAI呼び出しはデフォルトでコスト上限を設けます。対象は最新の日次レポート日付のみで、既定のチェーンは最大2回の呼び出しを使います。まず圧縮されたfact packetから英語マスター分析を生成し（`OPENAI_DAILY_REPORT_MODEL`, 既定値 `gpt-5.4-mini`）、その英語マスターを基準に低コストモデルで `ko`/`ja` をローカライズします（`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 既定値 `gpt-4o-mini`）。既定上限は `OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2` です。対象を狭める/広げる場合は `OPENAI_DAILY_REPORT_LOCALES`, `OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN`, `OPENAI_DAILY_REPORT_LATEST_ONLY` を明示的に調整します。
+- OpenAI呼び出しはデフォルトでコスト上限を設けます。対象は最新の日次レポート日付のみで、既定のチェーンは低コストモデルを使います。まず圧縮されたfact packetから英語マスター分析を生成し（`OPENAI_DAILY_REPORT_MODEL`, 既定値 `gpt-4o-mini`）、その英語マスターを基準に `ko`/`ja` をローカライズします（`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 既定値 `gpt-4o-mini`）。対象を狭める/広げる場合は `OPENAI_DAILY_REPORT_LOCALES`, `OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN`, `OPENAI_DAILY_REPORT_LATEST_ONLY` を明示的に調整します。より強い分析モデルが必要な場合は `OPENAI_DAILY_REPORT_MODEL` を指定します。
 - ローカライズ呼び出しが失敗した場合、または韓国語/日本語テキスト検証に失敗した場合、その言語パスは英語マスター本文へfallbackし、`generator.localizationStatus: "fallback_en"` と `generator.localizationFallback: "en"` を記録します。
-- OpenAIには全時間帯の診断rowを渡さず、圧縮したfact packetのみを入力します。プロンプト入力からはfallbackの自然言語オブジェクト、ルールベースの `insights`、ファイルpath、SHA-256 fingerprint、`performance` と重複するsummaryブロックを除外します。deterministic指標、入力参照、データ品質、`inputSnapshot` はPythonコードが固定します。
+- OpenAIには全時間帯の診断rowを渡さず、圧縮したfact packetのみを入力します。fact packetには `coverageContext`, `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `rollingPatternContext` などPythonで計算済みの判定/要約フィールドを含めます。プロンプト入力からはfallbackの自然言語オブジェクト、ルールベースの `insights`、ファイルpath、SHA-256 fingerprint、`performance` と重複するsummaryブロックを除外します。deterministic指標、入力参照、データ品質、`inputSnapshot` はPythonコードが固定します。
 
 ---
 

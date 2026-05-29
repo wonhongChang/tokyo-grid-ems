@@ -45,7 +45,7 @@ Intraday/status-only 실행은 오늘 데이터와 예측선을 갱신하지만,
 | deterministic fallback | OpenAI 키가 없거나 호출하지 않을 때 | Python 규칙 기반으로 성능 지표와 주요 오차를 요약 |
 | OpenAI 해설 | `OPENAI_API_KEY`가 있을 때 | 압축된 fact packet을 바탕으로 자연어 원인 분석과 개선 후보를 생성 |
 
-OpenAI를 사용하는 경우에도 성능 수치, 입력 파일 참조, 데이터 품질 정보는 Python 코드가 고정합니다. OpenAI는 이 숫자들을 다시 계산하지 않고 해설 레이어만 생성합니다.
+OpenAI를 사용하는 경우에도 성능 수치, 입력 파일 참조, 데이터 품질 정보, 커버리지 구분, stage attribution, controller diagnosis, band quality는 Python 코드가 고정합니다. OpenAI는 이 숫자들을 다시 계산하지 않고 해설 레이어만 생성합니다.
 
 ---
 
@@ -59,7 +59,7 @@ OpenAI 리포트는 비용과 품질을 위해 2단계로 처리합니다.
 기본 모델:
 
 ```text
-OPENAI_DAILY_REPORT_MODEL=gpt-5.4-mini
+OPENAI_DAILY_REPORT_MODEL=gpt-4o-mini
 OPENAI_DAILY_REPORT_LOCALIZATION_MODEL=gpt-4o-mini
 ```
 
@@ -156,15 +156,16 @@ UI는 전체 파일 목록을 직접 훑지 않고 index만 읽습니다. 기본
 OpenAI 비용을 막기 위해 다음 제어를 둡니다.
 
 - 최신 확정 일자만 OpenAI 대상
-- 기본 최대 호출 수 2회
+- 기본 최대 호출 수 3회. 현지화 검증 실패 시 1회 재시도까지 포함
 - 기존 리포트가 있으면 재생성하지 않음
 - OpenAI 입력은 압축된 fact packet만 전달
+- fact packet에는 `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, `rollingPatternContext` 같은 계산 완료 필드를 포함
 - 자연어 fallback 문장, 전체 hourly row, SHA fingerprint, 파일 path 등은 프롬프트에서 제외
 
 관련 기본값:
 
 ```text
-OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
+OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=3
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180

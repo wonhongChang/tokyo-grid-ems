@@ -308,8 +308,109 @@ export interface AIDailyReportFeatureRecommendation {
   expectedEffect: string
   risk: string
   validationPlan: string
+  proposedReplayCommand?: string | null
+  commandStatus?: 'implemented' | 'proposed_not_implemented' | 'manual_validation' | null
   linkedHypotheses: string[]
   autoApply: false
+}
+
+export interface AIDailyReportDiagnosticContext {
+  coverageContext?: {
+    finalActualCoverage?: {
+      comparableHours?: number | null
+      observedHours?: number | null
+      fallbackActualHours?: number | null
+      scope?: string
+    }
+    intradayCalibrationCoverage?: {
+      observedHours?: number | null
+      missingHours?: number | null
+      lastObservedHour?: number | null
+      sourceConfidence?: string | null
+      scope?: string
+    }
+  }
+  controllerDiagnosis?: {
+    applied?: boolean
+    baseAdjustmentMw?: number | null
+    carryoverAdjustmentMw?: number | null
+    maxAbsAdjustmentMw?: number | null
+    capHitLikely?: boolean
+    direction?: 'upward' | 'downward' | 'neutral'
+    lastObservedHour?: number | null
+    residualTrend?: {
+      latestResidualMw?: number | null
+      recentMeanResidualMw?: number | null
+      sameDirectionHours?: number | null
+    }
+    slopeContext?: {
+      latestActualSlopeMw?: number | null
+      latestModelSlopeMw?: number | null
+      mismatchedGradient?: boolean
+    }
+    guardSummary?: Record<string, string | number | boolean | null | undefined>
+    flags?: string[]
+  }
+  stageAttribution?: {
+    stageOrder?: string[]
+    topDriver?: string | null
+    largestStageShifts?: Array<{
+      hour: number
+      ts?: string
+      actualMw?: number | null
+      actualSource?: string
+      stageImpactSummary: Array<{
+        stage: string
+        label?: string
+        value_mw: number
+        delta_mw: number
+        delta_from?: string | null
+      }>
+      netStageShiftMw?: number | null
+      largestStageDelta?: {
+        stage?: string
+        delta_mw?: number | null
+        delta_from?: string | null
+      }
+      publishedVsLatestRecalculatedGapMw?: number | null
+    }>
+  }
+  bandQuality?: {
+    comparableHours?: number | null
+    p95CoverageHours?: number | null
+    p95CoverageRate?: number | null
+    p99CoverageHours?: number | null
+    p99CoverageRate?: number | null
+    outsideP95Hours?: number[]
+    outsideP99Hours?: number[]
+    medianP95HalfWidthMw?: number | null
+    medianP99HalfWidthMw?: number | null
+    q50LargeMissCoveredByP95Hours?: number[]
+  }
+  rollingPatternContext?: {
+    lookbackDays?: number | null
+    recentTrendVerdict?: string | null
+    sameBandRepeatedMisses?: Array<{
+      band: string
+      label?: string
+      days?: number
+      meanModelBiasMw?: number | null
+      meanModelMaeMw?: number | null
+      dominantDirection?: string | null
+      sameDirectionMissDays?: number | null
+      sampleDates?: string[]
+    }>
+  }
+  freezeImpact?: {
+    thresholdMw?: number | null
+    largestGaps?: Array<{
+      hour: number
+      publishedForecastMw?: number | null
+      latestRecalculatedForecastMw?: number | null
+      freezeGapMw?: number | null
+    }>
+    interpretation?: string
+  }
 }
 
 export interface AIDailyReport {
@@ -367,6 +468,7 @@ export interface AIDailyReport {
     confidence: AIDailyReportConfidence
   }
   performance: DailyOperationReport['summary']
+  diagnosticContext?: AIDailyReportDiagnosticContext
   rootCauseHypotheses: AIDailyReportHypothesis[]
   featureRecommendations: AIDailyReportFeatureRecommendation[]
   operatorNotes: string[]

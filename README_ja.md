@@ -126,7 +126,7 @@ python python/etl/run_batch.py --input data/raw --out web/public
 # 任意: OpenAIベースの日次運用レポートを有効化
 # Windows PowerShell:
 # $env:OPENAI_API_KEY="..."
-# $env:OPENAI_DAILY_REPORT_MODEL="gpt-5.4-mini"
+# $env:OPENAI_DAILY_REPORT_MODEL="gpt-4o-mini"
 # $env:OPENAI_DAILY_REPORT_LOCALIZATION_MODEL="gpt-4o-mini"
 
 # ダッシュボード ローカルプレビュー
@@ -177,7 +177,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 - AIレポートはETL実行時のみ生成し、intraday/status-only実行では本文を書き換えません。
 - 同じ日付/言語のレポートJSONが既にある場合、後続のETL再試行でも保持し、APIコストが繰り返し発生しないようにします。
-- OpenAI呼び出しは既定で最大3回に制限します。1回目は英語マスター分析（`OPENAI_DAILY_REPORT_MODEL`, 既定値 `gpt-5.4-mini`）、2回目は韓国語/日本語ローカライズ（`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 既定値 `gpt-4o-mini`）、3回目はローカライズ検証に失敗した場合に同じ低コストモデルで一度だけ再試行するためのものです。
+- OpenAI呼び出しは既定で最大3回に制限します。1回目は低コストの英語マスター分析（`OPENAI_DAILY_REPORT_MODEL`, 既定値 `gpt-4o-mini`）、2回目は韓国語/日本語ローカライズ（`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 既定値 `gpt-4o-mini`）、3回目はローカライズ検証に失敗した場合に同じ低コストモデルで一度だけ再試行するためのものです。より強い分析モデルが必要な場合は `OPENAI_DAILY_REPORT_MODEL` を明示的に指定します。
 - GitHub Actions向けtimeoutの既定値は `OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90`, `OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180` です。GitHub repository variablesを設定しなくてもPython側の既定値が使われます。
 - 翻訳が失敗またはtimeoutした場合、その言語パスは英語マスター本文へfallbackし、`localizationStatus: "fallback_en"` を記録します。
 

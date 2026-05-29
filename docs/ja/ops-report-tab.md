@@ -43,7 +43,7 @@ Intraday/status-only実行は当日データと予測を更新しますが、運
 | deterministic fallback | OpenAIキーがない、またはOpenAIを使わない場合 | Pythonルールで指標と主要な外れを要約 |
 | OpenAI解説 | `OPENAI_API_KEY`がある場合 | 圧縮されたfact packetをもとに自然言語の解説を生成 |
 
-OpenAIを使う場合でも、性能指標、入力参照、データ品質はPythonコードが固定します。OpenAIは指標を再計算しません。
+OpenAIを使う場合でも、性能指標、入力参照、データ品質、カバレッジ分離、stage attribution、controller diagnosis、band qualityはPythonコードが固定します。OpenAIは指標を再計算しません。
 
 ---
 
@@ -57,7 +57,7 @@ OpenAIレポートは2段階で処理します。
 既定モデル:
 
 ```text
-OPENAI_DAILY_REPORT_MODEL=gpt-5.4-mini
+OPENAI_DAILY_REPORT_MODEL=gpt-4o-mini
 OPENAI_DAILY_REPORT_LOCALIZATION_MODEL=gpt-4o-mini
 ```
 
@@ -148,15 +148,16 @@ UIはフォルダ全体を走査せず、indexのみを読みます。既定のi
 ## コスト制御
 
 - 既定では最新の確定済み日付だけがOpenAI対象
-- ETL 1回あたりOpenAI呼び出しは最大2回
+- ETL 1回あたりOpenAI呼び出しは最大3回。ローカライズ検証失敗時の1回リトライを含む
 - 既存レポートは保持して再生成しない
 - OpenAIには全時間帯raw rowではなく圧縮fact packetだけを渡す
+- fact packetには `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, `rollingPatternContext` などの計算済みフィールドを含める
 - fallback自然文、全hourly diagnostics、SHA fingerprint、file pathはプロンプトから除外
 
 既定値:
 
 ```text
-OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
+OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=3
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180

@@ -47,6 +47,29 @@ const COPY = {
     inputFingerprint: '입력 지문',
     sourceGeneratedAt: '입력 생성 시각',
     operationReport: '운영 리포트 입력',
+    diagnostics: '운영 진단',
+    coverage: '커버리지',
+    finalCoverage: '확정 실측',
+    calibrationCoverage: '보정 스냅샷',
+    controller: '보정 컨트롤러',
+    stageAttribution: '단계별 영향',
+    bandQuality: '예측밴드 품질',
+    rollingPattern: '최근 반복 패턴',
+    freezeImpact: '보존 예측선 영향',
+    capHit: 'Cap 도달',
+    latestResidual: '최근 잔차',
+    actualSlope: '실측 기울기',
+    modelSlope: '모델 기울기',
+    p95Coverage: 'p95 커버',
+    p99Coverage: 'p99 커버',
+    medianBandWidth: '중앙 밴드폭',
+    repeatedMiss: '반복 오차',
+    noDiagnostics: '표시할 추가 진단 정보가 없습니다.',
+    replayCommand: '검증 명령',
+    commandStatus: '명령 상태',
+    implementedCommand: '구현됨',
+    proposedCommand: '제안형',
+    manualValidation: '수동 검증',
     noHypotheses: '표시할 원인 가설이 없습니다.',
     noRecommendations: '표시할 개선 후보가 없습니다.',
     confirmed: '직접 근거',
@@ -97,6 +120,29 @@ const COPY = {
     inputFingerprint: 'Input fingerprint',
     sourceGeneratedAt: 'Input generated',
     operationReport: 'Operation report input',
+    diagnostics: 'Ops diagnostics',
+    coverage: 'Coverage',
+    finalCoverage: 'Final actuals',
+    calibrationCoverage: 'Calibration snapshot',
+    controller: 'Controller',
+    stageAttribution: 'Stage attribution',
+    bandQuality: 'Band quality',
+    rollingPattern: 'Rolling pattern',
+    freezeImpact: 'Published forecast freeze',
+    capHit: 'Cap hit',
+    latestResidual: 'Latest residual',
+    actualSlope: 'Actual slope',
+    modelSlope: 'Model slope',
+    p95Coverage: 'p95 coverage',
+    p99Coverage: 'p99 coverage',
+    medianBandWidth: 'Median band width',
+    repeatedMiss: 'Repeated miss',
+    noDiagnostics: 'No additional diagnostics to display.',
+    replayCommand: 'Replay command',
+    commandStatus: 'Command status',
+    implementedCommand: 'Implemented',
+    proposedCommand: 'Proposed',
+    manualValidation: 'Manual validation',
     noHypotheses: 'No hypotheses to display.',
     noRecommendations: 'No recommendations to display.',
     confirmed: 'Direct evidence',
@@ -147,6 +193,29 @@ const COPY = {
     inputFingerprint: '入力フィンガープリント',
     sourceGeneratedAt: '入力生成時刻',
     operationReport: '運用レポート入力',
+    diagnostics: '運用診断',
+    coverage: 'カバレッジ',
+    finalCoverage: '確定実測',
+    calibrationCoverage: '補正スナップショット',
+    controller: '補正コントローラー',
+    stageAttribution: '段階別影響',
+    bandQuality: '予測バンド品質',
+    rollingPattern: '直近の反復パターン',
+    freezeImpact: '公開予測線の保持影響',
+    capHit: 'Cap到達',
+    latestResidual: '直近残差',
+    actualSlope: '実測傾き',
+    modelSlope: 'モデル傾き',
+    p95Coverage: 'p95カバー',
+    p99Coverage: 'p99カバー',
+    medianBandWidth: '中央値バンド幅',
+    repeatedMiss: '反復誤差',
+    noDiagnostics: '表示する追加診断情報はありません。',
+    replayCommand: '検証コマンド',
+    commandStatus: 'コマンド状態',
+    implementedCommand: '実装済み',
+    proposedCommand: '提案',
+    manualValidation: '手動検証',
     noHypotheses: '表示する原因仮説はありません。',
     noRecommendations: '表示する改善候補はありません。',
     confirmed: '直接根拠',
@@ -186,9 +255,47 @@ function fmtPct(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`
 }
 
+function fmtRatioPct(value: number | null | undefined): string {
+  if (value == null) return '-'
+  return `${(value * 100).toFixed(1)}%`
+}
+
 function fmtPowerMaybe(value: number | null | undefined, locale: Locale): string {
   if (value == null) return '-'
   return formatPower(value, locale)
+}
+
+function fmtSignedPower(value: number | null | undefined, locale: Locale): string {
+  if (value == null) return '-'
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${formatPower(value, locale)}`
+}
+
+function fmtHour(hour: number | null | undefined): string {
+  if (hour == null) return '-'
+  return `${String(hour).padStart(2, '0')}:00`
+}
+
+function fmtHourList(hours: number[] | null | undefined): string {
+  if (!hours?.length) return '-'
+  return hours.slice(0, 6).map(fmtHour).join(', ')
+}
+
+function fmtBool(value: boolean | null | undefined, locale: Locale): string {
+  if (value == null) return '-'
+  if (locale === 'ja') return value ? 'はい' : 'いいえ'
+  if (locale === 'en') return value ? 'Yes' : 'No'
+  return value ? '예' : '아니오'
+}
+
+function commandStatusLabel(
+  status: string | null | undefined,
+  labels: typeof COPY.ko,
+): string {
+  if (status === 'implemented') return labels.implementedCommand
+  if (status === 'manual_validation') return labels.manualValidation
+  if (status === 'proposed_not_implemented') return labels.proposedCommand
+  return '-'
 }
 
 function shortFingerprint(value: string | null | undefined): string {
@@ -314,6 +421,164 @@ function EvidenceList({ report, index }: { report: AIDailyReport; index: number 
   )
 }
 
+function DiagnosticPanel({ report }: { report: AIDailyReport }) {
+  const { locale } = useT()
+  const labels = COPY[locale]
+  const context = report.diagnosticContext
+  if (!context) {
+    return (
+      <div className="card">
+        <div className="card-title">{labels.diagnostics}</div>
+        <div className="empty-msg">{labels.noDiagnostics}</div>
+      </div>
+    )
+  }
+
+  const finalCoverage = context.coverageContext?.finalActualCoverage
+  const calibrationCoverage = context.coverageContext?.intradayCalibrationCoverage
+  const controller = context.controllerDiagnosis
+  const bandQuality = context.bandQuality
+  const rollingPattern = context.rollingPatternContext
+  const stageRows = context.stageAttribution?.largestStageShifts ?? []
+  const freezeGaps = context.freezeImpact?.largestGaps ?? []
+  const repeatedMisses = rollingPattern?.sameBandRepeatedMisses ?? []
+
+  return (
+    <div className="card ops-diagnostics">
+      <div className="card-title">{labels.diagnostics}</div>
+
+      <div className="ops-diagnostic-grid">
+        <section className="ops-mini-section">
+          <div className="ops-section-kicker">{labels.coverage}</div>
+          <div className="ops-kv-grid">
+            <span>{labels.finalCoverage}</span>
+            <strong>
+              {finalCoverage?.observedHours ?? '-'} / {finalCoverage?.comparableHours ?? '-'}
+            </strong>
+            <span>{labels.calibrationCoverage}</span>
+            <strong>
+              {calibrationCoverage?.observedHours ?? '-'} / 24
+            </strong>
+            <span>fallback</span>
+            <strong>{finalCoverage?.fallbackActualHours ?? '-'}</strong>
+            <span>last observed</span>
+            <strong>{fmtHour(calibrationCoverage?.lastObservedHour)}</strong>
+          </div>
+        </section>
+
+        <section className="ops-mini-section">
+          <div className="ops-section-kicker">{labels.controller}</div>
+          <div className="ops-kv-grid">
+            <span>baseAdjustment</span>
+            <strong>{fmtSignedPower(controller?.baseAdjustmentMw, locale)}</strong>
+            <span>{labels.capHit}</span>
+            <strong>{fmtBool(controller?.capHitLikely, locale)}</strong>
+            <span>{labels.latestResidual}</span>
+            <strong>{fmtSignedPower(controller?.residualTrend?.latestResidualMw, locale)}</strong>
+            <span>{labels.actualSlope}</span>
+            <strong>{fmtSignedPower(controller?.slopeContext?.latestActualSlopeMw, locale)}</strong>
+            <span>{labels.modelSlope}</span>
+            <strong>{fmtSignedPower(controller?.slopeContext?.latestModelSlopeMw, locale)}</strong>
+          </div>
+          {!!controller?.flags?.length && (
+            <div className="ops-chip-row">
+              {controller.flags.slice(0, 6).map(flag => (
+                <span key={flag} className="alert-metric-chip">{flag}</span>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="ops-mini-section">
+          <div className="ops-section-kicker">{labels.bandQuality}</div>
+          <div className="ops-kv-grid">
+            <span>{labels.p95Coverage}</span>
+            <strong>
+              {bandQuality?.p95CoverageHours ?? '-'} / {bandQuality?.comparableHours ?? '-'}
+              {' '}
+              ({fmtRatioPct(bandQuality?.p95CoverageRate)})
+            </strong>
+            <span>{labels.p99Coverage}</span>
+            <strong>
+              {bandQuality?.p99CoverageHours ?? '-'} / {bandQuality?.comparableHours ?? '-'}
+              {' '}
+              ({fmtRatioPct(bandQuality?.p99CoverageRate)})
+            </strong>
+            <span>{labels.medianBandWidth} p95</span>
+            <strong>{fmtPowerMaybe(bandQuality?.medianP95HalfWidthMw, locale)}</strong>
+            <span>outside p95</span>
+            <strong>{fmtHourList(bandQuality?.outsideP95Hours)}</strong>
+          </div>
+        </section>
+
+        <section className="ops-mini-section">
+          <div className="ops-section-kicker">{labels.rollingPattern}</div>
+          <div className="ops-kv-grid">
+            <span>lookback</span>
+            <strong>{rollingPattern?.lookbackDays ?? '-'}</strong>
+            <span>verdict</span>
+            <strong>{rollingPattern?.recentTrendVerdict ?? '-'}</strong>
+          </div>
+          {repeatedMisses.length > 0 ? (
+            <div className="ops-chip-row">
+              {repeatedMisses.slice(0, 3).map(item => (
+                <span key={`${item.band}-${item.dominantDirection}`} className="alert-metric-chip">
+                  <strong>{item.label ?? item.band}</strong>
+                  {item.dominantDirection ?? '-'} / {item.sameDirectionMissDays ?? 0}d
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="ops-muted">{labels.noDiagnostics}</p>
+          )}
+        </section>
+      </div>
+
+      {(stageRows.length > 0 || freezeGaps.length > 0) && (
+        <div className="ops-diagnostic-detail">
+          {stageRows.length > 0 && (
+            <section>
+              <div className="ops-section-kicker">{labels.stageAttribution}</div>
+              <div className="ops-stage-list">
+                {stageRows.slice(0, 3).map(row => (
+                  <div key={`${row.hour}-${row.netStageShiftMw}`} className="ops-stage-row">
+                    <div className="ops-stage-hour">{fmtHour(row.hour)}</div>
+                    <div className="ops-stage-steps">
+                      {row.stageImpactSummary.slice(0, 7).map(stage => (
+                        <span key={`${row.hour}-${stage.stage}`} className="ops-stage-step">
+                          <span>{stage.stage}</span>
+                          <strong>{fmtPowerMaybe(stage.value_mw, locale)}</strong>
+                          {stage.delta_from && (
+                            <em>{fmtSignedPower(stage.delta_mw, locale)}</em>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {freezeGaps.length > 0 && (
+            <section>
+              <div className="ops-section-kicker">{labels.freezeImpact}</div>
+              <div className="ops-chip-row">
+                {freezeGaps.slice(0, 4).map(gap => (
+                  <span key={gap.hour} className="alert-metric-chip">
+                    <strong>{fmtHour(gap.hour)}</strong>
+                    {fmtSignedPower(gap.freezeGapMw, locale)}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function OpsReportPanel({ baseUrl }: Props) {
   const { t, locale, fmtDate } = useT()
   const labels = COPY[locale]
@@ -430,6 +695,8 @@ export function OpsReportPanel({ baseUrl }: Props) {
             </div>
           </div>
 
+          <DiagnosticPanel report={selectedReport} />
+
           {selectedReport.inputSnapshot && (
             <div className="card">
               <div className="card-title">{labels.inputVersion}</div>
@@ -496,7 +763,17 @@ export function OpsReportPanel({ baseUrl }: Props) {
                       <span className="badge info">{priorityLabel(item.priority, labels)}</span>
                     </div>
                     <p>{item.suggestion}</p>
+                    <p>{item.expectedEffect}</p>
+                    <p className="ops-muted">{item.risk}</p>
                     <p className="ops-muted">{item.validationPlan}</p>
+                    {(item.proposedReplayCommand || item.commandStatus) && (
+                      <div className="ops-command">
+                        <span>{labels.commandStatus}: {commandStatusLabel(item.commandStatus, labels)}</span>
+                        {item.proposedReplayCommand && (
+                          <code>{item.proposedReplayCommand}</code>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

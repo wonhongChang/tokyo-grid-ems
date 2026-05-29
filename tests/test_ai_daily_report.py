@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from python.eval.ai_daily_report import (
+    _build_openai_fact_packet,
+    _openai_analysis_schema,
     _validate_localized_analysis,
     build_ai_daily_report,
     build_ai_daily_reports,
@@ -238,9 +240,130 @@ def test_ai_daily_report_uses_calibration_snapshot_history(tmp_path):
     )
 
 
+def test_ai_report_fact_packet_separates_final_and_intraday_coverage(tmp_path):
+    date_iso = "2026-05-23"
+    _write_operation_fixture(tmp_path, date_iso)
+    _write_json(
+        tmp_path / "reports" / "internal" / "operational-calibration" / f"{date_iso}.json",
+        {
+            "schemaVersion": "1.0.0",
+            "date": date_iso,
+            "generatedAt": "2026-05-23T22:39:00+09:00",
+            "correction": {
+                "applied": True,
+                "observedHours": 22,
+                "lastObservedHour": 21,
+                "sourceConfidence": {
+                    "level": "observed",
+                    "usableObservedHours": 22,
+                    "missingHours": 2,
+                },
+            },
+        },
+    )
+    report = build_ai_daily_report(
+        tmp_path,
+        date_iso,
+        generated_at="2026-05-24T08:20:00+09:00",
+        use_openai=False,
+    )
+
+    fact_packet = _build_openai_fact_packet(tmp_path, {"ko": report})
+
+    assert fact_packet["dataQuality"]["observedHours"] == 24
+    assert fact_packet["coverageContext"]["finalActualCoverage"] == {
+        "scope": "final_daily_actuals_for_performance",
+        "comparableHours": 24,
+        "observedHours": 24,
+        "fallbackActualHours": 0,
+    }
+    assert fact_packet["coverageContext"]["intradayCalibrationCoverage"] == {
+        "scope": "retained_intraday_calibration_snapshot_not_final_actual_csv",
+        "observedHours": 22,
+        "missingHours": 2,
+        "lastObservedHour": 21,
+        "sourceConfidence": "observed",
+    }
+
+
+def test_ai_daily_report_clarifies_intraday_snapshot_coverage_note(monkeypatch, tmp_path):
+    _write_operation_fixture(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    def fake_openai_analysis(context, api_key, model):
+        return {
+            "executiveSummary": {
+                "severity": "warning",
+                "headline": "TEPCO가 더 낮은 오차를 보였습니다.",
+                "summary": "확정 실측 기준으로 비교했습니다.",
+                "modelVerdict": "tepco_better",
+                "confidence": "high",
+            },
+            "rootCauseHypotheses": [
+                {
+                    "id": "h1",
+                    "severity": "warning",
+                    "confidence": "medium",
+                    "evidenceStatus": "partial",
+                    "title": "낮 시간대 오차가 컸습니다.",
+                    "explanation": "모델의 낮 시간대 오차가 TEPCO보다 컸습니다.",
+                    "evidence": [
+                        {
+                            "source": "timeBands",
+                            "metric": "daytime modelMaeMw",
+                            "value": 500,
+                            "unit": "MW",
+                            "hour": None,
+                            "timeBand": "11-15",
+                        }
+                    ],
+                    "relatedHours": [11, 12],
+                    "relatedTimeBands": ["11-15"],
+                    "relatedFeatures": ["lag_24h"],
+                    "counterEvidence": [],
+                }
+            ],
+            "featureRecommendations": [
+                {
+                    "id": "r1",
+                    "priority": "medium",
+                    "type": "evaluation",
+                    "target": "timeband_replay",
+                    "suggestion": "낮 시간대 replay를 확인합니다.",
+                    "expectedEffect": "반복되는 오차인지 확인합니다.",
+                    "risk": "단일 날짜에 과적합할 수 있습니다.",
+                    "validationPlan": "최근 2주 replay로 검증합니다.",
+                    "linkedHypotheses": ["h1"],
+                    "autoApply": False,
+                }
+            ],
+            "operatorNotes": [
+                "성능 메트릭에 대한 전체 시간 커버리지는 완전하였고, 보정은 2시간 누락된 스냅샷 논리에 기반하여 22개의 관찰 시간에 의존하였습니다."
+            ],
+            "limitations": ["요약된 운영 증거와 보정 스냅샷을 사용했습니다."],
+        }
+
+    monkeypatch.setattr(
+        "python.eval.ai_daily_report._call_openai_analysis",
+        fake_openai_analysis,
+    )
+
+    report = build_ai_daily_report(
+        tmp_path,
+        "2026-05-23",
+        generated_at="2026-05-24T08:20:00+09:00",
+        use_openai=True,
+    )
+
+    assert report["operatorNotes"] == [
+        "성능 평가는 확정 CSV의 24시간 실측을 기준으로 했고, intraday 보정 스냅샷은 확정 전 운영 이력으로만 참고했습니다."
+    ]
+
+
 def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("OPENAI_DAILY_REPORT_MODEL", raising=False)
 
     def fake_openai_analysis(context, api_key, model):
         assert api_key == "test-key"
@@ -289,6 +412,8 @@ def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
                     "expectedEffect": "WAPE 개선 후보입니다.",
                     "risk": "단일 날짜 과적합 위험이 있습니다.",
                     "validationPlan": "replay로 검증합니다.",
+                    "proposedReplayCommand": "python run_replay.py --date 2026-05-23 --compare baseline",
+                    "commandStatus": "proposed_not_implemented",
                     "linkedHypotheses": ["h-openai"],
                     "autoApply": True,
                 }
@@ -310,22 +435,97 @@ def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
     )
 
     assert report["generator"]["provider"] == "openai"
-    assert report["generator"]["model"] == "gpt-5.4-mini"
+    assert report["generator"]["model"] == "gpt-4o-mini"
+    assert "diagnosticContext" in report
     assert report["performance"]["modelMaeMw"] == 535.2
     assert report["executiveSummary"]["headline"] == "OpenAI 분석 헤드라인"
     assert report["rootCauseHypotheses"][0]["confidence"] == "low"
     assert report["featureRecommendations"][0]["autoApply"] is False
+    assert report["featureRecommendations"][0]["proposedReplayCommand"].startswith(
+        "python run_replay.py"
+    )
+    assert report["featureRecommendations"][0]["commandStatus"] == "proposed_not_implemented"
+
+
+def test_openai_analysis_schema_requires_nullable_recommendation_fields():
+    schema = _openai_analysis_schema()
+    recommendation_schema = schema["properties"]["featureRecommendations"]["items"]
+
+    assert "proposedReplayCommand" in recommendation_schema["properties"]
+    assert "commandStatus" in recommendation_schema["properties"]
+    assert "proposedReplayCommand" in recommendation_schema["required"]
+    assert "commandStatus" in recommendation_schema["required"]
 
 
 def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, tmp_path):
     date_iso = "2026-05-23"
     _write_operation_fixture(tmp_path, date_iso)
+    _write_json(tmp_path / "reports" / "daily" / "index.json", {
+        "schemaVersion": "1.0.0",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "reports": [
+            {"date": "2026-05-21", "availability": "ok"},
+            {"date": "2026-05-22", "availability": "ok"},
+            {"date": date_iso, "availability": "ok"},
+        ],
+    })
+    for historical_date in ("2026-05-21", "2026-05-22"):
+        _write_operation_fixture(tmp_path, historical_date)
+        payload = json.loads(
+            (tmp_path / "reports" / "daily" / f"{historical_date}.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        payload["timeBands"] = [
+            {
+                "code": "daytime",
+                "label": "11-15",
+                "hours": 5,
+                "modelMaeMw": 640.0,
+                "tepcoMaeMw": 350.0,
+                "modelBiasMw": -620.0,
+                "verdict": "tepco_better",
+            }
+        ]
+        _write_json(tmp_path / "reports" / "daily" / f"{historical_date}.json", payload)
+    current_payload = json.loads(
+        (tmp_path / "reports" / "daily" / f"{date_iso}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    current_payload["timeBands"] = [
+        {
+            "code": "daytime",
+            "label": "11-15",
+            "hours": 5,
+            "modelMaeMw": 620.0,
+            "tepcoMaeMw": 360.0,
+            "modelBiasMw": -540.0,
+            "verdict": "tepco_better",
+        }
+    ]
+    _write_json(tmp_path / "reports" / "daily" / f"{date_iso}.json", current_payload)
+    _write_json(tmp_path / "reports" / "daily" / "index.json", {
+        "schemaVersion": "1.0.0",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "reports": [
+            {"date": "2026-05-21", "availability": "ok"},
+            {"date": "2026-05-22", "availability": "ok"},
+            {"date": date_iso, "availability": "ok"},
+        ],
+    })
     _write_json(tmp_path / "forecast" / f"{date_iso}.json", {
         "date": date_iso,
         "series": [
             {
                 "ts": f"{date_iso}T{hour:02d}:00:00+09:00",
                 "forecastMw": 33_923.0 if hour == 15 else 30_000.0 + hour,
+                "p95LowerMw": 0.0,
+                "p95UpperMw": 50_000.0,
+                "p99LowerMw": 0.0,
+                "p99UpperMw": 55_000.0,
             }
             for hour in range(24)
         ],
@@ -363,6 +563,13 @@ def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, t
                     "actualMw": 32_400.0,
                     "actualSource": "observed",
                     "tepcoForecastMw": 32_800.0,
+                    "forecastMwByStage": {
+                        "raw_lgbm": 33_000.0,
+                        "analog_adjusted": 33_100.0,
+                        "post_holiday_guarded": 33_049.2,
+                        "midday_guarded": 33_049.2,
+                        "pre_calibration": 33_049.2,
+                    },
                     "preCalibrationForecastMw": 33_049.2,
                     "postCalibrationForecastMw": 33_314.0,
                     "calibrationDeltaMw": 264.8,
@@ -387,10 +594,35 @@ def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, t
         assert len(focused_rows) <= 12
         assert focused_by_hour[15]["publishedVsLatestRecalculatedGapMw"] == 609.0
         assert fact_packet["freezeContext"]["largestGaps"][0]["freezeGapMw"] == 609.0
+        assert fact_packet["freezeImpact"]["largestGaps"][0]["freezeGapMw"] == 609.0
         damping = fact_packet["controlContext"]["positiveResidualSlopeDamping"]
         assert damping["applied"] is True
         assert damping["factor"] == 0.4
         assert damping["affectedHours"] == [15]
+        diagnosis = fact_packet["controllerDiagnosis"]
+        assert diagnosis["baseAdjustmentMw"] == 662.0
+        assert diagnosis["direction"] == "upward"
+        assert diagnosis["capHitLikely"] is False
+        assert diagnosis["residualTrend"]["latestResidualMw"] == -914.0
+        stage_row = fact_packet["stageAttribution"]["largestStageShifts"][0]
+        assert stage_row["hour"] == 15
+        assert stage_row["largestStageDelta"] == {
+            "stage": "published",
+            "delta_mw": 609.0,
+            "delta_from": "post_calibration",
+        }
+        assert stage_row["stageImpactSummary"][0] == {
+            "stage": "raw_lgbm",
+            "label": "raw lgbm",
+            "value_mw": 33000.0,
+            "delta_mw": 0.0,
+        }
+        assert fact_packet["bandQuality"]["p95CoverageHours"] == 24
+        rolling = fact_packet["rollingPatternContext"]
+        assert rolling["lookbackDays"] == 3
+        assert rolling["recentTrendVerdict"] == "daytime_underprediction_repeated"
+        assert rolling["sameBandRepeatedMisses"][0]["band"] == "daytime"
+        assert rolling["sameBandRepeatedMisses"][0]["sameDirectionMissDays"] == 3
         return {
             "executiveSummary": {
                 "severity": "warning",
