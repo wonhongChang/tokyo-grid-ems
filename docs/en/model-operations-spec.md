@@ -223,9 +223,10 @@ The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_
 | Day-boundary carryover | intraday calibration | carries the last real residual across midnight |
 | Business transition prior | intraday calibration | weak prior during business/non-business transition before observations accumulate |
 | Negative residual recovery damping | intraday calibration | avoids over-propagating negative residuals during non-business recovery |
+| Negative residual continuity floor | intraday calibration | prevents early negative residuals from pulling a stable non-business-day plateau too far below observed demand |
 | Positive residual slope damping | intraday calibration | damps positive residuals when actual slope rolls over |
 | Morning ramp continuity guard | intraday calibration | avoids near-term dips during confirmed business morning ramps |
-| Evening decline continuity guard | intraday calibration | limits near-term rebound spikes during evening decline |
+| Evening decline continuity guard | intraday calibration | limits near-term rebound spikes and high-level overhang during evening decline |
 
 Every guard should have a cap, shrinkage, and metadata footprint.
 
@@ -244,6 +245,9 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | intraday | `lookback_hours` | 3 | Shorter windows react faster; longer windows are smoother but slower. |
 | intraday | `decay_per_hour` | 0.92 | Higher values carry residuals farther into the day; lower values keep corrections near-term. Lower it when carryover contaminates shape. |
 | intraday | `max_abs_adjustment_mw` | 1200 | Hard cap for same-day residual correction. Raising it follows large misses faster but increases overshoot risk. |
+| intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | Upper bound for restoring a non-business-day forecast that has been pulled below a stable same-day plateau. Raising it protects Saturday plateaus more strongly but can hide real demand drops. |
+| intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | Buffer below the latest observed plateau before restoration begins. Lower values intervene sooner; higher values require a clearer undercut. |
+| intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | Extends the evening guard from local rebound spikes to high-but-flat overhangs after observed demand is falling. Disable only if it suppresses genuine hot-evening demand. |
 | forecast snapshots | `retention_days` | 21 | Public lead-time forecast history for operational review. |
 | calibration snapshots | `retention_days` | 14 | Internal calibration history. Too short makes incident analysis harder. |
 | reserve risk | warning | 92% | TEPCO reserve warning threshold. Lower values create more warnings; higher values reduce early warning behavior. |

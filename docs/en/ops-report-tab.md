@@ -47,6 +47,19 @@ Even with OpenAI enabled, deterministic Python code owns the performance metrics
 
 ---
 
+## Error Direction Rule
+
+The fact packet explicitly marks signed error direction before the model writes the narrative.
+
+- `modelErrorMw = modelForecastMw - actualMw`
+- `modelBiasMw = mean(modelForecastMw - actualMw)`
+- positive values mean overprediction, or forecast above actual
+- negative values mean underprediction, or forecast below actual
+
+If an OpenAI hypothesis contradicts this sign rule, the report generator rejects that hypothesis and falls back to deterministic wording.
+
+---
+
 ## Localization
 
 OpenAI reports use a two-step chain.

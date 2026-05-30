@@ -231,9 +231,10 @@ Raw LightGBM Forecast
 | Day-boundary carryover | intraday calibration | 자정 경계에서 마지막 진짜 실측 residual을 약하게 이월 |
 | Business transition prior | intraday calibration | 실측 부족 구간에서 영업/비영업 전환 prior 적용 |
 | Negative residual recovery damping | intraday calibration | 주말 회복 국면에서 음수 residual 전파 과잉 방지 |
+| Negative residual continuity floor | intraday calibration | 비영업일 초반 음수 residual이 안정적인 당일 plateau를 최신 실측보다 과하게 낮추는 문제 방지 |
 | Positive residual slope damping | intraday calibration | 실측 slope 둔화/하락 시 양수 residual 폭주 방지 |
 | Morning ramp continuity guard | intraday calibration | 영업일 오전 near-term dip 방지 |
-| Evening decline continuity guard | intraday calibration | 저녁 하락 국면의 near-term rebound spike 제한 |
+| Evening decline continuity guard | intraday calibration | 저녁 하락 국면의 near-term rebound spike와 높은 레벨 overhang 제한 |
 
 후처리 레이어의 기본 원칙:
 
@@ -257,6 +258,9 @@ Raw LightGBM Forecast
 | intraday | `lookback_hours` | 3 | 짧게 잡으면 최근 변화에 민감하고, 길게 잡으면 안정적이지만 반응이 늦습니다. |
 | intraday | `decay_per_hour` | 0.92 | 높이면 residual 영향이 먼 미래까지 남고, 낮추면 근거리 보정 중심이 됩니다. shape 오염이 있으면 낮추는 쪽을 검토합니다. |
 | intraday | `max_abs_adjustment_mw` | 1200 | 당일 residual 보정의 하드 상한입니다. 올리면 큰 오차를 빠르게 따라가지만 폭주 위험이 커집니다. |
+| intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 비영업일 예측선이 안정적인 당일 plateau 아래로 밀렸을 때 되돌릴 수 있는 최대치입니다. 올리면 토요일 plateau 보호가 강해지지만 실제 하락을 늦게 반영할 수 있습니다. |
+| intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 최신 실측 plateau보다 어느 정도 낮아져야 floor가 개입할지 정하는 버퍼입니다. 낮추면 더 빨리 개입하고, 높이면 명확한 undercut에서만 작동합니다. |
+| intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 저녁 하락 국면에서 국소 rebound뿐 아니라 높은 레벨로 버티는 overhang도 제한합니다. 더운 저녁의 실제 수요까지 누르는 경우에만 비활성화를 검토합니다. |
 | forecast snapshots | `retention_days` | 21 | 예측선 변화를 사후 분석할 수 있는 공개 snapshot 보관 기간입니다. |
 | calibration snapshots | `retention_days` | 14 | 보정 레이어 원인 분석용 내부 snapshot 보관 기간입니다. 너무 짧으면 장애 원인 추적이 어려워집니다. |
 | reserve risk | warning | 92% | TEPCO 기준 경고 구간입니다. 낮추면 경고가 많아지고, 높이면 사전 경보성이 약해집니다. |

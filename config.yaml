@@ -78,6 +78,19 @@ intraday_correction:
     damping_factor_default: 0.4
     damping_factor_strong: 0.2
     strong_recovery_mean_slope_mw: 500
+  negative_residual_continuity_floor:
+    enabled: true
+    non_business_day_only: true
+    target_hours: [10, 11, 12, 13, 14, 15, 16, 17]
+    min_reference_hour: 10
+    max_lead_hours: 2
+    latest_slope_min_mw: -300
+    mean_slope_min_mw: -300
+    floor_slack_mw: 500
+    floor_slope_fraction: 0.25
+    max_floor_slope_mw: 300
+    max_restore_mw: 900
+    min_restore_mw: 100
   positive_residual_slope_damping:
     enabled: true
     min_reference_hour: 12    # only after enough same-day shape evidence exists
@@ -107,7 +120,7 @@ intraday_correction:
     enabled: true
     business_day_only: false
     target_hours: [16, 17, 18, 19, 20]
-    min_reference_hour: 16
+    min_reference_hour: 15
     max_lead_hours: 2           # protect only near-term evening buckets
     latest_slope_max_mw: -500   # require a clear same-day demand drop
     mean_slope_max_mw: -300
@@ -120,6 +133,9 @@ intraday_correction:
     max_weather_allowance_mw: 400
     max_reduction_mw: 900
     min_reduction_mw: 100
+    level_overhang_enabled: true
+    min_level_overhang_mw: 500 # catch high-but-not-rebounding evening lines
+    level_overhang_shrinkage: 0.75
   midday_residual_deweight:
     enabled: false
     hours: [12]              # lunch bucket only; applies on business days

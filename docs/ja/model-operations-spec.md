@@ -221,9 +221,10 @@ Raw LightGBM Forecast
 | Day-boundary carryover | intraday calibration | 最後の実績residualを日付境界で弱くcarry-over |
 | Business transition prior | intraday calibration | 観測不足時の営業/非営業遷移prior |
 | Negative residual recovery damping | intraday calibration | 非営業日回復時の負residual過剰伝播を防止 |
+| Negative residual continuity floor | intraday calibration | 非営業日序盤の負residualが安定した当日plateauを実績水準より押し下げすぎることを防止 |
 | Positive residual slope damping | intraday calibration | 実績slope鈍化時の正residual伝播を抑制 |
 | Morning ramp continuity guard | intraday calibration | 営業日朝の近距離dipを防止 |
-| Evening decline continuity guard | intraday calibration | 夕方下落時の近距離反発spikeを制限 |
+| Evening decline continuity guard | intraday calibration | 夕方下落時の近距離反発spikeと高水準overhangを制限 |
 
 各guardにはcap、shrinkage、metadataを持たせます。
 
@@ -242,6 +243,9 @@ Raw LightGBM Forecast
 | intraday | `lookback_hours` | 3 | 短いほど反応が速く、長いほど滑らかですが遅れます。 |
 | intraday | `decay_per_hour` | 0.92 | 高いほどresidualが遠い時間まで残り、低いほど近距離中心になります。shape汚染時は引き下げを検討します。 |
 | intraday | `max_abs_adjustment_mw` | 1200 | 当日residual補正のhard capです。上げると大きなmissに追従しやすい一方、overshootリスクが増えます。 |
+| intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 非営業日の予測線が安定した当日plateauより下へ押された場合に戻せる最大値です。上げると土曜plateau保護は強くなりますが、実際の下落反映が遅れる場合があります。 |
+| intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 最新実績plateauよりどれだけ下がったらfloorを作動させるかのbufferです。下げると早めに介入し、上げると明確なundercut時だけ作動します。 |
+| intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 夕方下落局面で局所的なreboundだけでなく、高水準に残るoverhangも制限します。暑い夕方の実需要まで抑える場合だけ無効化を検討します。 |
 | forecast snapshots | `retention_days` | 21 | 公開lead-time forecast履歴の保持期間です。 |
 | calibration snapshots | `retention_days` | 14 | 内部calibration履歴です。短すぎると障害分析が難しくなります。 |
 | reserve risk | warning | 92% | TEPCO基準のwarning thresholdです。下げると警告が増え、上げると早期警戒性が弱まります。 |

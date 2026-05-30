@@ -1385,6 +1385,46 @@ def _round_number(value: Any, digits: int = 1) -> float | None:
     return round(number, digits)
 
 
+def _signed_error_direction(value: Any) -> str | None:
+    number = _as_float(value)
+    if number is None:
+        return None
+    if number > 0:
+        return "overprediction"
+    if number < 0:
+        return "underprediction"
+    return "neutral"
+
+
+def _annotate_error_direction(payload: dict, metric_key: str, direction_key: str) -> None:
+    direction = _signed_error_direction(payload.get(metric_key))
+    if direction is not None:
+        payload[direction_key] = direction
+
+
+def _annotate_time_bands(time_bands: list[dict] | None) -> list[dict]:
+    annotated = []
+    for band in time_bands or []:
+        if not isinstance(band, dict):
+            continue
+        item = dict(band)
+        _annotate_error_direction(item, "modelBiasMw", "modelBiasDirection")
+        annotated.append(item)
+    return annotated
+
+
+def _annotate_top_misses(top_misses: list[dict] | None) -> list[dict]:
+    annotated = []
+    for miss in top_misses or []:
+        if not isinstance(miss, dict):
+            continue
+        item = dict(miss)
+        _annotate_error_direction(item, "modelErrorMw", "modelErrorDirection")
+        _annotate_error_direction(item, "tepcoErrorMw", "tepcoErrorDirection")
+        annotated.append(item)
+    return annotated
+
+
 def _hour_from_point(point: dict | None) -> int | None:
     if not isinstance(point, dict):
         return None
@@ -1442,6 +1482,19 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
             item.get("positiveResidualSlopeDampingFactor"),
             digits=3,
         ),
+        "negativeResidualContinuityFloorMw": _round_number(
+            item.get("negativeResidualContinuityFloorMw")
+        ),
+        "negativeResidualContinuityRestoreMw": _round_number(
+            item.get("negativeResidualContinuityRestoreMw")
+        ),
+        "eveningDeclineContinuityMode": item.get("eveningDeclineContinuityMode"),
+        "eveningDeclineContinuityReductionMw": _round_number(
+            item.get("eveningDeclineContinuityReductionMw")
+        ),
+        "eveningDeclineContinuityCapMw": _round_number(
+            item.get("eveningDeclineContinuityCapMw")
+        ),
         "finalAdjustmentMw": _round_number(item.get("finalAdjustmentMw")),
     }
     return {key: value for key, value in compact.items() if value is not None}
@@ -1460,8 +1513,19 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
         factor = _as_float(item.get("positiveResidualSlopeDampingFactor"))
         final_adjustment = abs(_as_float(item.get("finalAdjustmentMw")) or 0.0)
         damped = factor is not None and factor < 0.999
+        continuity_floor = (
+            (_as_float(item.get("negativeResidualContinuityRestoreMw")) or 0.0)
+            > 0.0
+        )
+        evening_guard = (
+            (_as_float(item.get("eveningDeclineContinuityReductionMw")) or 0.0)
+            > 0.0
+        )
         large = final_adjustment >= LARGE_CONTROL_DELTA_MW
-        return (1 if damped or large else 0, final_adjustment)
+        return (
+            1 if damped or continuity_floor or evening_guard or large else 0,
+            final_adjustment,
+        )
 
     selected = sorted(compact_items, key=priority, reverse=True)[:max_items]
     return sorted(selected, key=lambda item: int(item.get("hour", 99)))
@@ -1498,6 +1562,8 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
         "positiveResidualSlopeDampingApplied": correction.get("positiveResidualSlopeDampingApplied"),
         "positiveResidualSlopeDampingFactor": correction.get("positiveResidualSlopeDampingFactor"),
         "positiveResidualSlopeDampingMaxMw": correction.get("positiveResidualSlopeDampingMaxMw"),
+        "negativeResidualContinuityFloorApplied": correction.get("negativeResidualContinuityFloorApplied"),
+        "negativeResidualContinuityFloorMaxRestoreMw": correction.get("negativeResidualContinuityFloorMaxRestoreMw"),
         "negResidualRecoveryDampingApplied": correction.get("negResidualRecoveryDampingApplied"),
         "negResidualRecoveryDampingFactor": correction.get("negResidualRecoveryDampingFactor"),
         "residualCarryoverByHour": residual_carryover,
@@ -1931,6 +1997,8 @@ def _build_controller_diagnosis(
         flags.append("eveningDeclineContinuityGuardApplied")
     if correction.get("morningRampContinuityGuardApplied"):
         flags.append("morningRampContinuityGuardApplied")
+    if correction.get("negativeResidualContinuityFloorApplied"):
+        flags.append("negativeResidualContinuityFloorApplied")
 
     return _drop_none_values({
         "source": "operationalCalibration.correction",
@@ -1963,6 +2031,12 @@ def _build_controller_diagnosis(
             "morningRampContinuityGuardApplied": correction.get("morningRampContinuityGuardApplied"),
             "morningRampContinuityMaxRestoreMw": _round_number(
                 correction.get("morningRampContinuityMaxRestoreMw")
+            ),
+            "negativeResidualContinuityFloorApplied": correction.get(
+                "negativeResidualContinuityFloorApplied"
+            ),
+            "negativeResidualContinuityFloorMaxRestoreMw": _round_number(
+                correction.get("negativeResidualContinuityFloorMaxRestoreMw")
             ),
             "eveningDeclineContinuityGuardApplied": correction.get("eveningDeclineContinuityGuardApplied"),
             "eveningDeclineContinuityMaxReductionMw": _round_number(
@@ -2395,6 +2469,8 @@ def _build_focused_rows(
                 calibration_row.get("residualCarryover")
             ),
         })
+        _annotate_error_direction(row, "modelErrorMw", "modelErrorDirection")
+        _annotate_error_direction(row, "tepcoErrorMw", "tepcoErrorDirection")
         rows.append(row)
     return rows
 
@@ -2416,9 +2492,9 @@ def _build_openai_fact_packet(
         operation_facts = {
             "model": operation.get("model"),
             "peak": operation.get("peak"),
-            "timeBands": operation.get("timeBands"),
+            "timeBands": _annotate_time_bands(operation.get("timeBands")),
             "shape": operation.get("shape"),
-            "topMisses": (operation.get("topMisses") or [])[:3],
+            "topMisses": _annotate_top_misses((operation.get("topMisses") or [])[:3]),
         }
 
     diagnostic_facts = None
@@ -2446,6 +2522,14 @@ def _build_openai_fact_packet(
     fact_packet = {
         "date": primary.get("date"),
         "timezone": TIMEZONE,
+        "errorSignConvention": {
+            "modelErrorMw": "modelForecastMw - actualMw",
+            "tepcoErrorMw": "tepcoForecastMw - actualMw",
+            "modelBiasMw": "mean(modelForecastMw - actualMw)",
+            "positive": "overprediction_forecast_above_actual",
+            "negative": "underprediction_forecast_below_actual",
+            "zero": "no_directional_bias",
+        },
         "inputSnapshot": primary.get("inputSnapshot"),
         "performance": primary.get("performance"),
         "dataQuality": primary.get("dataQuality"),
@@ -2652,6 +2736,11 @@ def _openai_domain_guidelines() -> str:
         "bandQuality, freezeContext, rollingPatternContext, and calibration flags "
         "from factPacket. Treat focusedRows as the detailed window around "
         "large misses or calibration-shape risk, not as a full-day table. "
+        "Strict sign convention: modelErrorMw and modelBiasMw are forecast "
+        "minus actual. Positive values mean overprediction or forecast above "
+        "actual; negative values mean underprediction or forecast below actual. "
+        "Never describe a positive modelErrorMw/modelBiasMw as underprediction, "
+        "and never describe a negative value as overprediction. "
         "When citing hour bands, always use unambiguous clock labels such as "
         "'hours 11:00-15:00 JST' or '11:00-15:00'. Do not write bare ranges "
         "like '11-15' or date-like phrases such as 'on 11-15'. "
@@ -3121,6 +3210,57 @@ def _is_placeholder_title(value: str) -> bool:
     }
 
 
+_UNDERPREDICTION_WORDS = (
+    "underprediction",
+    "under-prediction",
+    "underpredicted",
+    "underestimated",
+    "below actual",
+    "below the actual",
+    "lower than actual",
+    "forecast below",
+)
+_OVERPREDICTION_WORDS = (
+    "overprediction",
+    "over-prediction",
+    "overpredicted",
+    "overestimated",
+    "above actual",
+    "above the actual",
+    "higher than actual",
+    "forecast above",
+)
+_SIGNED_ERROR_METRICS = {
+    "modelerrormw",
+    "modelbiasmw",
+    "meanmodelbiasmw",
+}
+
+
+def _hypothesis_has_sign_conflict(
+    title: str,
+    explanation: str,
+    evidence: list[dict],
+) -> bool:
+    text = f"{title} {explanation}".lower()
+    mentions_under = any(word in text for word in _UNDERPREDICTION_WORDS)
+    mentions_over = any(word in text for word in _OVERPREDICTION_WORDS)
+    if not mentions_under and not mentions_over:
+        return False
+    for item in evidence:
+        metric = str(item.get("metric") or "").replace("_", "").lower()
+        if metric not in _SIGNED_ERROR_METRICS:
+            continue
+        value = _as_float(item.get("value"))
+        if value is None or abs(value) < 100.0:
+            continue
+        if value > 0.0 and mentions_under:
+            return True
+        if value < 0.0 and mentions_over:
+            return True
+    return False
+
+
 def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
     if not isinstance(value, list):
         return fallback
@@ -3145,6 +3285,8 @@ def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
         if not title or _is_placeholder_title(title) or not explanation:
             continue
         evidence = _normalize_evidence(item.get("evidence"))
+        if _hypothesis_has_sign_conflict(title, explanation, evidence):
+            continue
         if (
             evidence_status == "confirmed"
             and not _evidence_supports_confirmed_status(evidence)

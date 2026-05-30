@@ -28,12 +28,14 @@ It is evaluated only when:
 - the forecast rebound from the previous final forecast exceeds the configured threshold,
 - the rebound exceeds a capped upper buffer after weather allowance is included.
 
+2026-05-29 exposed a second evening failure mode: the forecast did not locally rebound, but it stayed too high while same-day actual demand was already falling. The guard now also has a conservative `level_overhang` path. This path uses the latest actual demand and same-business anchor as the level reference and trims only the excess above the allowed buffer for the next one or two future buckets.
+
 ## Operating Parameters
 
 Default configuration:
 
 - `target_hours`: 16-20
-- `min_reference_hour`: 16
+- `min_reference_hour`: 15
 - `max_lead_hours`: 2
 - `latest_slope_max_mw`: -500
 - `mean_slope_max_mw`: -300
@@ -46,8 +48,11 @@ Default configuration:
 - `max_weather_allowance_mw`: 400
 - `max_reduction_mw`: 900
 - `min_reduction_mw`: 100
+- `level_overhang_enabled`: true
+- `min_level_overhang_mw`: 500
+- `level_overhang_shrinkage`: 0.75
 
-The cap is intentionally conservative. It reduces only the excess rebound and keeps a weather allowance so genuinely hot evenings are not suppressed too aggressively.
+The cap is intentionally conservative. It reduces only the excess rebound or level overhang and keeps a weather allowance so genuinely hot evenings are not suppressed too aggressively.
 
 ## Diagnostics
 
@@ -56,7 +61,7 @@ Correction metadata now records:
 - `eveningDeclineContinuityGuardApplied`
 - `eveningDeclineContinuityMaxReductionMw`
 - `evening_decline_continuity_guard` in `appliedRegimeReason`
-- per-hour `residualCarryoverByHour` fields for the cap, rebound, weather allowance, and reduction amount
+- per-hour `residualCarryoverByHour` fields for the cap, mode, rebound, weather allowance, and reduction amount
 
 Operational calibration snapshot summaries also include the guard state so daily reports can explain why an evening spike was capped.
 
@@ -65,4 +70,5 @@ Operational calibration snapshot summaries also include the guard state so daily
 Added regression tests for:
 
 - a 2026-05-27-style evening decline where an abnormal 18:00 rebound is capped,
+- a 2026-05-29-style level-overhang case where a high near-term evening line is reduced even without a local rebound,
 - a legitimate rebound case where lag and same-business shape both support an increase, so the guard does not intervene.

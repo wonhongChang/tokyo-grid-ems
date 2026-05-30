@@ -287,6 +287,30 @@ def test_ai_report_fact_packet_separates_final_and_intraday_coverage(tmp_path):
     }
 
 
+def test_ai_report_fact_packet_marks_signed_error_direction(tmp_path):
+    _write_operation_fixture(tmp_path)
+    report = build_ai_daily_report(
+        tmp_path,
+        "2026-05-23",
+        generated_at="2026-05-24T08:20:00+09:00",
+        use_openai=False,
+    )
+
+    fact_packet = _build_openai_fact_packet(tmp_path, {"ko": report})
+
+    assert fact_packet["errorSignConvention"]["modelErrorMw"] == (
+        "modelForecastMw - actualMw"
+    )
+    assert fact_packet["errorSignConvention"]["positive"] == (
+        "overprediction_forecast_above_actual"
+    )
+    top_miss = fact_packet["operationFacts"]["topMisses"][0]
+    assert top_miss["modelErrorDirection"] == "overprediction"
+    assert top_miss["tepcoErrorDirection"] == "overprediction"
+    focused = next(row for row in fact_packet["focusedRows"] if row["hour"] == 8)
+    assert focused["modelErrorDirection"] == "overprediction"
+
+
 def test_ai_daily_report_clarifies_intraday_snapshot_coverage_note(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -446,6 +470,87 @@ def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
         "python run_replay.py"
     )
     assert report["featureRecommendations"][0]["commandStatus"] == "proposed_not_implemented"
+
+
+def test_ai_daily_report_rejects_openai_signed_error_contradiction(monkeypatch, tmp_path):
+    _write_operation_fixture(tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    def fake_openai_analysis(context, api_key, model):
+        return {
+            "executiveSummary": {
+                "severity": "warning",
+                "headline": "Signed error contradiction test",
+                "summary": "The deterministic metrics are retained.",
+                "modelVerdict": "tepco_better",
+                "confidence": "medium",
+            },
+            "rootCauseHypotheses": [
+                {
+                    "id": "h-bad-sign",
+                    "severity": "warning",
+                    "confidence": "high",
+                    "evidenceStatus": "partial",
+                    "title": "Daytime underprediction despite a positive bias",
+                    "explanation": (
+                        "The model underprediction should not be accepted when "
+                        "modelBiasMw is positive."
+                    ),
+                    "evidence": [
+                        {
+                            "source": "reports/internal/daily-diagnostics",
+                            "metric": "modelBiasMw",
+                            "value": 1000.0,
+                            "unit": "MW",
+                            "hour": None,
+                            "timeBand": "daytime",
+                        }
+                    ],
+                    "relatedHours": [],
+                    "relatedTimeBands": ["daytime"],
+                    "relatedFeatures": ["lag_24h"],
+                    "counterEvidence": [],
+                }
+            ],
+            "featureRecommendations": [
+                {
+                    "id": "r1",
+                    "priority": "medium",
+                    "type": "feature_engineering",
+                    "target": "lag_24h",
+                    "suggestion": "Backtest lag inertia thresholds.",
+                    "expectedEffect": "Reduce directional bias.",
+                    "risk": "A single-day pattern may be overfit.",
+                    "validationPlan": "Replay recent high-error days.",
+                    "proposedReplayCommand": None,
+                    "commandStatus": None,
+                    "linkedHypotheses": ["h-bad-sign"],
+                    "autoApply": False,
+                }
+            ],
+            "operatorNotes": [],
+            "limitations": [],
+        }
+
+    monkeypatch.setattr(
+        "python.eval.ai_daily_report._call_openai_analysis",
+        fake_openai_analysis,
+    )
+
+    report = build_ai_daily_report(
+        tmp_path,
+        "2026-05-23",
+        generated_at="2026-05-24T08:20:00+09:00",
+        language="en",
+        use_openai=True,
+    )
+
+    assert report["rootCauseHypotheses"][0]["title"] == (
+        "The morning ramp may have been overestimated."
+    )
+    assert report["rootCauseHypotheses"][0]["title"] != (
+        "Daytime underprediction despite a positive bias"
+    )
 
 
 def test_openai_analysis_schema_requires_nullable_recommendation_fields():
