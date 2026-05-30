@@ -28,7 +28,7 @@ It is evaluated only when:
 - the forecast rebound from the previous final forecast exceeds the configured threshold,
 - the rebound exceeds a capped upper buffer after weather allowance is included.
 
-2026-05-29 exposed a second evening failure mode: the forecast did not locally rebound, but it stayed too high while same-day actual demand was already falling. The guard now also has a conservative `level_overhang` path. This path uses the latest actual demand and same-business anchor as the level reference and trims only the excess above the allowed buffer for the next one or two future buckets.
+The later 2026-05-29 high-level overhang extension is documented separately in [Evening Level-Overhang Guard](model-improvement-2026-05-29-evening-level-overhang-guard.md).
 
 ## Operating Parameters
 
@@ -70,5 +70,4 @@ Operational calibration snapshot summaries also include the guard state so daily
 Added regression tests for:
 
 - a 2026-05-27-style evening decline where an abnormal 18:00 rebound is capped,
-- a 2026-05-29-style level-overhang case where a high near-term evening line is reduced even without a local rebound,
 - a legitimate rebound case where lag and same-business shape both support an increase, so the guard does not intervene.

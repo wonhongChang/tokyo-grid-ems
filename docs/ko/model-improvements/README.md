@@ -9,6 +9,7 @@
 ## 2026-05
 
 - [2026-05-30 음수 잔차 연속성 floor](model-improvement-2026-05-30-negative-residual-continuity-floor.md)
+- [2026-05-29 저녁 레벨 overhang 가드](model-improvement-2026-05-29-evening-level-overhang-guard.md)
 - [2026-05-27 저녁 하락 연속성 가드](model-improvement-2026-05-27-evening-decline-continuity-guard.md)
 - [2026-05-27 오전 램프 연속성 가드](model-improvement-2026-05-27-morning-ramp-continuity-guard.md)
 - [2026-05-27 점심 전환 가드 재활성화](model-improvement-2026-05-27-midday-transition-guard-reenabled.md)

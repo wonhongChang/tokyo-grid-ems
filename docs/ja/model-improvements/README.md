@@ -9,6 +9,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 ## 2026-05
 
 - [2026-05-30 負の残差連続性 floor](model-improvement-2026-05-30-negative-residual-continuity-floor.md)
+- [2026-05-29 夕方レベル overhang ガード](model-improvement-2026-05-29-evening-level-overhang-guard.md)
 - [2026-05-27 夕方下落継続ガード](model-improvement-2026-05-27-evening-decline-continuity-guard.md)
 - [2026-05-27 朝ランプ継続ガード](model-improvement-2026-05-27-morning-ramp-continuity-guard.md)
 - [2026-05-27 昼休み遷移ガード再有効化](model-improvement-2026-05-27-midday-transition-guard-reenabled.md)
