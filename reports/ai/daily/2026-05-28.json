@@ -800,10 +800,10 @@
       "priority": "high",
       "type": "feature_engineering",
       "target": "intraday_correction.day_level_scale",
-      "suggestion": "11~15시 구간에서 모델 바이어스가 -500 MW 이하로 표시될 때 주간 비율 상승 트리거를 추가합니다.",
-      "expectedEffect": "지속적인 정오 예측 미달을 줄입니다.",
-      "risk": "온화한 수요일에 과도 교정을 할 수 있습니다.",
-      "validationPlan": "지난 7일 문제를 재실행하고 저녁 오류를 악화시키지 않으며 낮 동안 MAE를 낮춰야 합니다.",
+      "suggestion": "11~15시 구간에서 모델 바이어스가 -500 MW 이하로 반복될 때, 낮 시간 스케일 보정을 백테스트 후보로 둡니다.",
+      "expectedEffect": "낮 시간 과소예측이 줄어드는지 보되, 저녁 예측선을 과하게 끌어올리지 않는지 함께 확인합니다.",
+      "risk": "수요가 온화한 날이나 오후에 급락하는 날에는 과보정으로 바뀔 수 있습니다.",
+      "validationPlan": "최근 7~14일 리플레이에서 낮 시간 MAE/WAPE, 저녁 MAE, 최대 오차 시간을 함께 비교합니다.",
       "linkedHypotheses": [
         "rc1"
       ],
@@ -814,10 +814,10 @@
       "priority": "high",
       "type": "calibration",
       "target": "serving.published_forecast_freeze",
-      "suggestion": "15~17시 구간에서 발표된 대 재계산 간격이 500.0 MW 이하일 때만 발행을 동결합니다.",
-      "expectedEffect": "최신 재계산 선 위에서의 서비스 이탈을 줄입니다.",
-      "risk": "더 엄격한 동결 관리가 운영의 변동성을 증가시킬 수 있습니다.",
-      "validationPlan": "다음 10회 intraday 실행에서 발표 및 재계산 오차를 비교합니다.",
+      "suggestion": "15~17시 구간에서 발표선과 재계산선의 차이가 500 MW를 넘는 경우, 예측선 보존 정책을 실험 후보로 재검토합니다.",
+      "expectedEffect": "오후 재계산 결과가 크게 달라졌을 때, 화면에 남는 예측선 괴리를 줄일 수 있는지 확인합니다.",
+      "risk": "보존 정책을 너무 느슨하게 하면 intraday 갱신 때 공개 곡선이 불안정해 보일 수 있습니다.",
+      "validationPlan": "다음 10회 intraday 실행에서 발표선-재계산선 갭, 실제 오차, 재공개 시 개선폭을 비교합니다.",
       "linkedHypotheses": [
         "rc2"
       ],
