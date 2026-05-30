@@ -176,7 +176,7 @@ UI는 전체 파일 목록을 직접 훑지 않고 index만 읽습니다. 기본
 OpenAI 비용을 막기 위해 다음 제어를 둡니다.
 
 - 최신 확정 일자만 OpenAI 대상
-- 기본 최대 호출 수 3회. 현지화 검증 실패 시 1회 재시도까지 포함
+- 기본 최대 호출 수 2회. 영어 마스터 1회와 한국어/일본어 현지화 1회를 기준으로 제한
 - 기존 리포트가 있으면 재생성하지 않음
 - OpenAI 입력은 압축된 fact packet만 전달
 - fact packet에는 `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, `rollingPatternContext` 같은 계산 완료 필드를 포함
@@ -185,7 +185,7 @@ OpenAI 비용을 막기 위해 다음 제어를 둡니다.
 관련 기본값:
 
 ```text
-OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=3
+OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180

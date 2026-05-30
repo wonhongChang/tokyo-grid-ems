@@ -168,7 +168,7 @@ UIはフォルダ全体を走査せず、indexのみを読みます。既定のi
 ## コスト制御
 
 - 既定では最新の確定済み日付だけがOpenAI対象
-- ETL 1回あたりOpenAI呼び出しは最大3回。ローカライズ検証失敗時の1回リトライを含む
+- ETL 1回あたりOpenAI呼び出しは最大2回。英語マスター1回と韓国語/日本語ローカライズ1回に制限する
 - 既存レポートは保持して再生成しない
 - OpenAIには全時間帯raw rowではなく圧縮fact packetだけを渡す
 - fact packetには `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, `rollingPatternContext` などの計算済みフィールドを含める
@@ -177,7 +177,7 @@ UIはフォルダ全体を走査せず、indexのみを読みます。既定のi
 既定値:
 
 ```text
-OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=3
+OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180

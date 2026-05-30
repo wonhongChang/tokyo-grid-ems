@@ -168,7 +168,7 @@ The UI does not scan the whole folder. The default index range is recent days, s
 ## Cost Control
 
 - Only the latest finalized date is eligible for OpenAI by default
-- Default maximum: 3 OpenAI calls per ETL run, including one localization validation retry
+- Default maximum: 2 OpenAI calls per ETL run: one English master call and one Korean/Japanese localization call
 - Existing report files are preserved
 - OpenAI receives a compact fact packet, not full hourly raw rows
 - The fact packet includes computed fields such as `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, and `rollingPatternContext`
@@ -177,7 +177,7 @@ The UI does not scan the whole folder. The default index range is recent days, s
 Defaults:
 
 ```text
-OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=3
+OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180

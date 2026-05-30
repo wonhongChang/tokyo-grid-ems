@@ -27,7 +27,7 @@ OPENAI_PROMPT_VERSION = "openai_ops_report_v4"
 OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALES = "ko,en,ja"
-OPENAI_DEFAULT_MAX_CALLS_PER_RUN = 3
+OPENAI_DEFAULT_MAX_CALLS_PER_RUN = 2
 OPENAI_DEFAULT_ANALYSIS_TIMEOUT_SECONDS = 90
 OPENAI_DEFAULT_LOCALIZATION_TIMEOUT_SECONDS = 180
 REPORT_TYPE = "ai_daily_operation_report"
@@ -2854,6 +2854,22 @@ def _extract_response_text(data: dict) -> str:
     raise ValueError("OpenAI response did not contain output text")
 
 
+def _log_openai_usage(label: str, model: str, data: dict) -> None:
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    total_tokens = usage.get("total_tokens")
+    print(
+        "[OPENAI-USAGE] "
+        f"{label} model={model} "
+        f"input_tokens={input_tokens} "
+        f"output_tokens={output_tokens} "
+        f"total_tokens={total_tokens}"
+    )
+
+
 def _call_openai_analysis(context: dict, api_key: str, model: str) -> dict:
     context = _sanitize_openai_context(context)
     payload = {
@@ -2885,6 +2901,7 @@ def _call_openai_analysis(context: dict, api_key: str, model: str) -> dict:
     )
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         data = json.loads(response.read().decode("utf-8"))
+    _log_openai_usage("analysis", model, data)
     return json.loads(_extract_response_text(data))
 
 
@@ -2924,6 +2941,7 @@ def _call_openai_multilingual_analysis(
     )
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         data = json.loads(response.read().decode("utf-8"))
+    _log_openai_usage("multilingual", model, data)
     return json.loads(_extract_response_text(data))
 
 
@@ -3014,6 +3032,7 @@ def _call_openai_localization_analysis(
     )
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         data = json.loads(response.read().decode("utf-8"))
+    _log_openai_usage("localization", model, data)
     return json.loads(_extract_response_text(data))
 
 

@@ -215,13 +215,17 @@ try {
         return
     }
 
-    $composeArgs = @("compose", "up", "--force-recreate", "--exit-code-from", "etl")
     if ($Build) {
-        $composeArgs += "--build"
+        Write-LocalEtlStatus -Status "running" -Stage "docker_build" -Message "Building Docker ETL image"
+        Invoke-Native -FilePath "docker" -Arguments @("compose", "build", "etl")
     }
-    $composeArgs += "etl"
+
+    # Use a one-shot container for Task Scheduler reliability. `docker compose up`
+    # can leave the scheduler waiting even after the ETL container exits.
+    $composeArgs = @("compose", "run", "--rm", "--no-TTY", "etl")
     Write-LocalEtlStatus -Status "running" -Stage "docker_etl" -Message "Running Docker ETL"
     Invoke-Native -FilePath "docker" -Arguments $composeArgs
+    Write-LocalEtlStatus -Status "running" -Stage "docker_etl_finished" -Message "Docker ETL finished; preparing publish"
 
     $published = $false
     $deployTriggered = $false
