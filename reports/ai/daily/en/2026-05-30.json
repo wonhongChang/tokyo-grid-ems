@@ -3,7 +3,7 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-30",
-  "generatedAt": "2026-05-31T07:34:39+09:00",
+  "generatedAt": "2026-05-31T16:41:10+09:00",
   "availability": "ok",
   "language": "en",
   "contentLanguage": "en",
@@ -26,22 +26,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-05-31T07:34:39+09:00",
-    "fingerprint": "sha256:c04aa91dde77cc5b82c650a73dfbabf3431ba31c6bfb7112f6c8b27546449ca8",
+    "createdAt": "2026-05-31T16:41:10+09:00",
+    "fingerprint": "sha256:f77f5d2ba7fcb1fd4d5e9ec5543fc39065f9d86a445a8720e5f067a6697744b0",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-05-30.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:34:19+09:00",
-        "fingerprint": "sha256:9244f6460dcdfa0cc546c2b48e381cfa962e11ae20c33a64ac5bb1f348131542"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:4bfc17015673e7eae9b273c0a671b98507ee7d9665dd09f06afc74037bd75663"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-05-30.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:34:19+09:00",
-        "fingerprint": "sha256:157cdb301743d8e0061ba65c186cca25b5dd0f40303483359a7192ecaef5e2da"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:3246abcd7278fbaf82b3bc20b7911d62444042ebd2a2eb9bb583b70836d9a5e8"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-05-30.json",
@@ -54,8 +54,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-05-30/index.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:30:36+09:00",
-        "fingerprint": "sha256:25ece3b0bef216f638466a6abaceec333bcfe0d0182cc032eb7c1b5b7054925b"
+        "generatedAt": "2026-05-31T08:31:19+09:00",
+        "fingerprint": "sha256:7a76f90e48f9085d1e48fe09c3f2d7ef85ac3de4b0d710a5befc8703f4043842"
       },
       "alerts": {
         "path": "alerts/2026-05-30.json",
@@ -82,8 +82,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-05-31T07:30:58+09:00",
-        "fingerprint": "sha256:dce2ab2f01a2cf05fcda1c73869fe78dcda7799d6e639641c243a82851a334f2"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:6439cbd5d4245c4b020a4871b61325564ae4ff92339814e83ba56b8e6b54ceaa"
       }
     }
   },
@@ -93,7 +93,7 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 12,
     "limitations": [
-      "Intermediate intraday runs are reconstructed only from retained operational-calibration snapshots."
+      "This analysis is derived from summarized operational evidence and retained calibration snapshots."
     ]
   },
   "diagnosticContext": {
@@ -662,9 +662,9 @@
     }
   },
   "executiveSummary": {
-    "severity": "critical",
-    "headline": "TEPCO Outperformed Model with Significant Errors During Daytime Hours",
-    "summary": "TEPCO's daily MAPE was 1.07% compared to the model’s 2.61%. The model showed substantial underprediction during the daytime hours 11:00-15:00 JST.",
+    "severity": "warning",
+    "headline": "TEPCO had lower daily error than the model.",
+    "summary": "Across 24 comparable hours, the model recorded MAE 675.2 MW, WAPE 2.61%; TEPCO recorded MAE 278.3 MW, WAPE 1.07%. Model advantage hours were 4/24, while TEPCO advantage hours were 20/24. The largest published-versus-recalculated gap was -2058.9 MW at 14:00 JST.",
     "modelVerdict": "tepco_better",
     "confidence": "high"
   },
@@ -693,30 +693,72 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "hp2",
+      "id": "h2",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "Likelihood of Calibration Shape Risk Due to Freeze Effects",
-      "explanation": "Freeze impact observed with significant gaps in forecast post-calibration resulting in inaccuracies.",
+      "title": "Late-afternoon demand persistence may have been underestimated.",
+      "explanation": "Demand stayed higher than forecast in late afternoon. Review temperature direction and late-business-hour interactions.",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "modelBiasMw",
+          "value": -1207.6,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "16-18"
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [
+        "16-18"
+      ],
+      "relatedFeatures": [
+        "temp_delta_1h",
+        "apparent_temp_delta_1h",
+        "business_late_afternoon_x_temp_delta_1h"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "serving.published_forecast_freeze",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "Published forecast freeze left a visible serving gap.",
+      "explanation": "The published line differed materially from the latest recalculated post-calibration line, so served chart shape should be reviewed separately from raw model accuracy.",
       "evidence": [
         {
           "source": "freezeImpact",
-          "metric": "largestGaps",
+          "metric": "freezeGapMw",
           "value": -2058.9,
           "unit": "MW",
           "hour": 14,
-          "timeBand": "daytime"
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": -1761.0,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": -1461.1,
+          "unit": "MW",
+          "hour": 15,
+          "timeBand": null
         }
       ],
       "relatedHours": [
         14,
-        15,
-        16
+        16,
+        15
       ],
-      "relatedTimeBands": [
-        "daytime"
-      ],
+      "relatedTimeBands": [],
       "relatedFeatures": [
         "serving.published_forecast_freeze"
       ],
@@ -725,39 +767,39 @@
   ],
   "featureRecommendations": [
     {
-      "id": "fr1",
-      "priority": "high",
-      "type": "calibration",
-      "target": "intraday_correction.negative_residual_recovery_damping",
-      "suggestion": "Consider testing a damping factor to better manage residual trends.",
-      "expectedEffect": "Improved forecast accuracy during peak demand hours.",
-      "risk": "Potential model overreliance on past data without adaptation.",
-      "validationPlan": "Monitor performance during next business day peak.",
+      "id": "intraday_correction.evening_decline_continuity_guard",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "serving.published_forecast_freeze",
+      "suggestion": "Review the published-forecast freeze policy as an experiment when the published versus recalculated gap exceeds 500 MW in hours 15:00-17:00 JST.",
+      "expectedEffect": "Reduce visible serving drift when a later recalculation materially changes the afternoon line.",
+      "risk": "Relaxing freeze behavior too much can make the public curve look unstable during intraday updates.",
+      "validationPlan": "For the next 10 intraday runs, compare published/recalculated gaps, actual error, and whether a refresh would have improved the served line.",
       "linkedHypotheses": [
-        "hp1"
+        "serving.published_forecast_freeze"
       ],
       "autoApply": false
     },
     {
-      "id": "fr2",
+      "id": "r1",
       "priority": "medium",
-      "type": "evaluation",
-      "target": "intraday_correction.day_boundary_carryover",
-      "suggestion": "Evaluate changes in intraday adjustments to minimize overestimation errors.",
-      "expectedEffect": "Reduction in forecast errors during transitions between operational periods.",
-      "risk": "Could lead to further inaccuracies if baseline is not calibrated correctly.",
-      "validationPlan": "Replay demand scenarios to assess improvements.",
+      "type": "feature_engineering",
+      "target": "temp_delta_1h",
+      "suggestion": "Review the impact of temp_delta_1h based on the hypothesis: Late-afternoon demand persistence may have been underestimated.",
+      "expectedEffect": "Check whether MAE, WAPE, and RMSE improve together under repeated hour-band and business-type conditions.",
+      "risk": "Overfitting a single-day pattern can cause over-correction in other seasons or day types.",
+      "validationPlan": "Compare WAPE, RMSE, and max error against TEPCO using recent 2-4 week replay and backtests.",
       "linkedHypotheses": [
-        "hp2"
+        "h2"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
     "featureRecommendations are review candidates and are never applied automatically.",
-    "Operational calibration signal catalog: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+    "Operational calibration signal catalog: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.negative_residual_continuity_floor, intraday_correction.evening_decline_continuity_guard, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
   ],
   "limitations": [
-    "Intermediate intraday runs are reconstructed only from retained operational-calibration snapshots."
+    "This analysis is derived from summarized operational evidence and retained calibration snapshots."
   ]
 }

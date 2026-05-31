@@ -3,7 +3,7 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-30",
-  "generatedAt": "2026-05-31T07:34:39+09:00",
+  "generatedAt": "2026-05-31T16:41:10+09:00",
   "availability": "ok",
   "language": "ko",
   "contentLanguage": "ko",
@@ -27,22 +27,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-05-31T07:34:39+09:00",
-    "fingerprint": "sha256:c04aa91dde77cc5b82c650a73dfbabf3431ba31c6bfb7112f6c8b27546449ca8",
+    "createdAt": "2026-05-31T16:41:10+09:00",
+    "fingerprint": "sha256:f77f5d2ba7fcb1fd4d5e9ec5543fc39065f9d86a445a8720e5f067a6697744b0",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-05-30.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:34:19+09:00",
-        "fingerprint": "sha256:9244f6460dcdfa0cc546c2b48e381cfa962e11ae20c33a64ac5bb1f348131542"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:4bfc17015673e7eae9b273c0a671b98507ee7d9665dd09f06afc74037bd75663"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-05-30.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:34:19+09:00",
-        "fingerprint": "sha256:157cdb301743d8e0061ba65c186cca25b5dd0f40303483359a7192ecaef5e2da"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:3246abcd7278fbaf82b3bc20b7911d62444042ebd2a2eb9bb583b70836d9a5e8"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-05-30.json",
@@ -55,8 +55,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-05-30/index.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:30:36+09:00",
-        "fingerprint": "sha256:25ece3b0bef216f638466a6abaceec333bcfe0d0182cc032eb7c1b5b7054925b"
+        "generatedAt": "2026-05-31T08:31:19+09:00",
+        "fingerprint": "sha256:7a76f90e48f9085d1e48fe09c3f2d7ef85ac3de4b0d710a5befc8703f4043842"
       },
       "alerts": {
         "path": "alerts/2026-05-30.json",
@@ -83,8 +83,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-05-31T07:30:58+09:00",
-        "fingerprint": "sha256:dce2ab2f01a2cf05fcda1c73869fe78dcda7799d6e639641c243a82851a334f2"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:6439cbd5d4245c4b020a4871b61325564ae4ff92339814e83ba56b8e6b54ceaa"
       }
     }
   },
@@ -94,7 +94,7 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 12,
     "limitations": [
-      "중간에 덮어쓴 intraday 실행 내역은 유지된 운영 보정 스냅샷에서만 재구성됩니다."
+      "이 분석은 요약된 운영 증거와 보정 스냅샷에서 파생되었습니다."
     ]
   },
   "diagnosticContext": {
@@ -663,9 +663,9 @@
     }
   },
   "executiveSummary": {
-    "severity": "critical",
-    "headline": "TEPCO가 낮 시간대에 모델을 크게 초과 달성했습니다",
-    "summary": "TEPCO의 일일 MAPE는 1.07%로 모델의 2.61%에 비해 우수했습니다. 모델은 낮 시간대 11~15시 구간 동안 상당한 저평가를 보였습니다.",
+    "severity": "warning",
+    "headline": "TEPCO 예측의 일간 오차가 모델보다 작았습니다.",
+    "summary": "비교 가능 24시간 기준 모델은 MAE 675.2 MW, WAPE 2.61%, TEPCO는 MAE 278.3 MW, WAPE 1.07%였습니다. 모델 우위 시간은 4/24, TEPCO 우위 시간은 20/24입니다. 가장 큰 발표선-재계산선 차이는 14:00 JST에 -2058.9 MW였습니다.",
     "modelVerdict": "tepco_better",
     "confidence": "high"
   },
@@ -694,30 +694,72 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "hp2",
+      "id": "h2",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "동결 효과로 인한 보정 모양 리스크 가능성",
-      "explanation": "동결 영향이 관찰되었으며, 보정 후 예측에서 상당한 간격이 발생하여 부정확성이 나타났습니다.",
+      "title": "늦은 오후 수요 지속성이 과소평가되었을 수 있습니다.",
+      "explanation": "늦은 오후에 수요가 예측보다 높게 유지되었습니다. 기온 변화와 늦은 영업 시간의 상호작용을 검토합니다.",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "modelBiasMw",
+          "value": -1207.6,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "16-18"
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [
+        "16-18"
+      ],
+      "relatedFeatures": [
+        "temp_delta_1h",
+        "apparent_temp_delta_1h",
+        "business_late_afternoon_x_temp_delta_1h"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "serving.published_forecast_freeze",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "예측선 보존 정책으로 표시선 격차가 남았습니다.",
+      "explanation": "공개된 예측선과 최신 재계산 후 라인 사이에 큰 차이가 있어, raw 모델 정확도와 별도로 화면에 남는 곡선 형태 리스크를 확인해야 합니다.",
       "evidence": [
         {
           "source": "freezeImpact",
-          "metric": "largestGaps",
+          "metric": "freezeGapMw",
           "value": -2058.9,
           "unit": "MW",
           "hour": 14,
-          "timeBand": "daytime"
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": -1761.0,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": -1461.1,
+          "unit": "MW",
+          "hour": 15,
+          "timeBand": null
         }
       ],
       "relatedHours": [
         14,
-        15,
-        16
+        16,
+        15
       ],
-      "relatedTimeBands": [
-        "daytime"
-      ],
+      "relatedTimeBands": [],
       "relatedFeatures": [
         "serving.published_forecast_freeze"
       ],
@@ -726,39 +768,39 @@
   ],
   "featureRecommendations": [
     {
-      "id": "fr1",
-      "priority": "high",
-      "type": "calibration",
-      "target": "intraday_correction.negative_residual_recovery_damping",
-      "suggestion": "잔차 추세 관리를 더 잘하기 위해 감쇠 요소를 백테스트 후보로 검토합니다.",
-      "expectedEffect": "피크 수요 시간대대에 예측 정확도 향상.",
-      "risk": "과거 데이터에 대한 모델 과신으로 인한 리스크.",
-      "validationPlan": "다음 영업일 피크 시간 동안 성능을 모니터링합니다.",
+      "id": "intraday_correction.evening_decline_continuity_guard",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "serving.published_forecast_freeze",
+      "suggestion": "15~17시 구간에서 발표선과 재계산선의 차이가 500 MW를 넘는 경우, 예측선 보존 정책을 실험 후보로 재검토합니다.",
+      "expectedEffect": "오후 재계산 결과가 크게 달라졌을 때, 화면에 남는 예측선 괴리를 줄일 수 있는지 확인합니다.",
+      "risk": "보존 정책을 너무 느슨하게 하면 intraday 갱신 때 공개 곡선이 불안정해 보일 수 있습니다.",
+      "validationPlan": "다음 10회 intraday 실행에서 발표선-재계산선 갭, 실제 오차, 재공개 시 개선폭을 비교합니다.",
       "linkedHypotheses": [
-        "hp1"
+        "serving.published_forecast_freeze"
       ],
       "autoApply": false
     },
     {
-      "id": "fr2",
+      "id": "r1",
       "priority": "medium",
-      "type": "evaluation",
-      "target": "intraday_correction.day_boundary_carryover",
-      "suggestion": "운영 기간 간 격차를 최소화하기 위해 intraday 조정의 변화를 검토합니다.",
-      "expectedEffect": "운영 기간 간 예측 오류 감소.",
-      "risk": "기준이 적절하게 보정되지 않으면 더욱 부정확함으로 이어질 수 있습니다.",
-      "validationPlan": "개선 정도를 평가하기 위해 수요 시나리오를 재생합니다.",
+      "type": "feature_engineering",
+      "target": "temp_delta_1h",
+      "suggestion": "늦은 오후 수요 지속성이 과소평가되었다는 가설을 바탕으로 temp_delta_1h의 영향을 검토합니다.",
+      "expectedEffect": "반복되는 시간대와 영업일 조건에서 MAE, WAPE 및 RMSE가 함께 개선되는지 확인합니다.",
+      "risk": "단일 일 패턴에 과적합되면 다른 계절이나 요일에 과도한 수정이 발생할 수 있습니다.",
+      "validationPlan": "최근 2-4주 재생과 백테스트를 사용하여 WAPE, RMSE 및 최대 오류를 TEPCO와 비교합니다.",
       "linkedHypotheses": [
-        "hp2"
+        "h2"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
-    "featureRecommendations는 검토 후보이며 자동으로 적용되지 않습니다.",
-    "운영 보정 신호 카탈로그: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+    "featureRecommendations는 검토 후보이며, 자동으로 적용되지 않습니다.",
+    "운영 보정 신호 카탈로그: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.negative_residual_continuity_floor, intraday_correction.evening_decline_continuity_guard, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
   ],
   "limitations": [
-    "중간에 덮어쓴 intraday 실행 내역은 유지된 운영 보정 스냅샷에서만 재구성됩니다."
+    "이 분석은 요약된 운영 증거와 보정 스냅샷에서 파생되었습니다."
   ]
 }

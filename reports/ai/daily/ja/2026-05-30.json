@@ -3,7 +3,7 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-30",
-  "generatedAt": "2026-05-31T07:34:39+09:00",
+  "generatedAt": "2026-05-31T16:41:10+09:00",
   "availability": "ok",
   "language": "ja",
   "contentLanguage": "ja",
@@ -27,22 +27,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-05-31T07:34:39+09:00",
-    "fingerprint": "sha256:c04aa91dde77cc5b82c650a73dfbabf3431ba31c6bfb7112f6c8b27546449ca8",
+    "createdAt": "2026-05-31T16:41:10+09:00",
+    "fingerprint": "sha256:f77f5d2ba7fcb1fd4d5e9ec5543fc39065f9d86a445a8720e5f067a6697744b0",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-05-30.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:34:19+09:00",
-        "fingerprint": "sha256:9244f6460dcdfa0cc546c2b48e381cfa962e11ae20c33a64ac5bb1f348131542"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:4bfc17015673e7eae9b273c0a671b98507ee7d9665dd09f06afc74037bd75663"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-05-30.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:34:19+09:00",
-        "fingerprint": "sha256:157cdb301743d8e0061ba65c186cca25b5dd0f40303483359a7192ecaef5e2da"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:3246abcd7278fbaf82b3bc20b7911d62444042ebd2a2eb9bb583b70836d9a5e8"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-05-30.json",
@@ -55,8 +55,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-05-30/index.json",
         "exists": true,
         "date": "2026-05-30",
-        "generatedAt": "2026-05-31T07:30:36+09:00",
-        "fingerprint": "sha256:25ece3b0bef216f638466a6abaceec333bcfe0d0182cc032eb7c1b5b7054925b"
+        "generatedAt": "2026-05-31T08:31:19+09:00",
+        "fingerprint": "sha256:7a76f90e48f9085d1e48fe09c3f2d7ef85ac3de4b0d710a5befc8703f4043842"
       },
       "alerts": {
         "path": "alerts/2026-05-30.json",
@@ -83,8 +83,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-05-31T07:30:58+09:00",
-        "fingerprint": "sha256:dce2ab2f01a2cf05fcda1c73869fe78dcda7799d6e639641c243a82851a334f2"
+        "generatedAt": "2026-05-31T08:31:49+09:00",
+        "fingerprint": "sha256:6439cbd5d4245c4b020a4871b61325564ae4ff92339814e83ba56b8e6b54ceaa"
       }
     }
   },
@@ -94,7 +94,7 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 12,
     "limitations": [
-      "中間のイントラデイ実行は保持された運用キャリブレーションのスナップショットからのみ再構成されます。"
+      "この分析は要約された運用指標および保持された補正スナップショットに基づいています。"
     ]
   },
   "diagnosticContext": {
@@ -663,9 +663,9 @@
     }
   },
   "executiveSummary": {
-    "severity": "critical",
-    "headline": "TEPCOが昼間帯にモデルを大きく上回りました",
-    "summary": "TEPCOの1日あたりのMAPEは1.07%であり、モデルの2.61%に比べて優れています。モデルは昼間帯11〜15時台でかなりの過小評価を示しました。",
+    "severity": "warning",
+    "headline": "TEPCO予測の日次誤差はモデルより小さくなりました。",
+    "summary": "比較可能な24時間で、モデルはMAE 675.2 MW, WAPE 2.61%、TEPCOはMAE 278.3 MW, WAPE 1.07%でした。モデル優位は4/24、TEPCO優位は20/24です。 公開予測と再計算線の最大差は14:00 JSTで-2058.9 MWでした。",
     "modelVerdict": "tepco_better",
     "confidence": "high"
   },
@@ -694,30 +694,72 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "hp2",
+      "id": "h2",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "凍結効果によるキャリブレーション形状リスクの可能性",
-      "explanation": "凍結の影響が観察されており、キャリブレーション後の予測には著しいギャップがあり、誤差が生じています。",
+      "title": "午後遅くの需要の持続性が過小評価されていた可能性があります。",
+      "explanation": "午後遅くに需要が予測よりも高くなりました。温度の変化と遅い営業時間の相互作用を確認します。",
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "modelBiasMw",
+          "value": -1207.6,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "16-18"
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [
+        "16-18"
+      ],
+      "relatedFeatures": [
+        "temp_delta_1h",
+        "apparent_temp_delta_1h",
+        "business_late_afternoon_x_temp_delta_1h"
+      ],
+      "counterEvidence": []
+    },
+    {
+      "id": "serving.published_forecast_freeze",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "公開予測の固定により表示線に差が残りました。",
+      "explanation": "公開された予測線と最新の再計算後ラインに大きな差があるため、rawモデル精度とは分けて表示上の形状リスクを確認します。",
       "evidence": [
         {
           "source": "freezeImpact",
-          "metric": "largestGaps",
+          "metric": "freezeGapMw",
           "value": -2058.9,
           "unit": "MW",
           "hour": 14,
-          "timeBand": "daytime"
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": -1761.0,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": -1461.1,
+          "unit": "MW",
+          "hour": 15,
+          "timeBand": null
         }
       ],
       "relatedHours": [
         14,
-        15,
-        16
+        16,
+        15
       ],
-      "relatedTimeBands": [
-        "daytime"
-      ],
+      "relatedTimeBands": [],
       "relatedFeatures": [
         "serving.published_forecast_freeze"
       ],
@@ -726,39 +768,39 @@
   ],
   "featureRecommendations": [
     {
-      "id": "fr1",
-      "priority": "high",
-      "type": "calibration",
-      "target": "intraday_correction.negative_residual_recovery_damping",
-      "suggestion": "残差トレンドをより良く管理するためにダンピング要因を検証候補とします。",
-      "expectedEffect": "ピーク需要時間帯における予測精度向上。",
-      "risk": "過去のデータに過度に依存するリスクがあります。",
-      "validationPlan": "次の営業日のピーク時にパフォーマンスを監視します。",
+      "id": "intraday_correction.evening_decline_continuity_guard",
+      "priority": "medium",
+      "type": "feature_engineering",
+      "target": "serving.published_forecast_freeze",
+      "suggestion": "15〜17時台で公開線と再計算線の差が500 MWを超える場合、公開予測線の保持ポリシーを検証候補として見直します。",
+      "expectedEffect": "午後の再計算で曲線が大きく変わった場合の、画面上の乖離を抑えます。",
+      "risk": "保持を緩めすぎると、intraday更新時に公開曲線が不安定に見える可能性があります。",
+      "validationPlan": "次の10回のintraday実行で、公開線と再計算線の差、実誤差、再公開した場合の改善幅を比較します。",
       "linkedHypotheses": [
-        "hp1"
+        "serving.published_forecast_freeze"
       ],
       "autoApply": false
     },
     {
-      "id": "fr2",
+      "id": "r1",
       "priority": "medium",
-      "type": "evaluation",
-      "target": "intraday_correction.day_boundary_carryover",
-      "suggestion": "運用期間間の過大評価エラーを最小限に抑えるためにイントラデイ調整の変更を検討します。",
-      "expectedEffect": "運用期間間の予測エラーの削減。",
-      "risk": "基準が正しくキャリブレーションされていない場合、さらなる不正確が生じる可能性があります。",
-      "validationPlan": "改善を評価するために需要シナリオを再生します。",
+      "type": "feature_engineering",
+      "target": "temp_delta_1h",
+      "suggestion": "午後遅くの需要の持続性が過小評価されているとの仮説に基づいてtemp_delta_1hの影響を検討します。",
+      "expectedEffect": "繰り返しの時間帯と営業日タイプの条件下で、MAE、WAPE、およびRMSEが一緒に改善されるかどうかを確認します。",
+      "risk": "単一日のパターンに過剰適合すると、他の季節や日タイプで過度の修正を引き起こす可能性があります。",
+      "validationPlan": "最近の2〜4週間の再生とバックテストを使用して、WAPE、RMSE、および最大誤差をTEPCOと比較します。",
       "linkedHypotheses": [
-        "hp2"
+        "h2"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
-    "featureRecommendationsは検討候補であり、自動的には適用されません。",
-    "運用キャリブレーション信号カタログ: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+    "featureRecommendationsはレビュー候補であり、自動的には適用されません。",
+    "運用キャリブレーション信号カタログ: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.negative_residual_continuity_floor, intraday_correction.evening_decline_continuity_guard, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
   ],
   "limitations": [
-    "中間のイントラデイ実行は保持された運用キャリブレーションのスナップショットからのみ再構成されます。"
+    "この分析は要約された運用指標および保持された補正スナップショットに基づいています。"
   ]
 }
