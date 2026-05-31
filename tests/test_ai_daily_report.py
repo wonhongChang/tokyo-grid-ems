@@ -463,13 +463,138 @@ def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
     assert report["generator"]["model"] == "gpt-4o-mini"
     assert "diagnosticContext" in report
     assert report["performance"]["modelMaeMw"] == 535.2
-    assert report["executiveSummary"]["headline"] == "OpenAI 분석 헤드라인"
-    assert report["rootCauseHypotheses"][0]["confidence"] == "low"
+    assert report["executiveSummary"]["headline"] == "TEPCO 예측의 일간 오차가 모델보다 작았습니다."
+    openai_hypothesis = next(
+        item for item in report["rootCauseHypotheses"]
+        if item["id"] == "h-openai"
+    )
+    assert openai_hypothesis["confidence"] == "low"
     assert report["featureRecommendations"][0]["autoApply"] is False
     assert report["featureRecommendations"][0]["proposedReplayCommand"].startswith(
         "python run_replay.py"
     )
     assert report["featureRecommendations"][0]["commandStatus"] == "proposed_not_implemented"
+
+
+def test_openai_merge_repairs_metric_terms_and_invalid_recommendation_links():
+    fallback_report = {
+        "language": "ko",
+        "contentLanguage": "ko",
+        "generator": {
+            "provider": "fallback",
+            "model": None,
+            "promptVersion": "fallback_rules_v1",
+            "schemaVersion": "1.0.0",
+        },
+        "dataQuality": {
+            "observedHours": 24,
+            "fallbackActualHours": 0,
+            "limitations": [],
+        },
+        "diagnosticContext": {
+            "freezeImpact": {
+                "largestGaps": [{"hour": 14, "freezeGapMw": -2058.9}],
+            },
+        },
+        "executiveSummary": {
+            "severity": "warning",
+            "headline": "fallback",
+            "summary": "fallback",
+            "modelVerdict": "tepco_better",
+            "confidence": "medium",
+        },
+        "performance": {
+            "comparableHours": 24,
+            "modelMaeMw": 675.2,
+            "tepcoMaeMw": 278.3,
+            "modelWapePct": 2.61,
+            "tepcoWapePct": 1.07,
+            "modelAdvantageHours": 4,
+            "tepcoAdvantageHours": 20,
+            "verdict": "tepco_better",
+        },
+        "rootCauseHypotheses": [],
+        "featureRecommendations": [],
+        "operatorNotes": [],
+        "limitations": [],
+    }
+    analysis = {
+        "executiveSummary": {
+            "severity": "critical",
+            "headline": "TEPCO가 낮 시간대에 모델을 크게 초과 달성했습니다",
+            "summary": "TEPCO의 일일 MAPE는 1.07%로 모델의 2.61%보다 우수했습니다.",
+            "modelVerdict": "tepco_better",
+            "confidence": "high",
+        },
+        "rootCauseHypotheses": [
+            {
+                "id": "hp2",
+                "severity": "warning",
+                "confidence": "medium",
+                "evidenceStatus": "partial",
+                "title": "Freeze policy left a serving gap.",
+                "explanation": "The published line differed from the recalculated line.",
+                "evidence": [
+                    {
+                        "source": "freezeImpact",
+                        "metric": "largestGaps",
+                        "value": -2058.9,
+                        "unit": "MW",
+                        "hour": 14,
+                        "timeBand": "daytime",
+                    }
+                ],
+                "relatedHours": [14],
+                "relatedTimeBands": ["daytime"],
+                "relatedFeatures": ["serving.published_forecast_freeze"],
+                "counterEvidence": [],
+            }
+        ],
+        "featureRecommendations": [
+            {
+                "id": "fr1",
+                "priority": "high",
+                "type": "calibration",
+                "target": "intraday_correction.negative_residual_recovery_damping",
+                "suggestion": "Backtest the damping factor.",
+                "expectedEffect": "Reduce peak risk.",
+                "risk": "Could overfit one day.",
+                "validationPlan": "Replay comparable days.",
+                "linkedHypotheses": ["hp1"],
+                "autoApply": True,
+            },
+            {
+                "id": "fr2",
+                "priority": "medium",
+                "type": "evaluation",
+                "target": "intraday_correction.day_boundary_carryover",
+                "suggestion": "Replay freeze-gap refresh candidates.",
+                "expectedEffect": "Reduce visible serving drift.",
+                "risk": "The public line may look less stable.",
+                "validationPlan": "Compare published and recalculated gaps.",
+                "linkedHypotheses": ["hp2"],
+                "autoApply": True,
+            },
+        ],
+        "operatorNotes": [],
+        "limitations": [],
+    }
+
+    report = _merge_openai_analysis(fallback_report, analysis, "gpt-4o-mini")
+
+    assert "MAPE" not in report["executiveSummary"]["summary"]
+    assert "WAPE" in report["executiveSummary"]["summary"]
+    assert report["executiveSummary"]["headline"] == (
+        "TEPCO 예측의 일간 오차가 모델보다 작았습니다."
+    )
+    assert [item["id"] for item in report["featureRecommendations"]] == ["r1"]
+    assert report["featureRecommendations"][0]["target"] == (
+        "serving.published_forecast_freeze"
+    )
+    assert report["featureRecommendations"][0]["linkedHypotheses"] == [
+        "serving.published_forecast_freeze"
+    ]
+    assert report["featureRecommendations"][0]["autoApply"] is False
 
 
 def test_ai_daily_report_rejects_openai_signed_error_contradiction(monkeypatch, tmp_path):
@@ -826,7 +951,7 @@ def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, t
     )
 
     assert report["generator"]["provider"] == "openai"
-    assert report["executiveSummary"]["headline"] == "Focused rows were used."
+    assert report["executiveSummary"]["headline"] == "TEPCO 예측의 일간 오차가 모델보다 작았습니다."
 
 
 def test_ai_daily_report_rejects_empty_openai_sections(monkeypatch, tmp_path):
@@ -1008,7 +1133,7 @@ def test_ai_daily_reports_caps_openai_to_latest_korean_report(monkeypatch, tmp_p
         "fallback",
         "openai",
     ]
-    assert index["latest"]["headline"] == "OpenAI 2026-05-23"
+    assert index["latest"]["headline"] == "TEPCO 예측의 일간 오차가 모델보다 작았습니다."
 
 
 def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkeypatch, tmp_path):
@@ -1221,8 +1346,12 @@ def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkey
     assert reports_by_language["ko"][0]["contentLanguage"] == "ko"
     assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-4o-mini"
     assert reports_by_language["ko"][0]["generator"]["localizationStatus"] == "ok"
-    assert reports_by_language["en"][0]["executiveSummary"]["headline"] == "English master headline"
-    assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == "한국어 현지화 헤드라인"
+    assert reports_by_language["en"][0]["executiveSummary"]["headline"] == (
+        "TEPCO had lower daily error than the model."
+    )
+    assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == (
+        "TEPCO 예측의 일간 오차가 모델보다 작았습니다."
+    )
     assert reports_by_language["ko"][0]["executiveSummary"]["modelVerdict"] == "tepco_better"
     assert reports_by_language["ko"][0]["rootCauseHypotheses"][0]["evidenceStatus"] == "partial"
     assert reports_by_language["ko"][0]["featureRecommendations"][0]["target"] == (
@@ -1394,7 +1523,9 @@ def test_ai_daily_reports_multilingual_falls_back_to_english_when_localization_f
     assert reports_by_language["en"][0]["contentLanguage"] == "en"
     assert reports_by_language["ko"][0]["language"] == "ko"
     assert reports_by_language["ko"][0]["contentLanguage"] == "en"
-    assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == "English master headline"
+    assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == (
+        "TEPCO 예측의 일간 오차가 모델보다 작았습니다."
+    )
     assert reports_by_language["ko"][0]["generator"]["localizationModel"] == "gpt-4o-mini"
     assert reports_by_language["ko"][0]["generator"]["localizationStatus"] == "fallback_en"
     assert reports_by_language["ko"][0]["generator"]["localizationFallback"] == "en"
@@ -1543,7 +1674,7 @@ def test_ai_daily_reports_multilingual_retries_invalid_localization_once(monkeyp
     assert reports_by_language["ko"][0]["contentLanguage"] == "ko"
     assert reports_by_language["ko"][0]["generator"]["localizationStatus"] == "ok"
     assert reports_by_language["ko"][0]["executiveSummary"]["headline"] == (
-        "TEPCO가 저녁 형태에서 더 안정적이었습니다"
+        "TEPCO 예측의 일간 오차가 모델보다 작았습니다."
     )
     assert reports_by_language["ja"][0]["contentLanguage"] == "ja"
     assert reports_by_language["ja"][0]["generator"]["localizationStatus"] == "ok"

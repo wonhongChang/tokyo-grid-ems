@@ -216,6 +216,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 - [모델 평가 리포트](docs/ko/model-evaluation.md)
 - [이상탐지 기준](docs/ko/anomaly-criteria.md)
 - [운영 리포트 탭 설명](docs/ko/ops-report-tab.md)
+- [AI 운영 리포트 가드레일](docs/ko/ai-report-guardrails.md)
 - [JSON 스키마 계약](docs/ko/json_schema.md)
 
 ---

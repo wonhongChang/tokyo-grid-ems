@@ -48,10 +48,53 @@ FEATURE_CATALOG = [
     "intraday_correction.positive_residual_mitigation",
     "intraday_correction.positive_residual_slope_damping",
     "intraday_correction.negative_residual_recovery_damping",
+    "intraday_correction.negative_residual_continuity_floor",
+    "intraday_correction.evening_decline_continuity_guard",
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
     "serving.published_forecast_freeze",
 ]
+FEATURE_NAME_ALIASES = {
+    "published_forecast_freeze": "serving.published_forecast_freeze",
+    "forecast_freeze": "serving.published_forecast_freeze",
+    "positive_residual_mitigation": "intraday_correction.positive_residual_mitigation",
+    "positive_residual_slope_damping": "intraday_correction.positive_residual_slope_damping",
+    "negative_residual_recovery_damping": "intraday_correction.negative_residual_recovery_damping",
+    "negative_residual_continuity_floor": "intraday_correction.negative_residual_continuity_floor",
+    "evening_decline_continuity_guard": "intraday_correction.evening_decline_continuity_guard",
+}
+ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
+    "lag_24h",
+    "lag_168h",
+    "temp_c",
+    "humidity_pct",
+    "apparent_temp_c",
+    "temp_delta_1h",
+    "temp_delta_2h",
+    "apparent_temp_delta_1h",
+    "business_late_afternoon_x_temp_delta_1h",
+    "cooling_load_3d_mean",
+    "weather_source",
+}
+
+METRIC_TERM_REPLACEMENTS = (
+    ("Mean Absolute Percentage Error", "Weighted Absolute Percentage Error"),
+    ("mean absolute percentage error", "weighted absolute percentage error"),
+    ("平均絶対パーセント誤差", "加重絶対パーセント誤差"),
+    ("평균 절대 백분율 오차", "가중 절대 백분율 오차"),
+    ("MAPE", "WAPE"),
+    ("mape", "WAPE"),
+)
+
+GENERAL_TEXT_REPLACEMENTS = (
+    ("TEPCO's model", "TEPCO forecast"),
+    ("TEPCO model", "TEPCO forecast"),
+    ("TEPCO의 모델", "TEPCO 예측"),
+    ("TEPCOのモデル", "TEPCO予測"),
+    ("significant operational risk", "meaningful forecast performance gap"),
+    ("重大な運用リスク", "予測性能上の有意な差"),
+    ("유의미한 운영 위험", "예측 성능상의 유의미한 차이"),
+)
 
 LOCALIZED_TEXT_REPLACEMENTS = {
     "ko": [
@@ -1396,6 +1439,16 @@ def _signed_error_direction(value: Any) -> str | None:
     return "neutral"
 
 
+def _band_bias_direction(bias_mw: Any, mae_mw: Any) -> str | None:
+    bias = _as_float(bias_mw)
+    if bias is None:
+        return None
+    mae = _as_float(mae_mw)
+    if mae is not None and abs(bias) < max(100.0, mae * 0.35):
+        return "mixed"
+    return _signed_error_direction(bias)
+
+
 def _annotate_error_direction(payload: dict, metric_key: str, direction_key: str) -> None:
     direction = _signed_error_direction(payload.get(metric_key))
     if direction is not None:
@@ -1408,7 +1461,17 @@ def _annotate_time_bands(time_bands: list[dict] | None) -> list[dict]:
         if not isinstance(band, dict):
             continue
         item = dict(band)
-        _annotate_error_direction(item, "modelBiasMw", "modelBiasDirection")
+        direction = _band_bias_direction(
+            item.get("modelBiasMw"),
+            item.get("modelMaeMw"),
+        )
+        if direction is not None:
+            item["modelBiasDirection"] = direction
+            if direction == "mixed":
+                item["directionNote"] = (
+                    "mean bias is small relative to MAE; avoid broad "
+                    "overprediction/underprediction wording for this band"
+                )
         annotated.append(item)
     return annotated
 
@@ -2341,6 +2404,18 @@ def _build_control_context(
                 digits=3,
             ),
         }),
+        "negativeResidualContinuityFloor": _drop_none_values({
+            "applied": correction.get("negativeResidualContinuityFloorApplied"),
+            "maxRestoredMw": _round_number(
+                correction.get("negativeResidualContinuityFloorMaxRestoreMw")
+            ),
+        }),
+        "eveningDeclineContinuityGuard": _drop_none_values({
+            "applied": correction.get("eveningDeclineContinuityGuardApplied"),
+            "maxReducedMw": _round_number(
+                correction.get("eveningDeclineContinuityMaxReductionMw")
+            ),
+        }),
         "businessTypeTransition": _drop_none_values({
             "priorApplied": correction.get("businessTypeTransitionPriorApplied"),
             "priorBiasMw": _round_number(
@@ -2741,12 +2816,22 @@ def _openai_domain_guidelines() -> str:
         "actual; negative values mean underprediction or forecast below actual. "
         "Never describe a positive modelErrorMw/modelBiasMw as underprediction, "
         "and never describe a negative value as overprediction. "
+        "The percent error metric is WAPE, not MAPE. Never write MAPE or "
+        "Mean Absolute Percentage Error; use WAPE or Weighted Absolute "
+        "Percentage Error. "
+        "If a timeBands item has modelBiasDirection=mixed, do not describe the "
+        "entire band as underprediction or overprediction; describe it as a "
+        "mixed-sign shape risk and cite the specific topMiss hours. "
         "When citing hour bands, always use unambiguous clock labels such as "
         "'hours 11:00-15:00 JST' or '11:00-15:00'. Do not write bare ranges "
         "like '11-15' or date-like phrases such as 'on 11-15'. "
         "The headline must state the operational result or risk, such as which "
         "model had lower daily error and the main affected hour band; never use "
         "generic headlines such as observations, status, or daily report. "
+        "TEPCO is an external forecast/reference series, not this project's model; "
+        "write TEPCO forecast, not TEPCO model. Avoid alarmist phrases such as "
+        "significant operational risk unless reserve risk or alerts justify them; "
+        "prefer forecast performance gap. "
         "When controllerDiagnosis, stageAttribution, or freezeImpact is present, "
         "at least one hypothesis or recommendation should use one of those fields "
         "unless the field is explicitly irrelevant. "
@@ -2759,8 +2844,14 @@ def _openai_domain_guidelines() -> str:
         "When both topMisses and stage/freeze diagnostics exist, return at least "
         "two hypotheses: one for forecast accuracy and one for serving/calibration "
         "shape risk. "
+        "Root-cause evidence should include concrete hours, topMisses, timeBands, "
+        "controlContext, stageAttribution, or freezeImpact. Do not use daily MAE "
+        "alone as root-cause evidence. "
         "Use freezeContext only when it records a published-versus-recalculated "
-        "forecast gap; otherwise do not infer freeze effects. If morning_ramp hours 06-10 "
+        "forecast gap; otherwise do not infer freeze effects. A negative "
+        "freeze gap means the published line is below the latest recalculated "
+        "line; do not describe that sign as actual-demand underprediction by "
+        "itself. If morning_ramp hours 06-10 "
         "show large positive model bias and the data indicates a business-day "
         "to non-business-day transition, independently consider a lag_24h "
         "inertia or ramp contamination hypothesis. If observed demand slope "
@@ -2771,6 +2862,9 @@ def _openai_domain_guidelines() -> str:
         "not_observed with low confidence. Feature recommendations must name "
         "a concrete target from featureCatalog when possible and must propose "
         "a specific trigger, threshold, decay, shrinkage, or validation replay; "
+        "Feature recommendations must link only to hypothesis IDs that are "
+        "present in the output, and the recommendation target should match one "
+        "of the linked hypothesis relatedFeatures when possible. "
         "write recommendations as experiment candidates, not production commands. "
         "Use wording like consider testing, backtest, evaluate, or make this a "
         "candidate; do not say to add, freeze, disable, or change production "
@@ -3219,6 +3313,17 @@ _UNDERPREDICTION_WORDS = (
     "below the actual",
     "lower than actual",
     "forecast below",
+    "과소예측",
+    "과소 예측",
+    "과소평가",
+    "과소 평가",
+    "저평가",
+    "실제보다 낮",
+    "낮게 예측",
+    "過小予測",
+    "過小評価",
+    "実績より低",
+    "低く予測",
 )
 _OVERPREDICTION_WORDS = (
     "overprediction",
@@ -3229,11 +3334,46 @@ _OVERPREDICTION_WORDS = (
     "above the actual",
     "higher than actual",
     "forecast above",
+    "과대예측",
+    "과대 예측",
+    "과대평가",
+    "과대 평가",
+    "고평가",
+    "실제보다 높",
+    "높게 예측",
+    "過大予測",
+    "過大評価",
+    "実績より高",
+    "高く予測",
 )
 _SIGNED_ERROR_METRICS = {
     "modelerrormw",
     "modelbiasmw",
     "meanmodelbiasmw",
+}
+_DAILY_PERFORMANCE_METRICS = {
+    "modelmaemw",
+    "tepcomaemw",
+    "modelwapepct",
+    "tepcowapepct",
+    "modelrmsemw",
+    "tepcormsemw",
+    "modelmaxerrormw",
+    "tepcomaxerrormw",
+    "maegapmw",
+    "wapegappct",
+}
+_DIAGNOSTIC_ONLY_FEATURES = {
+    "controllerDiagnosis",
+    "stageAttribution",
+    "freezeImpact",
+    "freezeContext",
+}
+_ACCURACY_EVIDENCE_SOURCES = {
+    "reports/daily",
+    "operationreport",
+    "reports/internal/daily-diagnostics",
+    "daily-diagnostics",
 }
 
 
@@ -3249,6 +3389,12 @@ def _hypothesis_has_sign_conflict(
         return False
     for item in evidence:
         metric = str(item.get("metric") or "").replace("_", "").lower()
+        value_text = str(item.get("value") or "").lower()
+        if metric in {"dominantdirection", "recenttrendverdict"}:
+            if "overprediction" in value_text and mentions_under:
+                return True
+            if "underprediction" in value_text and mentions_over:
+                return True
         if metric not in _SIGNED_ERROR_METRICS:
             continue
         value = _as_float(item.get("value"))
@@ -3259,6 +3405,80 @@ def _hypothesis_has_sign_conflict(
         if value < 0.0 and mentions_over:
             return True
     return False
+
+
+def _hypothesis_uses_only_daily_performance_evidence(evidence: list[dict]) -> bool:
+    if not evidence:
+        return False
+    for item in evidence:
+        source = str(item.get("source") or "").lower()
+        metric = str(item.get("metric") or "").replace("_", "").lower()
+        if source not in {"performance", "reports/daily"} or metric not in _DAILY_PERFORMANCE_METRICS:
+            return False
+        if item.get("hour") is not None:
+            return False
+    return True
+
+
+def _hypothesis_uses_only_controller_diagnostics(evidence: list[dict]) -> bool:
+    if not evidence:
+        return False
+    return all(
+        str(item.get("source") or "").lower() == "controllerdiagnosis"
+        for item in evidence
+    )
+
+
+def _hypothesis_is_freeze_only(hypothesis: dict) -> bool:
+    features = set(_as_string_list(hypothesis.get("relatedFeatures")))
+    if features:
+        return features == {"serving.published_forecast_freeze"}
+    evidence = hypothesis.get("evidence") or []
+    if not evidence:
+        return False
+    return all(
+        isinstance(item, dict)
+        and str(item.get("source") or "").lower() in {"freezeimpact", "freezecontext"}
+        for item in evidence
+    )
+
+
+def _hypothesis_has_concrete_non_freeze_evidence(hypothesis: dict) -> bool:
+    if _hypothesis_is_freeze_only(hypothesis):
+        return False
+    if hypothesis.get("evidenceStatus") == "not_observed":
+        return False
+    evidence = _normalize_evidence(hypothesis.get("evidence"))
+    if evidence and _hypothesis_uses_only_daily_performance_evidence(evidence):
+        return False
+    features = set(_as_string_list(hypothesis.get("relatedFeatures")))
+    if any(
+        feature not in _DIAGNOSTIC_ONLY_FEATURES
+        and feature != "serving.published_forecast_freeze"
+        for feature in features
+    ):
+        return True
+    if not evidence:
+        return False
+    return any(
+        str(item.get("source") or "").lower() in _ACCURACY_EVIDENCE_SOURCES
+        for item in evidence
+    )
+
+
+def _normalize_feature_name(value: Any) -> str:
+    text = str(value or "").strip()
+    return FEATURE_NAME_ALIASES.get(text, text)
+
+
+def _recommendation_targets_operational_feature(recommendation: dict) -> bool:
+    target = str(recommendation.get("target") or "")
+    return (
+        bool(target)
+        and target != "serving.published_forecast_freeze"
+        and target not in _DIAGNOSTIC_ONLY_FEATURES
+        and target in ALLOWED_RECOMMENDATION_TARGETS
+    )
 
 
 def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
@@ -3285,6 +3505,12 @@ def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
         if not title or _is_placeholder_title(title) or not explanation:
             continue
         evidence = _normalize_evidence(item.get("evidence"))
+        if evidence_status != "not_observed" and not evidence:
+            continue
+        if _hypothesis_uses_only_daily_performance_evidence(evidence):
+            continue
+        if _hypothesis_uses_only_controller_diagnostics(evidence):
+            continue
         if _hypothesis_has_sign_conflict(title, explanation, evidence):
             continue
         if (
@@ -3307,13 +3533,20 @@ def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
                 if isinstance(hour, int)
             ],
             "relatedTimeBands": _as_string_list(item.get("relatedTimeBands")),
-            "relatedFeatures": _as_string_list(item.get("relatedFeatures")),
+            "relatedFeatures": [
+                _normalize_feature_name(feature)
+                for feature in _as_string_list(item.get("relatedFeatures"))
+            ],
             "counterEvidence": _as_string_list(item.get("counterEvidence")),
         })
     return result or fallback
 
 
-def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
+def _normalize_recommendations(
+    value: Any,
+    fallback: list[dict],
+    hypotheses_by_id: dict[str, dict] | None = None,
+) -> list[dict]:
     if not isinstance(value, list):
         return fallback
 
@@ -3327,7 +3560,7 @@ def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
         rec_type = item.get("type")
         if rec_type not in {"feature_engineering", "calibration", "data_quality", "evaluation"}:
             rec_type = "feature_engineering"
-        target = _meaningful_text(item.get("target"))
+        target = _normalize_feature_name(_meaningful_text(item.get("target")))
         suggestion = _meaningful_text(item.get("suggestion"))
         expected_effect = _meaningful_text(item.get("expectedEffect"))
         risk = _meaningful_text(item.get("risk"))
@@ -3340,6 +3573,34 @@ def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
             or not risk
             or not validation_plan
         ):
+            continue
+        linked_hypotheses = _as_string_list(item.get("linkedHypotheses"))
+        linked_features: list[str] = []
+        if hypotheses_by_id is not None:
+            linked_hypotheses = [
+                hypothesis_id
+                for hypothesis_id in linked_hypotheses
+                if hypothesis_id in hypotheses_by_id
+            ]
+            if _as_string_list(item.get("linkedHypotheses")) and not linked_hypotheses:
+                continue
+            for hypothesis_id in linked_hypotheses:
+                for feature in _as_string_list(
+                    hypotheses_by_id.get(hypothesis_id, {}).get("relatedFeatures")
+                ):
+                    if feature not in linked_features:
+                        linked_features.append(feature)
+            operational_linked_features = [
+                feature for feature in linked_features
+                if feature not in _DIAGNOSTIC_ONLY_FEATURES
+            ]
+            operational_linked_features = [
+                _normalize_feature_name(feature)
+                for feature in operational_linked_features
+            ]
+            if operational_linked_features and target not in operational_linked_features:
+                target = operational_linked_features[0]
+        if target not in ALLOWED_RECOMMENDATION_TARGETS:
             continue
         proposed_replay_command = _meaningful_text(item.get("proposedReplayCommand"))
         command_status = (
@@ -3363,7 +3624,7 @@ def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
             "validationPlan": validation_plan,
             "proposedReplayCommand": proposed_replay_command or None,
             "commandStatus": command_status,
-            "linkedHypotheses": _as_string_list(item.get("linkedHypotheses")),
+            "linkedHypotheses": linked_hypotheses,
             "autoApply": False,
         }
         result.append({
@@ -3372,6 +3633,16 @@ def _normalize_recommendations(value: Any, fallback: list[dict]) -> list[dict]:
             if val is not None
         })
     return result or fallback
+
+
+def _hypotheses_by_id(hypotheses: Any) -> dict[str, dict]:
+    if not isinstance(hypotheses, list):
+        return {}
+    return {
+        str(item.get("id")): item
+        for item in hypotheses
+        if isinstance(item, dict) and item.get("id")
+    }
 
 
 def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) -> dict:
@@ -3410,14 +3681,171 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
         "modelVerdict": model_verdict,
         "confidence": confidence,
     }
-    report["rootCauseHypotheses"] = _normalize_hypotheses(
+    fallback_hypotheses = list(report.get("rootCauseHypotheses") or [])
+    normalized_hypotheses = _normalize_hypotheses(
         analysis.get("rootCauseHypotheses"),
-        report["rootCauseHypotheses"],
+        fallback_hypotheses,
     )
+    normalized_hypotheses = [
+        hypothesis
+        for hypothesis in normalized_hypotheses
+        if not (
+            isinstance(hypothesis, dict)
+            and (
+                _hypothesis_uses_only_daily_performance_evidence(
+                    _normalize_evidence(hypothesis.get("evidence"))
+                )
+                or _hypothesis_uses_only_controller_diagnostics(
+                    _normalize_evidence(hypothesis.get("evidence"))
+                )
+            )
+        )
+    ]
+    if normalized_hypotheses and all(
+        _hypothesis_is_freeze_only(hypothesis)
+        for hypothesis in normalized_hypotheses
+        if isinstance(hypothesis, dict)
+    ):
+        existing_ids = {
+            str(hypothesis.get("id"))
+            for hypothesis in normalized_hypotheses
+            if isinstance(hypothesis, dict)
+        }
+        for fallback_hypothesis in fallback_hypotheses:
+            if not isinstance(fallback_hypothesis, dict):
+                continue
+            if _hypothesis_is_freeze_only(fallback_hypothesis):
+                continue
+            if not _hypothesis_has_concrete_non_freeze_evidence(fallback_hypothesis):
+                continue
+            if str(fallback_hypothesis.get("id")) in existing_ids:
+                continue
+            normalized_hypotheses.insert(0, fallback_hypothesis)
+            break
+    if not any(
+        isinstance(hypothesis, dict)
+        and _hypothesis_has_concrete_non_freeze_evidence(hypothesis)
+        for hypothesis in normalized_hypotheses
+    ):
+        existing_ids = {
+            str(hypothesis.get("id"))
+            for hypothesis in normalized_hypotheses
+            if isinstance(hypothesis, dict)
+        }
+        for fallback_hypothesis in fallback_hypotheses:
+            if not isinstance(fallback_hypothesis, dict):
+                continue
+            if str(fallback_hypothesis.get("id")) in existing_ids:
+                continue
+            if not _hypothesis_has_concrete_non_freeze_evidence(fallback_hypothesis):
+                continue
+            normalized_hypotheses.insert(0, fallback_hypothesis)
+            break
+    if not any(
+        isinstance(hypothesis, dict) and _hypothesis_is_freeze_only(hypothesis)
+        for hypothesis in normalized_hypotheses
+    ):
+        freeze_hypothesis = _deterministic_freeze_hypothesis(report)
+        if freeze_hypothesis is not None:
+            normalized_hypotheses.append(freeze_hypothesis)
+    unique_hypotheses = []
+    freeze_seen = False
+    for hypothesis in normalized_hypotheses:
+        if not isinstance(hypothesis, dict):
+            continue
+        if _hypothesis_is_freeze_only(hypothesis):
+            if freeze_seen:
+                continue
+            freeze_seen = True
+            deterministic_freeze = _deterministic_freeze_hypothesis(report)
+            if deterministic_freeze is not None:
+                hypothesis = deterministic_freeze
+        unique_hypotheses.append(hypothesis)
+    normalized_hypotheses = unique_hypotheses[:3]
+    report["rootCauseHypotheses"] = normalized_hypotheses
+    messages = MESSAGES.get(report.get("language"), MESSAGES["ko"])
     report["featureRecommendations"] = _normalize_recommendations(
         analysis.get("featureRecommendations"),
-        report["featureRecommendations"],
+        _recommendations(report["rootCauseHypotheses"], messages),
+        _hypotheses_by_id(report["rootCauseHypotheses"]),
     )
+    if not any(
+        isinstance(recommendation, dict)
+        and _recommendation_targets_operational_feature(recommendation)
+        for recommendation in report["featureRecommendations"]
+    ):
+        existing_rec_ids = {
+            str(recommendation.get("id"))
+            for recommendation in report["featureRecommendations"]
+            if isinstance(recommendation, dict)
+        }
+        recommendation_seed_hypotheses = [
+            hypothesis for hypothesis in fallback_hypotheses
+            if isinstance(hypothesis, dict)
+            and _hypothesis_has_concrete_non_freeze_evidence(hypothesis)
+        ] + [
+            hypothesis for hypothesis in report["rootCauseHypotheses"]
+            if isinstance(hypothesis, dict)
+        ]
+        for fallback_recommendation in _recommendations(
+            recommendation_seed_hypotheses,
+            messages,
+        ):
+            if not isinstance(fallback_recommendation, dict):
+                continue
+            if str(fallback_recommendation.get("id")) in existing_rec_ids:
+                continue
+            if not _recommendation_targets_operational_feature(fallback_recommendation):
+                continue
+            report["featureRecommendations"].append(fallback_recommendation)
+            break
+    if any(
+        isinstance(hypothesis, dict) and _hypothesis_is_freeze_only(hypothesis)
+        for hypothesis in report["rootCauseHypotheses"]
+    ) and not any(
+        isinstance(recommendation, dict)
+        and recommendation.get("target") == "serving.published_forecast_freeze"
+        for recommendation in report["featureRecommendations"]
+    ):
+        freeze_seed = [
+            hypothesis for hypothesis in report["rootCauseHypotheses"]
+            if isinstance(hypothesis, dict) and _hypothesis_is_freeze_only(hypothesis)
+        ]
+        for fallback_recommendation in _recommendations(freeze_seed, messages):
+            if fallback_recommendation.get("target") == "serving.published_forecast_freeze":
+                report["featureRecommendations"].append(fallback_recommendation)
+                break
+    unique_recommendations = []
+    seen_targets = set()
+    for recommendation in report["featureRecommendations"]:
+        if not isinstance(recommendation, dict):
+            continue
+        target = recommendation.get("target")
+        if target != "serving.published_forecast_freeze" and target not in ALLOWED_RECOMMENDATION_TARGETS:
+            continue
+        if target in seen_targets:
+            continue
+        seen_targets.add(target)
+        unique_recommendations.append(recommendation)
+    if not any(
+        _recommendation_targets_operational_feature(recommendation)
+        for recommendation in unique_recommendations
+    ):
+        seed = [
+            hypothesis for hypothesis in fallback_hypotheses
+            if isinstance(hypothesis, dict)
+            and _hypothesis_has_concrete_non_freeze_evidence(hypothesis)
+        ]
+        for fallback_recommendation in _recommendations(seed, messages):
+            target = fallback_recommendation.get("target")
+            if target in seen_targets:
+                continue
+            if not _recommendation_targets_operational_feature(fallback_recommendation):
+                continue
+            seen_targets.add(target)
+            unique_recommendations.append(fallback_recommendation)
+            break
+    report["featureRecommendations"] = unique_recommendations[:3]
     operator_notes = _as_string_list(analysis.get("operatorNotes"))
     limitations = _as_string_list(analysis.get("limitations"))
     if operator_notes:
@@ -3429,7 +3857,6 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
             note for note in report.get("operatorNotes", [])
             if note != fallback_note
         ]
-    messages = MESSAGES.get(report.get("language"), MESSAGES["ko"])
     fallback_note = messages["fallback_note"]
     if limitations:
         report["limitations"] = [
@@ -3500,6 +3927,10 @@ def _localized_text(source: dict, field: str, fallback: Any) -> Any:
 def _polish_localized_text(language: str, value: Any) -> Any:
     if isinstance(value, str):
         result = value
+        for old, new in METRIC_TERM_REPLACEMENTS:
+            result = result.replace(old, new)
+        for old, new in GENERAL_TEXT_REPLACEMENTS:
+            result = result.replace(old, new)
         for old, new in LOCALIZED_TEXT_REPLACEMENTS.get(language, []):
             result = result.replace(old, new)
         if language == "ko":
@@ -3710,6 +4141,207 @@ def _recommendation_copy_override(language: str, target: str) -> dict[str, str] 
     return None
 
 
+def _format_mw(value: Any) -> str:
+    number = _as_float(value)
+    if number is None:
+        return "n/a"
+    return f"{number:.1f} MW"
+
+
+def _format_pct(value: Any) -> str:
+    number = _as_float(value)
+    if number is None:
+        return "n/a"
+    return f"{number:.2f}%"
+
+
+def _largest_freeze_gap(report: dict) -> dict | None:
+    gaps = (
+        ((report.get("diagnosticContext") or {}).get("freezeImpact") or {})
+        .get("largestGaps")
+        or []
+    )
+    if not isinstance(gaps, list):
+        return None
+    candidates = [
+        gap for gap in gaps
+        if isinstance(gap, dict) and _as_float(gap.get("freezeGapMw")) is not None
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda gap: abs(_as_float(gap.get("freezeGapMw")) or 0.0))
+
+
+def _deterministic_executive_summary_copy(report: dict) -> dict | None:
+    perf = report.get("performance") or {}
+    if not isinstance(perf, dict):
+        return None
+    hours_float = _as_float(perf.get("comparableHours"))
+    if hours_float is None or hours_float <= 0:
+        return None
+
+    hours = int(hours_float)
+    language = str(report.get("language") or "ko")
+    current = report.get("executiveSummary") or {}
+    verdict = current.get("modelVerdict") or perf.get("verdict") or "mixed"
+    model_adv = perf.get("modelAdvantageHours")
+    tepco_adv = perf.get("tepcoAdvantageHours")
+    model_text = (
+        f"MAE {_format_mw(perf.get('modelMaeMw'))}, "
+        f"WAPE {_format_pct(perf.get('modelWapePct'))}"
+    )
+    tepco_text = (
+        f"MAE {_format_mw(perf.get('tepcoMaeMw'))}, "
+        f"WAPE {_format_pct(perf.get('tepcoWapePct'))}"
+    )
+    advantage_text = f"{model_adv}/{hours}"
+    tepco_advantage_text = f"{tepco_adv}/{hours}"
+    freeze_gap = _largest_freeze_gap(report)
+
+    if language == "en":
+        headlines = {
+            "model_better": "The model had lower daily error than TEPCO.",
+            "tepco_better": "TEPCO had lower daily error than the model.",
+            "close": "Model and TEPCO errors were close.",
+            "mixed": "Daily accuracy was mixed across hour bands.",
+            "insufficient": "Daily accuracy could not be evaluated.",
+        }
+        freeze_sentence = ""
+        if freeze_gap is not None:
+            freeze_sentence = (
+                " The largest published-versus-recalculated gap was "
+                f"{_format_mw(freeze_gap.get('freezeGapMw'))} at "
+                f"{freeze_gap.get('hour')}:00 JST."
+            )
+        summary = (
+            f"Across {hours} comparable hours, the model recorded {model_text}; "
+            f"TEPCO recorded {tepco_text}. Model advantage hours were "
+            f"{advantage_text}, while TEPCO advantage hours were "
+            f"{tepco_advantage_text}.{freeze_sentence}"
+        )
+    elif language == "ja":
+        headlines = {
+            "model_better": "モデルの日次誤差はTEPCO予測より小さくなりました。",
+            "tepco_better": "TEPCO予測の日次誤差はモデルより小さくなりました。",
+            "close": "モデルとTEPCO予測の日次誤差は近い水準でした。",
+            "mixed": "時間帯によって優位性が分かれました。",
+            "insufficient": "日次精度を評価する十分なデータがありません。",
+        }
+        freeze_sentence = ""
+        if freeze_gap is not None:
+            freeze_sentence = (
+                " 公開予測と再計算線の最大差は"
+                f"{freeze_gap.get('hour')}:00 JSTで"
+                f"{_format_mw(freeze_gap.get('freezeGapMw'))}でした。"
+            )
+        summary = (
+            f"比較可能な{hours}時間で、モデルは{model_text}、"
+            f"TEPCOは{tepco_text}でした。モデル優位は{advantage_text}、"
+            f"TEPCO優位は{tepco_advantage_text}です。{freeze_sentence}"
+        )
+    else:
+        headlines = {
+            "model_better": "모델의 일간 오차가 TEPCO 예측보다 작았습니다.",
+            "tepco_better": "TEPCO 예측의 일간 오차가 모델보다 작았습니다.",
+            "close": "모델과 TEPCO 예측의 일간 오차가 비슷했습니다.",
+            "mixed": "시간대별로 성능 우위가 엇갈렸습니다.",
+            "insufficient": "일간 성능을 평가할 데이터가 부족합니다.",
+        }
+        freeze_sentence = ""
+        if freeze_gap is not None:
+            freeze_sentence = (
+                " 가장 큰 발표선-재계산선 차이는 "
+                f"{freeze_gap.get('hour')}:00 JST에 "
+                f"{_format_mw(freeze_gap.get('freezeGapMw'))}였습니다."
+            )
+        summary = (
+            f"비교 가능 {hours}시간 기준 모델은 {model_text}, "
+            f"TEPCO는 {tepco_text}였습니다. 모델 우위 시간은 "
+            f"{advantage_text}, TEPCO 우위 시간은 {tepco_advantage_text}입니다."
+            f"{freeze_sentence}"
+        )
+
+    return {
+        "severity": current.get("severity", "info"),
+        "headline": headlines.get(verdict, headlines["mixed"]),
+        "summary": summary,
+        "modelVerdict": verdict,
+        "confidence": current.get("confidence", "medium"),
+    }
+
+
+def _deterministic_freeze_hypothesis(report: dict) -> dict | None:
+    gap = _largest_freeze_gap(report)
+    if gap is None:
+        return None
+    gaps = (
+        ((report.get("diagnosticContext") or {}).get("freezeImpact") or {})
+        .get("largestGaps")
+        or []
+    )
+    evidence = []
+    related_hours = []
+    for item in gaps[:3]:
+        if not isinstance(item, dict):
+            continue
+        hour = item.get("hour")
+        evidence.append({
+            "source": "freezeImpact",
+            "metric": "freezeGapMw",
+            "value": _round_number(item.get("freezeGapMw")),
+            "unit": "MW",
+            "hour": hour,
+            "timeBand": None,
+        })
+        if isinstance(hour, int):
+            related_hours.append(hour)
+    language = str(report.get("language") or "ko")
+    if language == "en":
+        title = "Published forecast freeze left a visible serving gap."
+        explanation = (
+            "The published line differed materially from the latest recalculated "
+            "post-calibration line, so served chart shape should be reviewed "
+            "separately from raw model accuracy."
+        )
+    elif language == "ja":
+        title = "公開予測の固定により表示線に差が残りました。"
+        explanation = (
+            "公開された予測線と最新の再計算後ラインに大きな差があるため、"
+            "rawモデル精度とは分けて表示上の形状リスクを確認します。"
+        )
+    else:
+        title = "예측선 보존 정책으로 표시선 격차가 남았습니다."
+        explanation = (
+            "공개된 예측선과 최신 재계산 후 라인 사이에 큰 차이가 있어, "
+            "raw 모델 정확도와 별도로 화면에 남는 곡선 형태 리스크를 확인해야 합니다."
+        )
+    return {
+        "id": "serving.published_forecast_freeze",
+        "severity": "warning",
+        "confidence": "medium",
+        "evidenceStatus": "partial",
+        "title": title,
+        "explanation": explanation,
+        "evidence": evidence,
+        "relatedHours": related_hours,
+        "relatedTimeBands": [],
+        "relatedFeatures": ["serving.published_forecast_freeze"],
+        "counterEvidence": [],
+    }
+
+
+def _executive_summary_needs_repair(report: dict) -> bool:
+    summary = report.get("executiveSummary") or {}
+    if not isinstance(summary, dict):
+        return False
+    text = " ".join(
+        str(summary.get(field) or "")
+        for field in ("headline", "summary")
+    )
+    lowered = text.lower()
+    return "mape" in lowered or "mean absolute percentage error" in lowered
+
+
 def _polish_report_language(report: dict) -> dict:
     language = str(report.get("language") or "")
     if language not in MESSAGES:
@@ -3719,6 +4351,9 @@ def _polish_report_language(report: dict) -> dict:
     if isinstance(summary, dict):
         for field in ("headline", "summary"):
             summary[field] = _polish_localized_text(language, summary.get(field))
+        deterministic_summary = _deterministic_executive_summary_copy(report)
+        if deterministic_summary is not None:
+            report["executiveSummary"] = deterministic_summary
 
     for hypothesis in report.get("rootCauseHypotheses") or []:
         if not isinstance(hypothesis, dict):
