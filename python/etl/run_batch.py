@@ -2095,6 +2095,7 @@ def _write_ai_daily_reports(out_dir: Path) -> None:
         from python.eval.ai_daily_report import (
             OPENAI_DEFAULT_LOCALES,
             OPENAI_DEFAULT_MAX_CALLS_PER_RUN,
+            _env_bool,
             _env_csv,
             _env_int,
             build_ai_daily_reports_multilingual,
@@ -2110,6 +2111,7 @@ def _write_ai_daily_reports(out_dir: Path) -> None:
             "used": 0,
         }
         openai_locales = _env_csv("OPENAI_DAILY_REPORT_LOCALES", OPENAI_DEFAULT_LOCALES)
+        use_openai = _env_bool("OPENAI_DAILY_REPORT_AUTO_ENABLE", False)
         languages = ("ko", "en", "ja")
         indexes, reports_by_language, openai_budget = build_ai_daily_reports_multilingual(
             out_dir,
@@ -2117,6 +2119,7 @@ def _write_ai_daily_reports(out_dir: Path) -> None:
             languages=languages,
             existing_report_root=report_dir,
             skip_existing=True,
+            use_openai=use_openai,
             openai_budget=openai_budget,
             openai_locales=openai_locales,
         )
