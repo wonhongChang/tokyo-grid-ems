@@ -13,7 +13,6 @@ $Triggers = foreach ($Time in $Times) {
     New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.Add([TimeSpan]::Parse($Time)))
 }
 $Settings = New-ScheduledTaskSettingsSet `
-    -StartWhenAvailable `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew `

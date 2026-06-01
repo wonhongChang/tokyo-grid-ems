@@ -6,6 +6,7 @@ param(
     [switch]$SkipIntradayDispatch,
     [switch]$SkipValidation,
     [switch]$ForceHistoricalEtl,
+    [switch]$AllowOffSchedule,
     [string]$LogDir = "logs/local_etl"
 )
 
@@ -67,6 +68,59 @@ function Get-JstToday {
     catch {
         return (Get-Date).Date
     }
+}
+
+function Get-JstNow {
+    try {
+        $timezone = [System.TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
+        return [System.TimeZoneInfo]::ConvertTime((Get-Date), $timezone)
+    }
+    catch {
+        return Get-Date
+    }
+}
+
+function Test-LocalEtlScheduleWindow {
+    $now = Get-JstNow
+    $start = $now.Date.AddHours(7)
+    $end = $now.Date.AddHours(10).AddMinutes(30)
+    return ($now -ge $start -and $now -le $end)
+}
+
+function Get-ProjectOpenAiKeySource {
+    $projectKeyName = "TOKYO_GRID_EMS_OPENAI_API_KEY"
+    $standardKeyName = "OPENAI_API_KEY"
+    $projectKey = [Environment]::GetEnvironmentVariable($projectKeyName, "Process")
+    if (-not [string]::IsNullOrWhiteSpace($projectKey)) {
+        return "process_env"
+    }
+
+    $envPath = Join-Path $RepoRoot ".env"
+    if (Test-Path -LiteralPath $envPath) {
+        foreach ($line in Get-Content -LiteralPath $envPath -Encoding UTF8) {
+            $trimmed = $line.Trim()
+            if ($trimmed.StartsWith("#") -or -not $trimmed.Contains("=")) {
+                continue
+            }
+
+            $parts = $trimmed.Split("=", 2)
+            if ($parts[0].Trim() -ne $projectKeyName) {
+                continue
+            }
+
+            $value = $parts[1].Trim().Trim('"').Trim("'")
+            if (-not [string]::IsNullOrWhiteSpace($value) -and $value -ne "your_openai_api_key_here") {
+                return ".env"
+            }
+        }
+    }
+
+    $standardKey = [Environment]::GetEnvironmentVariable($standardKeyName, "Process")
+    if (-not [string]::IsNullOrWhiteSpace($standardKey)) {
+        return "standard_env_ignored"
+    }
+
+    return "missing"
 }
 
 function Test-HistoricalEtlNeeded {
@@ -173,6 +227,20 @@ Push-Location $RepoRoot
 try {
     Start-Transcript -Path $LogPath -Append | Out-Null
     Write-LocalEtlStatus -Status "running" -Stage "starting" -Message "Local ETL started"
+
+    if (-not $AllowOffSchedule -and -not $ForceHistoricalEtl -and -not (Test-LocalEtlScheduleWindow)) {
+        $jstNow = Get-JstNow
+        $message = "Skipped off-schedule local ETL at $($jstNow.ToString("yyyy-MM-dd HH:mm:ss zzz")); pass -AllowOffSchedule for manual recovery runs"
+        Write-Host "[SCHEDULE] $message"
+        Write-LocalEtlStatus -Status "ok" -Stage "skipped_off_schedule" -Message $message
+        return
+    }
+
+    $openAiKeySource = Get-ProjectOpenAiKeySource
+    Write-Host "[OPENAI] TOKYO_GRID_EMS_OPENAI_API_KEY source: $openAiKeySource"
+    if ($openAiKeySource -eq "standard_env_ignored") {
+        Write-Host "[OPENAI] Ignoring process OPENAI_API_KEY; use TOKYO_GRID_EMS_OPENAI_API_KEY for report generation"
+    }
 
     if (-not $SkipRestore) {
         Write-LocalEtlStatus -Status "running" -Stage "restore_data_branch" -Message "Restoring web/public from origin/data"

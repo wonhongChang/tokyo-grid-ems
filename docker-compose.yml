@@ -8,9 +8,12 @@ services:
         required: false
     environment:
       TZ: Asia/Tokyo
+      OPENAI_API_KEY: ""
     volumes:
       - .:/app
     command: >
-      sh -lc "export OPENAI_DAILY_REPORT_LATEST_ONLY=$${OPENAI_DAILY_REPORT_LATEST_ONLY:-true} &&
+      sh -lc "unset OPENAI_API_KEY &&
+      if [ -n \"$${TOKYO_GRID_EMS_OPENAI_API_KEY}\" ]; then echo '[OPENAI] project report key: set'; else echo '[OPENAI] project report key: missing; fallback report will be used'; fi &&
+      export OPENAI_DAILY_REPORT_LATEST_ONLY=$${OPENAI_DAILY_REPORT_LATEST_ONLY:-true} &&
       python python/etl/fetch_tepco.py --overwrite-recent-days 3 &&
       python python/etl/run_batch.py --input data/raw --out web/public"
