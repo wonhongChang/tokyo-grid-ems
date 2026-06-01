@@ -3,15 +3,17 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-31",
-  "generatedAt": "2026-06-01T07:34:44+09:00",
+  "generatedAt": "2026-06-01T09:11:04+09:00",
   "availability": "ok",
   "language": "ko",
   "contentLanguage": "ko",
   "generator": {
-    "provider": "fallback",
-    "model": null,
-    "promptVersion": "fallback_rules_v1",
-    "schemaVersion": "1.0.0"
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "promptVersion": "openai_ops_report_v4",
+    "schemaVersion": "1.0.0",
+    "localizationModel": "gpt-4o-mini",
+    "localizationStatus": "ok"
   },
   "inputRefs": {
     "operationReport": "reports/daily/2026-05-31.json",
@@ -25,22 +27,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-06-01T07:34:44+09:00",
-    "fingerprint": "sha256:4b637a8844a0b63da06d4472f496e407a8a1176ea34f2f61be844459b839ae77",
+    "createdAt": "2026-06-01T09:11:04+09:00",
+    "fingerprint": "sha256:6f58d708428764730e1cf82ce25db0609934f2a677beab79dbf443e0b74db84a",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-05-31.json",
         "exists": true,
         "date": "2026-05-31",
-        "generatedAt": "2026-06-01T07:34:23+09:00",
-        "fingerprint": "sha256:8ea05248164203b0493e004b2a50ba302007eb35b6c63c82e221e962137fc968"
+        "generatedAt": "2026-06-01T09:10:43+09:00",
+        "fingerprint": "sha256:69f82c0e26030e5490850d3dd151e4c5ba4835b14649b7827e1d0ff2e039f74f"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-05-31.json",
         "exists": true,
         "date": "2026-05-31",
-        "generatedAt": "2026-06-01T07:34:24+09:00",
-        "fingerprint": "sha256:3d4820fe321d1fe31496b811a13f1567b83bb792b93d9b3c91b67d6c4592d044"
+        "generatedAt": "2026-06-01T09:10:43+09:00",
+        "fingerprint": "sha256:555b33a490941d53f1cb4a2dfcb506d151effb625961c4c055a359d0a61b8c9f"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-05-31.json",
@@ -53,8 +55,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-05-31/index.json",
         "exists": true,
         "date": "2026-05-31",
-        "generatedAt": "2026-06-01T07:30:38+09:00",
-        "fingerprint": "sha256:e0c61b970c53149057eb0bebc3dd9a6be33b7bd94cec3ced0083f8521b4e3aca"
+        "generatedAt": "2026-06-01T09:06:48+09:00",
+        "fingerprint": "sha256:a65be0b30b8fd119f8492d8dd92f48836f65fa530d8ae8e814d072441bd9b6aa"
       },
       "alerts": {
         "path": "alerts/2026-05-31.json",
@@ -81,8 +83,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-06-01T07:31:01+09:00",
-        "fingerprint": "sha256:e0e145ab86a7a67f86b146bc4445143e611f366ad5ae7c47f103770ca34d7577"
+        "generatedAt": "2026-06-01T09:07:13+09:00",
+        "fingerprint": "sha256:d55fc66986fde922449b55116da6ede3a7f8a5bdfafadb2b6585a684e3bfac3f"
       }
     }
   },
@@ -92,8 +94,7 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 18,
     "limitations": [
-      "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
-      "intraday 중간 실행은 operational-calibration snapshot 기준으로 제한적으로 복원합니다."
+      "분석은 요약된 운영 증거와 보존된 보정 스냅샷을 기반으로 합니다."
     ]
   },
   "diagnosticContext": {
@@ -630,11 +631,11 @@
     }
   },
   "executiveSummary": {
-    "severity": "info",
-    "headline": "모델과 TEPCO의 일일 성능이 비슷했습니다.",
-    "summary": "비교 가능 시간은 24시간이며, 모델 MAE는 318.5 MW, TEPCO MAE는 308.3 MW입니다. WAPE는 모델 1.25%, TEPCO 1.21%로 집계되었습니다.",
-    "modelVerdict": "close",
-    "confidence": "high"
+    "severity": "warning",
+    "headline": "TEPCO 예측의 일간 오차가 모델보다 작았습니다.",
+    "summary": "비교 가능 24시간 기준 모델은 MAE 318.5 MW, WAPE 1.25%, TEPCO는 MAE 308.3 MW, WAPE 1.21%였습니다. 모델 우위 시간은 9/24, TEPCO 우위 시간은 15/24입니다. 가장 큰 발표선-재계산선 차이는 15:00 JST에 793.4 MW였습니다.",
+    "modelVerdict": "tepco_better",
+    "confidence": "medium"
   },
   "performance": {
     "comparableHours": 24,
@@ -665,28 +666,40 @@
       "severity": "info",
       "confidence": "high",
       "evidenceStatus": "confirmed",
-      "title": "intraday 보정 실행 이력이 스냅샷으로 보존되었습니다.",
-      "explanation": "operational-calibration snapshot index에 중간 실행 이력이 남아 있어 최종 덮어쓰기 JSON만 볼 때보다 보정 레이어 흐름을 더 잘 추적할 수 있습니다.",
+      "title": "Intraday 보정 실행 기록이 스냅샷으로 보존되었습니다.",
+      "explanation": "운영 보정 스냅샷 인덱스는 중간 실행을 보유하므로 최종 실행 JSON만으로는 보정 계층 타임라인을 추적하기가 더 쉽습니다.",
       "evidence": [
         {
           "source": "reports/internal/operational-calibration/snapshots",
           "metric": "snapshotCount",
-          "value": 18
+          "value": 18,
+          "unit": null,
+          "hour": null,
+          "timeBand": null
         },
         {
           "source": "reports/internal/operational-calibration/snapshots",
           "metric": "dominantAppliedRegimeReason",
-          "value": "intraday_observed_residual"
+          "value": "intraday_observed_residual",
+          "unit": null,
+          "hour": null,
+          "timeBand": null
         },
         {
           "source": "reports/internal/operational-calibration/snapshots",
           "metric": "dominantReasonCount",
-          "value": 15
+          "value": 15,
+          "unit": null,
+          "hour": null,
+          "timeBand": null
         },
         {
           "source": "reports/internal/operational-calibration/snapshots",
           "metric": "latestGeneratedAt",
-          "value": "2026-05-31T21:51:08+09:00"
+          "value": "2026-05-31T21:51:08+09:00",
+          "unit": null,
+          "hour": null,
+          "timeBand": null
         }
       ],
       "relatedHours": [],
@@ -697,21 +710,79 @@
         "intraday_correction.negative_residual_recovery_damping"
       ],
       "counterEvidence": [
-        "스냅샷은 보존된 18회 실행만 설명하며, 삭제된 이전 실행은 복원하지 않습니다.",
-        "보정이 실제로 적용된 스냅샷 수는 18회입니다."
+        "스냅샷은 보유된 18개의 실행만을 설명합니다; 삭제된 이전 실행은 재구성할 수 없습니다.",
+        "실제로 18개의 저장된 스냅샷에서 보정이 적용되었습니다."
       ]
+    },
+    {
+      "id": "serving.published_forecast_freeze",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "예측선 보존 정책으로 표시선 격차가 남았습니다.",
+      "explanation": "공개된 예측선과 최신 재계산 후 라인 사이에 큰 차이가 있어, raw 모델 정확도와 별도로 화면에 남는 곡선 형태 리스크를 확인해야 합니다.",
+      "evidence": [
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": 793.4,
+          "unit": "MW",
+          "hour": 15,
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": 658.2,
+          "unit": "MW",
+          "hour": 18,
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": 517.7,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        15,
+        18,
+        16
+      ],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "serving.published_forecast_freeze"
+      ],
+      "counterEvidence": []
     }
   ],
   "featureRecommendations": [
+    {
+      "id": "intraday_correction.positive_residual_mitigation",
+      "priority": "high",
+      "type": "evaluation",
+      "target": "serving.published_forecast_freeze",
+      "suggestion": "15~17시 구간에서 발표선과 재계산선의 차이가 500 MW를 넘는 경우, 예측선 보존 정책을 실험 후보로 재검토합니다.",
+      "expectedEffect": "오후 재계산 결과가 크게 달라졌을 때, 화면에 남는 예측선 괴리를 줄일 수 있는지 확인합니다.",
+      "risk": "보존 정책을 너무 느슨하게 하면 intraday 갱신 때 공개 곡선이 불안정해 보일 수 있습니다.",
+      "validationPlan": "다음 10회 intraday 실행에서 발표선-재계산선 갭, 실제 오차, 재공개 시 개선폭을 비교합니다.",
+      "linkedHypotheses": [
+        "serving.published_forecast_freeze"
+      ],
+      "autoApply": false
+    },
     {
       "id": "r1",
       "priority": "low",
       "type": "calibration",
       "target": "intraday_correction.day_boundary_carryover",
-      "suggestion": "intraday 보정 실행 이력이 스냅샷으로 보존되었습니다. 가설을 기준으로 intraday_correction.day_boundary_carryover의 영향도를 재검토합니다.",
-      "expectedEffect": "반복되는 시간대/영업형태 조건에서 MAE, WAPE, RMSE가 함께 개선되는지 확인합니다.",
-      "risk": "단일 날짜의 패턴을 과하게 반영하면 다른 계절/요일에서 과보정될 수 있습니다.",
-      "validationPlan": "최근 2~4주 replay와 백테스트에서 TEPCO 대비 WAPE, RMSE, 최대 오차를 함께 비교합니다.",
+      "suggestion": "Intraday 보정 실행 기록이 스냅샷으로 보존되었다는 가설을 바탕으로 intraday_correction.day_boundary_carryover의 영향을 검토합니다.",
+      "expectedEffect": "반복적인 시간 대 및 영업일 구분 조건에서 MAE, WAPE 및 RMSE가 함께 개선되는지 확인합니다.",
+      "risk": "단일 일 패턴에 과적합하면 다른 시즌이나 일 유형에서 과도한 보정이 발생할 수 있습니다.",
+      "validationPlan": "최근 2-4주 replay 및 백테스트를 사용하여 WAPE, RMSE 및 최대 오류를 TEPCO와 비교합니다.",
       "linkedHypotheses": [
         "h60"
       ],
@@ -719,12 +790,9 @@
     }
   ],
   "operatorNotes": [
-    "OpenAI 리포트 생성에 실패해 fallback 해설로 대체했습니다: HTTP Error 429: Too Many Requests",
-    "featureRecommendations는 검토 후보이며 자동 적용되지 않습니다.",
-    "운영 보정 신호 카탈로그: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.negative_residual_continuity_floor, intraday_correction.evening_decline_continuity_guard, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+    "현재 보정 방법은 변화하는 조건에서 수요 패턴을 완벽하게 캡처하지 못할 수 있습니다."
   ],
   "limitations": [
-    "이 리포트는 OpenAI 호출 없이 deterministic JSON만으로 생성한 fallback 해설입니다.",
-    "intraday 중간 실행은 operational-calibration snapshot 기준으로 제한적으로 복원합니다."
+    "분석은 요약된 운영 증거와 보존된 보정 스냅샷을 기반으로 합니다."
   ]
 }

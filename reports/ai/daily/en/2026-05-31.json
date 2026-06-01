@@ -3,15 +3,16 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-05-31",
-  "generatedAt": "2026-06-01T07:34:44+09:00",
+  "generatedAt": "2026-06-01T09:11:04+09:00",
   "availability": "ok",
   "language": "en",
   "contentLanguage": "en",
   "generator": {
-    "provider": "fallback",
-    "model": null,
-    "promptVersion": "fallback_rules_v1",
-    "schemaVersion": "1.0.0"
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "promptVersion": "openai_ops_report_v4",
+    "schemaVersion": "1.0.0",
+    "localizationStatus": "not_requested"
   },
   "inputRefs": {
     "operationReport": "reports/daily/2026-05-31.json",
@@ -25,22 +26,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-06-01T07:34:44+09:00",
-    "fingerprint": "sha256:4b637a8844a0b63da06d4472f496e407a8a1176ea34f2f61be844459b839ae77",
+    "createdAt": "2026-06-01T09:11:04+09:00",
+    "fingerprint": "sha256:6f58d708428764730e1cf82ce25db0609934f2a677beab79dbf443e0b74db84a",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-05-31.json",
         "exists": true,
         "date": "2026-05-31",
-        "generatedAt": "2026-06-01T07:34:23+09:00",
-        "fingerprint": "sha256:8ea05248164203b0493e004b2a50ba302007eb35b6c63c82e221e962137fc968"
+        "generatedAt": "2026-06-01T09:10:43+09:00",
+        "fingerprint": "sha256:69f82c0e26030e5490850d3dd151e4c5ba4835b14649b7827e1d0ff2e039f74f"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-05-31.json",
         "exists": true,
         "date": "2026-05-31",
-        "generatedAt": "2026-06-01T07:34:24+09:00",
-        "fingerprint": "sha256:3d4820fe321d1fe31496b811a13f1567b83bb792b93d9b3c91b67d6c4592d044"
+        "generatedAt": "2026-06-01T09:10:43+09:00",
+        "fingerprint": "sha256:555b33a490941d53f1cb4a2dfcb506d151effb625961c4c055a359d0a61b8c9f"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-05-31.json",
@@ -53,8 +54,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-05-31/index.json",
         "exists": true,
         "date": "2026-05-31",
-        "generatedAt": "2026-06-01T07:30:38+09:00",
-        "fingerprint": "sha256:e0c61b970c53149057eb0bebc3dd9a6be33b7bd94cec3ced0083f8521b4e3aca"
+        "generatedAt": "2026-06-01T09:06:48+09:00",
+        "fingerprint": "sha256:a65be0b30b8fd119f8492d8dd92f48836f65fa530d8ae8e814d072441bd9b6aa"
       },
       "alerts": {
         "path": "alerts/2026-05-31.json",
@@ -81,8 +82,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-06-01T07:31:01+09:00",
-        "fingerprint": "sha256:e0e145ab86a7a67f86b146bc4445143e611f366ad5ae7c47f103770ca34d7577"
+        "generatedAt": "2026-06-01T09:07:13+09:00",
+        "fingerprint": "sha256:d55fc66986fde922449b55116da6ede3a7f8a5bdfafadb2b6585a684e3bfac3f"
       }
     }
   },
@@ -92,8 +93,7 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 18,
     "limitations": [
-      "This report was generated from deterministic JSON without calling OpenAI.",
-      "Intermediate intraday runs are reconstructed only from retained operational-calibration snapshots."
+      "Analysis is based on summarized operational evidence and retained calibration snapshots."
     ]
   },
   "diagnosticContext": {
@@ -630,11 +630,11 @@
     }
   },
   "executiveSummary": {
-    "severity": "info",
-    "headline": "The model and TEPCO performed similarly.",
-    "summary": "24 comparable hours were available. Model MAE was 318.5 MW, TEPCO MAE was 308.3 MW. WAPE was 1.25% for the model and 1.21% for TEPCO.",
-    "modelVerdict": "close",
-    "confidence": "high"
+    "severity": "warning",
+    "headline": "TEPCO had lower daily error than the model.",
+    "summary": "Across 24 comparable hours, the model recorded MAE 318.5 MW, WAPE 1.25%; TEPCO recorded MAE 308.3 MW, WAPE 1.21%. Model advantage hours were 9/24, while TEPCO advantage hours were 15/24. The largest published-versus-recalculated gap was 793.4 MW at 15:00 JST.",
+    "modelVerdict": "tepco_better",
+    "confidence": "medium"
   },
   "performance": {
     "comparableHours": 24,
@@ -700,9 +700,67 @@
         "The snapshots explain only the 18 retained runs; deleted older runs cannot be reconstructed.",
         "Calibration was actually applied in 18 retained snapshots."
       ]
+    },
+    {
+      "id": "serving.published_forecast_freeze",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "Published forecast freeze left a visible serving gap.",
+      "explanation": "The published line differed materially from the latest recalculated post-calibration line, so served chart shape should be reviewed separately from raw model accuracy.",
+      "evidence": [
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": 793.4,
+          "unit": "MW",
+          "hour": 15,
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": 658.2,
+          "unit": "MW",
+          "hour": 18,
+          "timeBand": null
+        },
+        {
+          "source": "freezeImpact",
+          "metric": "freezeGapMw",
+          "value": 517.7,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": null
+        }
+      ],
+      "relatedHours": [
+        15,
+        18,
+        16
+      ],
+      "relatedTimeBands": [],
+      "relatedFeatures": [
+        "serving.published_forecast_freeze"
+      ],
+      "counterEvidence": []
     }
   ],
   "featureRecommendations": [
+    {
+      "id": "intraday_correction.positive_residual_mitigation",
+      "priority": "high",
+      "type": "evaluation",
+      "target": "serving.published_forecast_freeze",
+      "suggestion": "Review the published-forecast freeze policy as an experiment when the published versus recalculated gap exceeds 500 MW in hours 15:00-17:00 JST.",
+      "expectedEffect": "Reduce visible serving drift when a later recalculation materially changes the afternoon line.",
+      "risk": "Relaxing freeze behavior too much can make the public curve look unstable during intraday updates.",
+      "validationPlan": "For the next 10 intraday runs, compare published/recalculated gaps, actual error, and whether a refresh would have improved the served line.",
+      "linkedHypotheses": [
+        "serving.published_forecast_freeze"
+      ],
+      "autoApply": false
+    },
     {
       "id": "r1",
       "priority": "low",
@@ -719,12 +777,9 @@
     }
   ],
   "operatorNotes": [
-    "OpenAI report generation failed, so fallback analysis was used: HTTP Error 429: Too Many Requests",
-    "featureRecommendations are review candidates and are never applied automatically.",
-    "Operational calibration signal catalog: intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.negative_residual_recovery_damping, intraday_correction.negative_residual_continuity_floor, intraday_correction.evening_decline_continuity_guard, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, serving.published_forecast_freeze"
+    "Current calibration methods may not fully capture demand patterns under evolving conditions."
   ],
   "limitations": [
-    "This report was generated from deterministic JSON without calling OpenAI.",
-    "Intermediate intraday runs are reconstructed only from retained operational-calibration snapshots."
+    "Analysis is based on summarized operational evidence and retained calibration snapshots."
   ]
 }
