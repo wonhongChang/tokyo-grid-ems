@@ -1615,6 +1615,60 @@ def test_intraday_ramp_guard_caps_near_term_drop_after_afternoon_actual():
     assert result.forecasts[17].forecast_mw == pytest.approx(18_200.0)
 
 
+def test_intraday_ramp_guard_limits_evening_negative_carryover_after_sharp_drop():
+    target = date(2026, 6, 1)
+    forecasts = _make_forecasts(target, 30_000.0)
+    for hour, value in {
+        16: 40_246.0,
+        17: 37_769.3,
+        18: 35_640.8,
+        19: 33_319.5,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 16, 37_400.0),
+        _actual_point(target, 17, 36_060.0),
+        _actual_point(target, 18, 34_930.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "ramp_guard": {
+                "enabled": True,
+                "min_reference_hour": 10,
+                "max_lead_hours": 3,
+                "max_increase_mw_by_lead_hour": [1800, 2400, 3000],
+                "max_decrease_mw_by_lead_hour": [1600, 2600, 3600],
+                "observed_drop_relaxation": {
+                    "enabled": True,
+                    "min_recent_drop_mw": 700.0,
+                    "lookback_hours": 2,
+                    "skip_shape_guard": True,
+                    "max_decrease_mw_by_lead_hour": [1600, 2800, 4200],
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(forecasts, actual_series)
+
+    assert result.base_adjustment_mw == pytest.approx(-1_200.0)
+    assert result.ramp_guard_applied is True
+    assert result.forecasts[19].forecast_mw == pytest.approx(33_330.0)
+    assert result.forecasts[19].p95_lower_mw == pytest.approx(32_830.0)
+
+
 def test_intraday_ramp_guard_allows_plausible_near_term_drop():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)

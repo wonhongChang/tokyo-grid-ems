@@ -298,6 +298,30 @@ class PostHolidayTimeBandGuard:
         self._lag24_warm_day_max_increase_mw = float(
             daytime_config.get("lag24_warm_day_max_increase_mw", 2500.0)
         )
+        warm_day_decline_config = daytime_config.get("warm_day_decline_damping", {})
+        self._warm_day_decline_enabled = bool(
+            warm_day_decline_config.get("enabled", True)
+        )
+        self._warm_day_decline_hours = {
+            int(hour)
+            for hour in warm_day_decline_config.get("hours", [15, 16, 17, 18, 19])
+        }
+        self._warm_day_decline_max_same_business_delta_mw = float(
+            warm_day_decline_config.get("max_same_business_delta_mw", 0.0)
+        )
+        self._warm_day_decline_max_lag24_delta_mw = float(
+            warm_day_decline_config.get("max_lag24_delta_mw", 500.0)
+        )
+        self._warm_day_decline_offset_multiplier = min(
+            max(
+                float(warm_day_decline_config.get("offset_multiplier", 0.0)),
+                0.0,
+            ),
+            1.0,
+        )
+        self._warm_day_decline_allow_negative_analog_shift = bool(
+            warm_day_decline_config.get("allow_negative_analog_shift", True)
+        )
         business_return_config = guard_config.get("business_return_anchor_shortfall", {})
         self._business_return_enabled = bool(
             business_return_config.get("enabled", True)
@@ -332,6 +356,50 @@ class PostHolidayTimeBandGuard:
                 self._business_return_shrinkage_by_hour[int(hour)] = float(shrinkage)
             except (TypeError, ValueError):
                 continue
+        business_return_excess_config = guard_config.get(
+            "business_return_anchor_excess_cap",
+            {},
+        )
+        self._business_return_excess_enabled = bool(
+            business_return_excess_config.get("enabled", True)
+        )
+        self._business_return_excess_hours: set[int] = set()
+        for hour in business_return_excess_config.get("target_hours", [8, 9, 10]):
+            try:
+                self._business_return_excess_hours.add(int(hour))
+            except (TypeError, ValueError):
+                continue
+        self._business_return_excess_gap_threshold_mw = float(
+            business_return_excess_config.get("gap_threshold_mw", 1_000.0)
+        )
+        self._business_return_excess_allowance_mw = float(
+            business_return_excess_config.get("allowance_mw", 500.0)
+        )
+        self._business_return_excess_weather_allowance_mw_per_c = max(
+            float(
+                business_return_excess_config.get(
+                    "weather_allowance_mw_per_c",
+                    100.0,
+                )
+            ),
+            0.0,
+        )
+        self._business_return_excess_max_weather_allowance_mw = max(
+            float(
+                business_return_excess_config.get(
+                    "max_weather_allowance_mw",
+                    300.0,
+                )
+            ),
+            0.0,
+        )
+        self._business_return_excess_shrinkage = min(
+            max(float(business_return_excess_config.get("shrinkage", 0.6)), 0.0),
+            1.0,
+        )
+        self._business_return_excess_max_clipping_mw = float(
+            business_return_excess_config.get("max_clipping_mw", 900.0)
+        )
 
     @staticmethod
     def _shift_forecast(forecast, shift_mw: float):
@@ -372,6 +440,23 @@ class PostHolidayTimeBandGuard:
         if forecast.forecast_mw <= max_forecast_mw:
             return forecast
         return self._shift_forecast(forecast, max_forecast_mw - forecast.forecast_mw)
+
+    def _warm_day_decline_damping_active(self, hour: int, row) -> bool:
+        if not (
+            self._warm_day_decline_enabled
+            and hour in self._warm_day_decline_hours
+        ):
+            return False
+        same_business_delta = self._finite_float(
+            row.get("recent_same_business_type_delta_mean")
+        )
+        lag24_delta = self._finite_float(row.get("lag_24h_hourly_delta"))
+        if same_business_delta is None or lag24_delta is None:
+            return False
+        return (
+            same_business_delta <= self._warm_day_decline_max_same_business_delta_mw
+            and lag24_delta <= self._warm_day_decline_max_lag24_delta_mw
+        )
 
     def _business_return_shortfall_may_apply(
         self,
@@ -457,6 +542,105 @@ class PostHolidayTimeBandGuard:
 
         return result if changed else forecasts
 
+    def _business_return_excess_may_apply(
+        self,
+        inference_features: pd.DataFrame,
+    ) -> bool:
+        if (
+            not self._business_return_excess_enabled
+            or not self._business_return_excess_hours
+            or inference_features is None
+            or inference_features.empty
+            or "hour" not in inference_features.columns
+        ):
+            return False
+
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is None or int(hour) not in self._business_return_excess_hours:
+                continue
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+            if is_non_business_day == 0.0 and mismatch is not None and mismatch > 0.0:
+                return True
+        return False
+
+    def _business_return_weather_allowance_mw(self, row) -> float:
+        weather_delta_c = max(
+            0.0,
+            self._finite_float(row.get("temp_delta_24h")) or 0.0,
+            self._finite_float(row.get("cooling_delta_24h")) or 0.0,
+            self._finite_float(row.get("temp_anomaly_doy")) or 0.0,
+        )
+        return min(
+            weather_delta_c * self._business_return_excess_weather_allowance_mw_per_c,
+            self._business_return_excess_max_weather_allowance_mw,
+        )
+
+    def _apply_business_return_anchor_excess_cap(
+        self,
+        forecasts: list,
+        inference_features: pd.DataFrame,
+    ) -> list:
+        if not self._business_return_excess_may_apply(inference_features):
+            return forecasts
+
+        rows_by_hour = {}
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is not None:
+                rows_by_hour[int(hour)] = row
+
+        result = []
+        changed = False
+        for forecast in forecasts:
+            hour = pd.Timestamp(forecast.ts).hour
+            row = rows_by_hour.get(hour)
+            if row is None or hour not in self._business_return_excess_hours:
+                result.append(forecast)
+                continue
+
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+            if is_non_business_day != 0.0 or mismatch is None or mismatch <= 0.0:
+                result.append(forecast)
+                continue
+
+            recent_mean = self._finite_float(row.get("recent_same_business_type_mean"))
+            lag_24h = self._finite_float(row.get("lag_24h"))
+            forecast_mw = self._finite_float(forecast.forecast_mw)
+            if recent_mean is None or lag_24h is None or forecast_mw is None:
+                result.append(forecast)
+                continue
+
+            gap_mw = recent_mean - lag_24h
+            if gap_mw < self._business_return_excess_gap_threshold_mw:
+                result.append(forecast)
+                continue
+
+            upper_bound_mw = (
+                recent_mean
+                + self._business_return_excess_allowance_mw
+                + self._business_return_weather_allowance_mw(row)
+            )
+            if forecast_mw <= upper_bound_mw:
+                result.append(forecast)
+                continue
+
+            excess_mw = forecast_mw - upper_bound_mw
+            reduction_mw = min(
+                excess_mw * self._business_return_excess_shrinkage,
+                self._business_return_excess_max_clipping_mw,
+            )
+            if reduction_mw <= 0.0:
+                result.append(forecast)
+                continue
+
+            result.append(self._shift_forecast(forecast, -reduction_mw))
+            changed = True
+
+        return result if changed else forecasts
+
     def apply(
         self,
         raw_forecasts: list,
@@ -487,11 +671,15 @@ class PostHolidayTimeBandGuard:
         business_return_shortfall_active = (
             self._business_return_shortfall_may_apply(inference_features)
         )
+        business_return_excess_active = (
+            self._business_return_excess_may_apply(inference_features)
+        )
         if not (
             post_holiday_active
             or lag_holiday_active
             or self._activate_on_warm_day
             or business_return_shortfall_active
+            or business_return_excess_active
         ):
             return adjusted_forecasts
 
@@ -547,10 +735,21 @@ class PostHolidayTimeBandGuard:
                 )
 
                 if holiday_heat_active or warm_day_active:
+                    warm_day_decline_active = (
+                        warm_day_active
+                        and self._warm_day_decline_damping_active(hour, row)
+                    )
                     # Step 1: blocking determines the base
                     base = (
                         raw_forecast
-                        if (self._dt_block_neg and shift < 0)
+                        if (
+                            self._dt_block_neg
+                            and shift < 0
+                            and not (
+                                warm_day_decline_active
+                                and self._warm_day_decline_allow_negative_analog_shift
+                            )
+                        )
                         else adjusted_forecast
                     )
                     # Step 2: apply upward offset (independent of block decision)
@@ -558,7 +757,10 @@ class PostHolidayTimeBandGuard:
                     if holiday_heat_active:
                         offset_candidates.append(self._dt_offset)
                     if warm_day_active and shift <= 0:
-                        offset_candidates.append(self._warm_day_offset)
+                        warm_day_offset = self._warm_day_offset
+                        if warm_day_decline_active:
+                            warm_day_offset *= self._warm_day_decline_offset_multiplier
+                        offset_candidates.append(warm_day_offset)
                     dt_offset = min(max(offset_candidates or [0.0]), self._dt_max_offset)
                     if dt_offset == 0.0:
                         capped = self._cap_warm_day_lag24_increase(
@@ -579,7 +781,8 @@ class PostHolidayTimeBandGuard:
 
             result.append(adjusted_forecast)
 
-        return self._apply_business_return_anchor_shortfall(result, inference_features)
+        result = self._apply_business_return_anchor_shortfall(result, inference_features)
+        return self._apply_business_return_anchor_excess_cap(result, inference_features)
 
 
 # ---------------------------------------------------------------------------

@@ -401,6 +401,14 @@ def _guard_config(
                     "warm_day_min_temp_anomaly_doy": 1.0,
                     "warm_day_upward_offset_mw": warm_day_offset,
                     "max_upward_offset_mw": 900.0,
+                    "warm_day_decline_damping": {
+                        "enabled": True,
+                        "hours": [15, 16, 17, 18, 19],
+                        "max_same_business_delta_mw": 0.0,
+                        "max_lag24_delta_mw": 500.0,
+                        "offset_multiplier": 0.0,
+                        "allow_negative_analog_shift": True,
+                    },
                 },
                 "business_return_anchor_shortfall": {
                     "enabled": business_return_enabled,
@@ -416,6 +424,16 @@ def _guard_config(
                         10: 0.30,
                         11: 0.20,
                     },
+                },
+                "business_return_anchor_excess_cap": {
+                    "enabled": True,
+                    "target_hours": [8, 9, 10],
+                    "gap_threshold_mw": 1_000.0,
+                    "allowance_mw": 500.0,
+                    "weather_allowance_mw_per_c": 100.0,
+                    "max_weather_allowance_mw": 300.0,
+                    "shrinkage": 0.6,
+                    "max_clipping_mw": 900.0,
                 },
             }
         }
@@ -444,10 +462,13 @@ def _make_post_holiday_inf(
             "lag_last_biz_hour": 20_000.0, "lag_last_nonhol_hour": 20_000.0,
             "lag_24h_business_type_mismatch": 0,
             "recent_same_business_type_mean": 20_000.0,
+            "lag_24h_hourly_delta": 600.0,
+            "recent_same_business_type_delta_mean": 100.0,
             "consec_holiday_len": consec,
             "days_since_holiday_end": dsh,
             "major_holiday_season": 1,
             "temp_c": 25.0, "cooling_degree": 3.0, "heating_degree": 0.0,
+            "temp_delta_24h": 0.0, "cooling_delta_24h": 0.0,
             "temp_anomaly_7d": anom, "temp_anomaly_doy": 2.0,
             "holiday_x_heat": consec * max(0.0, anom),
             "post_holiday_x_heat": int(1 <= dsh <= 2) * max(0.0, anom),
@@ -804,6 +825,39 @@ def test_guard_does_not_add_warm_day_offset_when_adjuster_already_raises():
             assert fc_res.forecast_mw == pytest.approx(fc_a.forecast_mw)
 
 
+def test_guard_damps_warm_day_offset_when_evening_shape_is_declining():
+    """Warm-day guard should not erase a declining analog shape in late afternoon."""
+    guard = PostHolidayTimeBandGuard(_guard_config(
+        warm_day=True,
+        warm_day_offset=250.0,
+    ))
+    target = date(2026, 6, 1)
+    raw = _make_raw_forecasts(target, 40_000.0)
+    adj = []
+    for fc in raw:
+        h = pd.Timestamp(fc.ts).hour
+        bump = -300.0 if h == 16 else 0.0
+        from python.forecast.baseline import HourlyForecast
+        adj.append(HourlyForecast(
+            ts=fc.ts,
+            forecast_mw=fc.forecast_mw + bump,
+            p95_lower_mw=fc.p95_lower_mw + bump,
+            p95_upper_mw=fc.p95_upper_mw + bump,
+            p99_lower_mw=fc.p99_lower_mw + bump,
+            p99_upper_mw=fc.p99_upper_mw + bump,
+        ))
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"] == 16, "temp_c"] = 31.0
+    inf.loc[inf["hour"] == 16, "temp_anomaly_doy"] = 3.0
+    inf.loc[inf["hour"] == 16, "lag_24h_hourly_delta"] = 400.0
+    inf.loc[inf["hour"] == 16, "recent_same_business_type_delta_mean"] = -380.0
+
+    result = guard.apply(raw, adj, inf)
+
+    assert result[16].forecast_mw == pytest.approx(39_700.0)
+    assert result[16].p95_upper_mw == pytest.approx(40_700.0)
+
+
 def test_guard_caps_warm_day_forecast_too_far_above_lag24():
     """Warm-day guard can prevent hot-day adjustments from drifting far above yesterday."""
     config = _guard_config(warm_day=True)
@@ -866,6 +920,27 @@ def test_guard_lifts_business_return_anchor_shortfall():
     assert result[9].p95_lower_mw == pytest.approx(29_182.5)
     assert result[9].p95_upper_mw == pytest.approx(31_182.5)
     assert result[8].forecast_mw == pytest.approx(29_570.0)
+
+
+def test_guard_caps_business_return_anchor_excess():
+    """Business return guard trims excessive morning overshoot against same-type anchor."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 6, 1)
+    raw = _make_raw_forecasts(target, 37_000.0)
+    adj = _make_raw_forecasts(target, 37_000.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"] == 9, "lag_24h"] = 33_000.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_mean"] = 35_000.0
+    inf.loc[inf["hour"] == 9, "lag_24h_business_type_mismatch"] = 1
+    inf.loc[inf["hour"] == 9, "temp_delta_24h"] = 1.0
+    inf.loc[inf["hour"] == 9, "temp_anomaly_doy"] = 0.0
+
+    result = guard.apply(raw, adj, inf)
+
+    # upper bound = 35000 + 500 + 100; excess 1400 * 0.6 = 840
+    assert result[9].forecast_mw == pytest.approx(36_160.0)
+    assert result[9].p95_lower_mw == pytest.approx(35_160.0)
+    assert result[8].forecast_mw == pytest.approx(37_000.0)
 
 
 def test_guard_does_not_lift_business_return_without_mismatch():

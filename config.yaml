@@ -147,17 +147,17 @@ intraday_correction:
     hours: [15, 16, 17, 18, 19]
     max_drop_mw: 1000        # avoid implausibly steep warm-afternoon line drops
   ramp_guard:
-    enabled: false
+    enabled: true
     min_reference_hour: 10   # avoid suppressing the real morning ramp
     max_lead_hours: 3        # guard only the nearest future hours
-    max_increase_mw_by_lead_hour: [1200, 1500, 2000]
-    max_decrease_mw_by_lead_hour: [1000, 1800, 2400]
+    max_increase_mw_by_lead_hour: [1800, 2400, 3000]
+    max_decrease_mw_by_lead_hour: [1600, 2600, 3600]
     observed_drop_relaxation:
       enabled: true
       min_recent_drop_mw: 700 # relax when actual demand is already falling quickly
       lookback_hours: 2
       skip_shape_guard: true
-      max_decrease_mw_by_lead_hour: [2000, 3600, 5000]
+      max_decrease_mw_by_lead_hour: [1600, 2800, 4200]
 
 forecast_snapshots:
   enabled: true
@@ -221,6 +221,13 @@ adjustment:
       lag24_warm_day_cap_enabled: true
       lag24_warm_day_max_increase_mw: 2500
       max_upward_offset_mw: 900
+      warm_day_decline_damping:
+        enabled: true
+        hours: [15, 16, 17, 18, 19]
+        max_same_business_delta_mw: 0
+        max_lag24_delta_mw: 500
+        offset_multiplier: 0.0
+        allow_negative_analog_shift: true
 
     business_return_anchor_shortfall:
       enabled: true
@@ -235,6 +242,15 @@ adjustment:
         9: 0.50
         10: 0.30
         11: 0.20
+    business_return_anchor_excess_cap:
+      enabled: true
+      target_hours: [8, 9, 10]
+      gap_threshold_mw: 1000
+      allowance_mw: 500
+      weather_allowance_mw_per_c: 100
+      max_weather_allowance_mw: 300
+      shrinkage: 0.6
+      max_clipping_mw: 900
 
   midday_transition_guard:
     enabled: true
