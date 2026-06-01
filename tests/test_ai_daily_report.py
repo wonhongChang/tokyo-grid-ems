@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from python.eval.ai_daily_report import (
+    PROJECT_OPENAI_API_KEY_ENV,
     _build_openai_fact_packet,
     _merge_openai_analysis,
     _openai_analysis_schema,
@@ -313,7 +314,7 @@ def test_ai_report_fact_packet_marks_signed_error_direction(tmp_path):
 
 def test_ai_daily_report_clarifies_intraday_snapshot_coverage_note(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
 
     def fake_openai_analysis(context, api_key, model):
         return {
@@ -387,7 +388,7 @@ def test_ai_daily_report_clarifies_intraday_snapshot_coverage_note(monkeypatch, 
 
 def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
     monkeypatch.delenv("OPENAI_DAILY_REPORT_MODEL", raising=False)
 
     def fake_openai_analysis(context, api_key, model):
@@ -599,7 +600,7 @@ def test_openai_merge_repairs_metric_terms_and_invalid_recommendation_links():
 
 def test_ai_daily_report_rejects_openai_signed_error_contradiction(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
 
     def fake_openai_analysis(context, api_key, model):
         return {
@@ -886,7 +887,7 @@ def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, t
             ],
         },
     )
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
 
     def fake_openai_analysis(context, api_key, model):
         fact_packet = context["factPacket"]
@@ -956,7 +957,7 @@ def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, t
 
 def test_ai_daily_report_rejects_empty_openai_sections(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
 
     def fake_openai_analysis(context, api_key, model):
         return {
@@ -1059,7 +1060,7 @@ def test_ai_daily_report_reuses_existing_report_when_skip_existing(monkeypatch, 
         "limitations": [],
     }
     _write_json(report_dir / f"{date_iso}.json", existing_report)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
 
     def fail_openai_call(*args, **kwargs):
         raise AssertionError("OpenAI should not be called for existing reports")
@@ -1093,7 +1094,7 @@ def test_ai_daily_reports_caps_openai_to_latest_korean_report(monkeypatch, tmp_p
             {"date": "2026-05-23", "availability": "ok"},
         ],
     })
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
     calls = []
 
     def fake_openai_analysis(context, api_key, model):
@@ -1138,7 +1139,7 @@ def test_ai_daily_reports_caps_openai_to_latest_korean_report(monkeypatch, tmp_p
 
 def test_ai_daily_reports_multilingual_uses_master_and_localization_calls(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path, "2026-05-23")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
     calls = []
 
     def fake_master_analysis(context, api_key, model):
@@ -1385,7 +1386,7 @@ def test_ai_daily_reports_multilingual_retries_latest_existing_fallback(monkeypa
         )
         _write_json(report_root / language / "2026-05-23.json", fallback_report)
 
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
     calls = []
 
     def fake_master_localization_chain(
@@ -1446,7 +1447,7 @@ def test_ai_daily_reports_multilingual_retries_latest_existing_fallback(monkeypa
 
 def test_ai_daily_reports_multilingual_falls_back_to_english_when_localization_fails(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path, "2026-05-23")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
 
     def fake_master_analysis(context, api_key, model):
         return {
@@ -1535,7 +1536,7 @@ def test_ai_daily_reports_multilingual_falls_back_to_english_when_localization_f
 
 def test_ai_daily_reports_multilingual_retries_invalid_localization_once(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path, "2026-05-23")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
     localization_calls = []
 
     def fake_master_analysis(context, api_key, model):

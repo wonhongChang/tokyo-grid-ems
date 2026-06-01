@@ -65,7 +65,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 5. **運用レポート** — deterministic指標をもとに生成する日次運用解説
    - 前日指標、主要な外れ、データ品質、運用補正メタデータを使用
    - OpenAIキーがない場合はルールベースfallbackレポートを表示
-   - `OPENAI_API_KEY`がある場合は英語マスター分析を作成し、韓国語/日本語にローカライズ
+   - `TOKYO_GRID_EMS_OPENAI_API_KEY`がある場合は英語マスター分析を作成し、韓国語/日本語にローカライズ
 
 ---
 
@@ -125,7 +125,7 @@ python python/etl/run_batch.py --input data/raw --out web/public
 
 # 任意: OpenAIベースの日次運用レポートを有効化
 # Windows PowerShell:
-# $env:OPENAI_API_KEY="..."
+# $env:TOKYO_GRID_EMS_OPENAI_API_KEY="..."
 # $env:OPENAI_DAILY_REPORT_MODEL="gpt-4o-mini"
 # $env:OPENAI_DAILY_REPORT_LOCALIZATION_MODEL="gpt-4o-mini"
 

@@ -125,7 +125,7 @@ jobs:
         if: steps.historical_etl.outputs.needed == 'true'
         run: python python/etl/run_batch.py
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TOKYO_GRID_EMS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_DAILY_REPORT_MODEL: ${{ vars.OPENAI_DAILY_REPORT_MODEL }}
           OPENAI_DAILY_REPORT_LOCALIZATION_MODEL: ${{ vars.OPENAI_DAILY_REPORT_LOCALIZATION_MODEL }}
           OPENAI_DAILY_REPORT_TIMEOUT_SECONDS: ${{ vars.OPENAI_DAILY_REPORT_TIMEOUT_SECONDS }}
@@ -137,7 +137,7 @@ jobs:
       - name: Refresh intraday actuals, forecasts, and status
         run: python python/etl/run_batch.py --status-only
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TOKYO_GRID_EMS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_DAILY_REPORT_MODEL: ${{ vars.OPENAI_DAILY_REPORT_MODEL }}
           OPENAI_DAILY_REPORT_LOCALIZATION_MODEL: ${{ vars.OPENAI_DAILY_REPORT_LOCALIZATION_MODEL }}
           OPENAI_DAILY_REPORT_TIMEOUT_SECONDS: ${{ vars.OPENAI_DAILY_REPORT_TIMEOUT_SECONDS }}

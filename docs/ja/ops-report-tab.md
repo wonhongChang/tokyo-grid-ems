@@ -41,7 +41,7 @@ Intraday/status-only実行は当日データと予測を更新しますが、運
 | 方式 | 条件 | 説明 |
 |------|------|------|
 | deterministic fallback | OpenAIキーがない、またはOpenAIを使わない場合 | Pythonルールで指標と主要な外れを要約 |
-| OpenAI解説 | `OPENAI_API_KEY`がある場合 | 圧縮されたfact packetをもとに自然言語の解説を生成 |
+| OpenAI解説 | `TOKYO_GRID_EMS_OPENAI_API_KEY`がある場合 | 圧縮されたfact packetをもとに自然言語の解説を生成 |
 
 OpenAIを使う場合でも、性能指標、入力参照、データ品質、カバレッジ分離、stage attribution、controller diagnosis、band qualityはPythonコードが固定します。OpenAIは指標を再計算しません。
 
@@ -196,7 +196,7 @@ OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180
 ```
 
-GitHub Actionsでは `OPENAI_API_KEY` secretだけで動作します。その他は必要に応じてrepository variablesで調整します。
+GitHub Actionsのrepository secret名は `OPENAI_API_KEY` のままでも構いませんが、workflow内ではプロジェクト専用の実行時変数 `TOKYO_GRID_EMS_OPENAI_API_KEY` にマッピングします。その他は必要に応じてrepository variablesで調整します。
 
 ---
 

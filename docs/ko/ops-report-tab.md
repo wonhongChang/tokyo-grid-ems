@@ -43,7 +43,7 @@ Intraday/status-only 실행은 오늘 데이터와 예측선을 갱신하지만,
 | 방식 | 조건 | 설명 |
 |------|------|------|
 | deterministic fallback | OpenAI 키가 없거나 호출하지 않을 때 | Python 규칙 기반으로 성능 지표와 주요 오차를 요약 |
-| OpenAI 해설 | `OPENAI_API_KEY`가 있을 때 | 압축된 fact packet을 바탕으로 자연어 원인 분석과 개선 후보를 생성 |
+| OpenAI 해설 | `TOKYO_GRID_EMS_OPENAI_API_KEY`가 있을 때 | 압축된 fact packet을 바탕으로 자연어 원인 분석과 개선 후보를 생성 |
 
 OpenAI를 사용하는 경우에도 성능 수치, 입력 파일 참조, 데이터 품질 정보, 커버리지 구분, stage attribution, controller diagnosis, band quality는 Python 코드가 고정합니다. OpenAI는 이 숫자들을 다시 계산하지 않고 해설 레이어만 생성합니다.
 
@@ -204,7 +204,7 @@ OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180
 ```
 
-GitHub Actions에는 `OPENAI_API_KEY` secret만 있어도 기본값으로 동작합니다. 나머지는 repository variables로 필요할 때만 조정합니다.
+GitHub Actions의 repository secret 이름은 `OPENAI_API_KEY`를 유지해도 되지만, workflow 안에서는 프로젝트 전용 런타임 변수인 `TOKYO_GRID_EMS_OPENAI_API_KEY`로 매핑합니다. 나머지는 repository variables로 필요할 때만 조정합니다.
 
 ---
 

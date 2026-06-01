@@ -41,7 +41,7 @@ Intraday/status-only runs update same-day data and forecasts, but do not rewrite
 | Mode | Condition | Description |
 |------|-----------|-------------|
 | deterministic fallback | No OpenAI key or OpenAI disabled | Python rules summarize metrics and top misses |
-| OpenAI narrative | `OPENAI_API_KEY` is available | OpenAI writes the narrative layer from a compact fact packet |
+| OpenAI narrative | `TOKYO_GRID_EMS_OPENAI_API_KEY` is available | OpenAI writes the narrative layer from a compact fact packet |
 
 Even with OpenAI enabled, deterministic Python code owns the performance metrics, input references, data-quality fields, coverage separation, stage attribution, controller diagnosis, and band quality. OpenAI does not recompute metrics.
 
@@ -196,7 +196,7 @@ OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180
 ```
 
-GitHub Actions only requires the `OPENAI_API_KEY` secret. Other values can be tuned later with repository variables.
+GitHub Actions can keep the repository secret named `OPENAI_API_KEY`, but the workflow maps it to the project-scoped runtime variable `TOKYO_GRID_EMS_OPENAI_API_KEY`. Other values can be tuned later with repository variables.
 
 ---
 

@@ -65,7 +65,7 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 5. **Ops Report** — Daily operational explanation generated from deterministic metrics
    - Uses previous-day metrics, top misses, data quality, and calibration metadata
    - Runs as a rules-based fallback when no OpenAI key is configured
-   - When `OPENAI_API_KEY` is available, creates an English master analysis and localizes it to Korean/Japanese
+   - When `TOKYO_GRID_EMS_OPENAI_API_KEY` is available, creates an English master analysis and localizes it to Korean/Japanese
 
 ---
 
@@ -125,7 +125,7 @@ python python/etl/run_batch.py --input data/raw --out web/public
 
 # Optional: enable OpenAI-backed daily ops reports
 # Windows PowerShell:
-# $env:OPENAI_API_KEY="..."
+# $env:TOKYO_GRID_EMS_OPENAI_API_KEY="..."
 # $env:OPENAI_DAILY_REPORT_MODEL="gpt-4o-mini"
 # $env:OPENAI_DAILY_REPORT_LOCALIZATION_MODEL="gpt-4o-mini"
 

@@ -1,9 +1,9 @@
 """Build daily operation analysis reports.
 
 The generator always produces a deterministic fallback report from the public
-JSON artifacts.  When OPENAI_API_KEY is available it can ask OpenAI for the
-narrative analysis layer, while keeping deterministic metrics and input
-references owned by this script.
+JSON artifacts.  When the project-scoped OpenAI key environment variable is
+available it can ask OpenAI for the narrative analysis layer, while keeping
+deterministic metrics and input references owned by this script.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ JST = ZoneInfo(TIMEZONE)
 SCHEMA_VERSION = "1.0.0"
 PROMPT_VERSION = "fallback_rules_v1"
 OPENAI_PROMPT_VERSION = "openai_ops_report_v4"
+PROJECT_OPENAI_API_KEY_ENV = "TOKYO_GRID_EMS_OPENAI_API_KEY"
 OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALES = "ko,en,ja"
@@ -4780,7 +4781,7 @@ def build_ai_daily_report(
     if fallback_report.get("availability") != "ok":
         return fallback_report
 
-    api_key = _clean_env_value("OPENAI_API_KEY")
+    api_key = _clean_env_value(PROJECT_OPENAI_API_KEY_ENV)
     should_use_openai = bool(api_key) if use_openai is None else use_openai
     if not should_use_openai or not api_key:
         return fallback_report
@@ -4873,7 +4874,7 @@ def build_ai_daily_reports(
         else _env_csv("OPENAI_DAILY_REPORT_LOCALES", OPENAI_DEFAULT_LOCALES)
     )
     latest_only = _env_bool("OPENAI_DAILY_REPORT_LATEST_ONLY", openai_latest_only)
-    api_key_available = bool(_clean_env_value("OPENAI_API_KEY"))
+    api_key_available = bool(_clean_env_value(PROJECT_OPENAI_API_KEY_ENV))
     reports = []
     for date_iso in dates:
         existing_report = None
@@ -4970,7 +4971,7 @@ def build_ai_daily_reports_multilingual(
         else _env_csv("OPENAI_DAILY_REPORT_LOCALES", OPENAI_DEFAULT_LOCALES)
     )
     latest_only = _env_bool("OPENAI_DAILY_REPORT_LATEST_ONLY", openai_latest_only)
-    api_key = _clean_env_value("OPENAI_API_KEY")
+    api_key = _clean_env_value(PROJECT_OPENAI_API_KEY_ENV)
     should_use_openai = bool(api_key) if use_openai is None else use_openai
     model = os.getenv("OPENAI_DAILY_REPORT_MODEL") or OPENAI_DEFAULT_MODEL
     localization_model = (
