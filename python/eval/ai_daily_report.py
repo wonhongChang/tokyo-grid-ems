@@ -42,6 +42,18 @@ SLOPE_MISMATCH_THRESHOLD_MW = 500.0
 ROLLING_PATTERN_LOOKBACK_DAYS = 7
 ROLLING_PATTERN_MIN_DIRECTION_DAYS = 2
 ROLLING_PATTERN_MIN_MEAN_BIAS_MW = 300.0
+PRIORITY_EVENT_LARGE_ERROR_MW = 1000.0
+PRIORITY_EVENT_LARGE_SHAPE_ERROR_MW = 1000.0
+PRIORITY_EVENT_BAND_GAP_MW = 300.0
+PRIORITY_EVENT_MAX_ITEMS = 6
+
+TIME_BAND_HOUR_RANGES = {
+    "overnight": range(0, 6),
+    "morning_ramp": range(6, 11),
+    "daytime": range(11, 16),
+    "late_afternoon": range(16, 19),
+    "evening": range(19, 24),
+}
 
 FEATURE_CATALOG = [
     "intraday_correction.business_type_transition_prior",
@@ -1803,6 +1815,256 @@ def _build_freeze_context(
     }
 
 
+def _time_band_code_for_hour(hour: int | None) -> str | None:
+    if hour is None:
+        return None
+    for code, hours in TIME_BAND_HOUR_RANGES.items():
+        if hour in hours:
+            return code
+    return None
+
+
+def _time_band_label(operation: dict | None, code: str | None) -> str | None:
+    if not code or not isinstance(operation, dict):
+        return code
+    for band in operation.get("timeBands") or []:
+        if not isinstance(band, dict):
+            continue
+        if band.get("code") == code:
+            return band.get("label") or code
+    return code
+
+
+def _feature_candidates_for_hour(hour: int | None) -> list[str]:
+    candidates = ["lag_24h", "recent_same_business_type_mean"]
+    if hour is None:
+        return candidates
+    if 6 <= hour <= 10:
+        candidates.extend([
+            "lag_24h_business_type_mismatch",
+            "intraday_correction.business_type_transition",
+            "intraday_correction.positive_residual_mitigation",
+        ])
+    elif 11 <= hour <= 15:
+        candidates.extend([
+            "business_midday_x_lag_24h_delta",
+            "business_midday_x_recent_delta_mean",
+            "intraday_correction.positive_residual_slope_damping",
+        ])
+    elif 16 <= hour <= 19:
+        candidates.extend([
+            "temp_delta_1h",
+            "apparent_temp_delta_1h",
+            "intraday_correction.evening_decline_continuity_guard",
+        ])
+    elif hour >= 20:
+        candidates.extend([
+            "lag_168h",
+            "intraday_correction.day_boundary_carryover",
+        ])
+    return list(dict.fromkeys(candidates))
+
+
+def _priority_event_severity(score: float | None) -> str:
+    if score is not None and score >= 1500.0:
+        return "warning"
+    return "info"
+
+
+def _build_analysis_priorities(
+    operation: dict | None,
+    diagnostic_context: dict | None,
+) -> dict | None:
+    if not isinstance(operation, dict):
+        return None
+
+    events: list[dict] = []
+    summary = operation.get("summary") or {}
+    top_misses = _annotate_top_misses((operation.get("topMisses") or [])[:3])
+    for rank, miss in enumerate(top_misses, start=1):
+        hour = _hour_from_point(miss)
+        abs_error = _as_float(miss.get("modelAbsErrorMw"))
+        if abs_error is None or abs_error < PRIORITY_EVENT_LARGE_ERROR_MW:
+            continue
+        tepco_abs = _as_float(miss.get("tepcoAbsErrorMw"))
+        score = abs_error
+        time_band = _time_band_code_for_hour(hour)
+        events.append(_drop_none_values({
+            "id": f"top_miss_h{hour}",
+            "eventType": "large_absolute_error",
+            "rank": rank,
+            "priorityScoreMw": _round_number(score),
+            "severity": _priority_event_severity(score),
+            "hour": hour,
+            "timeBand": time_band,
+            "timeBandLabel": _time_band_label(operation, time_band),
+            "modelErrorMw": _round_number(miss.get("modelErrorMw")),
+            "modelAbsErrorMw": _round_number(abs_error),
+            "tepcoAbsErrorMw": _round_number(tepco_abs),
+            "modelErrorDirection": miss.get("modelErrorDirection"),
+            "comparisonToTepcoAbsGapMw": (
+                _round_number(abs_error - tepco_abs)
+                if tepco_abs is not None
+                else None
+            ),
+            "relatedFeatureCandidates": _feature_candidates_for_hour(hour),
+            "analysisRole": (
+                "forecast_accuracy_root_cause_candidate; cite this before "
+                "generic lag or weather explanations"
+            ),
+        }))
+
+    shape = operation.get("shape") or {}
+    for rank, item in enumerate(shape.get("largeShapeBreaks") or [], start=1):
+        if not isinstance(item, dict):
+            continue
+        delta_error = _as_float(item.get("modelDeltaErrorMw"))
+        abs_delta_error = _as_float(item.get("modelAbsDeltaErrorMw"))
+        score = abs_delta_error if abs_delta_error is not None else (
+            abs(delta_error) if delta_error is not None else None
+        )
+        if score is None or score < PRIORITY_EVENT_LARGE_SHAPE_ERROR_MW:
+            continue
+        from_hour = _hour_from_point({"hour": item.get("fromHour")})
+        to_hour = _hour_from_point({"hour": item.get("toHour")})
+        anchor_hour = to_hour if to_hour is not None else from_hour
+        time_band = _time_band_code_for_hour(anchor_hour)
+        direction = None
+        if delta_error is not None:
+            direction = "model_rise_too_fast" if delta_error > 0 else "model_drop_too_fast"
+        feature_candidates = _feature_candidates_for_hour(anchor_hour)
+        if direction == "model_drop_too_fast":
+            feature_candidates.extend([
+                "intraday_correction.negative_residual_continuity_floor",
+                "serving.published_forecast_freeze",
+            ])
+        elif direction == "model_rise_too_fast":
+            feature_candidates.extend([
+                "intraday_correction.positive_residual_slope_damping",
+                "intraday_correction.evening_decline_continuity_guard",
+            ])
+        events.append(_drop_none_values({
+            "id": f"shape_break_{from_hour}_{to_hour}",
+            "eventType": "shape_break",
+            "rank": rank,
+            "priorityScoreMw": _round_number(score),
+            "severity": _priority_event_severity(score),
+            "fromHour": from_hour,
+            "toHour": to_hour,
+            "timeBand": time_band,
+            "timeBandLabel": _time_band_label(operation, time_band),
+            "actualDeltaMw": _round_number(item.get("actualDeltaMw")),
+            "modelDeltaMw": _round_number(item.get("modelDeltaMw")),
+            "tepcoDeltaMw": _round_number(item.get("tepcoDeltaMw")),
+            "modelDeltaErrorMw": _round_number(delta_error),
+            "modelAbsDeltaErrorMw": _round_number(score),
+            "shapeDirection": direction,
+            "relatedFeatureCandidates": list(dict.fromkeys(feature_candidates)),
+            "analysisRole": (
+                "shape_risk_root_cause_candidate; explain curve dynamics, "
+                "not only point MAE"
+            ),
+        }))
+
+    for rank, band in enumerate(_annotate_time_bands(operation.get("timeBands")), start=1):
+        if not isinstance(band, dict):
+            continue
+        model_mae = _as_float(band.get("modelMaeMw"))
+        tepco_mae = _as_float(band.get("tepcoMaeMw"))
+        if model_mae is None or tepco_mae is None:
+            continue
+        gap = model_mae - tepco_mae
+        if gap < PRIORITY_EVENT_BAND_GAP_MW:
+            continue
+        events.append(_drop_none_values({
+            "id": f"band_gap_{band.get('code') or rank}",
+            "eventType": "time_band_underperformance",
+            "rank": rank,
+            "priorityScoreMw": _round_number(gap),
+            "severity": _priority_event_severity(gap),
+            "timeBand": band.get("code"),
+            "timeBandLabel": band.get("label"),
+            "modelMaeMw": _round_number(model_mae),
+            "tepcoMaeMw": _round_number(tepco_mae),
+            "maeGapMw": _round_number(gap),
+            "modelBiasMw": _round_number(band.get("modelBiasMw")),
+            "modelBiasDirection": band.get("modelBiasDirection"),
+            "relatedFeatureCandidates": [
+                "lag_24h",
+                "recent_same_business_type_mean",
+                "temp_delta_1h",
+                "intraday_correction.positive_residual_slope_damping",
+            ],
+            "analysisRole": (
+                "band_level_context; combine with topMisses or shapeBreaks "
+                "before making a root-cause claim"
+            ),
+        }))
+
+    freeze_impact = (diagnostic_context or {}).get("freezeImpact") or {}
+    for rank, gap in enumerate(freeze_impact.get("largestGaps") or [], start=1):
+        freeze_gap = _as_float(gap.get("freezeGapMw"))
+        if freeze_gap is None:
+            continue
+        score = abs(freeze_gap)
+        if score < FREEZE_GAP_THRESHOLD_MW:
+            continue
+        hour = _hour_from_point(gap)
+        events.append(_drop_none_values({
+            "id": f"freeze_gap_h{hour}",
+            "eventType": "published_recalculated_gap",
+            "rank": rank,
+            "priorityScoreMw": _round_number(score),
+            "severity": _priority_event_severity(score),
+            "hour": hour,
+            "timeBand": _time_band_code_for_hour(hour),
+            "publishedForecastMw": _round_number(gap.get("publishedForecastMw")),
+            "latestRecalculatedForecastMw": _round_number(
+                gap.get("latestRecalculatedForecastMw")
+            ),
+            "freezeGapMw": _round_number(freeze_gap),
+            "relatedFeatureCandidates": ["serving.published_forecast_freeze"],
+            "analysisRole": (
+                "serving_shape_risk_candidate; distinguish UI serving line "
+                "from raw model accuracy"
+            ),
+        }))
+
+    if not events:
+        return None
+
+    events = sorted(
+        events,
+        key=lambda item: (
+            float(item.get("priorityScoreMw") or 0.0),
+            1 if item.get("eventType") == "large_absolute_error" else 0,
+        ),
+        reverse=True,
+    )[:PRIORITY_EVENT_MAX_ITEMS]
+    return {
+        "selectionRule": (
+            "Generic, data-derived ranking of large point errors, shape breaks, "
+            "time-band underperformance, and published-vs-recalculated gaps. "
+            "These are evidence priorities, not prewritten conclusions."
+        ),
+        "mustDiscussEventIds": [event.get("id") for event in events[:3] if event.get("id")],
+        "events": events,
+        "recommendationRule": (
+            "Recommendations should target one relatedFeatureCandidates value "
+            "from a discussed event and describe a replay/backtest experiment."
+        ),
+        "dailyVerdict": _drop_none_values({
+            "verdict": summary.get("verdict"),
+            "modelMaeMw": _round_number(summary.get("modelMaeMw")),
+            "tepcoMaeMw": _round_number(summary.get("tepcoMaeMw")),
+            "modelWapePct": _round_number(summary.get("modelWapePct"), digits=3),
+            "tepcoWapePct": _round_number(summary.get("tepcoWapePct"), digits=3),
+            "modelAdvantageHours": summary.get("modelAdvantageHours"),
+            "tepcoAdvantageHours": summary.get("tepcoAdvantageHours"),
+        }),
+    }
+
+
 STAGE_ORDER = [
     "raw_lgbm",
     "analog_adjusted",
@@ -2610,6 +2872,10 @@ def _build_openai_fact_packet(
         "performance": primary.get("performance"),
         "dataQuality": primary.get("dataQuality"),
         "coverageContext": diagnostic_context.get("coverageContext"),
+        "analysisPriorities": _build_analysis_priorities(
+            operation,
+            diagnostic_context,
+        ),
         "operationFacts": operation_facts,
         "diagnosticFacts": diagnostic_facts,
         "calibrationFacts": calibration_facts,
@@ -2807,11 +3073,16 @@ def _openai_analysis_schema() -> dict:
 def _openai_domain_guidelines() -> str:
     return (
         "Reason like a power-demand operations analyst, not a text summarizer. "
-        "Use only numeric facts, weather diagnostics, topMisses, timeBands, "
-        "focusedRows, controlContext, controllerDiagnosis, stageAttribution, "
+        "Use only numeric facts, analysisPriorities, weather diagnostics, "
+        "topMisses, timeBands, focusedRows, controlContext, controllerDiagnosis, stageAttribution, "
         "bandQuality, freezeContext, rollingPatternContext, and calibration flags "
         "from factPacket. Treat focusedRows as the detailed window around "
         "large misses or calibration-shape risk, not as a full-day table. "
+        "analysisPriorities is a generic evidence ranking produced by Python; "
+        "it is not a prewritten conclusion. Unless contradicted by stronger "
+        "evidence, address the top mustDiscussEventIds before generic lag or "
+        "weather commentary, and cite the concrete hours and metrics from the "
+        "matching event. "
         "Strict sign convention: modelErrorMw and modelBiasMw are forecast "
         "minus actual. Positive values mean overprediction or forecast above "
         "actual; negative values mean underprediction or forecast below actual. "
@@ -2842,6 +3113,9 @@ def _openai_domain_guidelines() -> str:
         "If controllerDiagnosis.flags contains mismatchedGradient, explain the "
         "residual direction versus latest actual slope conflict instead of giving "
         "only a generic time-band bias. "
+        "When analysisPriorities contains large_absolute_error and shape_break "
+        "events, return at least one hypothesis that connects point accuracy "
+        "and curve dynamics instead of discussing only a broad time band. "
         "When both topMisses and stage/freeze diagnostics exist, return at least "
         "two hypotheses: one for forecast accuracy and one for serving/calibration "
         "shape risk. "
@@ -2861,7 +3135,8 @@ def _openai_domain_guidelines() -> str:
         "intraday_correction.negative_residual_recovery_damping thresholds or "
         "handoff timing need tuning; if direct evidence is absent, mark it "
         "not_observed with low confidence. Feature recommendations must name "
-        "a concrete target from featureCatalog when possible and must propose "
+        "a concrete target from featureCatalog or "
+        "analysisPriorities.relatedFeatureCandidates when possible and must propose "
         "a specific trigger, threshold, decay, shrinkage, or validation replay; "
         "Feature recommendations must link only to hypothesis IDs that are "
         "present in the output, and the recommendation target should match one "
@@ -2915,9 +3190,13 @@ def _openai_instructions(language: str) -> str:
         "metrics consistent with factPacket.performance. "
         "Use factPacket as the source of facts; it already contains summary "
         "metrics, key miss windows, focused rows around abnormal windows, "
-        "time-band statistics, calibration flags, control context, freeze-gap "
+        "analysisPriorities, time-band statistics, calibration flags, control context, freeze-gap "
         "context, stage attribution, controller diagnosis, band-quality "
         "coverage, rolling pattern context, and snapshot summaries. "
+        "Start from factPacket.analysisPriorities when selecting the two or "
+        "three root-cause hypotheses; it ranks the day's large point errors, "
+        "shape breaks, time-band gaps, and serving freeze gaps without writing "
+        "the conclusion for you. "
         "Do not recompute deltas yourself: use stageAttribution stage "
         "value_mw/delta_mw pairs, controllerDiagnosis flags, and bandQuality "
         "coverage fields exactly as provided. "
@@ -2991,12 +3270,15 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "Return reports keyed by locale. Use only the provided factPacket; "
         "do not invent metrics, hours, feature names, or calibration events. "
         "The factPacket contains summary metrics, key miss windows, focused "
-        "rows around abnormal windows, time-band statistics, calibration flags, "
+        "rows around abnormal windows, analysisPriorities, time-band statistics, calibration flags, "
         "control context, freeze-gap context, stage attribution, controller "
         "diagnosis, band-quality coverage, rolling pattern context, and snapshot summaries. Do not recompute "
         "deltas yourself: use stageAttribution stage value_mw/delta_mw pairs, "
         "controllerDiagnosis flags, and bandQuality coverage fields exactly as "
-        "provided. Do not describe "
+        "provided. Start from factPacket.analysisPriorities when selecting the "
+        "two or three root-cause hypotheses; it ranks the day's large point "
+        "errors, shape breaks, time-band gaps, and serving freeze gaps without "
+        "writing the conclusion for you. Do not describe "
         "this as missing raw time-series data; if a limitation is needed, say "
         "the analysis is based on summarized operational evidence and retained "
         "calibration snapshots. "

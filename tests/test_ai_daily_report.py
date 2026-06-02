@@ -312,6 +312,99 @@ def test_ai_report_fact_packet_marks_signed_error_direction(tmp_path):
     assert focused["modelErrorDirection"] == "overprediction"
 
 
+def test_ai_report_fact_packet_prioritizes_key_events(tmp_path):
+    date_iso = "2026-05-23"
+    _write_operation_fixture(tmp_path, date_iso)
+    operation_path = tmp_path / "reports" / "daily" / f"{date_iso}.json"
+    operation = json.loads(operation_path.read_text(encoding="utf-8"))
+    operation["timeBands"] = [
+        {
+            "code": "morning_ramp",
+            "label": "06-10",
+            "hours": 5,
+            "modelMaeMw": 1200.0,
+            "tepcoMaeMw": 300.0,
+            "modelBiasMw": 800.0,
+        },
+        {
+            "code": "late_afternoon",
+            "label": "16-18",
+            "hours": 3,
+            "modelMaeMw": 1500.0,
+            "tepcoMaeMw": 700.0,
+            "modelBiasMw": 500.0,
+        },
+    ]
+    operation["shape"] = {
+        "largeShapeBreaks": [
+            {
+                "fromHour": 16,
+                "toHour": 17,
+                "actualDeltaMw": -1320.0,
+                "modelDeltaMw": -4317.2,
+                "tepcoDeltaMw": -1540.0,
+                "modelDeltaErrorMw": -2997.2,
+                "modelAbsDeltaErrorMw": 2997.2,
+            }
+        ]
+    }
+    _write_json(operation_path, operation)
+    _write_json(
+        tmp_path
+        / "reports"
+        / "internal"
+        / "operational-calibration"
+        / f"{date_iso}.json",
+        {
+            "schemaVersion": "1.0.0",
+            "date": date_iso,
+            "correction": {"applied": True},
+            "hourlyDiagnostics": [
+                {
+                    "hour": 17,
+                    "ts": f"{date_iso}T17:00:00+09:00",
+                    "postCalibrationForecastMw": 19_000.0,
+                    "preCalibrationForecastMw": 19_000.0,
+                }
+            ],
+        },
+    )
+    forecast_path = tmp_path / "forecast" / f"{date_iso}.json"
+    forecast = json.loads(forecast_path.read_text(encoding="utf-8"))
+    forecast["series"][17]["forecastMw"] = 21_200.0
+    _write_json(forecast_path, forecast)
+
+    report = build_ai_daily_report(
+        tmp_path,
+        date_iso,
+        generated_at="2026-05-24T08:20:00+09:00",
+        use_openai=False,
+    )
+
+    fact_packet = _build_openai_fact_packet(tmp_path, {"ko": report})
+    priorities = fact_packet["analysisPriorities"]
+    event_types = [event["eventType"] for event in priorities["events"]]
+
+    assert priorities["selectionRule"].startswith("Generic, data-derived")
+    assert "shape_break" in event_types
+    assert "large_absolute_error" in event_types
+    assert "published_recalculated_gap" in event_types
+    assert "shape_break_16_17" in priorities["mustDiscussEventIds"]
+    shape_event = next(
+        event for event in priorities["events"]
+        if event["eventType"] == "shape_break"
+    )
+    assert shape_event["shapeDirection"] == "model_drop_too_fast"
+    assert "intraday_correction.negative_residual_continuity_floor" in (
+        shape_event["relatedFeatureCandidates"]
+    )
+    freeze_event = next(
+        event for event in priorities["events"]
+        if event["eventType"] == "published_recalculated_gap"
+    )
+    assert freeze_event["freezeGapMw"] == 2200.0
+
+
 def test_ai_daily_report_clarifies_intraday_snapshot_coverage_note(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path)
     monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
