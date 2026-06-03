@@ -31,7 +31,7 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | q50 | 中心予測値 |
 | q975 | p95上側区間推定 |
 
-ダッシュボードではq50を予測線として使用します。q025/q975はp95予測バンドとして表示し、p99風の広い区間はq025/q975の幅から拡張します。片側のquantile区間がq50近くに潰れた場合、反対側の大きな不確実性をそのまま反映せず、その方向には最小幅のみを維持します。
+ダッシュボードではq50を予測線として使用します。q025/q975はp95予測バンドとして表示し、p99風の広い区間はq025/q975の幅から拡張します。片側のquantile区間がq50近くに潰れた場合、反対側の大きな不確実性をそのまま反映せず、その方向には最小幅のみを維持します。独立したquantileモデルが気象regime変化後に片側tailだけを稀に過度に広げる場合は、interval sanity calibrationがp95最大half-widthと上下非対称比率を制限し、q50予測線は変更しません。
 
 最小学習データ:
 
@@ -131,7 +131,7 @@ residual = actualMw - modelForecastMw
 
 12:00の時間遷移改善は [2026-05-20 昼時間帯の遷移ガード](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) と [2026-05-27 昼休み遷移ガード再有効化](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) に整理しています。
 
-最新の運用補正レイヤーは [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)、[2026-05-25 正の残差スロープ減衰](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)、[2026-05-27 朝ランプ継続ガード](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)、[2026-05-27 夕方下落継続ガード](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)、[2026-05-30 負の残差連続性 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md) に整理しています。
+最新の運用補正レイヤーは [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)、[2026-05-25 正の残差スロープ減衰](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)、[2026-05-27 朝ランプ継続ガード](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)、[2026-05-27 夕方下落継続ガード](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)、[2026-05-30 負の残差連続性 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)、[2026-06-03 予測区間の上側 tail 安定化](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md) に整理しています。
 
 ---
 

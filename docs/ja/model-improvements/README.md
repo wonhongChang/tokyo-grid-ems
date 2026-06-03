@@ -6,6 +6,10 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ---
 
+## 2026-06
+
+- [2026-06-03 予測区間の上側 tail 安定化](model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
+
 ## 2026-05
 
 - [2026-05-30 負の残差連続性 floor](model-improvement-2026-05-30-negative-residual-continuity-floor.md)

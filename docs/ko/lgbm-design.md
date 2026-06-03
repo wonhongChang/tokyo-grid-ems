@@ -31,7 +31,7 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | q50 | 중심 예측값 |
 | q975 | p95 상단 구간 추정 |
 
-대시보드는 q50을 예측선으로 사용합니다. q025/q975는 p95 예측 밴드로 표시하고, p99 스타일의 더 넓은 구간은 q025/q975 폭을 바탕으로 확장합니다. 한쪽 quantile 구간이 q50 근처로 붙는 경우에는 반대쪽의 큰 불확실성을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다.
+대시보드는 q50을 예측선으로 사용합니다. q025/q975는 p95 예측 밴드로 표시하고, p99 스타일의 더 넓은 구간은 q025/q975 폭을 바탕으로 확장합니다. 한쪽 quantile 구간이 q50 근처로 붙는 경우에는 반대쪽의 큰 불확실성을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다. 독립 quantile 모델이 날씨 regime 변화 이후 한쪽 tail만 드물게 과도하게 넓히는 경우에는 interval sanity calibration이 p95 최대 half-width와 상단/하단 비대칭 비율을 제한하며, q50 예측선은 변경하지 않습니다.
 
 최소 학습 데이터:
 
@@ -131,7 +131,7 @@ residual = actualMw - modelForecastMw
 
 12:00 시간 전환 개선은 [2026-05-20 점심 시간대 전환 guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md)와 [2026-05-27 점심 전환 가드 재활성화](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md)에 정리했습니다.
 
-최신 운영 보정 레이어는 [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [2026-05-25 양수 잔차 슬로프 감쇠](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [2026-05-27 오전 램프 연속성 가드](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [2026-05-27 저녁 하락 연속성 가드](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [2026-05-30 음수 잔차 연속성 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)에 정리했습니다.
+최신 운영 보정 레이어는 [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [2026-05-25 양수 잔차 슬로프 감쇠](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [2026-05-27 오전 램프 연속성 가드](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [2026-05-27 저녁 하락 연속성 가드](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [2026-05-30 음수 잔차 연속성 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [2026-06-03 예측 구간 상단 tail 안정화](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)에 정리했습니다.
 
 ---
 

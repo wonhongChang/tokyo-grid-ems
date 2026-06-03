@@ -31,7 +31,7 @@ The statistical baseline (`baseline_dow_hour_mean`) remains as a fallback when L
 | q50 | point forecast |
 | q975 | upper p95 interval estimate |
 
-The dashboard uses q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread. When one side of the quantile interval collapses near q50, the pipeline keeps only a minimum width on that side instead of mirroring the opposite side's larger uncertainty.
+The dashboard uses q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread. When one side of the quantile interval collapses near q50, the pipeline keeps only a minimum width on that side instead of mirroring the opposite side's larger uncertainty. When an independent quantile model produces a rare one-sided tail explosion after a weather-regime shift, interval sanity calibration caps the maximum p95 half-width and the upper/lower asymmetry ratio without changing q50.
 
 Minimum training data:
 
@@ -129,7 +129,7 @@ See [Business-Type Lag Features](model-improvements/model-improvement-2026-05-16
 
 See [Midday Transition Guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) and [Midday Transition Guard Re-enabled](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) for the 12:00 lag-shape follow-up.
 
-See [Business Return Anchor Shortfall Guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [Positive Residual Slope Damping](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [Morning Ramp Continuity Guard](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [Evening Decline Continuity Guard](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), and [Negative Residual Continuity Floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md) for the latest operational guard layers.
+See [Business Return Anchor Shortfall Guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [Positive Residual Slope Damping](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [Morning Ramp Continuity Guard](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [Evening Decline Continuity Guard](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [Negative Residual Continuity Floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), and [Forecast Interval Tail Sanity Guard](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md) for the latest operational guard layers.
 
 ---
 

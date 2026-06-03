@@ -6,6 +6,10 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ---
 
+## 2026-06
+
+- [2026-06-03 forecast interval tail sanity guard](model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
+
 ## 2026-05
 
 - [2026-05-30 negative residual continuity floor](model-improvement-2026-05-30-negative-residual-continuity-floor.md)

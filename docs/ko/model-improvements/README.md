@@ -6,6 +6,10 @@
 
 ---
 
+## 2026-06
+
+- [2026-06-03 예측 구간 상단 tail 안정화](model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
+
 ## 2026-05
 
 - [2026-05-30 음수 잔차 연속성 floor](model-improvement-2026-05-30-negative-residual-continuity-floor.md)
