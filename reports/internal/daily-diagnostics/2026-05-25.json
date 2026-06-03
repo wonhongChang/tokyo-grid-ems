@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-06-03T17:05:46+09:00",
+  "generatedAt": "2026-06-03T19:01:18+09:00",
   "date": "2026-05-25",
   "availability": "ok",
   "visibility": {
@@ -17,7 +17,7 @@
   "operationReport": {
     "schemaVersion": "1.0.0",
     "timezone": "Asia/Tokyo",
-    "generatedAt": "2026-06-03T17:05:46+09:00",
+    "generatedAt": "2026-06-03T19:01:18+09:00",
     "date": "2026-05-25",
     "availability": "ok",
     "model": {
@@ -464,6 +464,195 @@
         "modelBiasMw": 26.9,
         "modelMaeMw": 319.2,
         "assessment": "neutral"
+      }
+    ],
+    "morningTransition": {
+      "rows": 6,
+      "modelMaeMw": 549.5,
+      "modelBiasMw": -366.5,
+      "maxErrorHour": 9,
+      "maxAbsErrorMw": 1001.2,
+      "morningLagDeltaExcessMeanMw": -1132.9,
+      "coolingDelta24hMeanC": 0.6,
+      "publishedVsRecalculatedGapMaxAbsMw": 526.5,
+      "causeTagCounts": {
+        "business-return": 4,
+        "humidity-ramp": 1
+      }
+    }
+  },
+  "morningTransitionDiagnostics": {
+    "schemaVersion": "1.0.0",
+    "hours": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "summary": {
+      "rows": 6,
+      "modelMaeMw": 549.5,
+      "modelBiasMw": -366.5,
+      "maxErrorHour": 9,
+      "maxAbsErrorMw": 1001.2,
+      "morningLagDeltaExcessMeanMw": -1132.9,
+      "coolingDelta24hMeanC": 0.6,
+      "publishedVsRecalculatedGapMaxAbsMw": 526.5,
+      "causeTagCounts": {
+        "business-return": 4,
+        "humidity-ramp": 1
+      }
+    },
+    "tagDefinitions": {
+      "lag-overheat/cooler-day": "lag_24h ramp exceeds recent same-business ramp while cooling load falls, and the served model overpredicts.",
+      "humidity-ramp": "morning demand is underpredicted while humidity or discomfort is high enough to indicate early cooling demand.",
+      "business-return": "today and lag_24h differ in business/non-business type, with a material morning error.",
+      "intraday-carryover": "post-calibration residual carryover worsens the pre-calibration error.",
+      "freeze": "served forecast differs materially from the latest recalculated post-calibration line."
+    },
+    "rows": [
+      {
+        "hour": 6,
+        "rawForecastMw": 22731.8,
+        "preCalibrationForecastMw": 22707.8,
+        "postCalibrationForecastMw": 22707.8,
+        "servedForecastMw": 22399,
+        "actualMw": 21850,
+        "modelErrorMw": 549,
+        "publishedVsRecalculatedGapMw": -308.8,
+        "lag24HourlyDeltaMw": -220,
+        "recentSameBusinessTypeDeltaMeanMw": 901.2,
+        "morningLagDeltaExcessMw": -1121.2,
+        "lag24BusinessTypeMismatch": 1,
+        "tempC": 18,
+        "coolingDelta24hC": 0,
+        "humidityPct": 89,
+        "discomfortIndex": 64,
+        "weatherSource": "AMEDAS_ACTUAL",
+        "weatherSourceConfidence": "observed",
+        "residualAdjustmentMw": null,
+        "causeTags": [
+          "business-return"
+        ]
+      },
+      {
+        "hour": 7,
+        "rawForecastMw": 24786.5,
+        "preCalibrationForecastMw": 24744.9,
+        "postCalibrationForecastMw": 24744.9,
+        "servedForecastMw": 24218.4,
+        "actualMw": 24400,
+        "modelErrorMw": -181.6,
+        "publishedVsRecalculatedGapMw": -526.5,
+        "lag24HourlyDeltaMw": 580,
+        "recentSameBusinessTypeDeltaMeanMw": 2213.8,
+        "morningLagDeltaExcessMw": -1633.8,
+        "lag24BusinessTypeMismatch": 1,
+        "tempC": 19.8,
+        "coolingDelta24hC": 0,
+        "humidityPct": 79,
+        "discomfortIndex": 66.5,
+        "weatherSource": "AMEDAS_ACTUAL",
+        "weatherSourceConfidence": "observed",
+        "residualAdjustmentMw": null,
+        "causeTags": []
+      },
+      {
+        "hour": 8,
+        "rawForecastMw": 27983.1,
+        "preCalibrationForecastMw": 27895.8,
+        "postCalibrationForecastMw": 27895.8,
+        "servedForecastMw": 27459.2,
+        "actualMw": 28080,
+        "modelErrorMw": -620.8,
+        "publishedVsRecalculatedGapMw": -436.6,
+        "lag24HourlyDeltaMw": 930,
+        "recentSameBusinessTypeDeltaMeanMw": 3237.5,
+        "morningLagDeltaExcessMw": -2307.5,
+        "lag24BusinessTypeMismatch": 1,
+        "tempC": 21,
+        "coolingDelta24hC": 0,
+        "humidityPct": 72,
+        "discomfortIndex": 68,
+        "weatherSource": "AMEDAS_ACTUAL",
+        "weatherSourceConfidence": "observed",
+        "residualAdjustmentMw": null,
+        "causeTags": [
+          "humidity-ramp",
+          "business-return"
+        ]
+      },
+      {
+        "hour": 9,
+        "rawForecastMw": 30114.3,
+        "preCalibrationForecastMw": 30347.6,
+        "postCalibrationForecastMw": 30347.6,
+        "servedForecastMw": 30128.8,
+        "actualMw": 31130,
+        "modelErrorMw": -1001.2,
+        "publishedVsRecalculatedGapMw": -218.8,
+        "lag24HourlyDeltaMw": 650,
+        "recentSameBusinessTypeDeltaMeanMw": 2970,
+        "morningLagDeltaExcessMw": -2320.0,
+        "lag24BusinessTypeMismatch": 1,
+        "tempC": 22.7,
+        "coolingDelta24hC": 0.7,
+        "humidityPct": 61,
+        "discomfortIndex": 69.7,
+        "weatherSource": "AMEDAS_ACTUAL",
+        "weatherSourceConfidence": "observed",
+        "residualAdjustmentMw": null,
+        "causeTags": [
+          "business-return"
+        ]
+      },
+      {
+        "hour": 10,
+        "rawForecastMw": 31021.9,
+        "preCalibrationForecastMw": 31415.7,
+        "postCalibrationForecastMw": 31415.7,
+        "servedForecastMw": 31557.8,
+        "actualMw": 32290,
+        "modelErrorMw": -732.2,
+        "publishedVsRecalculatedGapMw": 142.1,
+        "lag24HourlyDeltaMw": 1110,
+        "recentSameBusinessTypeDeltaMeanMw": 956.2,
+        "morningLagDeltaExcessMw": 153.8,
+        "lag24BusinessTypeMismatch": 1,
+        "tempC": 23.2,
+        "coolingDelta24hC": 1.2,
+        "humidityPct": 59,
+        "discomfortIndex": 70.2,
+        "weatherSource": "AMEDAS_ACTUAL",
+        "weatherSourceConfidence": "observed",
+        "residualAdjustmentMw": null,
+        "causeTags": [
+          "business-return"
+        ]
+      },
+      {
+        "hour": 11,
+        "rawForecastMw": 32346.1,
+        "preCalibrationForecastMw": 32596.1,
+        "postCalibrationForecastMw": 32596.1,
+        "servedForecastMw": 32577.6,
+        "actualMw": 32790,
+        "modelErrorMw": -212.4,
+        "publishedVsRecalculatedGapMw": -18.5,
+        "lag24HourlyDeltaMw": 880,
+        "recentSameBusinessTypeDeltaMeanMw": 448.8,
+        "morningLagDeltaExcessMw": 431.2,
+        "lag24BusinessTypeMismatch": 1,
+        "tempC": 23.5,
+        "coolingDelta24hC": 1.5,
+        "humidityPct": 62,
+        "discomfortIndex": 70.9,
+        "weatherSource": "AMEDAS_ACTUAL",
+        "weatherSourceConfidence": "observed",
+        "residualAdjustmentMw": null,
+        "causeTags": []
       }
     ]
   },
