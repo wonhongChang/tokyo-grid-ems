@@ -12,6 +12,7 @@ from python.forecast.feature_builder import (
     build_inference_features,
     build_training_features,
 )
+from python.forecast.interval_calibration import calibrate_p95_half_widths
 
 try:
     from lightgbm import LGBMRegressor
@@ -28,9 +29,6 @@ _LGBM_PARAMS = {
     "colsample_bytree": 0.8,
     "verbose": -1,
 }
-
-_DEFAULT_MIN_P95_HALF_WIDTH_MW = 500.0
-
 
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
@@ -66,29 +64,11 @@ class LGBMForecaster:
         half_lo: float,
         half_hi: float,
     ) -> tuple[float, float]:
-        interval_config = (getattr(self, "config", {}) or {}).get(
-            "interval_calibration",
-            {},
+        return calibrate_p95_half_widths(
+            half_lo,
+            half_hi,
+            getattr(self, "config", {}) or {},
         )
-        min_half_width = max(
-            0.0,
-            float(
-                interval_config.get(
-                    "min_p95_half_width_mw",
-                    _DEFAULT_MIN_P95_HALF_WIDTH_MW,
-                )
-            ),
-        )
-        if interval_config.get("mirror_collapsed_side", False):
-            reference_width = max(half_lo, half_hi, min_half_width)
-            if half_lo < min_half_width:
-                half_lo = reference_width
-            if half_hi < min_half_width:
-                half_hi = reference_width
-        else:
-            half_lo = max(half_lo, min_half_width)
-            half_hi = max(half_hi, min_half_width)
-        return half_lo, half_hi
 
     def fit(self, cache: pd.DataFrame) -> None:
         """Train q025/q50/q975 quantile models on hourly cache. Needs >= 90 days."""

@@ -43,6 +43,7 @@ from python.etl.quality_gate import run_quality_gate, QualityStatus
 from python.forecast.baseline import (
     compute_forecast, forecast_to_dict, peak_of_forecasts, HourlyForecast,
 )
+from python.forecast.interval_calibration import calibrate_p95_half_widths
 from python.anomaly.detector import (
     DEFAULT_RESERVE_CRITICAL_PCT,
     DEFAULT_RESERVE_WARNING_PCT,
@@ -339,26 +340,30 @@ def build_actual_json(d: date, hourly: pd.DataFrame) -> dict:
     }
 
 
-def _normalize_forecast_bands(fc_list: list[HourlyForecast]) -> list[HourlyForecast]:
+def _normalize_forecast_bands(
+    fc_list: list[HourlyForecast],
+    config: dict | None = None,
+) -> list[HourlyForecast]:
     result: list[HourlyForecast] = []
     for forecast in fc_list:
         point_forecast_mw = round(float(forecast.forecast_mw), 1)
-        p95_lower = round(
+        ordered_p95_lower = round(
             min(float(forecast.p95_lower_mw), float(forecast.p95_upper_mw), point_forecast_mw),
             1,
         )
-        p95_upper = round(
+        ordered_p95_upper = round(
             max(float(forecast.p95_lower_mw), float(forecast.p95_upper_mw), point_forecast_mw),
             1,
         )
-        p99_lower = round(
-            min(float(forecast.p99_lower_mw), float(forecast.p99_upper_mw), p95_lower, point_forecast_mw),
-            1,
+        half_lo, half_hi = calibrate_p95_half_widths(
+            point_forecast_mw - ordered_p95_lower,
+            ordered_p95_upper - point_forecast_mw,
+            config,
         )
-        p99_upper = round(
-            max(float(forecast.p99_lower_mw), float(forecast.p99_upper_mw), p95_upper, point_forecast_mw),
-            1,
-        )
+        p95_lower = round(point_forecast_mw - half_lo, 1)
+        p95_upper = round(point_forecast_mw + half_hi, 1)
+        p99_lower = round(p95_lower - half_lo, 1)
+        p99_upper = round(p95_upper + half_hi, 1)
         result.append(HourlyForecast(
             ts=forecast.ts,
             forecast_mw=point_forecast_mw,
@@ -379,7 +384,7 @@ def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = 
             "series": [],
             "message": "Insufficient historical data for this date.",
         }
-    fc_list = _normalize_forecast_bands(fc_list)
+    fc_list = _normalize_forecast_bands(fc_list, config)
     cfg_fc = config.get("forecast", {})
     return {
         "date": d.isoformat(),

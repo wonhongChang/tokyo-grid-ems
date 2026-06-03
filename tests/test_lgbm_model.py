@@ -231,6 +231,44 @@ def test_predict_does_not_mirror_one_sided_interval_by_default(monkeypatch):
         assert point.p99_upper_mw == 40_000.0
 
 
+def test_predict_caps_extreme_one_sided_interval_when_configured(monkeypatch):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({"hour": range(24)}),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "interval_calibration": {
+            "min_p95_half_width_mw": 500.0,
+            "max_p95_half_width_mw": 4_500.0,
+            "max_p95_asymmetry_ratio": 4.0,
+            "asymmetry_reference_half_width_mw": 1_000.0,
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(30_200.0)
+    f.model_q50 = FakeModel(31_000.0)
+    f.model_q975 = FakeModel(37_200.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    for point in result:
+        assert point.p95_lower_mw == 30_200.0
+        assert point.p95_upper_mw == 35_000.0
+        assert point.p99_lower_mw == 29_400.0
+        assert point.p99_upper_mw == 39_000.0
+
+
 def test_predict_can_mirror_collapsed_side_when_configured(monkeypatch):
     class FakeModel:
         def __init__(self, value: float) -> None:

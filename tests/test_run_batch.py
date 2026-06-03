@@ -614,6 +614,35 @@ def test_build_forecast_json_normalizes_crossed_bands():
     assert result["peak"]["interval"]["p95Upper"] == point["p95UpperMw"]
 
 
+def test_build_forecast_json_caps_extreme_one_sided_band():
+    from python.forecast.baseline import HourlyForecast
+    fc = HourlyForecast(
+        ts="2024-01-01T13:00:00+09:00",
+        forecast_mw=31_000.0,
+        p95_lower_mw=30_200.0,
+        p95_upper_mw=37_200.0,
+        p99_lower_mw=29_400.0,
+        p99_upper_mw=43_400.0,
+    )
+    config = {
+        "interval_calibration": {
+            "min_p95_half_width_mw": 500.0,
+            "max_p95_half_width_mw": 4_500.0,
+            "max_p95_asymmetry_ratio": 4.0,
+            "asymmetry_reference_half_width_mw": 1_000.0,
+        }
+    }
+
+    result = build_forecast_json(date(2024, 1, 1), [fc], config)
+    point = result["series"][0]
+
+    assert point["p95LowerMw"] == 30_200.0
+    assert point["p95UpperMw"] == 35_000.0
+    assert point["p99LowerMw"] == 29_400.0
+    assert point["p99UpperMw"] == 39_000.0
+    assert result["peak"]["interval"]["p95Upper"] == 35_000.0
+
+
 def _forecast_point(d: date, forecast_mw: float) -> HourlyForecast:
     return HourlyForecast(
         ts=f"{d.isoformat()}T11:00:00+09:00",

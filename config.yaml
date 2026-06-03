@@ -19,6 +19,9 @@ weather_forecast_bias_correction:
 
 interval_calibration:
   min_p95_half_width_mw: 500 # prevent unrealistically narrow LightGBM bands
+  max_p95_half_width_mw: 4500 # cap rare quantile-tail explosions after weather-regime shifts
+  max_p95_asymmetry_ratio: 4.0 # limit one-sided p95 tails relative to the opposite side
+  asymmetry_reference_half_width_mw: 1000 # avoid over-tight caps when one side collapses to the floor
   mirror_collapsed_side: false # avoid mirroring one-sided quantile uncertainty into the other side
 
 intraday_correction:
