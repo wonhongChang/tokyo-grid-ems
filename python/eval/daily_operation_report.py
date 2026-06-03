@@ -20,6 +20,8 @@ _TIME_BANDS = [
     ("evening", "19-23", 19, 23),
 ]
 
+_MORNING_TRANSITION_HOURS = set(range(6, 12))
+
 _INTERNAL_CALENDAR_FEATURES = [
     "hour",
     "dayofweek",
@@ -708,6 +710,283 @@ def _internal_diagnostic_rows(rows: list[dict], feature_rows: dict[int, dict]) -
     return result
 
 
+def _operational_calibration_rows_by_hour(public_dir: Path, date_iso: str) -> dict[int, dict]:
+    path = public_dir / "reports" / "internal" / "operational-calibration" / f"{date_iso}.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = _load_json(path)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    result = {}
+    for row in payload.get("hourlyDiagnostics", []):
+        hour = _clean_number(row.get("hour"), digits=0)
+        if hour is None:
+            continue
+        result[int(hour)] = row
+    return result
+
+
+def _weather_source_category(source: Any) -> str | None:
+    if source is None:
+        return None
+    text = str(source).upper()
+    if not text:
+        return None
+    if any(token in text for token in ["AMEDAS", "OBSERVED", "ACTUAL"]):
+        return "observed"
+    if any(token in text for token in ["OPEN_METEO", "FORWARD_FILL", "SEASONAL", "FALLBACK"]):
+        return "fallback"
+    if "JMA" in text or "FORECAST" in text:
+        return "forecast"
+    return "unknown"
+
+
+def _weather_context_by_hour(cache, target_date: date) -> dict[int, dict]:
+    if cache is None or not hasattr(cache, "iterrows"):
+        return {}
+
+    result: dict[int, dict] = {}
+    for _, row in cache.iterrows():
+        ts = row.get("ts") if hasattr(row, "get") else None
+        if ts is None or not hasattr(ts, "date") or ts.date() != target_date:
+            continue
+        hour = getattr(ts, "hour", None)
+        if hour is None:
+            continue
+        source = row.get("weather_source") if hasattr(row, "get") else None
+        result[int(hour)] = {
+            "humidityPct": _clean_number(row.get("humidity_pct") if hasattr(row, "get") else None, 1),
+            "discomfortIndex": _clean_number(row.get("discomfort_index") if hasattr(row, "get") else None, 1),
+            "weatherSource": str(source) if source is not None else None,
+            "weatherSourceConfidence": _weather_source_category(source),
+        }
+    return result
+
+
+def _first_clean_number(*values: Any, digits: int = 1) -> int | float | None:
+    for value in values:
+        cleaned = _clean_number(value, digits=digits)
+        if cleaned is not None:
+            return cleaned
+    return None
+
+
+def _morning_cause_tags(entry: dict) -> list[str]:
+    tags: list[str] = []
+    model_error = entry.get("modelErrorMw")
+    abs_model_error = abs(float(model_error)) if model_error is not None else 0.0
+    lag_excess = entry.get("morningLagDeltaExcessMw")
+    cooling_delta = entry.get("coolingDelta24hC")
+    humidity = entry.get("humidityPct")
+    discomfort = entry.get("discomfortIndex")
+    mismatch = entry.get("lag24BusinessTypeMismatch")
+    residual = entry.get("residualAdjustmentMw")
+    pre_calibration = entry.get("preCalibrationForecastMw")
+    post_calibration = entry.get("postCalibrationForecastMw")
+    actual = entry.get("actualMw")
+    published_gap = entry.get("publishedVsRecalculatedGapMw")
+
+    if (
+        model_error is not None
+        and float(model_error) >= 500.0
+        and lag_excess is not None
+        and float(lag_excess) >= 800.0
+        and cooling_delta is not None
+        and float(cooling_delta) <= -1.0
+    ):
+        tags.append("lag-overheat/cooler-day")
+
+    if (
+        model_error is not None
+        and float(model_error) <= -500.0
+        and (
+            (humidity is not None and float(humidity) >= 70.0)
+            or (discomfort is not None and float(discomfort) >= 75.0)
+        )
+    ):
+        tags.append("humidity-ramp")
+
+    if mismatch is not None and float(mismatch) > 0 and abs_model_error >= 500.0:
+        tags.append("business-return")
+
+    if (
+        residual is not None
+        and abs(float(residual)) >= 300.0
+        and pre_calibration is not None
+        and post_calibration is not None
+        and actual is not None
+    ):
+        pre_error = float(pre_calibration) - float(actual)
+        post_error = float(post_calibration) - float(actual)
+        if abs(post_error) >= abs(pre_error) + 300.0:
+            tags.append("intraday-carryover")
+
+    if published_gap is not None and abs(float(published_gap)) >= 500.0 and abs_model_error >= 500.0:
+        tags.append("freeze")
+
+    return tags
+
+
+def _morning_transition_registry(
+    diagnostic_rows: list[dict],
+    calibration_rows: dict[int, dict],
+    weather_context: dict[int, dict],
+) -> dict:
+    entries = []
+    for row in diagnostic_rows:
+        hour = int(row["hour"])
+        if hour not in _MORNING_TRANSITION_HOURS:
+            continue
+        calibration_row = calibration_rows.get(hour, {})
+        lag_features = row.get("lagFeatures", {})
+        weather_features = row.get("weatherFeatures", {})
+        cache_weather = weather_context.get(hour, {})
+        stage_forecasts = calibration_row.get("forecastMwByStage", {})
+
+        raw_forecast = _first_clean_number(stage_forecasts.get("raw_lgbm"), digits=1)
+        pre_calibration = _first_clean_number(
+            calibration_row.get("preCalibrationForecastMw"),
+            stage_forecasts.get("pre_calibration"),
+            digits=1,
+        )
+        post_calibration = _first_clean_number(
+            calibration_row.get("postCalibrationForecastMw"),
+            digits=1,
+        )
+        served_forecast = _clean_number(row.get("modelForecastMw"), digits=1)
+        actual = _clean_number(row.get("actualMw"), digits=1)
+        lag_delta = _first_clean_number(
+            calibration_row.get("lag24DeltaMw"),
+            lag_features.get("lag_24h_hourly_delta"),
+            digits=1,
+        )
+        recent_delta = _first_clean_number(
+            calibration_row.get("recentSameBusinessTypeDeltaMw"),
+            lag_features.get("recent_same_business_type_delta_mean"),
+            digits=1,
+        )
+        lag_delta_excess = None
+        if lag_delta is not None and recent_delta is not None:
+            lag_delta_excess = round(float(lag_delta) - float(recent_delta), 1)
+
+        published_gap = None
+        if served_forecast is not None and post_calibration is not None:
+            published_gap = round(float(served_forecast) - float(post_calibration), 1)
+
+        entry = {
+            "hour": hour,
+            "rawForecastMw": raw_forecast,
+            "preCalibrationForecastMw": pre_calibration,
+            "postCalibrationForecastMw": post_calibration,
+            "servedForecastMw": served_forecast,
+            "actualMw": actual,
+            "modelErrorMw": _clean_number(row.get("modelErrorMw"), digits=1),
+            "publishedVsRecalculatedGapMw": published_gap,
+            "lag24HourlyDeltaMw": lag_delta,
+            "recentSameBusinessTypeDeltaMeanMw": recent_delta,
+            "morningLagDeltaExcessMw": lag_delta_excess,
+            "lag24BusinessTypeMismatch": _clean_number(
+                lag_features.get("lag_24h_business_type_mismatch"),
+                digits=1,
+            ),
+            "tempC": _clean_number(weather_features.get("temp_c"), digits=1),
+            "coolingDelta24hC": _clean_number(weather_features.get("cooling_delta_24h"), digits=1),
+            "humidityPct": cache_weather.get("humidityPct"),
+            "discomfortIndex": cache_weather.get("discomfortIndex"),
+            "weatherSource": cache_weather.get("weatherSource"),
+            "weatherSourceConfidence": cache_weather.get("weatherSourceConfidence"),
+            "residualAdjustmentMw": _clean_number(
+                calibration_row.get("residualAdjustmentMw"),
+                digits=1,
+            ),
+        }
+        entry["causeTags"] = _morning_cause_tags(entry)
+        entries.append(entry)
+
+    tag_counts: dict[str, int] = {}
+    for entry in entries:
+        for tag in entry["causeTags"]:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    max_error_entry = None
+    if entries:
+        max_error_entry = max(
+            entries,
+            key=lambda entry: abs(float(entry["modelErrorMw"] or 0.0)),
+        )
+
+    lag_excess_values = [
+        float(entry["morningLagDeltaExcessMw"])
+        for entry in entries
+        if entry.get("morningLagDeltaExcessMw") is not None
+    ]
+    cooling_delta_values = [
+        float(entry["coolingDelta24hC"])
+        for entry in entries
+        if entry.get("coolingDelta24hC") is not None
+    ]
+    published_gap_values = [
+        abs(float(entry["publishedVsRecalculatedGapMw"]))
+        for entry in entries
+        if entry.get("publishedVsRecalculatedGapMw") is not None
+    ]
+
+    return {
+        "schemaVersion": "1.0.0",
+        "hours": sorted(_MORNING_TRANSITION_HOURS),
+        "summary": {
+            "rows": len(entries),
+            "modelMaeMw": _mean([
+                abs(float(entry["modelErrorMw"]))
+                for entry in entries
+                if entry.get("modelErrorMw") is not None
+            ]),
+            "modelBiasMw": _mean([
+                float(entry["modelErrorMw"])
+                for entry in entries
+                if entry.get("modelErrorMw") is not None
+            ]),
+            "maxErrorHour": max_error_entry["hour"] if max_error_entry else None,
+            "maxAbsErrorMw": (
+                abs(float(max_error_entry["modelErrorMw"]))
+                if max_error_entry and max_error_entry.get("modelErrorMw") is not None
+                else None
+            ),
+            "morningLagDeltaExcessMeanMw": _mean(lag_excess_values),
+            "coolingDelta24hMeanC": _mean(cooling_delta_values),
+            "publishedVsRecalculatedGapMaxAbsMw": (
+                round(max(published_gap_values), 1)
+                if published_gap_values
+                else None
+            ),
+            "causeTagCounts": tag_counts,
+        },
+        "tagDefinitions": {
+            "lag-overheat/cooler-day": (
+                "lag_24h ramp exceeds recent same-business ramp while cooling load falls, "
+                "and the served model overpredicts."
+            ),
+            "humidity-ramp": (
+                "morning demand is underpredicted while humidity or discomfort is high enough "
+                "to indicate early cooling demand."
+            ),
+            "business-return": (
+                "today and lag_24h differ in business/non-business type, with a material "
+                "morning error."
+            ),
+            "intraday-carryover": (
+                "post-calibration residual carryover worsens the pre-calibration error."
+            ),
+            "freeze": (
+                "served forecast differs materially from the latest recalculated post-calibration line."
+            ),
+        },
+        "rows": entries,
+    }
+
+
 def _feature_band_means(rows: list[dict], group_name: str, feature_name: str) -> list[dict]:
     result = []
     for code, label, start_hour, end_hour in _TIME_BANDS:
@@ -866,6 +1145,32 @@ def _weather_delta_risk_by_band(rows: list[dict]) -> list[dict]:
     return result
 
 
+def _morning_transition_index_summary(diagnostics: list[dict]) -> dict:
+    tag_counts: dict[str, int] = {}
+    report_summaries = []
+    for diagnostic in diagnostics:
+        morning = diagnostic.get("morningTransitionDiagnostics") or {}
+        summary = morning.get("summary") or {}
+        for tag, count in (summary.get("causeTagCounts") or {}).items():
+            tag_counts[tag] = tag_counts.get(tag, 0) + int(count)
+        report_summaries.append({
+            "date": diagnostic.get("date"),
+            "rows": summary.get("rows"),
+            "modelMaeMw": summary.get("modelMaeMw"),
+            "modelBiasMw": summary.get("modelBiasMw"),
+            "maxErrorHour": summary.get("maxErrorHour"),
+            "maxAbsErrorMw": summary.get("maxAbsErrorMw"),
+            "causeTagCounts": summary.get("causeTagCounts", {}),
+        })
+
+    return {
+        "windowDays": len(diagnostics),
+        "hours": sorted(_MORNING_TRANSITION_HOURS),
+        "causeTagCounts": tag_counts,
+        "reports": report_summaries,
+    }
+
+
 def build_internal_daily_diagnostic(
     public_dir: Path,
     date_iso: str,
@@ -879,6 +1184,12 @@ def build_internal_daily_diagnostic(
     target_date = date.fromisoformat(date_iso)
     feature_rows, feature_error = _feature_rows_by_hour(cache, target_date, config)
     diagnostic_rows = _internal_diagnostic_rows(rows, feature_rows)
+    calibration_rows = _operational_calibration_rows_by_hour(public_dir, date_iso)
+    morning_transition = _morning_transition_registry(
+        diagnostic_rows,
+        calibration_rows,
+        _weather_context_by_hour(cache, target_date),
+    )
     public_report = build_daily_operation_report(
         public_dir,
         date_iso,
@@ -939,7 +1250,9 @@ def build_internal_daily_diagnostic(
             ),
             "dayLevelRegime": _day_level_regime(diagnostic_rows),
             "weatherDeltaRiskByBand": _weather_delta_risk_by_band(diagnostic_rows),
+            "morningTransition": morning_transition.get("summary"),
         },
+        "morningTransitionDiagnostics": morning_transition,
         "rows": diagnostic_rows,
     }
 
@@ -980,6 +1293,7 @@ def build_internal_daily_diagnostics(
         diagnostic for diagnostic in diagnostics
         if diagnostic["availability"] == "ok"
     ]
+    morning_transition_summary = _morning_transition_index_summary(diagnostics)
 
     return {
         "schemaVersion": "1.0.0",
@@ -996,13 +1310,24 @@ def build_internal_daily_diagnostics(
             "date": diagnostics[-1]["date"],
             "model": diagnostics[-1]["model"],
             "operationSummary": diagnostics[-1]["operationReport"].get("summary"),
+            "morningTransition": (
+                diagnostics[-1]
+                .get("morningTransitionDiagnostics", {})
+                .get("summary")
+            ),
         } if diagnostics else None,
+        "morningTransition": morning_transition_summary,
         "reports": [
             {
                 "date": diagnostic["date"],
                 "model": diagnostic["model"],
                 "availability": diagnostic["availability"],
                 "operationSummary": diagnostic["operationReport"].get("summary"),
+                "morningTransition": (
+                    diagnostic
+                    .get("morningTransitionDiagnostics", {})
+                    .get("summary")
+                ),
                 "featureBuildError": diagnostic.get("featureBuildError"),
             }
             for diagnostic in diagnostics

@@ -1266,6 +1266,75 @@ def test_intraday_correction_restores_non_business_plateau_after_negative_residu
     assert "negative_residual_continuity_floor" in result.applied_regime_reason
 
 
+def test_intraday_correction_limits_near_term_negative_residual_overcorrection():
+    target = date(2026, 6, 2)
+    forecasts = _make_forecasts(target, 30_000.0)
+    for hour, value in {
+        15: 36_028.0,
+        16: 34_191.4,
+        17: 33_911.8,
+        18: 31_844.6,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 15, 34_300.0),
+        _actual_point(target, 16, 33_260.0),
+        _actual_point(target, 17, 32_280.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": 18,
+            "is_non_business_day": 0,
+            "recent_same_business_type_mean": 32_413.8,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "negative_residual_near_term_floor": {
+                "enabled": True,
+                "target_hours": [18],
+                "min_reference_hour": 10,
+                "max_lead_hours": 2,
+                "min_adjustment_mw": 500.0,
+                "actual_reference_slack_mw": 500.0,
+                "anchor_slack_mw": 1_200.0,
+                "drop_slope_allowance_fraction": 0.25,
+                "max_drop_slope_allowance_mw": 400.0,
+                "max_restore_mw": 700.0,
+                "min_restore_mw": 100.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.base_adjustment_mw == pytest.approx(-1_200.0)
+    assert result.negative_residual_near_term_floor_applied is True
+    assert result.negative_residual_near_term_floor_max_restore_mw == pytest.approx(700.0)
+    assert result.forecasts[18].forecast_mw == pytest.approx(31_344.6)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_18 = next(item for item in residual_logs if item["hour"] == 18)
+    assert hour_18["negativeResidualNearTermRestoreMw"] == pytest.approx(700.0)
+    assert hour_18["negativeResidualNearTermFloorMw"] == pytest.approx(31_535.0)
+    assert "negative_residual_near_term_floor" in result.applied_regime_reason
+
+
 def test_intraday_correction_keeps_evening_rebound_when_shape_supports_it():
     target = date(2026, 5, 27)
     forecasts = _make_forecasts(target, 30_000.0)

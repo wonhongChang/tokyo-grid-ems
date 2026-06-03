@@ -236,6 +236,68 @@ def test_internal_daily_diagnostic_includes_lag_and_weather_features(tmp_path):
     assert "tempDelta24hMeanC" in summary["dayLevelRegime"]
     assert "flags" in summary["dayLevelRegime"]
     assert summary["weatherDeltaRiskByBand"]
+    assert summary["morningTransition"]["rows"] == 6
+    assert "morningTransitionDiagnostics" in diagnostic
+
+
+def test_internal_daily_diagnostic_builds_morning_transition_registry(tmp_path):
+    date_iso = "2026-05-18"
+    actual_values = [30_000.0 + hour * 100 for hour in range(24)]
+    model_values = actual_values.copy()
+    model_values[10] = actual_values[10] + 1_500.0
+    _write_day(tmp_path, date_iso, model_values, actual_values)
+    _write_json(
+        tmp_path
+        / "reports"
+        / "internal"
+        / "operational-calibration"
+        / f"{date_iso}.json",
+        {
+            "date": date_iso,
+            "hourlyDiagnostics": [
+                {
+                    "hour": 10,
+                    "forecastMwByStage": {
+                        "raw_lgbm": actual_values[10] + 900.0,
+                        "pre_calibration": actual_values[10],
+                    },
+                    "preCalibrationForecastMw": actual_values[10],
+                    "postCalibrationForecastMw": actual_values[10] - 500.0,
+                    "lag24DeltaMw": 2_400.0,
+                    "recentSameBusinessTypeDeltaMw": 700.0,
+                    "residualAdjustmentMw": -500.0,
+                }
+            ],
+        },
+    )
+    cache = _make_feature_cache()
+    target_mask = cache["ts"].dt.strftime("%Y-%m-%dT%H") == f"{date_iso}T10"
+    cache.loc[target_mask, "humidity_pct"] = 78.0
+    cache.loc[target_mask, "discomfort_index"] = 76.5
+    cache.loc[target_mask, "weather_source"] = "AMEDAS_ACTUAL"
+
+    diagnostic = build_internal_daily_diagnostic(
+        tmp_path,
+        date_iso,
+        generated_at="2026-05-19T08:20:00+09:00",
+        cache=cache,
+        config={},
+    )
+
+    registry = diagnostic["morningTransitionDiagnostics"]
+    hour_10 = next(row for row in registry["rows"] if row["hour"] == 10)
+    assert hour_10["rawForecastMw"] == pytest.approx(actual_values[10] + 900.0)
+    assert hour_10["preCalibrationForecastMw"] == pytest.approx(actual_values[10])
+    assert hour_10["postCalibrationForecastMw"] == pytest.approx(actual_values[10] - 500.0)
+    assert hour_10["servedForecastMw"] == pytest.approx(actual_values[10] + 1_500.0)
+    assert hour_10["publishedVsRecalculatedGapMw"] == pytest.approx(2_000.0)
+    assert hour_10["morningLagDeltaExcessMw"] == pytest.approx(1_700.0)
+    assert hour_10["humidityPct"] == pytest.approx(78.0)
+    assert hour_10["discomfortIndex"] == pytest.approx(76.5)
+    assert hour_10["weatherSourceConfidence"] == "observed"
+    assert "intraday-carryover" in hour_10["causeTags"]
+    assert "freeze" in hour_10["causeTags"]
+    assert registry["summary"]["causeTagCounts"]["freeze"] == 1
 
 
 def test_internal_daily_diagnostics_index_points_to_latest_report(tmp_path):
@@ -254,4 +316,7 @@ def test_internal_daily_diagnostics_index_points_to_latest_report(tmp_path):
     assert index["visibility"]["uiVisible"] is False
     assert index["visibility"]["storedWithOperationalOutputs"] is True
     assert index["latest"]["date"] == "2026-05-18"
+    assert index["latest"]["morningTransition"]["rows"] == 6
+    assert index["morningTransition"]["windowDays"] == 2
+    assert index["morningTransition"]["hours"] == [6, 7, 8, 9, 10, 11]
     assert [diagnostic["date"] for diagnostic in diagnostics] == ["2026-05-17", "2026-05-18"]

@@ -62,6 +62,7 @@ FEATURE_CATALOG = [
     "intraday_correction.positive_residual_slope_damping",
     "intraday_correction.negative_residual_recovery_damping",
     "intraday_correction.negative_residual_continuity_floor",
+    "intraday_correction.negative_residual_near_term_floor",
     "intraday_correction.evening_decline_continuity_guard",
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
@@ -74,6 +75,7 @@ FEATURE_NAME_ALIASES = {
     "positive_residual_slope_damping": "intraday_correction.positive_residual_slope_damping",
     "negative_residual_recovery_damping": "intraday_correction.negative_residual_recovery_damping",
     "negative_residual_continuity_floor": "intraday_correction.negative_residual_continuity_floor",
+    "negative_residual_near_term_floor": "intraday_correction.negative_residual_near_term_floor",
     "evening_decline_continuity_guard": "intraday_correction.evening_decline_continuity_guard",
 }
 ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
@@ -1564,6 +1566,12 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
         "negativeResidualContinuityRestoreMw": _round_number(
             item.get("negativeResidualContinuityRestoreMw")
         ),
+        "negativeResidualNearTermFloorMw": _round_number(
+            item.get("negativeResidualNearTermFloorMw")
+        ),
+        "negativeResidualNearTermRestoreMw": _round_number(
+            item.get("negativeResidualNearTermRestoreMw")
+        ),
         "eveningDeclineContinuityMode": item.get("eveningDeclineContinuityMode"),
         "eveningDeclineContinuityReductionMw": _round_number(
             item.get("eveningDeclineContinuityReductionMw")
@@ -1593,13 +1601,17 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
             (_as_float(item.get("negativeResidualContinuityRestoreMw")) or 0.0)
             > 0.0
         )
+        near_term_floor = (
+            (_as_float(item.get("negativeResidualNearTermRestoreMw")) or 0.0)
+            > 0.0
+        )
         evening_guard = (
             (_as_float(item.get("eveningDeclineContinuityReductionMw")) or 0.0)
             > 0.0
         )
         large = final_adjustment >= LARGE_CONTROL_DELTA_MW
         return (
-            1 if damped or continuity_floor or evening_guard or large else 0,
+            1 if damped or continuity_floor or near_term_floor or evening_guard or large else 0,
             final_adjustment,
         )
 
@@ -1640,6 +1652,8 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
         "positiveResidualSlopeDampingMaxMw": correction.get("positiveResidualSlopeDampingMaxMw"),
         "negativeResidualContinuityFloorApplied": correction.get("negativeResidualContinuityFloorApplied"),
         "negativeResidualContinuityFloorMaxRestoreMw": correction.get("negativeResidualContinuityFloorMaxRestoreMw"),
+        "negativeResidualNearTermFloorApplied": correction.get("negativeResidualNearTermFloorApplied"),
+        "negativeResidualNearTermFloorMaxRestoreMw": correction.get("negativeResidualNearTermFloorMaxRestoreMw"),
         "negResidualRecoveryDampingApplied": correction.get("negResidualRecoveryDampingApplied"),
         "negResidualRecoveryDampingFactor": correction.get("negResidualRecoveryDampingFactor"),
         "residualCarryoverByHour": residual_carryover,
@@ -1658,6 +1672,52 @@ def _compact_calibration_history(calibration_history: dict | None) -> dict | Non
         "snapshotCount": len(snapshots),
         "appliedSnapshotCount": applied_count,
         "latest": latest,
+    }
+
+
+def _compact_morning_transition_diagnostics(diagnostics: dict | None) -> dict | None:
+    if not diagnostics:
+        return None
+    morning = diagnostics.get("morningTransitionDiagnostics") or {}
+    if not isinstance(morning, dict):
+        return None
+    rows = morning.get("rows") or []
+    compact_rows = []
+    for row in rows:
+        compact = _drop_none_values({
+            "hour": row.get("hour"),
+            "actualMw": _round_number(row.get("actualMw")),
+            "servedForecastMw": _round_number(row.get("servedForecastMw")),
+            "modelErrorMw": _round_number(row.get("modelErrorMw")),
+            "rawForecastMw": _round_number(row.get("rawForecastMw")),
+            "preCalibrationForecastMw": _round_number(row.get("preCalibrationForecastMw")),
+            "postCalibrationForecastMw": _round_number(row.get("postCalibrationForecastMw")),
+            "publishedVsRecalculatedGapMw": _round_number(
+                row.get("publishedVsRecalculatedGapMw")
+            ),
+            "morningLagDeltaExcessMw": _round_number(row.get("morningLagDeltaExcessMw")),
+            "coolingDelta24hC": _round_number(row.get("coolingDelta24hC")),
+            "humidityPct": _round_number(row.get("humidityPct")),
+            "discomfortIndex": _round_number(row.get("discomfortIndex")),
+            "weatherSourceConfidence": row.get("weatherSourceConfidence"),
+            "residualAdjustmentMw": _round_number(row.get("residualAdjustmentMw")),
+            "causeTags": row.get("causeTags") or [],
+        })
+        if compact:
+            compact_rows.append(compact)
+
+    def priority(row: dict) -> tuple[int, float]:
+        tagged = 1 if row.get("causeTags") else 0
+        abs_error = abs(_as_float(row.get("modelErrorMw")) or 0.0)
+        freeze_gap = abs(_as_float(row.get("publishedVsRecalculatedGapMw")) or 0.0)
+        return (tagged, max(abs_error, freeze_gap))
+
+    selected_rows = sorted(compact_rows, key=priority, reverse=True)[:6]
+    selected_rows = sorted(selected_rows, key=lambda row: int(row.get("hour", 99)))
+    return {
+        "summary": morning.get("summary"),
+        "tagDefinitions": morning.get("tagDefinitions"),
+        "selectedRows": selected_rows,
     }
 
 
@@ -2325,6 +2385,8 @@ def _build_controller_diagnosis(
         flags.append("morningRampContinuityGuardApplied")
     if correction.get("negativeResidualContinuityFloorApplied"):
         flags.append("negativeResidualContinuityFloorApplied")
+    if correction.get("negativeResidualNearTermFloorApplied"):
+        flags.append("negativeResidualNearTermFloorApplied")
 
     return _drop_none_values({
         "source": "operationalCalibration.correction",
@@ -2363,6 +2425,12 @@ def _build_controller_diagnosis(
             ),
             "negativeResidualContinuityFloorMaxRestoreMw": _round_number(
                 correction.get("negativeResidualContinuityFloorMaxRestoreMw")
+            ),
+            "negativeResidualNearTermFloorApplied": correction.get(
+                "negativeResidualNearTermFloorApplied"
+            ),
+            "negativeResidualNearTermFloorMaxRestoreMw": _round_number(
+                correction.get("negativeResidualNearTermFloorMaxRestoreMw")
             ),
             "eveningDeclineContinuityGuardApplied": correction.get("eveningDeclineContinuityGuardApplied"),
             "eveningDeclineContinuityMaxReductionMw": _round_number(
@@ -2878,6 +2946,9 @@ def _build_openai_fact_packet(
         ),
         "operationFacts": operation_facts,
         "diagnosticFacts": diagnostic_facts,
+        "morningTransitionDiagnostics": _compact_morning_transition_diagnostics(
+            diagnostics
+        ),
         "calibrationFacts": calibration_facts,
         "calibrationHistoryFacts": _compact_calibration_history(calibration_history),
         "focusedRows": _build_focused_rows(operation, actual, forecast, calibration),
@@ -3074,7 +3145,8 @@ def _openai_domain_guidelines() -> str:
     return (
         "Reason like a power-demand operations analyst, not a text summarizer. "
         "Use only numeric facts, analysisPriorities, weather diagnostics, "
-        "topMisses, timeBands, focusedRows, controlContext, controllerDiagnosis, stageAttribution, "
+        "topMisses, timeBands, focusedRows, morningTransitionDiagnostics, "
+        "controlContext, controllerDiagnosis, stageAttribution, "
         "bandQuality, freezeContext, rollingPatternContext, and calibration flags "
         "from factPacket. Treat focusedRows as the detailed window around "
         "large misses or calibration-shape risk, not as a full-day table. "
@@ -3116,6 +3188,10 @@ def _openai_domain_guidelines() -> str:
         "When analysisPriorities contains large_absolute_error and shape_break "
         "events, return at least one hypothesis that connects point accuracy "
         "and curve dynamics instead of discussing only a broad time band. "
+        "When morningTransitionDiagnostics has causeTags, use those tags to "
+        "separate raw morning transition risk, intraday carryover, humidity "
+        "ramp, business-return, and freeze hypotheses instead of collapsing "
+        "all 06-11 errors into a generic morning-ramp issue. "
         "When both topMisses and stage/freeze diagnostics exist, return at least "
         "two hypotheses: one for forecast accuracy and one for serving/calibration "
         "shape risk. "
@@ -3190,7 +3266,8 @@ def _openai_instructions(language: str) -> str:
         "metrics consistent with factPacket.performance. "
         "Use factPacket as the source of facts; it already contains summary "
         "metrics, key miss windows, focused rows around abnormal windows, "
-        "analysisPriorities, time-band statistics, calibration flags, control context, freeze-gap "
+        "analysisPriorities, morningTransitionDiagnostics, time-band statistics, "
+        "calibration flags, control context, freeze-gap "
         "context, stage attribution, controller diagnosis, band-quality "
         "coverage, rolling pattern context, and snapshot summaries. "
         "Start from factPacket.analysisPriorities when selecting the two or "
@@ -3270,7 +3347,8 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "Return reports keyed by locale. Use only the provided factPacket; "
         "do not invent metrics, hours, feature names, or calibration events. "
         "The factPacket contains summary metrics, key miss windows, focused "
-        "rows around abnormal windows, analysisPriorities, time-band statistics, calibration flags, "
+        "rows around abnormal windows, analysisPriorities, morningTransitionDiagnostics, "
+        "time-band statistics, calibration flags, "
         "control context, freeze-gap context, stage attribution, controller "
         "diagnosis, band-quality coverage, rolling pattern context, and snapshot summaries. Do not recompute "
         "deltas yourself: use stageAttribution stage value_mw/delta_mw pairs, "
@@ -3278,7 +3356,10 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "provided. Start from factPacket.analysisPriorities when selecting the "
         "two or three root-cause hypotheses; it ranks the day's large point "
         "errors, shape breaks, time-band gaps, and serving freeze gaps without "
-        "writing the conclusion for you. Do not describe "
+        "writing the conclusion for you. When morningTransitionDiagnostics has "
+        "causeTags, use those tags to separate raw morning transition risk, "
+        "intraday carryover, humidity ramp, business-return, and freeze "
+        "hypotheses. Do not describe "
         "this as missing raw time-series data; if a limitation is needed, say "
         "the analysis is based on summarized operational evidence and retained "
         "calibration snapshots. "

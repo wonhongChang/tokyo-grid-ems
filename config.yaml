@@ -91,6 +91,18 @@ intraday_correction:
     max_floor_slope_mw: 300
     max_restore_mw: 900
     min_restore_mw: 100
+  negative_residual_near_term_floor:
+    enabled: true
+    target_hours: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    min_reference_hour: 10
+    max_lead_hours: 2
+    min_adjustment_mw: 500       # only intervene when downward residual carryover is material
+    actual_reference_slack_mw: 500
+    anchor_slack_mw: 1200
+    drop_slope_allowance_fraction: 0.25
+    max_drop_slope_allowance_mw: 400
+    max_restore_mw: 700          # restore only part of the downward carryover
+    min_restore_mw: 100
   positive_residual_slope_damping:
     enabled: true
     min_reference_hour: 12    # only after enough same-day shape evidence exists

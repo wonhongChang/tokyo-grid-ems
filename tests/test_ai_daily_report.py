@@ -481,6 +481,53 @@ def test_ai_daily_report_clarifies_intraday_snapshot_coverage_note(monkeypatch, 
 
 def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
     _write_operation_fixture(tmp_path)
+    _write_json(
+        tmp_path
+        / "reports"
+        / "internal"
+        / "daily-diagnostics"
+        / "2026-05-23.json",
+        {
+            "date": "2026-05-23",
+            "generatedAt": "2026-05-24T08:20:00+09:00",
+            "featureBuildError": None,
+            "diagnosticSummary": {
+                "morningTransition": {
+                    "rows": 6,
+                    "modelMaeMw": 900.0,
+                    "causeTagCounts": {"lag-overheat/cooler-day": 1},
+                }
+            },
+            "morningTransitionDiagnostics": {
+                "summary": {
+                    "rows": 6,
+                    "modelMaeMw": 900.0,
+                    "causeTagCounts": {"lag-overheat/cooler-day": 1},
+                },
+                "tagDefinitions": {
+                    "lag-overheat/cooler-day": "lag ramp overheated while cooling load fell"
+                },
+                "rows": [
+                    {
+                        "hour": 8,
+                        "actualMw": 23_000.0,
+                        "servedForecastMw": 25_008.3,
+                        "modelErrorMw": 2_008.3,
+                        "rawForecastMw": 25_100.0,
+                        "preCalibrationForecastMw": 25_000.0,
+                        "postCalibrationForecastMw": 25_000.0,
+                        "publishedVsRecalculatedGapMw": 8.3,
+                        "morningLagDeltaExcessMw": 1_400.0,
+                        "coolingDelta24hC": -2.0,
+                        "humidityPct": 65.0,
+                        "discomfortIndex": 72.0,
+                        "weatherSourceConfidence": "observed",
+                        "causeTags": ["lag-overheat/cooler-day"],
+                    }
+                ],
+            },
+        },
+    )
     monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
     monkeypatch.delenv("OPENAI_DAILY_REPORT_MODEL", raising=False)
 
@@ -490,6 +537,10 @@ def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
         assert "fallbackNarrativeByLanguage" not in context["factPacket"]
         assert "fingerprint" not in context["factPacket"]
         assert context["factPacket"]["performance"]["modelMaeMw"] == 535.2
+        morning = context["factPacket"]["morningTransitionDiagnostics"]
+        assert morning["summary"]["causeTagCounts"]["lag-overheat/cooler-day"] == 1
+        assert morning["selectedRows"][0]["hour"] == 8
+        assert morning["selectedRows"][0]["causeTags"] == ["lag-overheat/cooler-day"]
         assert "summary" not in context["factPacket"]["operationFacts"]
         assert "insights" not in context["factPacket"]["operationFacts"]
         snapshot = context["factPacket"]["inputSnapshot"]
