@@ -43,6 +43,8 @@ class IntradayCorrectionResult:
     residual_adjustments_by_hour: tuple[dict, ...] = ()
     morning_ramp_continuity_guard_applied: bool = False
     morning_ramp_continuity_max_restore_mw: float = 0.0
+    morning_warm_lag_overreaction_guard_applied: bool = False
+    morning_warm_lag_overreaction_max_reduction_mw: float = 0.0
     evening_decline_continuity_guard_applied: bool = False
     evening_decline_continuity_max_reduction_mw: float = 0.0
     negative_residual_continuity_floor_applied: bool = False
@@ -102,6 +104,13 @@ class IntradayCorrectionResult:
             ),
             "morningRampContinuityMaxRestoreMw": round(
                 float(self.morning_ramp_continuity_max_restore_mw),
+                1,
+            ),
+            "morningWarmLagOverreactionGuardApplied": (
+                self.morning_warm_lag_overreaction_guard_applied
+            ),
+            "morningWarmLagOverreactionMaxReductionMw": round(
+                float(self.morning_warm_lag_overreaction_max_reduction_mw),
                 1,
             ),
             "eveningDeclineContinuityGuardApplied": (
@@ -472,6 +481,68 @@ class IntradayResidualCorrector:
         )
         self._morning_ramp_min_restore_mw = max(
             float(morning_ramp_config.get("min_restore_mw", 100.0)),
+            0.0,
+        )
+        morning_warm_config = correction_config.get(
+            "morning_warm_lag_overreaction_guard",
+            {},
+        )
+        self._morning_warm_enabled = bool(
+            morning_warm_config.get("enabled", False)
+        )
+        self._morning_warm_business_day_only = bool(
+            morning_warm_config.get("business_day_only", True)
+        )
+        self._morning_warm_target_hours = {
+            int(hour)
+            for hour in morning_warm_config.get("target_hours", [8, 9, 10, 11])
+        }
+        self._morning_warm_min_reference_hour = int(
+            morning_warm_config.get("min_reference_hour", 6)
+        )
+        self._morning_warm_max_reference_hour = int(
+            morning_warm_config.get("max_reference_hour", 10)
+        )
+        self._morning_warm_max_lead_hours = max(
+            int(morning_warm_config.get("max_lead_hours", 2)),
+            1,
+        )
+        self._morning_warm_min_base_adjustment_mw = max(
+            float(morning_warm_config.get("min_base_adjustment_mw", 500.0)),
+            0.0,
+        )
+        self._morning_warm_min_temp_delta_24h_c = float(
+            morning_warm_config.get("min_temp_delta_24h_c", 2.0)
+        )
+        self._morning_warm_min_cooling_delta_24h_c = float(
+            morning_warm_config.get("min_cooling_delta_24h_c", 0.8)
+        )
+        self._morning_warm_slope_slack_mw = max(
+            float(morning_warm_config.get("slope_slack_mw", 300.0)),
+            0.0,
+        )
+        self._morning_warm_min_projected_slope_mw = max(
+            float(morning_warm_config.get("min_projected_slope_mw", 400.0)),
+            0.0,
+        )
+        self._morning_warm_max_projected_slope_mw = max(
+            float(morning_warm_config.get("max_projected_slope_mw", 1_800.0)),
+            0.0,
+        )
+        self._morning_warm_cap_buffer_mw = max(
+            float(morning_warm_config.get("cap_buffer_mw", 0.0)),
+            0.0,
+        )
+        self._morning_warm_shrinkage = min(
+            max(float(morning_warm_config.get("shrinkage", 0.75)), 0.0),
+            1.0,
+        )
+        self._morning_warm_max_reduction_mw = max(
+            float(morning_warm_config.get("max_reduction_mw", 800.0)),
+            0.0,
+        )
+        self._morning_warm_min_reduction_mw = max(
+            float(morning_warm_config.get("min_reduction_mw", 100.0)),
             0.0,
         )
         evening_decline_config = correction_config.get(
@@ -1267,6 +1338,116 @@ class IntradayResidualCorrector:
             "floorDeltaMw": round(float(floor_delta_mw), 1),
         }
 
+    def _morning_warm_lag_overreaction_context(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        actual_mw_by_hour: dict[int, float],
+        last_observed_hour: int | None,
+        base_adjustment_mw: float,
+    ) -> dict | None:
+        if (
+            not self._morning_warm_enabled
+            or base_adjustment_mw > -self._morning_warm_min_base_adjustment_mw
+            or last_observed_hour is None
+            or last_observed_hour < self._morning_warm_min_reference_hour
+            or last_observed_hour > self._morning_warm_max_reference_hour
+            or last_observed_hour not in actual_mw_by_hour
+            or self._morning_warm_max_reduction_mw <= 0.0
+        ):
+            return None
+
+        if self._morning_warm_business_day_only:
+            row = self._feature_row_for_hour(inference_features, last_observed_hour)
+            if row is not None:
+                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+                if is_non_business_day == 1.0:
+                    return None
+            elif forecasts:
+                forecast_ts = pd.Timestamp(forecasts[0].ts)
+                if _is_nonworking_day(forecast_ts):
+                    return None
+
+        previous_hour = last_observed_hour - 1
+        latest_slope_mw = 0.0
+        if previous_hour in actual_mw_by_hour:
+            latest_slope_mw = (
+                actual_mw_by_hour[last_observed_hour]
+                - actual_mw_by_hour[previous_hour]
+            )
+
+        projected_slope_mw = latest_slope_mw + self._morning_warm_slope_slack_mw
+        projected_slope_mw = float(np.clip(
+            projected_slope_mw,
+            self._morning_warm_min_projected_slope_mw,
+            self._morning_warm_max_projected_slope_mw,
+        ))
+        return {
+            "lastObservedHour": last_observed_hour,
+            "lastActualMw": round(actual_mw_by_hour[last_observed_hour], 1),
+            "latestSlopeMw": round(float(latest_slope_mw), 1),
+            "projectedSlopeMw": round(float(projected_slope_mw), 1),
+        }
+
+    def _morning_warm_lag_overreaction_reduction(
+        self,
+        context: dict | None,
+        inference_features: pd.DataFrame | None,
+        forecast_hour: int,
+        lead_hours: int,
+        final_before_guard_mw: float,
+    ) -> dict | None:
+        if (
+            context is None
+            or forecast_hour not in self._morning_warm_target_hours
+            or lead_hours <= 0
+            or lead_hours > self._morning_warm_max_lead_hours
+        ):
+            return None
+
+        row = self._feature_row_for_hour(inference_features, forecast_hour)
+        if row is None:
+            return None
+        if self._morning_warm_business_day_only:
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day == 1.0:
+                return None
+
+        temp_delta_24h = self._finite_float(row.get("temp_delta_24h")) or 0.0
+        cooling_delta_24h = self._finite_float(row.get("cooling_delta_24h")) or 0.0
+        warm_signal_active = (
+            temp_delta_24h >= self._morning_warm_min_temp_delta_24h_c
+            or cooling_delta_24h >= self._morning_warm_min_cooling_delta_24h_c
+        )
+        if not warm_signal_active:
+            return None
+
+        cap_mw = (
+            float(context["lastActualMw"])
+            + float(context["projectedSlopeMw"]) * lead_hours
+            + self._morning_warm_cap_buffer_mw
+        )
+        overhang_mw = final_before_guard_mw - cap_mw
+        if overhang_mw <= 0.0:
+            return None
+
+        reduction_mw = min(
+            overhang_mw * self._morning_warm_shrinkage,
+            self._morning_warm_max_reduction_mw,
+        )
+        reduction_mw = round(float(reduction_mw), 1)
+        if reduction_mw < self._morning_warm_min_reduction_mw:
+            return None
+
+        return {
+            "capMw": round(float(cap_mw), 1),
+            "reductionMw": reduction_mw,
+            "tempDelta24hC": round(float(temp_delta_24h), 1),
+            "coolingDelta24hC": round(float(cooling_delta_24h), 1),
+            "latestSlopeMw": context["latestSlopeMw"],
+            "projectedSlopeMw": context["projectedSlopeMw"],
+        }
+
     def _negative_residual_continuity_floor_context(
         self,
         actual_mw_by_hour: dict[int, float],
@@ -1976,6 +2157,13 @@ class IntradayResidualCorrector:
             last_observed_hour,
             base_adjustment_mw,
         )
+        morning_warm_context = self._morning_warm_lag_overreaction_context(
+            transition_prior_guarded_forecasts,
+            inference_features,
+            actual_mw_by_hour,
+            last_observed_hour,
+            base_adjustment_mw,
+        )
         negative_floor_context = self._negative_residual_continuity_floor_context(
             actual_mw_by_hour,
             last_observed_hour,
@@ -1992,6 +2180,8 @@ class IntradayResidualCorrector:
         )
         morning_ramp_guard_applied = False
         morning_ramp_restored_values: list[float] = []
+        morning_warm_guard_applied = False
+        morning_warm_reduced_values: list[float] = []
         evening_decline_guard_applied = False
         evening_decline_reduced_values: list[float] = []
         negative_floor_applied = False
@@ -2027,6 +2217,12 @@ class IntradayResidualCorrector:
             near_negative_floor_restore_mw = 0.0
             near_negative_floor_mw = None
             near_negative_floor_drop_allowance_mw = None
+            morning_warm_cap_mw = None
+            morning_warm_reduction_mw = 0.0
+            morning_warm_temp_delta_24h_c = None
+            morning_warm_cooling_delta_24h_c = None
+            morning_warm_latest_slope_mw = None
+            morning_warm_projected_slope_mw = None
             pre_evening_decline_adjustment_mw = decayed_adjustment_mw
             evening_decline_cap_mw = None
             evening_decline_reduction_mw = 0.0
@@ -2150,6 +2346,37 @@ class IntradayResidualCorrector:
                     )
                     near_negative_floor_applied = True
                     near_negative_floor_restored_values.append(restore_mw)
+            final_before_morning_warm_guard_mw = forecast.forecast_mw + decayed_adjustment_mw
+            morning_warm_guard = self._morning_warm_lag_overreaction_reduction(
+                morning_warm_context,
+                inference_features,
+                forecast_hour,
+                lead_hours,
+                final_before_morning_warm_guard_mw,
+            )
+            if morning_warm_guard is not None:
+                morning_warm_reduction_mw = float(
+                    morning_warm_guard["reductionMw"]
+                )
+                decayed_adjustment_mw = round(
+                    decayed_adjustment_mw - morning_warm_reduction_mw,
+                    1,
+                )
+                morning_warm_cap_mw = morning_warm_guard["capMw"]
+                morning_warm_temp_delta_24h_c = (
+                    morning_warm_guard["tempDelta24hC"]
+                )
+                morning_warm_cooling_delta_24h_c = (
+                    morning_warm_guard["coolingDelta24hC"]
+                )
+                morning_warm_latest_slope_mw = (
+                    morning_warm_guard["latestSlopeMw"]
+                )
+                morning_warm_projected_slope_mw = (
+                    morning_warm_guard["projectedSlopeMw"]
+                )
+                morning_warm_guard_applied = True
+                morning_warm_reduced_values.append(morning_warm_reduction_mw)
             pre_evening_decline_adjustment_mw = decayed_adjustment_mw
             previous_final_mw = (
                 adjusted_forecasts[-1].forecast_mw
@@ -2237,6 +2464,35 @@ class IntradayResidualCorrector:
                     if near_negative_floor_drop_allowance_mw is not None
                     else None
                 ),
+                "morningWarmLagOverreactionCapMw": (
+                    round(float(morning_warm_cap_mw), 1)
+                    if morning_warm_cap_mw is not None
+                    else None
+                ),
+                "morningWarmLagOverreactionReductionMw": round(
+                    morning_warm_reduction_mw,
+                    1,
+                ),
+                "morningWarmLagOverreactionTempDelta24hC": (
+                    round(float(morning_warm_temp_delta_24h_c), 1)
+                    if morning_warm_temp_delta_24h_c is not None
+                    else None
+                ),
+                "morningWarmLagOverreactionCoolingDelta24hC": (
+                    round(float(morning_warm_cooling_delta_24h_c), 1)
+                    if morning_warm_cooling_delta_24h_c is not None
+                    else None
+                ),
+                "morningWarmLagOverreactionLatestSlopeMw": (
+                    round(float(morning_warm_latest_slope_mw), 1)
+                    if morning_warm_latest_slope_mw is not None
+                    else None
+                ),
+                "morningWarmLagOverreactionProjectedSlopeMw": (
+                    round(float(morning_warm_projected_slope_mw), 1)
+                    if morning_warm_projected_slope_mw is not None
+                    else None
+                ),
                 "preEveningDeclineContinuityAdjustmentMw": round(
                     pre_evening_decline_adjustment_mw,
                     1,
@@ -2277,6 +2533,8 @@ class IntradayResidualCorrector:
             applied_reasons.append("positive_residual_slope_damping_triggered")
         if morning_ramp_guard_applied:
             applied_reasons.append("morning_ramp_continuity_guard")
+        if morning_warm_guard_applied:
+            applied_reasons.append("morning_warm_lag_overreaction_guard")
         if negative_floor_applied:
             applied_reasons.append("negative_residual_continuity_floor")
         if near_negative_floor_applied:
@@ -2335,6 +2593,8 @@ class IntradayResidualCorrector:
             tuple(residual_adjustment_logs),
             morning_ramp_guard_applied,
             round(max(morning_ramp_restored_values or [0.0]), 1),
+            morning_warm_guard_applied,
+            round(max(morning_warm_reduced_values or [0.0]), 1),
             evening_decline_guard_applied,
             round(max(evening_decline_reduced_values or [0.0]), 1),
             negative_floor_applied,

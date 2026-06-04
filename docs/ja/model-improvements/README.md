@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-06
 
+- [2026-06-04 朝の warm-lag 過反応ガード](model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)
 - [2026-06-03 予測区間の上側 tail 安定化](model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
 
 ## 2026-05

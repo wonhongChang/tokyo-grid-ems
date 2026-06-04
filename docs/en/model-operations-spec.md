@@ -245,6 +245,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | intraday | `lookback_hours` | 3 | Shorter windows react faster; longer windows are smoother but slower. |
 | intraday | `decay_per_hour` | 0.92 | Higher values carry residuals farther into the day; lower values keep corrections near-term. Lower it when carryover contaminates shape. |
 | intraday | `max_abs_adjustment_mw` | 1200 | Hard cap for same-day residual correction. Raising it follows large misses faster but increases overshoot risk. |
+| intraday | `morning_warm_lag_overreaction_guard.max_reduction_mw` | 800 | Caps the extra morning q50 reduction when warm lag/weather signals are not confirmed by same-day actuals. Raising it reacts faster to overprediction but can suppress real heat-driven morning ramps. |
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | Upper bound for restoring a non-business-day forecast that has been pulled below a stable same-day plateau. Raising it protects Saturday plateaus more strongly but can hide real demand drops. |
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | Buffer below the latest observed plateau before restoration begins. Lower values intervene sooner; higher values require a clearer undercut. |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | Extends the evening guard from local rebound spikes to high-but-flat overhangs after observed demand is falling. Disable only if it suppresses genuine hot-evening demand. |

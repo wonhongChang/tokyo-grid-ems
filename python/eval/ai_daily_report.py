@@ -63,6 +63,7 @@ FEATURE_CATALOG = [
     "intraday_correction.negative_residual_recovery_damping",
     "intraday_correction.negative_residual_continuity_floor",
     "intraday_correction.negative_residual_near_term_floor",
+    "intraday_correction.morning_warm_lag_overreaction_guard",
     "intraday_correction.evening_decline_continuity_guard",
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
@@ -76,6 +77,7 @@ FEATURE_NAME_ALIASES = {
     "negative_residual_recovery_damping": "intraday_correction.negative_residual_recovery_damping",
     "negative_residual_continuity_floor": "intraday_correction.negative_residual_continuity_floor",
     "negative_residual_near_term_floor": "intraday_correction.negative_residual_near_term_floor",
+    "morning_warm_lag_overreaction_guard": "intraday_correction.morning_warm_lag_overreaction_guard",
     "evening_decline_continuity_guard": "intraday_correction.evening_decline_continuity_guard",
 }
 ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
@@ -1572,6 +1574,12 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
         "negativeResidualNearTermRestoreMw": _round_number(
             item.get("negativeResidualNearTermRestoreMw")
         ),
+        "morningWarmLagOverreactionReductionMw": _round_number(
+            item.get("morningWarmLagOverreactionReductionMw")
+        ),
+        "morningWarmLagOverreactionCapMw": _round_number(
+            item.get("morningWarmLagOverreactionCapMw")
+        ),
         "eveningDeclineContinuityMode": item.get("eveningDeclineContinuityMode"),
         "eveningDeclineContinuityReductionMw": _round_number(
             item.get("eveningDeclineContinuityReductionMw")
@@ -1605,13 +1613,26 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
             (_as_float(item.get("negativeResidualNearTermRestoreMw")) or 0.0)
             > 0.0
         )
+        morning_warm_guard = (
+            (_as_float(item.get("morningWarmLagOverreactionReductionMw")) or 0.0)
+            > 0.0
+        )
         evening_guard = (
             (_as_float(item.get("eveningDeclineContinuityReductionMw")) or 0.0)
             > 0.0
         )
         large = final_adjustment >= LARGE_CONTROL_DELTA_MW
         return (
-            1 if damped or continuity_floor or near_term_floor or evening_guard or large else 0,
+            1
+            if (
+                damped
+                or continuity_floor
+                or near_term_floor
+                or morning_warm_guard
+                or evening_guard
+                or large
+            )
+            else 0,
             final_adjustment,
         )
 
@@ -1654,6 +1675,8 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
         "negativeResidualContinuityFloorMaxRestoreMw": correction.get("negativeResidualContinuityFloorMaxRestoreMw"),
         "negativeResidualNearTermFloorApplied": correction.get("negativeResidualNearTermFloorApplied"),
         "negativeResidualNearTermFloorMaxRestoreMw": correction.get("negativeResidualNearTermFloorMaxRestoreMw"),
+        "morningWarmLagOverreactionGuardApplied": correction.get("morningWarmLagOverreactionGuardApplied"),
+        "morningWarmLagOverreactionMaxReductionMw": correction.get("morningWarmLagOverreactionMaxReductionMw"),
         "negResidualRecoveryDampingApplied": correction.get("negResidualRecoveryDampingApplied"),
         "negResidualRecoveryDampingFactor": correction.get("negResidualRecoveryDampingFactor"),
         "residualCarryoverByHour": residual_carryover,
@@ -1902,8 +1925,11 @@ def _feature_candidates_for_hour(hour: int | None) -> list[str]:
     if 6 <= hour <= 10:
         candidates.extend([
             "lag_24h_business_type_mismatch",
+            "temp_delta_24h",
+            "cooling_delta_24h",
             "intraday_correction.business_type_transition",
             "intraday_correction.positive_residual_mitigation",
+            "intraday_correction.morning_warm_lag_overreaction_guard",
         ])
     elif 11 <= hour <= 15:
         candidates.extend([
@@ -2000,6 +2026,7 @@ def _build_analysis_priorities(
             ])
         elif direction == "model_rise_too_fast":
             feature_candidates.extend([
+                "intraday_correction.morning_warm_lag_overreaction_guard",
                 "intraday_correction.positive_residual_slope_damping",
                 "intraday_correction.evening_decline_continuity_guard",
             ])

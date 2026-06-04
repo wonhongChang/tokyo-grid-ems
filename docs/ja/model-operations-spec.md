@@ -243,6 +243,7 @@ Raw LightGBM Forecast
 | intraday | `lookback_hours` | 3 | 短いほど反応が速く、長いほど滑らかですが遅れます。 |
 | intraday | `decay_per_hour` | 0.92 | 高いほどresidualが遠い時間まで残り、低いほど近距離中心になります。shape汚染時は引き下げを検討します。 |
 | intraday | `max_abs_adjustment_mw` | 1200 | 当日residual補正のhard capです。上げると大きなmissに追従しやすい一方、overshootリスクが増えます。 |
+| intraday | `morning_warm_lag_overreaction_guard.max_reduction_mw` | 800 | 暖かくなった朝のlag/気象上昇シグナルが当日実績で確認されない場合のq50追加下方ブレーキを制限します。上げると過大予測への反応は速くなりますが、実際の冷房rampを抑える可能性があります。 |
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 非営業日の予測線が安定した当日plateauより下へ押された場合に戻せる最大値です。上げると土曜plateau保護は強くなりますが、実際の下落反映が遅れる場合があります。 |
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 最新実績plateauよりどれだけ下がったらfloorを作動させるかのbufferです。下げると早めに介入し、上げると明確なundercut時だけ作動します。 |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 夕方下落局面で局所的なreboundだけでなく、高水準に残るoverhangも制限します。暑い夕方の実需要まで抑える場合だけ無効化を検討します。 |

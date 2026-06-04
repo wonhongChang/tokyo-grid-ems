@@ -131,6 +131,23 @@ intraday_correction:
     max_floor_delta_mw: 900
     max_restore_mw: 700        # never lift above the pre-calibration forecast
     min_restore_mw: 100
+  morning_warm_lag_overreaction_guard:
+    enabled: true
+    business_day_only: true
+    target_hours: [8, 9, 10, 11]
+    min_reference_hour: 6
+    max_reference_hour: 10
+    max_lead_hours: 2          # only protect near-term morning buckets
+    min_base_adjustment_mw: 500 # require observed residual evidence
+    min_temp_delta_24h_c: 2.0   # warm-lag overreaction signal
+    min_cooling_delta_24h_c: 0.8
+    slope_slack_mw: 300
+    min_projected_slope_mw: 400
+    max_projected_slope_mw: 1800
+    cap_buffer_mw: 0
+    shrinkage: 0.75
+    max_reduction_mw: 800
+    min_reduction_mw: 100
   evening_decline_continuity_guard:
     enabled: true
     business_day_only: false

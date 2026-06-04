@@ -258,6 +258,7 @@ Raw LightGBM Forecast
 | intraday | `lookback_hours` | 3 | 짧게 잡으면 최근 변화에 민감하고, 길게 잡으면 안정적이지만 반응이 늦습니다. |
 | intraday | `decay_per_hour` | 0.92 | 높이면 residual 영향이 먼 미래까지 남고, 낮추면 근거리 보정 중심이 됩니다. shape 오염이 있으면 낮추는 쪽을 검토합니다. |
 | intraday | `max_abs_adjustment_mw` | 1200 | 당일 residual 보정의 하드 상한입니다. 올리면 큰 오차를 빠르게 따라가지만 폭주 위험이 커집니다. |
+| intraday | `morning_warm_lag_overreaction_guard.max_reduction_mw` | 800 | 따뜻해진 오전의 lag/기상 상승 신호가 당일 실측으로 확인되지 않을 때 q50 추가 하방 제동을 제한합니다. 올리면 과대예측 반응은 빨라지지만 실제 냉방 ramp를 누를 수 있습니다. |
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 비영업일 예측선이 안정적인 당일 plateau 아래로 밀렸을 때 되돌릴 수 있는 최대치입니다. 올리면 토요일 plateau 보호가 강해지지만 실제 하락을 늦게 반영할 수 있습니다. |
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 최신 실측 plateau보다 어느 정도 낮아져야 floor가 개입할지 정하는 버퍼입니다. 낮추면 더 빨리 개입하고, 높이면 명확한 undercut에서만 작동합니다. |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 저녁 하락 국면에서 국소 rebound뿐 아니라 높은 레벨로 버티는 overhang도 제한합니다. 더운 저녁의 실제 수요까지 누르는 경우에만 비활성화를 검토합니다. |
