@@ -230,3 +230,9 @@ Full chronological log: [docs/en/model-improvements/README.md](docs/en/model-imp
 
 - Chang Wonhong
 - LinkedIn: https://www.linkedin.com/in/wonhong-chang-6660a0177/
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

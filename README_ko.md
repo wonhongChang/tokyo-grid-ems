@@ -252,3 +252,9 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 - Chang Wonhong
 - LinkedIn: https://www.linkedin.com/in/wonhong-chang-6660a0177/
+
+---
+
+## 라이선스
+
+이 프로젝트는 [MIT License](LICENSE)를 따릅니다.

@@ -229,3 +229,9 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 - Chang Wonhong
 - LinkedIn: https://www.linkedin.com/in/wonhong-chang-6660a0177/
+
+---
+
+## ライセンス
+
+このプロジェクトは [MIT License](LICENSE) の下で公開されています。
