@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-05 morning positive residual carryover damping](model-improvement-2026-06-05-morning-positive-carryover-damping.md)
 - [2026-06-04 morning warm-lag overreaction guard](model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)
 - [2026-06-03 forecast interval tail sanity guard](model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
 

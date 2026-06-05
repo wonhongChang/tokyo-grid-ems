@@ -8,6 +8,8 @@
 
 ## 2026-06
 
+- [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvement-2026-06-05-morning-positive-carryover-damping.md)
+
 - [2026-06-04 오전 warm-lag 과반응 가드](model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)
 - [2026-06-03 예측 구간 상단 tail 안정화](model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
 

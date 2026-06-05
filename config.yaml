@@ -119,6 +119,19 @@ intraday_correction:
     anchor_proximity_tolerance_mw: 1200
     peak_excess_allowance_mw: 300
     damping_factor: 0.4       # keep 40% of the positive carryover when shape is rolling over
+  morning_positive_residual_carryover_damping:
+    enabled: true
+    business_day_only: true
+    target_hours: [10, 11, 12, 13]
+    min_reference_hour: 7
+    max_reference_hour: 10
+    min_lead_hours: 2          # keep the immediate ramp bucket responsive
+    max_lead_hours: 4
+    min_base_adjustment_mw: 300
+    min_recent_ramp_slope_mw: 1000
+    weak_support_delta_mw: 1000 # damp only when lag/recent shape no longer supports a steep ramp
+    damping_factor: 0.4
+    min_damped_mw: 100
   morning_ramp_continuity_guard:
     enabled: true
     business_day_only: true

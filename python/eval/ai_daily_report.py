@@ -60,6 +60,7 @@ FEATURE_CATALOG = [
     "intraday_correction.business_type_transition",
     "intraday_correction.positive_residual_mitigation",
     "intraday_correction.positive_residual_slope_damping",
+    "intraday_correction.morning_positive_residual_carryover_damping",
     "intraday_correction.negative_residual_recovery_damping",
     "intraday_correction.negative_residual_continuity_floor",
     "intraday_correction.negative_residual_near_term_floor",
@@ -74,6 +75,7 @@ FEATURE_NAME_ALIASES = {
     "forecast_freeze": "serving.published_forecast_freeze",
     "positive_residual_mitigation": "intraday_correction.positive_residual_mitigation",
     "positive_residual_slope_damping": "intraday_correction.positive_residual_slope_damping",
+    "morning_positive_residual_carryover_damping": "intraday_correction.morning_positive_residual_carryover_damping",
     "negative_residual_recovery_damping": "intraday_correction.negative_residual_recovery_damping",
     "negative_residual_continuity_floor": "intraday_correction.negative_residual_continuity_floor",
     "negative_residual_near_term_floor": "intraday_correction.negative_residual_near_term_floor",
@@ -1562,6 +1564,16 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
             item.get("positiveResidualSlopeDampingFactor"),
             digits=3,
         ),
+        "morningPositiveResidualCarryoverDampingFactor": _round_number(
+            item.get("morningPositiveResidualCarryoverDampingFactor"),
+            digits=3,
+        ),
+        "morningPositiveResidualCarryoverDampedMw": _round_number(
+            item.get("morningPositiveResidualCarryoverDampedMw")
+        ),
+        "morningPositiveResidualCarryoverSupportDeltaMw": _round_number(
+            item.get("morningPositiveResidualCarryoverSupportDeltaMw")
+        ),
         "negativeResidualContinuityFloorMw": _round_number(
             item.get("negativeResidualContinuityFloorMw")
         ),
@@ -1603,8 +1615,15 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
 
     def priority(item: dict) -> tuple[int, float]:
         factor = _as_float(item.get("positiveResidualSlopeDampingFactor"))
+        morning_positive_factor = _as_float(
+            item.get("morningPositiveResidualCarryoverDampingFactor")
+        )
         final_adjustment = abs(_as_float(item.get("finalAdjustmentMw")) or 0.0)
         damped = factor is not None and factor < 0.999
+        morning_positive_damped = (
+            morning_positive_factor is not None
+            and morning_positive_factor < 0.999
+        )
         continuity_floor = (
             (_as_float(item.get("negativeResidualContinuityRestoreMw")) or 0.0)
             > 0.0
@@ -1626,6 +1645,7 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
             1
             if (
                 damped
+                or morning_positive_damped
                 or continuity_floor
                 or near_term_floor
                 or morning_warm_guard
@@ -1671,6 +1691,9 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
         "positiveResidualSlopeDampingApplied": correction.get("positiveResidualSlopeDampingApplied"),
         "positiveResidualSlopeDampingFactor": correction.get("positiveResidualSlopeDampingFactor"),
         "positiveResidualSlopeDampingMaxMw": correction.get("positiveResidualSlopeDampingMaxMw"),
+        "morningPositiveResidualCarryoverDampingApplied": correction.get("morningPositiveResidualCarryoverDampingApplied"),
+        "morningPositiveResidualCarryoverDampingFactor": correction.get("morningPositiveResidualCarryoverDampingFactor"),
+        "morningPositiveResidualCarryoverDampingMaxMw": correction.get("morningPositiveResidualCarryoverDampingMaxMw"),
         "negativeResidualContinuityFloorApplied": correction.get("negativeResidualContinuityFloorApplied"),
         "negativeResidualContinuityFloorMaxRestoreMw": correction.get("negativeResidualContinuityFloorMaxRestoreMw"),
         "negativeResidualNearTermFloorApplied": correction.get("negativeResidualNearTermFloorApplied"),
@@ -1929,12 +1952,14 @@ def _feature_candidates_for_hour(hour: int | None) -> list[str]:
             "cooling_delta_24h",
             "intraday_correction.business_type_transition",
             "intraday_correction.positive_residual_mitigation",
+            "intraday_correction.morning_positive_residual_carryover_damping",
             "intraday_correction.morning_warm_lag_overreaction_guard",
         ])
     elif 11 <= hour <= 15:
         candidates.extend([
             "business_midday_x_lag_24h_delta",
             "business_midday_x_recent_delta_mean",
+            "intraday_correction.morning_positive_residual_carryover_damping",
             "intraday_correction.positive_residual_slope_damping",
         ])
     elif 16 <= hour <= 19:
@@ -2026,6 +2051,7 @@ def _build_analysis_priorities(
             ])
         elif direction == "model_rise_too_fast":
             feature_candidates.extend([
+                "intraday_correction.morning_positive_residual_carryover_damping",
                 "intraday_correction.morning_warm_lag_overreaction_guard",
                 "intraday_correction.positive_residual_slope_damping",
                 "intraday_correction.evening_decline_continuity_guard",
@@ -2406,6 +2432,8 @@ def _build_controller_diagnosis(
         flags.append("freezeLikelyVisibleInUi")
     if correction.get("positiveResidualSlopeDampingApplied"):
         flags.append("positiveResidualSlopeDampingApplied")
+    if correction.get("morningPositiveResidualCarryoverDampingApplied"):
+        flags.append("morningPositiveResidualCarryoverDampingApplied")
     if correction.get("eveningDeclineContinuityGuardApplied"):
         flags.append("eveningDeclineContinuityGuardApplied")
     if correction.get("morningRampContinuityGuardApplied"):
@@ -2442,6 +2470,16 @@ def _build_controller_diagnosis(
             ),
             "positiveResidualSlopeDampingMaxMw": _round_number(
                 correction.get("positiveResidualSlopeDampingMaxMw")
+            ),
+            "morningPositiveResidualCarryoverDampingApplied": correction.get(
+                "morningPositiveResidualCarryoverDampingApplied"
+            ),
+            "morningPositiveResidualCarryoverDampingFactor": _round_number(
+                correction.get("morningPositiveResidualCarryoverDampingFactor"),
+                digits=3,
+            ),
+            "morningPositiveResidualCarryoverDampingMaxMw": _round_number(
+                correction.get("morningPositiveResidualCarryoverDampingMaxMw")
             ),
             "morningRampContinuityGuardApplied": correction.get("morningRampContinuityGuardApplied"),
             "morningRampContinuityMaxRestoreMw": _round_number(
@@ -2723,6 +2761,17 @@ def _build_control_context(
         for item in residual_items
         if (_as_float(item.get("positiveResidualSlopeDampingFactor")) or 1.0) < 0.999
     ]
+    morning_positive_damped_items = [
+        item
+        for item in residual_items
+        if (
+            _as_float(
+                item.get("morningPositiveResidualCarryoverDampingFactor")
+            )
+            or 1.0
+        )
+        < 0.999
+    ]
     snapshots = (calibration_history or {}).get("snapshots") or []
     context = {
         "sourceConfidence": correction.get("sourceConfidence")
@@ -2748,6 +2797,20 @@ def _build_control_context(
             ),
             "affectedHours": [item.get("hour") for item in damped_items],
             "sample": damped_items,
+        }),
+        "morningPositiveResidualCarryoverDamping": _drop_none_values({
+            "applied": correction.get("morningPositiveResidualCarryoverDampingApplied"),
+            "factor": _round_number(
+                correction.get("morningPositiveResidualCarryoverDampingFactor"),
+                digits=3,
+            ),
+            "maxReducedMw": _round_number(
+                correction.get("morningPositiveResidualCarryoverDampingMaxMw")
+            ),
+            "affectedHours": [
+                item.get("hour") for item in morning_positive_damped_items
+            ],
+            "sample": morning_positive_damped_items,
         }),
         "positiveResidualMitigation": _drop_none_values({
             "applied": correction.get("positiveResidualMitigationApplied"),
