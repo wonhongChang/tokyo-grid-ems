@@ -3772,7 +3772,10 @@ _UNDERPREDICTION_WORDS = (
     "과소평가",
     "과소 평가",
     "저평가",
+    "하방 오차",
+    "낮게 잡",
     "실제보다 낮",
+    "실측보다 낮",
     "낮게 예측",
     "過小予測",
     "過小評価",
@@ -3793,12 +3796,50 @@ _OVERPREDICTION_WORDS = (
     "과대평가",
     "과대 평가",
     "고평가",
+    "상방 오차",
+    "높게 잡",
     "실제보다 높",
+    "실측보다 높",
+    "초과예측",
+    "초과 예측",
     "높게 예측",
     "過大予測",
     "過大評価",
     "実績より高",
     "高く予測",
+)
+_DROP_SHAPE_WORDS = (
+    "drop",
+    "fall",
+    "fell",
+    "falling",
+    "decline",
+    "decrease",
+    "downward",
+    "하락",
+    "급락",
+    "떨어",
+    "낮아",
+    "내려",
+    "감소",
+    "下降",
+    "低下",
+)
+_RISE_SHAPE_WORDS = (
+    "rise",
+    "rising",
+    "increase",
+    "rebound",
+    "upward",
+    "lift",
+    "상승",
+    "급등",
+    "반등",
+    "올라",
+    "높아",
+    "증가",
+    "上昇",
+    "反発",
 )
 _SIGNED_ERROR_METRICS = {
     "modelerrormw",
@@ -3859,6 +3900,148 @@ def _hypothesis_has_sign_conflict(
         if value < 0.0 and mentions_over:
             return True
     return False
+
+
+def _primary_signed_error_evidence(evidence: list[dict]) -> dict | None:
+    for item in evidence:
+        metric = str(item.get("metric") or "").replace("_", "").lower()
+        if metric not in _SIGNED_ERROR_METRICS:
+            continue
+        value = _as_float(item.get("value"))
+        if value is None or abs(value) < 100.0:
+            continue
+        return item
+    return None
+
+
+def _hypothesis_has_shape_direction_conflict(
+    title: str,
+    explanation: str,
+    evidence: list[dict],
+) -> bool:
+    signed_evidence = _primary_signed_error_evidence(evidence)
+    if signed_evidence is None:
+        return False
+    value = _as_float(signed_evidence.get("value"))
+    if value is None:
+        return False
+    text = f"{title} {explanation}".lower()
+    raw_text = f"{title} {explanation}"
+    mentions_drop = any(word in text for word in _DROP_SHAPE_WORDS) or any(
+        word in raw_text for word in _DROP_SHAPE_WORDS
+    )
+    mentions_rise = any(word in text for word in _RISE_SHAPE_WORDS) or any(
+        word in raw_text for word in _RISE_SHAPE_WORDS
+    )
+    if value > 0.0 and mentions_drop and not mentions_rise:
+        return True
+    if value < 0.0 and mentions_rise and not mentions_drop:
+        return True
+    return False
+
+
+def _hypothesis_has_direction_conflict(
+    title: str,
+    explanation: str,
+    evidence: list[dict],
+) -> bool:
+    return _hypothesis_has_sign_conflict(
+        title,
+        explanation,
+        evidence,
+    ) or _hypothesis_has_shape_direction_conflict(title, explanation, evidence)
+
+
+def _hypothesis_needs_directional_copy(hypothesis: dict) -> bool:
+    title = str(hypothesis.get("title") or "")
+    explanation = str(hypothesis.get("explanation") or "")
+    evidence = _normalize_evidence(hypothesis.get("evidence"))
+    if _primary_signed_error_evidence(evidence) is None:
+        return False
+    if _hypothesis_has_direction_conflict(title, explanation, evidence):
+        return True
+    lowered = f"{title} {explanation}".lower()
+    generic_tokens = (
+        "single hour",
+        "large error",
+        "forecast error",
+        "peak hour error",
+        "단일 시간",
+        "크게 틀림",
+        "예측 오차",
+        "피크 시간대",
+        "大きな誤差",
+        "予測誤差",
+    )
+    return any(token in lowered or token in title for token in generic_tokens)
+
+
+def _directional_hypothesis_copy(language: str, hypothesis: dict) -> dict | None:
+    evidence = _normalize_evidence(hypothesis.get("evidence"))
+    signed_evidence = _primary_signed_error_evidence(evidence)
+    if signed_evidence is None:
+        return None
+    value = _as_float(signed_evidence.get("value"))
+    if value is None:
+        return None
+    hour = signed_evidence.get("hour")
+    try:
+        hour_text = f"{int(hour):02d}:00 JST" if hour is not None else "해당 시간"
+    except (TypeError, ValueError):
+        hour_text = "해당 시간"
+    abs_mw = abs(value)
+    if value > 0.0:
+        if language == "en":
+            title = f"The model overpredicted demand at {hour_text}."
+            explanation = (
+                f"The signed model error was +{abs_mw:.1f} MW, so the forecast "
+                "was above actual demand. Review the listed lag, weather, and "
+                "calibration features as candidates rather than treating the "
+                "whole day as one regime."
+            )
+        elif language == "ja":
+            title = f"{hour_text} にモデルが実績を上回って予測しました。"
+            explanation = (
+                f"符号付きモデル誤差は +{abs_mw:.1f} MW で、予測値が実績を上回りました。"
+                "関連する lag、気象、補正レイヤーを候補として確認し、日全体の問題として一括処理しないでください。"
+            )
+        else:
+            title = f"{hour_text}에 모델이 실측보다 높게 예측했습니다."
+            explanation = (
+                f"부호가 있는 모델 오차는 +{abs_mw:.1f} MW로, 예측선이 실측보다 높았습니다. "
+                "관련 lag, 기상, 보정 레이어를 후보로 확인하되 하루 전체를 같은 레짐으로 단정하지 않습니다."
+            )
+    else:
+        if language == "en":
+            title = f"The model underpredicted demand at {hour_text}."
+            explanation = (
+                f"The signed model error was -{abs_mw:.1f} MW, so the forecast "
+                "was below actual demand. Review the listed lag, weather, and "
+                "calibration features as candidates rather than treating the "
+                "whole day as one regime."
+            )
+        elif language == "ja":
+            title = f"{hour_text} にモデルが実績を下回って予測しました。"
+            explanation = (
+                f"符号付きモデル誤差は -{abs_mw:.1f} MW で、予測値が実績を下回りました。"
+                "関連する lag、気象、補正レイヤーを候補として確認し、日全体の問題として一括処理しないでください。"
+            )
+        else:
+            title = f"{hour_text}에 모델이 실측보다 낮게 예측했습니다."
+            explanation = (
+                f"부호가 있는 모델 오차는 -{abs_mw:.1f} MW로, 예측선이 실측보다 낮았습니다. "
+                "관련 lag, 기상, 보정 레이어를 후보로 확인하되 하루 전체를 같은 레짐으로 단정하지 않습니다."
+            )
+    repaired = dict(hypothesis)
+    repaired["title"] = title
+    repaired["explanation"] = explanation
+    repaired["evidence"] = evidence
+    if hour is not None and not repaired.get("relatedHours"):
+        try:
+            repaired["relatedHours"] = [int(hour)]
+        except (TypeError, ValueError):
+            pass
+    return repaired
 
 
 def _hypothesis_uses_only_daily_performance_evidence(evidence: list[dict]) -> bool:
@@ -3965,7 +4148,7 @@ def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
             continue
         if _hypothesis_uses_only_controller_diagnostics(evidence):
             continue
-        if _hypothesis_has_sign_conflict(title, explanation, evidence):
+        if _hypothesis_has_direction_conflict(title, explanation, evidence):
             continue
         if (
             evidence_status == "confirmed"
@@ -4489,6 +4672,58 @@ def _clarify_operator_notes_coverage(report: dict) -> dict:
 
 def _recommendation_copy_override(language: str, target: str) -> dict[str, str] | None:
     """Keep high-risk recommendations framed as reviewable experiments."""
+    if target == "intraday_correction.positive_residual_slope_damping":
+        if language == "en":
+            return {
+                "suggestion": (
+                    "Backtest positive-residual slope damping only for hours where "
+                    "upward residual carryover conflicts with a flattening or falling "
+                    "same-day actual slope."
+                ),
+                "expectedEffect": (
+                    "Reduce overshoot after lunch or late-afternoon rollovers without "
+                    "muting real demand recovery."
+                ),
+                "risk": (
+                    "If the trigger is too broad, the controller can underpredict days "
+                    "where demand rebounds after a temporary dip."
+                ),
+                "validationPlan": (
+                    "Replay recent high-error days and compare target-band MAE, WAPE, "
+                    "max error, and published-versus-recalculated gaps."
+                ),
+            }
+        if language == "ja":
+            return {
+                "suggestion": (
+                    "正の residual carryover と当日実績 slope の横ばい/下落が衝突する時間だけ、"
+                    "positive-residual slope damping をバックテスト候補として確認します。"
+                ),
+                "expectedEffect": (
+                    "昼以降や夕方の折り返しでの上振れを抑えつつ、実際の需要回復は残せるか確認します。"
+                ),
+                "risk": (
+                    "条件を広げすぎると、一時的な dip 後に需要が戻る日に過小予測へ反転する可能性があります。"
+                ),
+                "validationPlan": (
+                    "直近の大外れ日を replay し、対象時間帯の MAE、WAPE、最大誤差、公開線と再計算線の差を比較します。"
+                ),
+            }
+        return {
+            "suggestion": (
+                "양수 residual carryover와 당일 실측 slope의 둔화/하락이 충돌하는 시간대만 골라 "
+                "positive-residual slope damping을 백테스트 후보로 검토합니다."
+            ),
+            "expectedEffect": (
+                "점심 이후나 늦은 오후 전환 구간의 상방 튐을 줄이면서, 실제 수요 회복은 보존할 수 있는지 확인합니다."
+            ),
+            "risk": (
+                "트리거를 넓게 잡으면 일시적 dip 이후 수요가 회복되는 날에 과소예측으로 반전될 수 있습니다."
+            ),
+            "validationPlan": (
+                "최근 대형 오차일을 replay해 대상 시간대 MAE, WAPE, 최대 오차, 발표선-재계산선 gap을 함께 비교합니다."
+            ),
+        }
     if target == "intraday_correction.day_level_scale":
         if language == "en":
             return {
@@ -4812,6 +5047,10 @@ def _polish_report_language(report: dict) -> dict:
     for hypothesis in report.get("rootCauseHypotheses") or []:
         if not isinstance(hypothesis, dict):
             continue
+        if _hypothesis_needs_directional_copy(hypothesis):
+            repaired = _directional_hypothesis_copy(language, hypothesis)
+            if repaired is not None:
+                hypothesis.update(repaired)
         for field in ("title", "explanation", "counterEvidence"):
             hypothesis[field] = _polish_localized_text(language, hypothesis.get(field))
 

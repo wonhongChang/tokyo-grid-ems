@@ -823,6 +823,217 @@ def test_ai_daily_report_rejects_openai_signed_error_contradiction(monkeypatch, 
     )
 
 
+def test_ai_daily_report_repairs_generic_signed_error_copy():
+    fallback_report = {
+        "language": "ko",
+        "contentLanguage": "ko",
+        "generator": {
+            "provider": "fallback",
+            "model": None,
+            "promptVersion": "fallback_rules_v1",
+            "schemaVersion": "1.0.0",
+        },
+        "dataQuality": {
+            "observedHours": 24,
+            "fallbackActualHours": 0,
+            "limitations": [],
+        },
+        "diagnosticContext": {},
+        "executiveSummary": {
+            "severity": "warning",
+            "headline": "fallback",
+            "summary": "fallback",
+            "modelVerdict": "tepco_better",
+            "confidence": "medium",
+        },
+        "performance": {
+            "comparableHours": 24,
+            "modelMaeMw": 531.7,
+            "tepcoMaeMw": 320.0,
+            "modelWapePct": 1.94,
+            "tepcoWapePct": 1.17,
+            "modelAdvantageHours": 7,
+            "tepcoAdvantageHours": 17,
+            "verdict": "tepco_better",
+        },
+        "rootCauseHypotheses": [],
+        "featureRecommendations": [],
+        "operatorNotes": [],
+        "limitations": [],
+    }
+    analysis = {
+        "executiveSummary": {
+            "severity": "warning",
+            "headline": "OpenAI headline",
+            "summary": "OpenAI summary",
+            "modelVerdict": "tepco_better",
+            "confidence": "medium",
+        },
+        "rootCauseHypotheses": [
+            {
+                "id": "top_miss_h11",
+                "severity": "warning",
+                "confidence": "high",
+                "evidenceStatus": "partial",
+                "title": "피크 시간대의 예측 오차",
+                "explanation": "11시에 큰 오차가 발생했습니다.",
+                "evidence": [
+                    {
+                        "source": "performance",
+                        "metric": "modelErrorMw",
+                        "value": 1555.8,
+                        "unit": "MW",
+                        "hour": 11,
+                        "timeBand": "daytime",
+                    }
+                ],
+                "relatedHours": [11],
+                "relatedTimeBands": ["daytime"],
+                "relatedFeatures": [
+                    "intraday_correction.positive_residual_slope_damping"
+                ],
+                "counterEvidence": [],
+            }
+        ],
+        "featureRecommendations": [
+            {
+                "id": "r1",
+                "priority": "high",
+                "type": "calibration",
+                "target": "intraday_correction.positive_residual_slope_damping",
+                "suggestion": "피크 시 모델이 급락하지 않도록 조정합니다.",
+                "expectedEffect": "피크 시간대의 과대 예측 감소가 예상됩니다.",
+                "risk": "적절하게 보정되지 않으면 예측 누락으로 이어질 수 있습니다.",
+                "validationPlan": "역사적인 피크 시간대 데이터를 기준으로 검증합니다.",
+                "proposedReplayCommand": None,
+                "commandStatus": None,
+                "linkedHypotheses": ["top_miss_h11"],
+                "autoApply": False,
+            }
+        ],
+        "operatorNotes": [],
+        "limitations": [],
+    }
+
+    report = _merge_openai_analysis(fallback_report, analysis, "gpt-4o-mini")
+
+    assert report["rootCauseHypotheses"][0]["title"] == (
+        "11:00 JST에 모델이 실측보다 높게 예측했습니다."
+    )
+    assert "+1555.8 MW" in report["rootCauseHypotheses"][0]["explanation"]
+    recommendation = report["featureRecommendations"][0]
+    assert recommendation["target"] == (
+        "intraday_correction.positive_residual_slope_damping"
+    )
+    assert "급락하지 않도록" not in recommendation["suggestion"]
+    assert "양수 residual carryover" in recommendation["suggestion"]
+    assert recommendation["autoApply"] is False
+
+
+def test_ai_daily_report_rejects_shape_direction_contradiction():
+    fallback_report = {
+        "language": "ko",
+        "contentLanguage": "ko",
+        "generator": {
+            "provider": "fallback",
+            "model": None,
+            "promptVersion": "fallback_rules_v1",
+            "schemaVersion": "1.0.0",
+        },
+        "dataQuality": {
+            "observedHours": 24,
+            "fallbackActualHours": 0,
+            "limitations": [],
+        },
+        "diagnosticContext": {},
+        "executiveSummary": {
+            "severity": "warning",
+            "headline": "fallback",
+            "summary": "fallback",
+            "modelVerdict": "tepco_better",
+            "confidence": "medium",
+        },
+        "performance": {
+            "comparableHours": 24,
+            "modelMaeMw": 531.7,
+            "tepcoMaeMw": 320.0,
+            "modelWapePct": 1.94,
+            "tepcoWapePct": 1.17,
+            "modelAdvantageHours": 7,
+            "tepcoAdvantageHours": 17,
+            "verdict": "tepco_better",
+        },
+        "rootCauseHypotheses": [
+            {
+                "id": "fallback_h11",
+                "severity": "warning",
+                "confidence": "medium",
+                "evidenceStatus": "partial",
+                "title": "11:00 JST에 모델이 실측보다 높게 예측했습니다.",
+                "explanation": "fallback explanation",
+                "evidence": [
+                    {
+                        "source": "operationReport",
+                        "metric": "modelErrorMw",
+                        "value": 1555.8,
+                        "unit": "MW",
+                        "hour": 11,
+                        "timeBand": "daytime",
+                    }
+                ],
+                "relatedHours": [11],
+                "relatedTimeBands": ["daytime"],
+                "relatedFeatures": ["lag_24h"],
+                "counterEvidence": [],
+            }
+        ],
+        "featureRecommendations": [],
+        "operatorNotes": [],
+        "limitations": [],
+    }
+    analysis = {
+        "executiveSummary": {
+            "severity": "warning",
+            "headline": "OpenAI headline",
+            "summary": "OpenAI summary",
+            "modelVerdict": "tepco_better",
+            "confidence": "medium",
+        },
+        "rootCauseHypotheses": [
+            {
+                "id": "bad_shape",
+                "severity": "warning",
+                "confidence": "medium",
+                "evidenceStatus": "partial",
+                "title": "주간 하락에서의 모델 초과예측",
+                "explanation": "모델 예측이 지나치게 급격히 떨어져 오차가 발생했습니다.",
+                "evidence": [
+                    {
+                        "source": "topMiss_h11",
+                        "metric": "modelErrorMw",
+                        "value": 1555.8,
+                        "unit": "MW",
+                        "hour": 11,
+                        "timeBand": "daytime",
+                    }
+                ],
+                "relatedHours": [11],
+                "relatedTimeBands": ["daytime"],
+                "relatedFeatures": ["lag_24h"],
+                "counterEvidence": [],
+            }
+        ],
+        "featureRecommendations": [],
+        "operatorNotes": [],
+        "limitations": [],
+    }
+
+    report = _merge_openai_analysis(fallback_report, analysis, "gpt-4o-mini")
+
+    assert report["rootCauseHypotheses"][0]["id"] == "fallback_h11"
+    assert "급격히 떨어져" not in report["rootCauseHypotheses"][0]["explanation"]
+
+
 def test_openai_analysis_schema_requires_nullable_recommendation_fields():
     schema = _openai_analysis_schema()
     recommendation_schema = schema["properties"]["featureRecommendations"]["items"]
