@@ -225,12 +225,13 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-06-07 actual JSON 캐시 영속화](docs/ko/model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)
+- [2026-06-05 오전 양수 잔차 carryover 감쇠](docs/ko/model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)
+- [2026-06-04 오전 warm-lag 과반응 가드](docs/ko/model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)
+- [2026-06-03 예측 구간 상단 tail 안정화](docs/ko/model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
 - [2026-05-30 음수 잔차 연속성 floor](docs/ko/model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)
 - [2026-05-29 저녁 레벨 overhang 가드](docs/ko/model-improvements/model-improvement-2026-05-29-evening-level-overhang-guard.md)
 - [2026-05-27 저녁 하락 연속성 가드](docs/ko/model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)
-- [2026-05-27 오전 램프 연속성 가드](docs/ko/model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)
-- [2026-05-27 점심 전환 가드 재활성화](docs/ko/model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md)
-- [2026-05-25 양수 잔차 슬로프 감쇠](docs/ko/model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 

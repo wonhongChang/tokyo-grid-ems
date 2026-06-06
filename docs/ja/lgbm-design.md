@@ -131,7 +131,7 @@ residual = actualMw - modelForecastMw
 
 12:00の時間遷移改善は [2026-05-20 昼時間帯の遷移ガード](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) と [2026-05-27 昼休み遷移ガード再有効化](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) に整理しています。
 
-最新の運用補正レイヤーは [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)、[2026-05-25 正の残差スロープ減衰](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)、[2026-05-27 朝ランプ継続ガード](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)、[2026-05-27 夕方下落継続ガード](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)、[2026-05-30 負の残差連続性 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)、[2026-06-03 予測区間の上側 tail 安定化](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)、[2026-06-04 朝の warm-lag 過反応ガード](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)、[2026-06-05 朝の正の残差 carryover 減衰](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md) に整理しています。
+最新の運用補正およびデータ連続性レイヤーは [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)、[2026-05-25 正の残差スロープ減衰](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)、[2026-05-27 朝ランプ継続ガード](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)、[2026-05-27 夕方下落継続ガード](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)、[2026-05-30 負の残差連続性 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)、[2026-06-03 予測区間の上側 tail 安定化](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)、[2026-06-04 朝の warm-lag 過反応ガード](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)、[2026-06-05 朝の正の残差 carryover 減衰](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)、[2026-06-07 actual JSON キャッシュ永続化](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md) に整理しています。
 
 ---
 
@@ -141,7 +141,7 @@ residual = actualMw - modelForecastMw
 2. JMA AMeDAS観測気象、JMA公式予報気温、湿度fallbackフィールドを付与します。
 3. LightGBMを学習し `web/public/.lgbm_model.pkl` に保存します。
 4. status/intraday workflowがモデルを再ロードします。
-5. 月次ZIPがまだ更新されていない期間は、直近のactual JSONでcacheを補完します。
+5. 月次ZIPがまだ更新されていない期間は、直近のactual JSONでcacheを補完して保存し、次回実行のlag連続性を維持します。
 6. 今日の予測を生成し、intraday residual correctionを適用します。
 7. 同じcacheから明日の予測も生成します。
 8. `web/public/forecast/` 以下にJSONとして保存します。

@@ -129,7 +129,7 @@ See [Business-Type Lag Features](model-improvements/model-improvement-2026-05-16
 
 See [Midday Transition Guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) and [Midday Transition Guard Re-enabled](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) for the 12:00 lag-shape follow-up.
 
-See [Business Return Anchor Shortfall Guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [Positive Residual Slope Damping](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [Morning Ramp Continuity Guard](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [Evening Decline Continuity Guard](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [Negative Residual Continuity Floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [Forecast Interval Tail Sanity Guard](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [Morning Warm-Lag Overreaction Guard](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), and [Morning Positive Residual Carryover Damping](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md) for the latest operational guard layers.
+See [Business Return Anchor Shortfall Guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [Positive Residual Slope Damping](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [Morning Ramp Continuity Guard](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [Evening Decline Continuity Guard](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [Negative Residual Continuity Floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [Forecast Interval Tail Sanity Guard](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [Morning Warm-Lag Overreaction Guard](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [Morning Positive Residual Carryover Damping](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), and [Actual JSON Cache Persistence](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md) for the latest operational guard and data-continuity layers.
 
 ---
 
@@ -139,7 +139,7 @@ See [Business Return Anchor Shortfall Guard](model-improvements/model-improvemen
 2. Weather enrichment fills JMA AMeDAS observed weather, JMA official forecast temperatures, and humidity fallback fields.
 3. LightGBM is trained and saved to `web/public/.lgbm_model.pkl`.
 4. The status/intraday workflow reloads the model.
-5. Recent actual JSON files are injected into the cache to fill gaps before the monthly ZIP is updated.
+5. Recent actual JSON files are injected into the cache and persisted to fill gaps before the monthly ZIP is updated.
 6. Today's forecast is generated and adjusted with intraday residual correction.
 7. Tomorrow's forecast is generated using the same enriched cache.
 8. JSON outputs are written under `web/public/forecast/`.

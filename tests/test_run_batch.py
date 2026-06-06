@@ -528,6 +528,51 @@ def test_inject_today_actuals_fills_missing_yesterday_hours_from_tepco_forecast(
 
 # ── build_alerts_json ────────────────────────────────────────────────────────
 
+def test_injected_actuals_can_be_persisted_to_hourly_cache(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    (actual_dir / "2026-06-06.json").write_text(json.dumps({
+        "date": "2026-06-06",
+        "timezone": "Asia/Tokyo",
+        "availability": "ok",
+        "series": [
+            {
+                "ts": "2026-06-06T10:00:00+09:00",
+                "actualMw": 25_430.0,
+                "actualSource": "observed",
+                "tepcoForecastMw": 25_180.0,
+                "usagePct": 81.2,
+                "supplyMw": 31_300.0,
+            },
+        ],
+    }), encoding="utf-8")
+    cache = pd.DataFrame([
+        {
+            "ts": pd.Timestamp("2026-06-06T10:00:00+09:00"),
+            "actual_mw": float("nan"),
+            "forecast_mw": float("nan"),
+            "usage_pct": float("nan"),
+            "supply_mw": float("nan"),
+            "temp_c": 23.5,
+            "apparent_temp_c": 25.2,
+            "humidity_pct": 68.0,
+            "discomfort_index": 72.1,
+            "weather_source": "jma_forecast",
+        },
+    ])
+
+    injected = _inject_today_actuals(tmp_path, date(2026, 6, 7), cache)
+    save_hourly_cache(tmp_path, injected)
+
+    loaded = load_hourly_cache(tmp_path)
+    row = loaded.loc[loaded["ts"] == pd.Timestamp("2026-06-06T10:00:00+09:00")].iloc[0]
+    assert row["actual_mw"] == pytest.approx(25_430.0)
+    assert row["forecast_mw"] == pytest.approx(25_180.0)
+    assert row["usage_pct"] == pytest.approx(81.2)
+    assert row["supply_mw"] == pytest.approx(31_300.0)
+    assert row["temp_c"] == pytest.approx(23.5)
+
+
 def test_build_alerts_json_empty_events():
     result = build_alerts_json(date(2024, 1, 1), [])
     assert result["date"] == "2024-01-01"

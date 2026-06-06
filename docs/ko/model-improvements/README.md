@@ -8,6 +8,7 @@
 
 ## 2026-06
 
+- [2026-06-07 actual JSON 캐시 영속화](model-improvement-2026-06-07-actual-cache-persistence.md)
 - [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvement-2026-06-05-morning-positive-carryover-damping.md)
 
 - [2026-06-04 오전 warm-lag 과반응 가드](model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)

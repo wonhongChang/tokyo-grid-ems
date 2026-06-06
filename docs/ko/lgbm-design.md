@@ -131,7 +131,7 @@ residual = actualMw - modelForecastMw
 
 12:00 시간 전환 개선은 [2026-05-20 점심 시간대 전환 guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md)와 [2026-05-27 점심 전환 가드 재활성화](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md)에 정리했습니다.
 
-최신 운영 보정 레이어는 [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [2026-05-25 양수 잔차 슬로프 감쇠](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [2026-05-27 오전 램프 연속성 가드](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [2026-05-27 저녁 하락 연속성 가드](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [2026-05-30 음수 잔차 연속성 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [2026-06-03 예측 구간 상단 tail 안정화](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [2026-06-04 오전 warm-lag 과반응 가드](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)에 정리했습니다.
+최신 운영 보정 및 데이터 연속성 레이어는 [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [2026-05-25 양수 잔차 슬로프 감쇠](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [2026-05-27 오전 램프 연속성 가드](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [2026-05-27 저녁 하락 연속성 가드](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [2026-05-30 음수 잔차 연속성 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [2026-06-03 예측 구간 상단 tail 안정화](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [2026-06-04 오전 warm-lag 과반응 가드](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), [2026-06-07 actual JSON 캐시 영속화](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)에 정리했습니다.
 
 ---
 
@@ -141,7 +141,7 @@ residual = actualMw - modelForecastMw
 2. JMA AMeDAS 실측 기상, JMA 공식 예보 기온, 습도 fallback 필드를 붙입니다.
 3. LightGBM을 학습하고 `web/public/.lgbm_model.pkl`로 저장합니다.
 4. status/intraday workflow가 모델을 다시 로드합니다.
-5. 월별 ZIP이 아직 갱신되지 않은 구간은 최근 actual JSON으로 cache를 보강합니다.
+5. 월별 ZIP이 아직 갱신되지 않은 구간은 최근 actual JSON으로 cache를 보강하고 저장해 다음 실행의 lag 연속성을 유지합니다.
 6. 오늘 예측을 만들고 intraday residual correction을 적용합니다.
 7. 같은 cache로 내일 예측도 만듭니다.
 8. `web/public/forecast/` 아래 JSON으로 저장합니다.

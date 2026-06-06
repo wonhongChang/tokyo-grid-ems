@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-06
 
+- [2026-06-07 actual JSON キャッシュ永続化](model-improvement-2026-06-07-actual-cache-persistence.md)
 - [2026-06-05 朝の正の残差 carryover 減衰](model-improvement-2026-06-05-morning-positive-carryover-damping.md)
 
 - [2026-06-04 朝の warm-lag 過反応ガード](model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)

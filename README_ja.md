@@ -202,12 +202,13 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-06-07 actual JSON キャッシュ永続化](docs/ja/model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)
+- [2026-06-05 朝の正の残差 carryover 減衰](docs/ja/model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)
+- [2026-06-04 朝の warm-lag 過反応ガード](docs/ja/model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)
+- [2026-06-03 予測区間の上側 tail 安定化](docs/ja/model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
 - [2026-05-30 負の残差連続性 floor](docs/ja/model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)
 - [2026-05-29 夕方レベル overhang ガード](docs/ja/model-improvements/model-improvement-2026-05-29-evening-level-overhang-guard.md)
 - [2026-05-27 夕方下落継続ガード](docs/ja/model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)
-- [2026-05-27 朝ランプ継続ガード](docs/ja/model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)
-- [2026-05-27 昼休み遷移ガード再有効化](docs/ja/model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md)
-- [2026-05-25 正の残差スロープ減衰](docs/ja/model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 

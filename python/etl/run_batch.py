@@ -2330,7 +2330,6 @@ def _run_status_only(
     hourly_cache = enrich_cache_with_weather(hourly_cache)
     forecast_weather_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
     extended_cache = _apply_weather_forecast_bias_correction(forecast_weather_cache, config)
-    save_hourly_cache(out_dir, forecast_weather_cache)
 
     forecaster = _try_load_lgbm(out_dir)
     adjuster   = _make_adjuster(config)
@@ -2340,6 +2339,9 @@ def _run_status_only(
     # Inject recent missing actuals (yesterday + today) for both forecasts
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
     display_with_actuals = _inject_today_actuals(out_dir, today, forecast_weather_cache)
+    # Persist the display cache after actual JSON injection so the next run's
+    # lag features see the same observed/fallback actuals shown on the UI.
+    save_hourly_cache(out_dir, display_with_actuals)
     if forecaster is None:
         forecaster = _try_train_lgbm(extended_with_actuals, out_dir, config)
 
@@ -2588,10 +2590,10 @@ def main() -> None:
                 print(f"[WARN] LightGBM re-forecast {d}: {e}", file=sys.stderr)
 
     # Extend cache with forecast weather for today/tomorrow inference. Persist the
-    # unadjusted forecast-weather cache; the bias-corrected copy is model input only.
+    # unadjusted forecast-weather cache after actual JSON injection; the
+    # bias-corrected copy is model input only.
     forecast_weather_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
     extended_cache = _apply_weather_forecast_bias_correction(forecast_weather_cache, config)
-    save_hourly_cache(out_dir, forecast_weather_cache)
 
     # Today / tomorrow forecasts
     today    = datetime.now(tz=JST).date()
@@ -2603,6 +2605,7 @@ def main() -> None:
 
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
     display_with_actuals = _inject_today_actuals(out_dir, today, forecast_weather_cache)
+    save_hourly_cache(out_dir, display_with_actuals)
     today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,
         config, adjuster, guard, midday_guard
