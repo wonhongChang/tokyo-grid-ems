@@ -1376,6 +1376,163 @@ def test_ai_daily_report_rejects_empty_openai_sections(monkeypatch, tmp_path):
     assert report["featureRecommendations"][0]["suggestion"]
 
 
+def test_ai_daily_report_curates_generic_openai_miss_with_signed_facts(
+    monkeypatch,
+    tmp_path,
+):
+    date_iso = "2026-06-05"
+    _write_operation_fixture(tmp_path, date_iso)
+    operation_path = tmp_path / "reports" / "daily" / f"{date_iso}.json"
+    operation = json.loads(operation_path.read_text(encoding="utf-8"))
+    operation["summary"]["modelMaxErrorHour"] = 8
+    operation["summary"]["modelMaxErrorMw"] = 1661.4
+    operation["topMisses"] = [
+        {
+            "hour": 8,
+            "actualMw": 28_280.0,
+            "modelForecastMw": 26_618.6,
+            "tepcoForecastMw": 28_050.0,
+            "modelErrorMw": -1661.4,
+            "tepcoErrorMw": -230.0,
+            "modelAbsErrorMw": 1661.4,
+            "tepcoAbsErrorMw": 230.0,
+        }
+    ]
+    operation["insights"] = [
+        {
+            "code": "large_single_hour_miss",
+            "severity": "warning",
+            "evidence": {"hour": 8, "modelAbsErrorMw": 1661.4},
+        }
+    ]
+    operation["shape"] = {
+        "largeShapeBreaks": [
+            {
+                "fromHour": 8,
+                "toHour": 9,
+                "modelDeltaErrorMw": 2104.9,
+                "modelAbsDeltaErrorMw": 2104.9,
+            }
+        ]
+    }
+    _write_json(operation_path, operation)
+    monkeypatch.setenv(PROJECT_OPENAI_API_KEY_ENV, "test-key")
+
+    def fake_openai_analysis(context, api_key, model):
+        return {
+            "executiveSummary": {
+                "severity": "warning",
+                "headline": "TEPCO forecast was closer.",
+                "summary": "TEPCO had lower daily error.",
+                "modelVerdict": "tepco_better",
+                "confidence": "high",
+            },
+            "rootCauseHypotheses": [
+                {
+                    "id": "h2",
+                    "severity": "warning",
+                    "confidence": "medium",
+                    "evidenceStatus": "partial",
+                    "title": "큰 단일 시간 오차가 발생했습니다.",
+                    "explanation": "최대 오류 시간이 일일 지표에 큰 영향을 미쳤습니다.",
+                    "evidence": [
+                        {
+                            "source": "reports/daily",
+                            "metric": "modelAbsErrorMw",
+                            "value": 1661.4,
+                            "unit": "MW",
+                            "hour": 8,
+                            "timeBand": "morning_ramp",
+                        }
+                    ],
+                    "relatedHours": [8],
+                    "relatedTimeBands": ["morning_ramp"],
+                    "relatedFeatures": ["lag_24h"],
+                    "counterEvidence": [],
+                },
+                {
+                    "id": "shape_break_8_9",
+                    "severity": "warning",
+                    "confidence": "medium",
+                    "evidenceStatus": "partial",
+                    "title": "오전 램프 중 예측의 급격한 상승",
+                    "explanation": "8:00-9:00 JST 사이에 큰 형태 파괴가 발생했습니다.",
+                    "evidence": [
+                        {
+                            "source": "shape_break",
+                            "metric": "modelDeltaErrorMw",
+                            "value": 2104.9,
+                            "unit": "MW",
+                            "hour": 8,
+                            "timeBand": "morning_ramp",
+                        }
+                    ],
+                    "relatedHours": [8, 9],
+                    "relatedTimeBands": ["morning_ramp"],
+                    "relatedFeatures": [],
+                    "counterEvidence": [],
+                },
+                {
+                    "id": "top_miss_h8",
+                    "severity": "warning",
+                    "confidence": "medium",
+                    "evidenceStatus": "partial",
+                    "title": "8시 예측 과소 예측 발생",
+                    "explanation": "모델이 8시 수요를 과소 예측했습니다.",
+                    "evidence": [
+                        {
+                            "source": "top_miss_h8",
+                            "metric": "modelErrorMw",
+                            "value": -1661.4,
+                            "unit": "MW",
+                            "hour": 8,
+                            "timeBand": "morning_ramp",
+                        }
+                    ],
+                    "relatedHours": [8],
+                    "relatedTimeBands": ["morning_ramp"],
+                    "relatedFeatures": [],
+                    "counterEvidence": [],
+                },
+            ],
+            "featureRecommendations": [
+                {
+                    "id": "r1",
+                    "priority": "medium",
+                    "type": "feature_engineering",
+                    "target": "lag_24h",
+                    "suggestion": "lag_24h의 영향을 검토합니다.",
+                    "expectedEffect": "MAE를 확인합니다.",
+                    "risk": "과적합 위험이 있습니다.",
+                    "validationPlan": "백테스트합니다.",
+                    "linkedHypotheses": ["h2"],
+                    "autoApply": False,
+                }
+            ],
+            "operatorNotes": [],
+            "limitations": [],
+        }
+
+    monkeypatch.setattr(
+        "python.eval.ai_daily_report._call_openai_analysis",
+        fake_openai_analysis,
+    )
+
+    report = build_ai_daily_report(
+        tmp_path,
+        date_iso,
+        generated_at="2026-06-06T07:34:53+09:00",
+        use_openai=True,
+    )
+
+    titles = [item["title"] for item in report["rootCauseHypotheses"]]
+    assert "큰 단일 시간 오차가 발생했습니다." not in titles
+    assert any("08:00 JST" in title and "낮게" in title for title in titles), titles
+    assert all(item["relatedFeatures"] for item in report["rootCauseHypotheses"])
+    assert "replay" in report["featureRecommendations"][0]["suggestion"]
+    assert "영향을 검토합니다" not in report["featureRecommendations"][0]["suggestion"]
+
+
 def test_ai_daily_report_reuses_existing_report_when_skip_existing(monkeypatch, tmp_path):
     date_iso = "2026-05-23"
     _write_operation_fixture(tmp_path, date_iso)

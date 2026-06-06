@@ -84,12 +84,17 @@ FEATURE_NAME_ALIASES = {
 }
 ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
     "lag_24h",
+    "lag_24h_hourly_delta",
     "lag_168h",
+    "recent_same_business_type_mean",
+    "recent_same_business_type_delta_mean",
     "temp_c",
     "humidity_pct",
     "apparent_temp_c",
     "temp_delta_1h",
     "temp_delta_2h",
+    "temp_delta_24h",
+    "cooling_delta_24h",
     "apparent_temp_delta_1h",
     "business_late_afternoon_x_temp_delta_1h",
     "cooling_load_3d_mean",
@@ -846,6 +851,7 @@ def _evidence_from_insight(insight: dict, operation: dict) -> list[dict]:
     raw = insight.get("evidence") or {}
     time_band = raw.get("band") or raw.get("timeBand")
     hour = raw.get("hour")
+    top_miss = (operation.get("topMisses") or [None])[0]
     for metric, value in raw.items():
         if metric in {"band", "timeBand", "hour", "fromHour", "toHour"}:
             continue
@@ -857,18 +863,46 @@ def _evidence_from_insight(insight: dict, operation: dict) -> list[dict]:
             "hour": hour,
             "timeBand": time_band,
         })
+    if (
+        insight.get("code") == "large_single_hour_miss"
+        and isinstance(top_miss, dict)
+        and top_miss.get("modelErrorMw") is not None
+    ):
+        miss_hour = top_miss.get("hour")
+        miss_band = _time_band_code_for_hour(miss_hour)
+        existing_metrics = {
+            str(item.get("metric") or "").replace("_", "").lower()
+            for item in evidence
+        }
+        for metric, unit in (
+            ("modelErrorMw", "MW"),
+            ("modelAbsErrorMw", "MW"),
+            ("modelForecastMw", "MW"),
+            ("actualMw", "MW"),
+        ):
+            if metric.lower() in existing_metrics:
+                continue
+            if top_miss.get(metric) is None:
+                continue
+            evidence.append({
+                "source": "reports/daily",
+                "metric": metric,
+                "value": top_miss.get(metric),
+                "unit": unit,
+                "hour": miss_hour,
+                "timeBand": miss_band,
+            })
     if evidence:
         return evidence
 
-    top_miss = (operation.get("topMisses") or [None])[0]
     if top_miss:
         return [{
             "source": "reports/daily",
-            "metric": "modelAbsErrorMw",
-            "value": top_miss.get("modelAbsErrorMw"),
+            "metric": "modelErrorMw",
+            "value": top_miss.get("modelErrorMw"),
             "unit": "MW",
             "hour": top_miss.get("hour"),
-            "timeBand": None,
+            "timeBand": _time_band_code_for_hour(top_miss.get("hour")),
         }]
     return []
 
@@ -3960,20 +3994,157 @@ def _hypothesis_needs_directional_copy(hypothesis: dict) -> bool:
         return False
     if _hypothesis_has_direction_conflict(title, explanation, evidence):
         return True
+    return _hypothesis_has_generic_error_wording(hypothesis)
+
+
+def _hypothesis_has_generic_error_wording(hypothesis: dict) -> bool:
+    title = str(hypothesis.get("title") or "")
+    explanation = str(hypothesis.get("explanation") or "")
     lowered = f"{title} {explanation}".lower()
     generic_tokens = (
         "single hour",
         "large error",
         "forecast error",
         "peak hour error",
+        "large single-hour miss",
         "단일 시간",
+        "단일 대형 오차",
+        "단일 대형",
         "크게 틀림",
         "예측 오차",
+        "과소 예측 발생",
+        "과대 예측 발생",
+        "과소예측 발생",
+        "과대예측 발생",
         "피크 시간대",
         "大きな誤差",
         "予測誤差",
     )
     return any(token in lowered or token in title for token in generic_tokens)
+
+
+def _hypothesis_first_hour(hypothesis: dict) -> int | None:
+    evidence = _normalize_evidence(hypothesis.get("evidence"))
+    for item in evidence:
+        hour = item.get("hour")
+        if hour is not None:
+            try:
+                return int(hour)
+            except (TypeError, ValueError):
+                pass
+    for hour in hypothesis.get("relatedHours") or []:
+        try:
+            return int(hour)
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+def _hypothesis_signed_error_key(hypothesis: dict) -> tuple[int | None, str] | None:
+    signed_evidence = _primary_signed_error_evidence(
+        _normalize_evidence(hypothesis.get("evidence"))
+    )
+    if signed_evidence is None:
+        return None
+    value = _as_float(signed_evidence.get("value"))
+    if value is None:
+        return None
+    direction = "overprediction" if value > 0 else "underprediction"
+    return (_hypothesis_first_hour(hypothesis), direction)
+
+
+def _hydrate_hypothesis_related_features(hypothesis: dict) -> dict:
+    features = [
+        _normalize_feature_name(feature)
+        for feature in _as_string_list(hypothesis.get("relatedFeatures"))
+    ]
+    if features:
+        result = dict(hypothesis)
+        result["relatedFeatures"] = list(dict.fromkeys(features))
+        return result
+
+    hour = _hypothesis_first_hour(hypothesis)
+    if hour is None:
+        return hypothesis
+    result = dict(hypothesis)
+    result["relatedFeatures"] = _feature_candidates_for_hour(hour)
+    return result
+
+
+def _hypothesis_quality_score(hypothesis: dict) -> tuple[int, int, int, int]:
+    evidence = _normalize_evidence(hypothesis.get("evidence"))
+    has_signed = 1 if _primary_signed_error_evidence(evidence) is not None else 0
+    has_features = 1 if _as_string_list(hypothesis.get("relatedFeatures")) else 0
+    is_specific = 0 if _hypothesis_has_generic_error_wording(hypothesis) else 1
+    evidence_count = min(len(evidence), 9)
+    return (has_signed, has_features, is_specific, evidence_count)
+
+
+def _curate_hypotheses_with_fallback(
+    hypotheses: list[dict],
+    fallback_hypotheses: list[dict],
+    language: str,
+) -> list[dict]:
+    fallback_candidates = [
+        hypothesis
+        for hypothesis in fallback_hypotheses
+        if isinstance(hypothesis, dict)
+        and (
+            _primary_signed_error_evidence(
+                _normalize_evidence(hypothesis.get("evidence"))
+            )
+            is not None
+            or _hypothesis_has_concrete_non_freeze_evidence(hypothesis)
+        )
+    ]
+    candidates = list(hypotheses) + fallback_candidates
+    signed_hours = {
+        key[0]
+        for key in (
+            _hypothesis_signed_error_key(hypothesis)
+            for hypothesis in candidates
+            if isinstance(hypothesis, dict)
+        )
+        if key is not None and key[0] is not None
+    }
+
+    result_by_key: dict[tuple[Any, ...], dict] = {}
+    order: list[tuple[Any, ...]] = []
+    for index, hypothesis in enumerate(candidates):
+        if not isinstance(hypothesis, dict):
+            continue
+        item = _hydrate_hypothesis_related_features(hypothesis)
+        if _hypothesis_needs_directional_copy(item):
+            repaired = _directional_hypothesis_copy(language, item)
+            if repaired is not None:
+                item = repaired
+                item = _hydrate_hypothesis_related_features(item)
+
+        hour = _hypothesis_first_hour(item)
+        signed_key = _hypothesis_signed_error_key(item)
+        if (
+            signed_key is None
+            and hour in signed_hours
+            and _hypothesis_has_generic_error_wording(item)
+        ):
+            continue
+        if signed_key is not None:
+            key: tuple[Any, ...] = ("signed", signed_key[0], signed_key[1])
+        elif hour is not None:
+            key = ("hour", hour, str(item.get("id") or item.get("title") or index))
+        else:
+            key = ("title", str(item.get("title") or index))
+
+        existing = result_by_key.get(key)
+        if existing is None:
+            result_by_key[key] = item
+            order.append(key)
+            continue
+        if _hypothesis_quality_score(item) > _hypothesis_quality_score(existing):
+            result_by_key[key] = item
+
+    curated = [result_by_key[key] for key in order if key in result_by_key]
+    return curated[:5]
 
 
 def _directional_hypothesis_copy(language: str, hypothesis: dict) -> dict | None:
@@ -4338,6 +4509,11 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
             )
         )
     ]
+    normalized_hypotheses = _curate_hypotheses_with_fallback(
+        normalized_hypotheses,
+        fallback_hypotheses,
+        report.get("language", "ko"),
+    )
     if normalized_hypotheses and all(
         _hypothesis_is_freeze_only(hypothesis)
         for hypothesis in normalized_hypotheses
@@ -4672,6 +4848,60 @@ def _clarify_operator_notes_coverage(report: dict) -> dict:
 
 def _recommendation_copy_override(language: str, target: str) -> dict[str, str] | None:
     """Keep high-risk recommendations framed as reviewable experiments."""
+    if target in {"lag_24h", "lag_24h_hourly_delta"}:
+        if language == "en":
+            return {
+                "suggestion": (
+                    "Replay the top-miss window and compare lag_24h level and "
+                    "hourly delta against recent same-business-type anchors before "
+                    "changing model features."
+                ),
+                "expectedEffect": (
+                    "Separate true next-day inertia from stale previous-day ramp "
+                    "shape so the morning curve is not over- or under-corrected."
+                ),
+                "risk": (
+                    "A broad lag penalty can damage days where yesterday's pattern "
+                    "is genuinely predictive."
+                ),
+                "validationPlan": (
+                    "Use recent 2-4 week replay, then compare 06-11 MAE/WAPE, "
+                    "max error, and same-hour TEPCO gap before accepting the change."
+                ),
+            }
+        if language == "ja":
+            return {
+                "suggestion": (
+                    "モデル特徴量を変える前に、最大誤差時間の前後を replay し、lag_24h の水準と"
+                    "時間差分を最近の同一営業形態 anchor と比較します。"
+                ),
+                "expectedEffect": (
+                    "前日慣性が有効なケースと、古い ramp 形状を引きずったケースを分離し、"
+                    "朝の曲線の過補正/過小補正を避けます。"
+                ),
+                "risk": (
+                    "lag を広く弱めると、前日の形状が本当に有効な日に精度を落とす可能性があります。"
+                ),
+                "validationPlan": (
+                    "直近2〜4週を replay し、06〜11時 MAE/WAPE、最大誤差、同時刻のTEPCO差を比較します。"
+                ),
+            }
+        return {
+            "suggestion": (
+                "모델 피처를 바로 바꾸기 전에, 최대 오차 시간 전후를 replay해서 lag_24h의 레벨과 "
+                "시간별 변화량을 최근 같은 영업형태 anchor와 비교합니다."
+            ),
+            "expectedEffect": (
+                "전날 관성이 실제로 유효한 날과 낡은 ramp 형태를 끌고 온 날을 분리해, "
+                "오전 곡선의 과보정/과소보정을 줄일 수 있는지 확인합니다."
+            ),
+            "risk": (
+                "lag 영향력을 넓게 약화하면 전날 패턴이 실제로 유효한 날의 정확도가 떨어질 수 있습니다."
+            ),
+            "validationPlan": (
+                "최근 2~4주 replay에서 06~11시 MAE/WAPE, 최대 오차, 같은 시간대 TEPCO 격차를 비교합니다."
+            ),
+        }
     if target == "intraday_correction.positive_residual_slope_damping":
         if language == "en":
             return {
