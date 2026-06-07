@@ -237,7 +237,9 @@ def test_internal_daily_diagnostic_includes_lag_and_weather_features(tmp_path):
     assert "flags" in summary["dayLevelRegime"]
     assert summary["weatherDeltaRiskByBand"]
     assert summary["morningTransition"]["rows"] == 6
+    assert summary["nonBusinessMiddayShape"]["rows"] == 0
     assert "morningTransitionDiagnostics" in diagnostic
+    assert "nonBusinessMiddayShapeDiagnostics" in diagnostic
 
 
 def test_internal_daily_diagnostic_builds_morning_transition_registry(tmp_path):
@@ -300,6 +302,90 @@ def test_internal_daily_diagnostic_builds_morning_transition_registry(tmp_path):
     assert registry["summary"]["causeTagCounts"]["freeze"] == 1
 
 
+def test_internal_daily_diagnostic_builds_non_business_midday_shape_registry(tmp_path):
+    date_iso = "2026-05-17"
+    actual_values = [23_000.0 + hour * 30.0 for hour in range(24)]
+    actual_values[10] = 23_500.0
+    actual_values[11] = 24_000.0
+    actual_values[12] = 25_200.0
+    actual_values[13] = 25_400.0
+    actual_values[14] = 25_300.0
+    actual_values[15] = 25_100.0
+    model_values = actual_values.copy()
+    model_values[11] = 24_500.0
+    model_values[12] = 23_600.0
+    model_values[13] = 23_900.0
+    model_values[14] = 24_200.0
+    model_values[15] = 24_400.0
+    _write_day(tmp_path, date_iso, model_values, actual_values)
+    _write_json(
+        tmp_path
+        / "reports"
+        / "internal"
+        / "operational-calibration"
+        / f"{date_iso}.json",
+        {
+            "date": date_iso,
+            "hourlyDiagnostics": [
+                {
+                    "hour": 11,
+                    "forecastMwByStage": {
+                        "raw_lgbm": 24_800.0,
+                        "pre_calibration": 24_700.0,
+                    },
+                    "preCalibrationForecastMw": 24_700.0,
+                    "postCalibrationForecastMw": 24_600.0,
+                    "lag24DeltaMw": 100.0,
+                    "recentSameBusinessTypeDeltaMw": 300.0,
+                    "residualAdjustmentMw": -100.0,
+                },
+                {
+                    "hour": 12,
+                    "forecastMwByStage": {
+                        "raw_lgbm": 24_100.0,
+                        "pre_calibration": 24_000.0,
+                    },
+                    "preCalibrationForecastMw": 24_000.0,
+                    "postCalibrationForecastMw": 24_000.0,
+                    "lag24DeltaMw": -70.0,
+                    "recentSameBusinessTypeDeltaMw": 250.0,
+                    "residualAdjustmentMw": -300.0,
+                },
+            ],
+        },
+    )
+    cache = _make_feature_cache()
+    target_mask = cache["ts"].dt.strftime("%Y-%m-%dT%H") == f"{date_iso}T12"
+    cache.loc[target_mask, "temp_c"] = 25.0
+    cache.loc[target_mask, "apparent_temp_c"] = 28.5
+    cache.loc[target_mask, "humidity_pct"] = 75.0
+    cache.loc[target_mask, "discomfort_index"] = 76.0
+    cache.loc[target_mask, "weather_source"] = "AMEDAS_ACTUAL"
+
+    diagnostic = build_internal_daily_diagnostic(
+        tmp_path,
+        date_iso,
+        generated_at="2026-05-18T08:20:00+09:00",
+        cache=cache,
+        config={},
+    )
+
+    registry = diagnostic["nonBusinessMiddayShapeDiagnostics"]
+    hour_12 = next(row for row in registry["rows"] if row["hour"] == 12)
+    assert hour_12["actualDeltaMw"] == pytest.approx(1_200.0)
+    assert hour_12["servedForecastDeltaMw"] == pytest.approx(-900.0)
+    assert hour_12["modelShapeDeltaErrorMw"] == pytest.approx(-2_100.0)
+    assert hour_12["modelErrorMw"] == pytest.approx(-1_600.0)
+    assert hour_12["nonBusinessMiddayLagDeltaExcessMw"] == pytest.approx(-320.0)
+    assert hour_12["weatherSourceConfidence"] == "observed"
+    assert "weekend-cooling-ramp-underpredicted" in hour_12["causeTags"]
+    assert "model-dropped-against-actual-rise" in hour_12["causeTags"]
+    assert "rebound-shape-underfit" in hour_12["causeTags"]
+    assert registry["summary"]["maxShapeDeltaErrorHour"] == 12
+    assert registry["summary"]["actualRiseModelDropHours"] == [12]
+    assert registry["summary"]["causeTagCounts"]["model-dropped-against-actual-rise"] == 1
+
+
 def test_internal_daily_diagnostics_index_points_to_latest_report(tmp_path):
     actual_values = [20_000.0 + hour * 100 for hour in range(24)]
     _write_day(tmp_path, "2026-05-17", actual_values, actual_values)
@@ -317,6 +403,9 @@ def test_internal_daily_diagnostics_index_points_to_latest_report(tmp_path):
     assert index["visibility"]["storedWithOperationalOutputs"] is True
     assert index["latest"]["date"] == "2026-05-18"
     assert index["latest"]["morningTransition"]["rows"] == 6
+    assert index["latest"]["nonBusinessMiddayShape"]["rows"] == 0
     assert index["morningTransition"]["windowDays"] == 2
     assert index["morningTransition"]["hours"] == [6, 7, 8, 9, 10, 11]
+    assert index["nonBusinessMiddayShape"]["windowDays"] == 2
+    assert index["nonBusinessMiddayShape"]["hours"] == [11, 12, 13, 14, 15]
     assert [diagnostic["date"] for diagnostic in diagnostics] == ["2026-05-17", "2026-05-18"]

@@ -1846,6 +1846,59 @@ def _compact_morning_transition_diagnostics(diagnostics: dict | None) -> dict | 
     }
 
 
+def _compact_non_business_midday_shape_diagnostics(diagnostics: dict | None) -> dict | None:
+    if not diagnostics:
+        return None
+    registry = diagnostics.get("nonBusinessMiddayShapeDiagnostics") or {}
+    if not isinstance(registry, dict):
+        return None
+    rows = registry.get("rows") or []
+    compact_rows = []
+    for row in rows:
+        compact = _drop_none_values({
+            "hour": row.get("hour"),
+            "actualMw": _round_number(row.get("actualMw")),
+            "servedForecastMw": _round_number(row.get("servedForecastMw")),
+            "modelErrorMw": _round_number(row.get("modelErrorMw")),
+            "rawForecastMw": _round_number(row.get("rawForecastMw")),
+            "preCalibrationForecastMw": _round_number(row.get("preCalibrationForecastMw")),
+            "postCalibrationForecastMw": _round_number(row.get("postCalibrationForecastMw")),
+            "publishedVsRecalculatedGapMw": _round_number(
+                row.get("publishedVsRecalculatedGapMw")
+            ),
+            "servedForecastDeltaMw": _round_number(row.get("servedForecastDeltaMw")),
+            "actualDeltaMw": _round_number(row.get("actualDeltaMw")),
+            "modelShapeDeltaErrorMw": _round_number(row.get("modelShapeDeltaErrorMw")),
+            "nonBusinessMiddayLagDeltaExcessMw": _round_number(
+                row.get("nonBusinessMiddayLagDeltaExcessMw")
+            ),
+            "coolingDelta24hC": _round_number(row.get("coolingDelta24hC")),
+            "tempAnomaly7dC": _round_number(row.get("tempAnomaly7dC")),
+            "apparentCoolingDegreeC": _round_number(row.get("apparentCoolingDegreeC")),
+            "humidityPct": _round_number(row.get("humidityPct")),
+            "discomfortIndex": _round_number(row.get("discomfortIndex")),
+            "weatherSourceConfidence": row.get("weatherSourceConfidence"),
+            "causeTags": row.get("causeTags") or [],
+        })
+        if compact:
+            compact_rows.append(compact)
+
+    def priority(row: dict) -> tuple[int, float]:
+        tagged = 1 if row.get("causeTags") else 0
+        abs_error = abs(_as_float(row.get("modelErrorMw")) or 0.0)
+        shape_error = abs(_as_float(row.get("modelShapeDeltaErrorMw")) or 0.0)
+        freeze_gap = abs(_as_float(row.get("publishedVsRecalculatedGapMw")) or 0.0)
+        return (tagged, max(abs_error, shape_error, freeze_gap))
+
+    selected_rows = sorted(compact_rows, key=priority, reverse=True)[:6]
+    selected_rows = sorted(selected_rows, key=lambda row: int(row.get("hour", 99)))
+    return {
+        "summary": registry.get("summary"),
+        "tagDefinitions": registry.get("tagDefinitions"),
+        "selectedRows": selected_rows,
+    }
+
+
 def _build_coverage_context(
     data_quality: dict | None,
     calibration_facts: dict | None,
@@ -3654,6 +3707,9 @@ def _build_openai_fact_packet(
         "morningTransitionDiagnostics": _compact_morning_transition_diagnostics(
             diagnostics
         ),
+        "nonBusinessMiddayShapeDiagnostics": _compact_non_business_midday_shape_diagnostics(
+            diagnostics
+        ),
         "calibrationFacts": calibration_facts,
         "calibrationHistoryFacts": _compact_calibration_history(calibration_history),
         "focusedRows": focused_rows,
@@ -3684,6 +3740,7 @@ def _openai_analysis_schema() -> dict:
                     "reports/daily",
                     "focusedRows",
                     "morningTransitionDiagnostics",
+                    "nonBusinessMiddayShapeDiagnostics",
                     "stageAttribution",
                     "freezeImpact",
                     "controllerDiagnosis",
@@ -3887,7 +3944,7 @@ def _openai_domain_guidelines() -> str:
         "Use only numeric facts, analysisPriorities, weather diagnostics, "
         "topMisses, timeBands, focusedRows, eventEvidenceBundles, "
         "recommendationTicketCandidates, morningTransitionDiagnostics, "
-        "controlContext, controllerDiagnosis, stageAttribution, "
+        "nonBusinessMiddayShapeDiagnostics, controlContext, controllerDiagnosis, stageAttribution, "
         "bandQuality, freezeContext, rollingPatternContext, and calibration flags "
         "from factPacket. Treat focusedRows as the detailed window around "
         "large misses or calibration-shape risk, not as a full-day table. "
@@ -3908,7 +3965,8 @@ def _openai_domain_guidelines() -> str:
         "Do not put event IDs such as top_miss_h8 in evidence.source; event IDs "
         "belong only in sourceEventIds. evidence.source must name the factPacket "
         "block that supplies the metric, such as focusedRows, stageAttribution, "
-        "morningTransitionDiagnostics, controllerDiagnosis, freezeImpact, "
+        "morningTransitionDiagnostics, nonBusinessMiddayShapeDiagnostics, "
+        "controllerDiagnosis, freezeImpact, "
         "operationFacts, topMisses, timeBands, performance, bandQuality, "
         "rollingPatternContext, controlContext, calibrationFacts, or "
         "analysisPriorities, eventEvidenceBundles, or recommendationTicketCandidates. "
@@ -3957,6 +4015,11 @@ def _openai_domain_guidelines() -> str:
         "separate raw morning transition risk, intraday carryover, humidity "
         "ramp, business-return, and freeze hypotheses instead of collapsing "
         "all 06-11 errors into a generic morning-ramp issue. "
+        "When nonBusinessMiddayShapeDiagnostics has causeTags, use those tags "
+        "to separate weekend/holiday midday cooling-ramp underprediction, "
+        "forecast-drop-versus-actual-rise shape breaks, lag-shape conflict, "
+        "and freeze hypotheses instead of treating all 11:00-15:00 errors as "
+        "ordinary daytime bias. "
         "When both topMisses and stage/freeze diagnostics exist, return at least "
         "two hypotheses: one for forecast accuracy and one for serving/calibration "
         "shape risk. "
@@ -4041,7 +4104,8 @@ def _openai_instructions(language: str) -> str:
         "metrics consistent with factPacket.performance. "
         "Use factPacket as the source of facts; it already contains summary "
         "metrics, key miss windows, focused rows around abnormal windows, "
-        "analysisPriorities, morningTransitionDiagnostics, time-band statistics, "
+        "analysisPriorities, morningTransitionDiagnostics, "
+        "nonBusinessMiddayShapeDiagnostics, time-band statistics, "
         "calibration flags, control context, freeze-gap "
         "context, stage attribution, controller diagnosis, band-quality "
         "coverage, rolling pattern context, eventEvidenceBundles, "
@@ -4062,7 +4126,8 @@ def _openai_instructions(language: str) -> str:
         "belong only in sourceEventIds, while evidence.source must cite a "
         "factPacket block such as focusedRows, stageAttribution, performance, "
         "topMisses, timeBands, controlContext, controllerDiagnosis, "
-        "freezeImpact, morningTransitionDiagnostics, eventEvidenceBundles, "
+        "freezeImpact, morningTransitionDiagnostics, "
+        "nonBusinessMiddayShapeDiagnostics, eventEvidenceBundles, "
         "recommendationTicketCandidates, or analysisPriorities. "
         "Do not recompute deltas yourself: use stageAttribution stage "
         "value_mw/delta_mw pairs, controllerDiagnosis flags, and bandQuality "
@@ -4138,7 +4203,7 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "do not invent metrics, hours, feature names, or calibration events. "
         "The factPacket contains summary metrics, key miss windows, focused "
         "rows around abnormal windows, analysisPriorities, morningTransitionDiagnostics, "
-        "time-band statistics, calibration flags, "
+        "nonBusinessMiddayShapeDiagnostics, time-band statistics, calibration flags, "
         "control context, freeze-gap context, stage attribution, controller "
         "diagnosis, band-quality coverage, rolling pattern context, "
         "eventEvidenceBundles, recommendationTicketCandidates, and snapshot summaries. Do not recompute "
@@ -4159,12 +4224,16 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "belong only in sourceEventIds, while evidence.source must cite a "
         "factPacket block such as focusedRows, stageAttribution, performance, "
         "topMisses, timeBands, controlContext, controllerDiagnosis, "
-        "freezeImpact, morningTransitionDiagnostics, eventEvidenceBundles, "
+        "freezeImpact, morningTransitionDiagnostics, "
+        "nonBusinessMiddayShapeDiagnostics, eventEvidenceBundles, "
         "recommendationTicketCandidates, or analysisPriorities. When "
         "morningTransitionDiagnostics has "
         "causeTags, use those tags to separate raw morning transition risk, "
         "intraday carryover, humidity ramp, business-return, and freeze "
-        "hypotheses. Do not describe "
+        "hypotheses. "
+        "When nonBusinessMiddayShapeDiagnostics has causeTags, use those tags "
+        "to explain weekend/holiday midday shape breaks separately from "
+        "business-day midday guard behavior. Do not describe "
         "this as missing raw time-series data; if a limitation is needed, say "
         "the analysis is based on summarized operational evidence and retained "
         "calibration snapshots. "

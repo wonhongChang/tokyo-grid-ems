@@ -21,6 +21,7 @@ _TIME_BANDS = [
 ]
 
 _MORNING_TRANSITION_HOURS = set(range(6, 12))
+_NON_BUSINESS_MIDDAY_SHAPE_HOURS = set(range(11, 16))
 
 _INTERNAL_CALENDAR_FEATURES = [
     "hour",
@@ -987,6 +988,330 @@ def _morning_transition_registry(
     }
 
 
+def _clean_delta(current: Any, previous: Any, digits: int = 1) -> int | float | None:
+    current_number = _clean_number(current, digits=digits)
+    previous_number = _clean_number(previous, digits=digits)
+    if current_number is None or previous_number is None:
+        return None
+    return _clean_number(float(current_number) - float(previous_number), digits=digits)
+
+
+def _non_business_midday_shape_tags(entry: dict) -> list[str]:
+    tags: list[str] = []
+    model_error = entry.get("modelErrorMw")
+    abs_model_error = abs(float(model_error)) if model_error is not None else 0.0
+    actual_delta = entry.get("actualDeltaMw")
+    forecast_delta = entry.get("servedForecastDeltaMw")
+    shape_delta_error = entry.get("modelShapeDeltaErrorMw")
+    cooling_delta = entry.get("coolingDelta24hC")
+    temp_anomaly = entry.get("tempAnomaly7dC")
+    apparent_cooling = entry.get("apparentCoolingDegreeC")
+    lag_delta = entry.get("lag24HourlyDeltaMw")
+    recent_delta = entry.get("recentSameBusinessTypeDeltaMeanMw")
+    published_gap = entry.get("publishedVsRecalculatedGapMw")
+
+    cooling_context = (
+        (cooling_delta is not None and float(cooling_delta) >= 1.0)
+        or (temp_anomaly is not None and float(temp_anomaly) >= 2.0)
+        or (apparent_cooling is not None and float(apparent_cooling) >= 5.0)
+    )
+
+    if (
+        model_error is not None
+        and float(model_error) <= -500.0
+        and actual_delta is not None
+        and float(actual_delta) >= 500.0
+        and cooling_context
+    ):
+        tags.append("weekend-cooling-ramp-underpredicted")
+
+    if (
+        actual_delta is not None
+        and float(actual_delta) >= 500.0
+        and forecast_delta is not None
+        and float(forecast_delta) <= -300.0
+    ):
+        tags.append("model-dropped-against-actual-rise")
+
+    if (
+        shape_delta_error is not None
+        and float(shape_delta_error) <= -800.0
+        and actual_delta is not None
+        and float(actual_delta) >= 300.0
+    ):
+        tags.append("rebound-shape-underfit")
+
+    if (
+        lag_delta is not None
+        and recent_delta is not None
+        and actual_delta is not None
+        and float(actual_delta) >= 500.0
+        and float(lag_delta) <= 0.0
+        and float(recent_delta) >= 0.0
+    ):
+        tags.append("lag-shape-conflict")
+
+    if published_gap is not None and abs(float(published_gap)) >= 500.0 and abs_model_error >= 500.0:
+        tags.append("freeze")
+
+    return tags
+
+
+def _stage_forecast_value(calibration_row: dict, stage: str) -> int | float | None:
+    stage_forecasts = calibration_row.get("forecastMwByStage", {})
+    if stage == "raw_lgbm":
+        return _first_clean_number(stage_forecasts.get("raw_lgbm"), digits=1)
+    if stage == "pre_calibration":
+        return _first_clean_number(
+            calibration_row.get("preCalibrationForecastMw"),
+            stage_forecasts.get("pre_calibration"),
+            digits=1,
+        )
+    if stage == "post_calibration":
+        return _first_clean_number(
+            calibration_row.get("postCalibrationForecastMw"),
+            digits=1,
+        )
+    return None
+
+
+def _non_business_midday_shape_registry(
+    diagnostic_rows: list[dict],
+    calibration_rows: dict[int, dict],
+    weather_context: dict[int, dict],
+) -> dict:
+    entries = []
+    rows_by_hour = {
+        int(row["hour"]): row
+        for row in diagnostic_rows
+        if row.get("hour") is not None
+    }
+    for row in diagnostic_rows:
+        hour = int(row["hour"])
+        if hour not in _NON_BUSINESS_MIDDAY_SHAPE_HOURS:
+            continue
+
+        calendar_features = row.get("calendarFeatures", {})
+        if _clean_number(calendar_features.get("is_non_business_day"), digits=0) != 1:
+            continue
+
+        previous_row = rows_by_hour.get(hour - 1)
+        calibration_row = calibration_rows.get(hour, {})
+        previous_calibration_row = calibration_rows.get(hour - 1, {})
+        lag_features = row.get("lagFeatures", {})
+        weather_features = row.get("weatherFeatures", {})
+        cache_weather = weather_context.get(hour, {})
+
+        raw_forecast = _stage_forecast_value(calibration_row, "raw_lgbm")
+        pre_calibration = _stage_forecast_value(calibration_row, "pre_calibration")
+        post_calibration = _stage_forecast_value(calibration_row, "post_calibration")
+        served_forecast = _clean_number(row.get("modelForecastMw"), digits=1)
+        actual = _clean_number(row.get("actualMw"), digits=1)
+
+        served_delta = _clean_delta(
+            served_forecast,
+            previous_row.get("modelForecastMw") if previous_row else None,
+            digits=1,
+        )
+        actual_delta = _clean_delta(
+            actual,
+            previous_row.get("actualMw") if previous_row else None,
+            digits=1,
+        )
+        raw_delta = _clean_delta(
+            raw_forecast,
+            _stage_forecast_value(previous_calibration_row, "raw_lgbm"),
+            digits=1,
+        )
+        pre_delta = _clean_delta(
+            pre_calibration,
+            _stage_forecast_value(previous_calibration_row, "pre_calibration"),
+            digits=1,
+        )
+        post_delta = _clean_delta(
+            post_calibration,
+            _stage_forecast_value(previous_calibration_row, "post_calibration"),
+            digits=1,
+        )
+        shape_delta_error = None
+        if served_delta is not None and actual_delta is not None:
+            shape_delta_error = round(float(served_delta) - float(actual_delta), 1)
+
+        lag_delta = _first_clean_number(
+            calibration_row.get("lag24DeltaMw"),
+            lag_features.get("lag_24h_hourly_delta"),
+            digits=1,
+        )
+        lag168_delta = _first_clean_number(
+            calibration_row.get("lag168DeltaMw"),
+            lag_features.get("lag_168h_hourly_delta"),
+            digits=1,
+        )
+        recent_delta = _first_clean_number(
+            calibration_row.get("recentSameBusinessTypeDeltaMw"),
+            lag_features.get("recent_same_business_type_delta_mean"),
+            digits=1,
+        )
+        lag_delta_excess = None
+        if lag_delta is not None and recent_delta is not None:
+            lag_delta_excess = round(float(lag_delta) - float(recent_delta), 1)
+
+        published_gap = None
+        if served_forecast is not None and post_calibration is not None:
+            published_gap = round(float(served_forecast) - float(post_calibration), 1)
+
+        entry = {
+            "hour": hour,
+            "rawForecastMw": raw_forecast,
+            "preCalibrationForecastMw": pre_calibration,
+            "postCalibrationForecastMw": post_calibration,
+            "servedForecastMw": served_forecast,
+            "actualMw": actual,
+            "modelErrorMw": _clean_number(row.get("modelErrorMw"), digits=1),
+            "publishedVsRecalculatedGapMw": published_gap,
+            "rawForecastDeltaMw": raw_delta,
+            "preCalibrationForecastDeltaMw": pre_delta,
+            "postCalibrationForecastDeltaMw": post_delta,
+            "servedForecastDeltaMw": served_delta,
+            "actualDeltaMw": actual_delta,
+            "modelShapeDeltaErrorMw": shape_delta_error,
+            "lag24HourlyDeltaMw": lag_delta,
+            "lag168HourlyDeltaMw": lag168_delta,
+            "recentSameBusinessTypeDeltaMeanMw": recent_delta,
+            "nonBusinessMiddayLagDeltaExcessMw": lag_delta_excess,
+            "lag24BusinessTypeMismatch": _clean_number(
+                lag_features.get("lag_24h_business_type_mismatch"),
+                digits=1,
+            ),
+            "tempC": _clean_number(weather_features.get("temp_c"), digits=1),
+            "apparentTempC": _clean_number(weather_features.get("apparent_temp_c"), digits=1),
+            "tempDelta24hC": _clean_number(weather_features.get("temp_delta_24h"), digits=1),
+            "coolingDelta24hC": _clean_number(weather_features.get("cooling_delta_24h"), digits=1),
+            "tempAnomaly7dC": _clean_number(weather_features.get("temp_anomaly_7d"), digits=1),
+            "apparentCoolingDegreeC": _clean_number(
+                weather_features.get("apparent_cooling_degree"),
+                digits=1,
+            ),
+            "tempDelta1hC": _clean_number(weather_features.get("temp_delta_1h"), digits=1),
+            "apparentTempDelta1hC": _clean_number(
+                weather_features.get("apparent_temp_delta_1h"),
+                digits=1,
+            ),
+            "humidityPct": cache_weather.get("humidityPct"),
+            "discomfortIndex": cache_weather.get("discomfortIndex"),
+            "weatherSource": cache_weather.get("weatherSource"),
+            "weatherSourceConfidence": cache_weather.get("weatherSourceConfidence"),
+            "residualAdjustmentMw": _clean_number(
+                calibration_row.get("residualAdjustmentMw"),
+                digits=1,
+            ),
+        }
+        entry["causeTags"] = _non_business_midday_shape_tags(entry)
+        entries.append(entry)
+
+    tag_counts: dict[str, int] = {}
+    for entry in entries:
+        for tag in entry["causeTags"]:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    max_error_entry = None
+    if entries:
+        max_error_entry = max(
+            entries,
+            key=lambda entry: abs(float(entry["modelErrorMw"] or 0.0)),
+        )
+    shape_entries = [
+        entry for entry in entries
+        if entry.get("modelShapeDeltaErrorMw") is not None
+    ]
+    max_shape_entry = None
+    if shape_entries:
+        max_shape_entry = max(
+            shape_entries,
+            key=lambda entry: abs(float(entry["modelShapeDeltaErrorMw"] or 0.0)),
+        )
+
+    published_gap_values = [
+        abs(float(entry["publishedVsRecalculatedGapMw"]))
+        for entry in entries
+        if entry.get("publishedVsRecalculatedGapMw") is not None
+    ]
+    cooling_delta_values = [
+        float(entry["coolingDelta24hC"])
+        for entry in entries
+        if entry.get("coolingDelta24hC") is not None
+    ]
+    shape_delta_values = [
+        float(entry["modelShapeDeltaErrorMw"])
+        for entry in shape_entries
+    ]
+
+    return {
+        "schemaVersion": "1.0.0",
+        "hours": sorted(_NON_BUSINESS_MIDDAY_SHAPE_HOURS),
+        "summary": {
+            "rows": len(entries),
+            "modelMaeMw": _mean([
+                abs(float(entry["modelErrorMw"]))
+                for entry in entries
+                if entry.get("modelErrorMw") is not None
+            ]),
+            "modelBiasMw": _mean([
+                float(entry["modelErrorMw"])
+                for entry in entries
+                if entry.get("modelErrorMw") is not None
+            ]),
+            "maxErrorHour": max_error_entry["hour"] if max_error_entry else None,
+            "maxAbsErrorMw": (
+                abs(float(max_error_entry["modelErrorMw"]))
+                if max_error_entry and max_error_entry.get("modelErrorMw") is not None
+                else None
+            ),
+            "maxShapeDeltaErrorHour": max_shape_entry["hour"] if max_shape_entry else None,
+            "maxAbsShapeDeltaErrorMw": (
+                abs(float(max_shape_entry["modelShapeDeltaErrorMw"]))
+                if max_shape_entry and max_shape_entry.get("modelShapeDeltaErrorMw") is not None
+                else None
+            ),
+            "shapeDeltaBiasMw": _mean(shape_delta_values),
+            "coolingDelta24hMeanC": _mean(cooling_delta_values),
+            "actualRiseModelDropHours": [
+                entry["hour"]
+                for entry in entries
+                if entry.get("actualDeltaMw") is not None
+                and entry.get("servedForecastDeltaMw") is not None
+                and float(entry["actualDeltaMw"]) >= 500.0
+                and float(entry["servedForecastDeltaMw"]) <= 0.0
+            ],
+            "publishedVsRecalculatedGapMaxAbsMw": (
+                round(max(published_gap_values), 1)
+                if published_gap_values
+                else None
+            ),
+            "causeTagCounts": tag_counts,
+        },
+        "tagDefinitions": {
+            "weekend-cooling-ramp-underpredicted": (
+                "non-business midday demand rose under warm or cooling-load context, "
+                "while the served model underpredicted materially."
+            ),
+            "model-dropped-against-actual-rise": (
+                "served forecast fell from the previous hour while actual demand rose."
+            ),
+            "rebound-shape-underfit": (
+                "served forecast hour-to-hour shape was materially below the actual shape."
+            ),
+            "lag-shape-conflict": (
+                "lag_24h shape failed to support an observed non-business midday rebound."
+            ),
+            "freeze": (
+                "served forecast differs materially from the latest recalculated post-calibration line."
+            ),
+        },
+        "rows": entries,
+    }
+
+
 def _feature_band_means(rows: list[dict], group_name: str, feature_name: str) -> list[dict]:
     result = []
     for code, label, start_hour, end_hour in _TIME_BANDS:
@@ -1171,6 +1496,35 @@ def _morning_transition_index_summary(diagnostics: list[dict]) -> dict:
     }
 
 
+def _non_business_midday_shape_index_summary(diagnostics: list[dict]) -> dict:
+    tag_counts: dict[str, int] = {}
+    report_summaries = []
+    for diagnostic in diagnostics:
+        registry = diagnostic.get("nonBusinessMiddayShapeDiagnostics") or {}
+        summary = registry.get("summary") or {}
+        for tag, count in (summary.get("causeTagCounts") or {}).items():
+            tag_counts[tag] = tag_counts.get(tag, 0) + int(count)
+        report_summaries.append({
+            "date": diagnostic.get("date"),
+            "rows": summary.get("rows"),
+            "modelMaeMw": summary.get("modelMaeMw"),
+            "modelBiasMw": summary.get("modelBiasMw"),
+            "maxErrorHour": summary.get("maxErrorHour"),
+            "maxAbsErrorMw": summary.get("maxAbsErrorMw"),
+            "maxShapeDeltaErrorHour": summary.get("maxShapeDeltaErrorHour"),
+            "maxAbsShapeDeltaErrorMw": summary.get("maxAbsShapeDeltaErrorMw"),
+            "actualRiseModelDropHours": summary.get("actualRiseModelDropHours", []),
+            "causeTagCounts": summary.get("causeTagCounts", {}),
+        })
+
+    return {
+        "windowDays": len(diagnostics),
+        "hours": sorted(_NON_BUSINESS_MIDDAY_SHAPE_HOURS),
+        "causeTagCounts": tag_counts,
+        "reports": report_summaries,
+    }
+
+
 def build_internal_daily_diagnostic(
     public_dir: Path,
     date_iso: str,
@@ -1185,10 +1539,16 @@ def build_internal_daily_diagnostic(
     feature_rows, feature_error = _feature_rows_by_hour(cache, target_date, config)
     diagnostic_rows = _internal_diagnostic_rows(rows, feature_rows)
     calibration_rows = _operational_calibration_rows_by_hour(public_dir, date_iso)
+    weather_context = _weather_context_by_hour(cache, target_date)
     morning_transition = _morning_transition_registry(
         diagnostic_rows,
         calibration_rows,
-        _weather_context_by_hour(cache, target_date),
+        weather_context,
+    )
+    non_business_midday_shape = _non_business_midday_shape_registry(
+        diagnostic_rows,
+        calibration_rows,
+        weather_context,
     )
     public_report = build_daily_operation_report(
         public_dir,
@@ -1251,8 +1611,10 @@ def build_internal_daily_diagnostic(
             "dayLevelRegime": _day_level_regime(diagnostic_rows),
             "weatherDeltaRiskByBand": _weather_delta_risk_by_band(diagnostic_rows),
             "morningTransition": morning_transition.get("summary"),
+            "nonBusinessMiddayShape": non_business_midday_shape.get("summary"),
         },
         "morningTransitionDiagnostics": morning_transition,
+        "nonBusinessMiddayShapeDiagnostics": non_business_midday_shape,
         "rows": diagnostic_rows,
     }
 
@@ -1294,6 +1656,7 @@ def build_internal_daily_diagnostics(
         if diagnostic["availability"] == "ok"
     ]
     morning_transition_summary = _morning_transition_index_summary(diagnostics)
+    non_business_midday_shape_summary = _non_business_midday_shape_index_summary(diagnostics)
 
     return {
         "schemaVersion": "1.0.0",
@@ -1315,8 +1678,14 @@ def build_internal_daily_diagnostics(
                 .get("morningTransitionDiagnostics", {})
                 .get("summary")
             ),
+            "nonBusinessMiddayShape": (
+                diagnostics[-1]
+                .get("nonBusinessMiddayShapeDiagnostics", {})
+                .get("summary")
+            ),
         } if diagnostics else None,
         "morningTransition": morning_transition_summary,
+        "nonBusinessMiddayShape": non_business_midday_shape_summary,
         "reports": [
             {
                 "date": diagnostic["date"],
@@ -1326,6 +1695,11 @@ def build_internal_daily_diagnostics(
                 "morningTransition": (
                     diagnostic
                     .get("morningTransitionDiagnostics", {})
+                    .get("summary")
+                ),
+                "nonBusinessMiddayShape": (
+                    diagnostic
+                    .get("nonBusinessMiddayShapeDiagnostics", {})
                     .get("summary")
                 ),
                 "featureBuildError": diagnostic.get("featureBuildError"),
