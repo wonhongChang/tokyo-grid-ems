@@ -11,6 +11,8 @@ from python.eval.ai_daily_report import (
     _build_openai_fact_packet,
     _merge_openai_analysis,
     _openai_analysis_schema,
+    _normalize_hypotheses,
+    _normalize_recommendations,
     _validate_localized_analysis,
     build_ai_daily_report,
     build_ai_daily_reports,
@@ -403,6 +405,28 @@ def test_ai_report_fact_packet_prioritizes_key_events(tmp_path):
         if event["eventType"] == "published_recalculated_gap"
     )
     assert freeze_event["freezeGapMw"] == 2200.0
+    assert shape_event["analysisContract"]["sourceEventId"] == shape_event["id"]
+    assert "diagnosticQuestion" in shape_event["analysisContract"]
+
+
+def test_openai_fact_packet_includes_analysis_quality_contract(tmp_path):
+    _write_operation_fixture(tmp_path)
+    report = build_ai_daily_report(
+        tmp_path,
+        "2026-05-23",
+        generated_at="2026-05-24T08:20:00+09:00",
+        use_openai=False,
+    )
+
+    fact_packet = _build_openai_fact_packet(tmp_path, {"ko": report})
+    contract = fact_packet["analysisQualityContract"]
+
+    assert "mechanism" in " ".join(contract["hypothesisRequirements"])
+    assert "nextCheck" in " ".join(contract["hypothesisRequirements"])
+    assert "Forecast Accuracy Risk in Hour X" in contract["rejectedTitlePatterns"]
+    assert "target one concrete feature" in " ".join(
+        contract["recommendationRequirements"]
+    )
 
 
 def test_ai_daily_report_clarifies_intraday_snapshot_coverage_note(monkeypatch, tmp_path):
@@ -541,6 +565,18 @@ def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
         assert morning["summary"]["causeTagCounts"]["lag-overheat/cooler-day"] == 1
         assert morning["selectedRows"][0]["hour"] == 8
         assert morning["selectedRows"][0]["causeTags"] == ["lag-overheat/cooler-day"]
+        bundles = context["factPacket"]["eventEvidenceBundles"]
+        morning_bundle = next(
+            bundle for bundle in bundles
+            if bundle["eventId"] == "top_miss_h8"
+        )
+        assert "modelErrorMw" in morning_bundle["focusedEvidence"]
+        assert morning_bundle["morningEvidence"]["morningLagDeltaExcessMw"] == 1400.0
+        assert morning_bundle["recommendedTicket"]["target"] == (
+            "intraday_correction.business_type_transition"
+        )
+        tickets = context["factPacket"]["recommendationTicketCandidates"]
+        assert tickets[0]["testWindowJst"] == "06:00-11:00"
         assert "summary" not in context["factPacket"]["operationFacts"]
         assert "insights" not in context["factPacket"]["operationFacts"]
         snapshot = context["factPacket"]["inputSnapshot"]
@@ -816,7 +852,8 @@ def test_ai_daily_report_rejects_openai_signed_error_contradiction(monkeypatch, 
     )
 
     assert report["rootCauseHypotheses"][0]["title"] == (
-        "The morning ramp may have been overestimated."
+        "Morning ramp overprediction needs transition-layer attribution "
+        "during the morning ramp."
     )
     assert report["rootCauseHypotheses"][0]["title"] != (
         "Daytime underprediction despite a positive bias"
@@ -1036,8 +1073,25 @@ def test_ai_daily_report_rejects_shape_direction_contradiction():
 
 def test_openai_analysis_schema_requires_nullable_recommendation_fields():
     schema = _openai_analysis_schema()
+    hypothesis_schema = schema["properties"]["rootCauseHypotheses"]["items"]
     recommendation_schema = schema["properties"]["featureRecommendations"]["items"]
+    evidence_schema = hypothesis_schema["properties"]["evidence"]["items"]
 
+    assert "mechanism" in hypothesis_schema["properties"]
+    assert "nextCheck" in hypothesis_schema["properties"]
+    assert "sourceEventIds" in hypothesis_schema["properties"]
+    assert "mechanism" in hypothesis_schema["required"]
+    assert "nextCheck" in hypothesis_schema["required"]
+    assert "sourceEventIds" in hypothesis_schema["required"]
+    assert "enum" in evidence_schema["properties"]["source"]
+    assert "top_miss_h8" not in evidence_schema["properties"]["source"]["enum"]
+    assert "focusedRows" in evidence_schema["properties"]["source"]["enum"]
+    assert "topMisses" in evidence_schema["properties"]["source"]["enum"]
+    assert "eventEvidenceBundles" in evidence_schema["properties"]["source"]["enum"]
+    assert (
+        "recommendationTicketCandidates"
+        in evidence_schema["properties"]["source"]["enum"]
+    )
     assert "proposedReplayCommand" in recommendation_schema["properties"]
     assert "commandStatus" in recommendation_schema["properties"]
     assert "proposedReplayCommand" in recommendation_schema["required"]
@@ -1112,6 +1166,79 @@ def test_openai_merge_normalizes_empty_command_and_mw_unit(tmp_path):
     assert report["rootCauseHypotheses"][0]["evidence"][0]["unit"] == "MW"
     assert "proposedReplayCommand" not in report["featureRecommendations"][0]
     assert "commandStatus" not in report["featureRecommendations"][0]
+
+
+def test_openai_hypothesis_rejects_freeze_claim_without_freeze_evidence():
+    fallback = [{
+        "id": "fallback",
+        "severity": "info",
+        "confidence": "low",
+        "evidenceStatus": "partial",
+        "title": "Fallback",
+        "explanation": "Fallback",
+        "mechanism": "Fallback",
+        "nextCheck": "Fallback",
+        "evidence": [],
+        "relatedHours": [],
+        "relatedTimeBands": [],
+        "relatedFeatures": [],
+        "counterEvidence": [],
+    }]
+
+    result = _normalize_hypotheses([
+        {
+            "id": "h-freeze",
+            "severity": "warning",
+            "confidence": "medium",
+            "evidenceStatus": "partial",
+            "title": "Published freeze gap caused the miss",
+            "explanation": "The published line diverged from recalculation.",
+            "mechanism": "A freeze gap likely held the serving line below actual demand.",
+            "nextCheck": "Inspect freezeImpact.",
+            "sourceEventIds": ["top_miss_h11"],
+            "evidence": [
+                {
+                    "source": "reports/daily",
+                    "metric": "modelErrorMw",
+                    "value": -1022.0,
+                    "unit": "MW",
+                    "hour": 11,
+                    "timeBand": "daytime",
+                }
+            ],
+            "relatedHours": [11],
+            "relatedTimeBands": ["daytime"],
+            "relatedFeatures": ["intraday_correction.positive_residual_slope_damping"],
+            "counterEvidence": [],
+        }
+    ], fallback)
+
+    assert result == fallback
+
+
+def test_openai_recommendation_preserves_valid_target_not_linked_feature():
+    result = _normalize_recommendations([
+        {
+            "id": "r1",
+            "priority": "medium",
+            "type": "calibration",
+            "target": "intraday_correction.positive_residual_slope_damping",
+            "suggestion": "Backtest the damping threshold around the 10:00-16:00 replay window.",
+            "expectedEffect": "Reduce daytime shape overshoot while preserving WAPE.",
+            "risk": "Too much damping can underpredict genuine recovery ramps.",
+            "validationPlan": "Replay the latest 2-4 weeks and compare WAPE, RMSE, and max error.",
+            "proposedReplayCommand": None,
+            "commandStatus": None,
+            "linkedHypotheses": ["h1"],
+            "autoApply": False,
+        }
+    ], [], {
+        "h1": {
+            "relatedFeatures": ["lag_24h"],
+        }
+    })
+
+    assert result[0]["target"] == "intraday_correction.positive_residual_slope_damping"
 
 
 def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, tmp_path):
@@ -1370,7 +1497,10 @@ def test_ai_daily_report_rejects_empty_openai_sections(monkeypatch, tmp_path):
     )
 
     assert report["generator"]["provider"] == "openai"
-    assert report["rootCauseHypotheses"][0]["title"] == "The morning ramp may have been overestimated."
+    assert report["rootCauseHypotheses"][0]["title"] == (
+        "Morning ramp overprediction needs transition-layer attribution "
+        "during the morning ramp."
+    )
     assert report["rootCauseHypotheses"][0]["explanation"]
     assert report["featureRecommendations"][0]["target"] == "lag_24h"
     assert report["featureRecommendations"][0]["suggestion"]

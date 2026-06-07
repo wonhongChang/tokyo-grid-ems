@@ -521,6 +521,9 @@ intraday実行ごとの運用補正状態を限定的に保存します。最新
       "evidenceStatus": "partial",
       "title": "営業日lagが非営業日の朝rampを汚染した可能性",
       "explanation": "最大誤差が朝rampで発生し、24時間lagが異なる営業/非営業タイプから来ていました。",
+      "mechanism": "前日の営業日lagが、当日実績が十分に入る前の非営業日朝需要を過度に押し上げる可能性があります。",
+      "nextCheck": "06:00-11:00のreplayでlag_24h、recent_same_business_type_mean、intraday補正deltaを比較します。",
+      "sourceEventIds": ["top_miss_h8"],
       "evidence": [
         {
           "source": "reports/daily",
@@ -597,6 +600,8 @@ intraday実行ごとの運用補正状態を限定的に保存します。最新
 ## フィールド規則
 - `performance` は deterministic な日次レポート指標をコピーします。AI生成器はこの値を再計算したり捏造したりしてはいけません。
 - `rootCauseHypotheses[].evidence[]` は必ず入力 source と metric を含めます。
+- `rootCauseHypotheses[].mechanism` は原因経路を説明し、`nextCheck` はコード変更前に確認するreplay、フィールド、診断資料を示します。
+- `rootCauseHypotheses[].sourceEventIds` は自然言語の仮説を `analysisPriorities.events` の元イベントに結び付けます。
 - `inputRefs.operationalCalibration` は任意であり、その日のintraday補正レポートがない場合は `null` になり得ます。
 - `inputRefs.operationalCalibrationHistory` は任意であり、その日のintraday補正snapshot indexがない場合は `null` になり得ます。
 - `inputSnapshot` は、AI解説がどのdeterministic入力バージョンに基づいて作成されたかを記録します。参照入力JSONが変わるとfingerprintも変わりますが、既存AIレポート本文は明示的な再生成まで保持します。

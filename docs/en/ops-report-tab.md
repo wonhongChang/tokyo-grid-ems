@@ -97,7 +97,7 @@ The UI detects this state and shows an English-source badge.
 Shows the selected date, generation provider, severity, and model verdict.
 
 - `provider: "fallback"`: system-generated diagnostic
-- `provider: "openai"`: AI operational narrative
+- `provider: "openai"`: AI Ops Analysis
 - `contentLanguage !== language`: English fallback text is being shown
 
 ### Metric Cards
@@ -128,6 +128,8 @@ This section avoids exposing long internal logs as the primary reading path. Ope
 `rootCauseHypotheses[]` cards explain likely causes. Each hypothesis includes:
 
 - Title and explanation
+- Mechanism: how the input features, calibration layer, or serving policy could have produced the miss
+- Next check: the replay, diagnostic field, or snapshot to inspect before changing code
 - Related hours and time bands
 - Related features or calibration layers
 - `evidenceStatus`

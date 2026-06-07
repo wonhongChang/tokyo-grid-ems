@@ -521,6 +521,9 @@ Provides an **AI-generated daily operations analysis** for the Daily Report tab.
       "evidenceStatus": "partial",
       "title": "Business-day lag may have contaminated the non-business morning ramp.",
       "explanation": "The largest misses occurred during the morning ramp while lag_24h came from a different business type.",
+      "mechanism": "The previous business-day lag can lift early non-business demand before same-day observations have enough weight.",
+      "nextCheck": "Replay the 06:00-11:00 band and compare lag_24h, recent_same_business_type_mean, and intraday calibration deltas.",
+      "sourceEventIds": ["top_miss_h8"],
       "evidence": [
         {
           "source": "reports/daily",
@@ -597,6 +600,8 @@ Provides an **AI-generated daily operations analysis** for the Daily Report tab.
 ## Field Rules
 - `performance` must be copied from deterministic daily report metrics; the AI generator must not invent or recompute these values.
 - `rootCauseHypotheses[].evidence[]` must cite an input source and metric.
+- `rootCauseHypotheses[].mechanism` describes the causal path; `nextCheck` names the replay, field, or diagnostic to inspect before changing code.
+- `rootCauseHypotheses[].sourceEventIds` links the narrative hypothesis back to `analysisPriorities.events`.
 - `inputRefs.operationalCalibration` is optional and may be `null` when no intraday calibration report exists for that date.
 - `inputRefs.operationalCalibrationHistory` is optional and may be `null` when no intraday calibration snapshot index exists for that date.
 - `inputSnapshot` records the deterministic input version used by the AI narrative. Its fingerprint changes when referenced input JSON changes, but existing AI report bodies remain frozen unless explicitly regenerated.

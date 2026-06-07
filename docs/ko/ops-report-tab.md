@@ -99,7 +99,7 @@ UI는 이 상태를 감지해 "영어 원문 표시" 배지를 보여줍니다.
 선택된 날짜, 리포트 생성 방식, 심각도, 모델 판정 결과를 표시합니다.
 
 - `provider: "fallback"`: 시스템 자동 진단
-- `provider: "openai"`: AI 심층 운영 해설
+- `provider: "openai"`: AI 운영 분석
 - `contentLanguage !== language`: 영어 원문 fallback 표시
 
 ### 2. 요약 카드
@@ -130,6 +130,8 @@ UI는 이 상태를 감지해 "영어 원문 표시" 배지를 보여줍니다.
 `rootCauseHypotheses[]`를 카드 형태로 표시합니다. 각 가설은 다음 정보를 포함합니다.
 
 - 제목과 설명
+- 메커니즘: 입력 feature, 보정 레이어, 서빙 정책이 오차를 만들 수 있는 경로
+- 다음 확인: 코드 수정 전에 확인할 replay, 진단 필드, snapshot
 - 관련 시간대
 - 관련 feature 또는 보정 레이어
 - evidenceStatus

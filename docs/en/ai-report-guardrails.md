@@ -96,8 +96,10 @@ A high-quality Ops Report should satisfy these checks:
 - TEPCO is described as an external forecast/reference.
 - Coverage notes distinguish finalized actual coverage from calibration snapshot coverage.
 - Each root-cause hypothesis has concrete evidence.
+- Each root-cause hypothesis names a causal mechanism and a concrete next check.
 - Freeze-policy explanations appear only when a freeze gap is present.
 - Improvement candidates target real features or post-processing layers.
+- Improvement candidates include a validation window, threshold, guard, or replay target rather than generic review wording.
 - Recommendations remain review/backtest candidates and never auto-apply.
 - Korean and Japanese reports preserve the English master analysis numbers.
 

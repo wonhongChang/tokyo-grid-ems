@@ -292,6 +292,9 @@ export interface AIDailyReportHypothesis {
   evidenceStatus: AIDailyReportEvidenceStatus
   title: string
   explanation: string
+  mechanism?: string
+  nextCheck?: string
+  sourceEventIds?: string[]
   evidence: AIDailyReportEvidence[]
   relatedHours: number[]
   relatedTimeBands: string[]

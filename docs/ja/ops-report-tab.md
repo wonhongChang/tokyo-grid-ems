@@ -128,6 +128,8 @@ UIはこの状態を検出し、英語原文表示のバッジを出します。
 `rootCauseHypotheses[]`をカードとして表示します。各仮説は以下を含みます。
 
 - タイトルと説明
+- メカニズム: 入力feature、補正レイヤー、serving policyが誤差を生む経路
+- 次の確認: コード変更前に確認するreplay、診断フィールド、snapshot
 - 関連時間帯
 - 関連featureまたは補正レイヤー
 - `evidenceStatus`

@@ -426,6 +426,24 @@ function limitationText(item: string, locale: Locale): string {
   return '이 리포트는 요약 지표, 주요 오차 구간, 내부 보정 로그를 기준으로 작성되었습니다.'
 }
 
+function openaiBadgeText(locale: Locale): string {
+  if (locale === 'ja') return 'AI運用分析'
+  if (locale === 'en') return 'AI Ops Analysis'
+  return 'AI 운영 분석'
+}
+
+function mechanismLabel(locale: Locale): string {
+  if (locale === 'ja') return 'メカニズム'
+  if (locale === 'en') return 'Mechanism'
+  return '메커니즘'
+}
+
+function nextCheckLabel(locale: Locale): string {
+  if (locale === 'ja') return '次の確認'
+  if (locale === 'en') return 'Next check'
+  return '다음 확인'
+}
+
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="validation-stat">
@@ -719,7 +737,7 @@ export function OpsReportPanel({ baseUrl }: Props) {
               </div>
               <div className="ops-report-badges">
                 <span className={`badge ops-provider-badge ${providerBadgeClass(selectedReport.generator.provider)}`}>
-                  {selectedReport.generator.provider === 'openai' ? labels.openaiBadge : labels.fallbackBadge}
+                  {selectedReport.generator.provider === 'openai' ? openaiBadgeText(locale) : labels.fallbackBadge}
                 </span>
                 {usesEnglishFallback && (
                   <span className="badge info">{labels.englishFallbackBadge}</span>
@@ -807,6 +825,22 @@ export function OpsReportPanel({ baseUrl }: Props) {
                       </span>
                     </div>
                     <p>{hypothesis.explanation}</p>
+                    {(hypothesis.mechanism || hypothesis.nextCheck) && (
+                      <div className="ops-hypothesis-detail">
+                        {hypothesis.mechanism && (
+                          <div className="ops-rec-row">
+                            <span>{mechanismLabel(locale)}</span>
+                            <p>{hypothesis.mechanism}</p>
+                          </div>
+                        )}
+                        {hypothesis.nextCheck && (
+                          <div className="ops-rec-row">
+                            <span>{nextCheckLabel(locale)}</span>
+                            <p>{hypothesis.nextCheck}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {hypothesis.relatedFeatures.length > 0 && (
                       <div className="ops-chip-row">
                         {hypothesis.relatedFeatures.slice(0, 5).map(feature => (

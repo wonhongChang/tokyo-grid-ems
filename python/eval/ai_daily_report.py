@@ -23,7 +23,7 @@ TIMEZONE = "Asia/Tokyo"
 JST = ZoneInfo(TIMEZONE)
 SCHEMA_VERSION = "1.0.0"
 PROMPT_VERSION = "fallback_rules_v1"
-OPENAI_PROMPT_VERSION = "openai_ops_report_v4"
+OPENAI_PROMPT_VERSION = "openai_ops_report_v5"
 PROJECT_OPENAI_API_KEY_ENV = "TOKYO_GRID_EMS_OPENAI_API_KEY"
 OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-4o-mini"
@@ -97,6 +97,8 @@ ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
     "cooling_delta_24h",
     "apparent_temp_delta_1h",
     "business_late_afternoon_x_temp_delta_1h",
+    "business_midday_x_lag_24h_delta",
+    "business_midday_x_recent_delta_mean",
     "cooling_load_3d_mean",
     "weather_source",
 }
@@ -122,6 +124,26 @@ GENERAL_TEXT_REPLACEMENTS = (
 
 LOCALIZED_TEXT_REPLACEMENTS = {
     "ko": [
+        ("발표선-재계산선", "공개 예측선-재계산선"),
+        ("발표선", "공개 예측선"),
+        ("제공된 선", "서빙 예측선"),
+        ("제공 선", "서빙 예측선"),
+        ("제공된 라인", "서빙 예측선"),
+        ("제공 라인", "서빙 예측선"),
+        ("전이 레이어", "전환 레이어"),
+        ("전이 기능", "전환 피처"),
+        ("영업일 구분 전이", "영업일 구분 전환"),
+        ("재계산 곡선", "재계산 예측선"),
+        ("원시 지연 관성", "raw lag 관성"),
+        ("정오 기능", "정오 피처"),
+        ("아침 램프 중에 존재했습니다", "아침 램프업 구간에서 발생했습니다"),
+        ("인접한 낮 시간대는 혼합 방향을 가지고 있었습니다", "인접한 낮 시간대는 오차 방향이 섞여 있었습니다"),
+        ("발표된 동결", "공개 예측선 프리즈"),
+        ("동결 격차", "프리즈 격차"),
+        ("발표된 프리즈", "공개 예측선 프리즈"),
+        ("공개 예측선 프리즈이", "공개 예측선 프리즈가"),
+        ("실제 수요 아래에 있었습니다", "실제 수요를 밑돌았습니다"),
+        ("비즈니스 전환", "영업일 구분 전환"),
         ("중간의 행복한 실행", "중간에 덮어쓴 intraday 실행 내역"),
         ("중간의 인트라데이 실행", "중간에 덮어쓴 intraday 실행 내역"),
         ("중간 intraday 실행은", "중간에 덮어쓴 intraday 실행 내역은"),
@@ -157,6 +179,29 @@ LOCALIZED_TEXT_REPLACEMENTS = {
         ("램프업업", "램프업"),
     ],
     "ja": [
+        ("原材料とサービスの分割", "raw予測と配信予測の切り分け"),
+        ("原材料とサービス", "raw予測と配信予測"),
+        ("生データと提供データ", "raw予測と配信予測"),
+        ("提供されたライン", "配信予測線"),
+        ("提供された線", "配信予測線"),
+        ("提供された", "配信された"),
+        ("発表されたフリーズ", "公開予測フリーズ"),
+        ("公表されたフリーズ", "公開予測フリーズ"),
+        ("公表されたライン", "配信予測線"),
+        ("再計算曲線", "再計算予測線"),
+        ("正午機能", "正午特徴量"),
+        ("混合サイン", "混合方向"),
+        ("混合方向を持っていました", "誤差方向が混在していました"),
+        ("実際の需要の上", "実際の需要を上回る位置"),
+        ("実際の需要の下", "実際の需要を下回る位置"),
+        ("朝のランプ内で", "朝のランプアップ区間で"),
+        ("分離してください", "切り分ける必要があります"),
+        ("フリーズギャップ", "フリーズ差分"),
+        ("ギャップ", "差分"),
+        ("トランジションレイヤー", "遷移レイヤー"),
+        ("ビジネストランジション", "営業日/非営業日区分の遷移"),
+        ("生のラグ慣性", "raw lagの慣性"),
+        ("生のLGBM", "raw LGBM"),
         ("インターデイ", "イントラデイ"),
         ("イントラデイラン", "イントラデイ実行"),
         ("ビジネスタイプ", "営業日/非営業日区分"),
@@ -593,12 +638,12 @@ def _load_local_dotenv(public_dir: Path) -> None:
     for dotenv_path in candidates:
         if not dotenv_path.exists():
             continue
-        for line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        for line in dotenv_path.read_text(encoding="utf-8-sig").splitlines():
             raw = line.strip()
             if not raw or raw.startswith("#") or "=" not in raw:
                 continue
             key, value = raw.split("=", 1)
-            key = key.strip()
+            key = key.strip().lstrip("\ufeff")
             value = value.strip().strip('"').strip("'")
             if key and key not in os.environ:
                 os.environ[key] = value
@@ -2016,6 +2061,123 @@ def _priority_event_severity(score: float | None) -> str:
     return "info"
 
 
+def _priority_event_analysis_contract(event: dict) -> dict:
+    event_type = str(event.get("eventType") or "")
+    hour = _hour_from_point(event)
+    direction = str(event.get("modelErrorDirection") or "")
+    base = {
+        "sourceEventId": event.get("id"),
+        "requiredHypothesisLink": (
+            "At least one rootCauseHypothesis should include this id in "
+            "sourceEventIds when it is listed in mustDiscussEventIds."
+        ),
+        "avoidClaim": (
+            "Do not restate the miss only as a large forecast error; separate "
+            "raw model level, post-processing, calibration, and published line effects."
+        ),
+    }
+    if event_type == "large_absolute_error":
+        if hour is not None and 6 <= hour <= 10:
+            return _drop_none_values({
+                **base,
+                "diagnosticQuestion": (
+                    "Is the morning miss caused by lag/business-type transition, "
+                    "weather regime, intraday carryover, or published freeze?"
+                ),
+                "minimumEvidence": [
+                    "focusedRows same hour modelErrorMw and publishedVsLatestRecalculatedGapMw",
+                    "morningTransitionDiagnostics.selectedRows causeTags and morningLagDeltaExcessMw",
+                    "stageAttribution same hour raw_lgbm -> published deltas",
+                ],
+                "preferredNextCheck": (
+                    f"Replay hours 06:00-11:00 around hour {hour:02d}:00 and compare "
+                    "raw_lgbm, published, lag_24h, recent_same_business_type_mean, "
+                    "and morningTransitionDiagnostics causeTags."
+                ),
+            })
+        if hour is not None and 11 <= hour <= 15:
+            return _drop_none_values({
+                **base,
+                "diagnosticQuestion": (
+                    "Is the daytime miss a raw level error, a midday/analog guard "
+                    "shape issue, a residual carryover effect, or a published freeze gap?"
+                ),
+                "minimumEvidence": [
+                    "focusedRows same hour modelErrorMw and neighboring-hour errors",
+                    "stageAttribution same hour stageImpactSummary",
+                    "freezeImpact gap for the same or adjacent hour when present",
+                ],
+                "preferredNextCheck": (
+                    f"Replay hours 10:00-16:00 around hour {hour:02d}:00 and inspect "
+                    "business_midday interaction features, stageAttribution, and freeze gaps."
+                ),
+            })
+        if hour is not None and 16 <= hour <= 19:
+            return _drop_none_values({
+                **base,
+                "diagnosticQuestion": (
+                    "Is the evening miss caused by warm-day overhang, evening decline "
+                    "continuity, weather slope, or residual carryover?"
+                ),
+                "minimumEvidence": [
+                    "focusedRows same hour actual/model slope and modelErrorMw",
+                    "controllerDiagnosis slopeContext and guardSummary",
+                    "stageAttribution same hour stageImpactSummary",
+                ],
+                "preferredNextCheck": (
+                    f"Replay hours 15:00-20:00 around hour {hour:02d}:00 and compare "
+                    "temp_delta_1h, apparent_temp_delta_1h, evening guard reductions, "
+                    "and residual carryover."
+                ),
+            })
+        return _drop_none_values({
+            **base,
+            "diagnosticQuestion": (
+                f"Why did the model {direction or 'miss'} at this hour, and did "
+                "serving/calibration change the raw model conclusion?"
+            ),
+            "minimumEvidence": [
+                "focusedRows same hour signed error",
+                "stageAttribution same hour stageImpactSummary",
+            ],
+        })
+    if event_type == "shape_break":
+        return _drop_none_values({
+            **base,
+            "diagnosticQuestion": (
+                "Did the model curve move faster or slower than actual demand, "
+                "and which post-processing layer changed the slope?"
+            ),
+            "minimumEvidence": [
+                "actualDeltaMw, modelDeltaMw, and modelDeltaErrorMw",
+                "stageAttribution for the target hour",
+                "controllerDiagnosis slopeContext when present",
+            ],
+            "preferredNextCheck": (
+                "Replay the two-hour transition and compare raw_lgbm slope with "
+                "post_calibration and published slope."
+            ),
+        })
+    if event_type == "published_recalculated_gap":
+        return _drop_none_values({
+            **base,
+            "diagnosticQuestion": (
+                "Did the UI-serving published line diverge from the latest "
+                "recalculated post-calibration line?"
+            ),
+            "minimumEvidence": [
+                "publishedForecastMw",
+                "latestRecalculatedForecastMw",
+                "freezeGapMw sign and magnitude",
+            ],
+            "preferredNextCheck": (
+                "Inspect freezeImpact.largestGaps and stageAttribution published "
+                "delta for the same hour before calling it a raw model failure."
+            ),
+        })
+    return base
+
+
 def _build_analysis_priorities(
     operation: dict | None,
     diagnostic_context: dict | None,
@@ -2188,6 +2350,13 @@ def _build_analysis_priorities(
         ),
         reverse=True,
     )[:PRIORITY_EVENT_MAX_ITEMS]
+    events = [
+        {
+            **event,
+            "analysisContract": _priority_event_analysis_contract(event),
+        }
+        for event in events
+    ]
     return {
         "selectionRule": (
             "Generic, data-derived ranking of large point errors, shape breaks, "
@@ -3005,6 +3174,404 @@ def _build_focused_rows(
     return rows
 
 
+def _rows_by_hour(rows: Any) -> dict[int, dict]:
+    if not isinstance(rows, list):
+        return {}
+    result: dict[int, dict] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        hour = row.get("hour")
+        try:
+            result[int(hour)] = row
+        except (TypeError, ValueError):
+            continue
+    return result
+
+
+def _stage_deltas_for_event(
+    calibration_row: dict | None,
+    focused_row: dict | None,
+) -> dict | None:
+    if not isinstance(calibration_row, dict):
+        calibration_row = {}
+    if not isinstance(focused_row, dict):
+        focused_row = {}
+    stages = calibration_row.get("forecastMwByStage") or {}
+    if not isinstance(stages, dict):
+        stages = {}
+
+    raw = _as_float(stages.get("raw_lgbm"))
+    analog = _as_float(stages.get("analog_adjusted"))
+    pre = _as_float(
+        stages.get("pre_calibration")
+        if stages.get("pre_calibration") is not None
+        else calibration_row.get("preCalibrationForecastMw")
+        if calibration_row.get("preCalibrationForecastMw") is not None
+        else focused_row.get("preCalibrationForecastMw")
+    )
+    post = _as_float(
+        stages.get("post_calibration")
+        if stages.get("post_calibration") is not None
+        else calibration_row.get("postCalibrationForecastMw")
+        if calibration_row.get("postCalibrationForecastMw") is not None
+        else focused_row.get("postCalibrationForecastMw")
+    )
+    published = _as_float(focused_row.get("publishedForecastMw"))
+    actual = _as_float(focused_row.get("actualMw") or calibration_row.get("actualMw"))
+
+    stage_values = _drop_none_values({
+        "rawLgbmMw": _round_number(raw),
+        "analogAdjustedMw": _round_number(analog),
+        "preCalibrationMw": _round_number(pre),
+        "postCalibrationMw": _round_number(post),
+        "publishedMw": _round_number(published),
+        "actualMw": _round_number(actual),
+    })
+    stage_deltas = _drop_none_values({
+        "rawToAnalogMw": _round_number(analog - raw)
+        if raw is not None and analog is not None
+        else None,
+        "analogToPreCalibrationMw": _round_number(pre - analog)
+        if analog is not None and pre is not None
+        else None,
+        "preToPostCalibrationMw": _round_number(post - pre)
+        if pre is not None and post is not None
+        else None,
+        "postCalibrationToPublishedMw": _round_number(published - post)
+        if published is not None and post is not None
+        else None,
+        "rawToPublishedMw": _round_number(published - raw)
+        if published is not None and raw is not None
+        else None,
+    })
+    stage_errors = _drop_none_values({
+        "rawErrorMw": _round_number(raw - actual)
+        if raw is not None and actual is not None
+        else None,
+        "preCalibrationErrorMw": _round_number(pre - actual)
+        if pre is not None and actual is not None
+        else None,
+        "postCalibrationErrorMw": _round_number(post - actual)
+        if post is not None and actual is not None
+        else None,
+        "publishedErrorMw": _round_number(published - actual)
+        if published is not None and actual is not None
+        else None,
+    })
+    result = _drop_none_values({
+        "source": "operationalCalibration.hourlyDiagnostics.forecastMwByStage",
+        "stageValues": stage_values,
+        "stageDeltas": stage_deltas,
+        "stageErrors": stage_errors,
+    })
+    return result or None
+
+
+def _nearest_freeze_gap_for_hour(
+    freeze_impact: dict | None,
+    hour: int | None,
+) -> dict | None:
+    if hour is None or not isinstance(freeze_impact, dict):
+        return None
+    gaps = freeze_impact.get("largestGaps") or []
+    if not isinstance(gaps, list):
+        return None
+    candidates = [
+        gap for gap in gaps
+        if isinstance(gap, dict) and gap.get("hour") is not None
+    ]
+    if not candidates:
+        return None
+    exact = [
+        gap for gap in candidates
+        if _as_float(gap.get("freezeGapMw")) is not None
+        and int(gap.get("hour")) == hour
+    ]
+    if exact:
+        gap = exact[0]
+    else:
+        nearby = [
+            gap for gap in candidates
+            if _as_float(gap.get("freezeGapMw")) is not None
+            and abs(int(gap.get("hour")) - hour) <= 1
+        ]
+        if not nearby:
+            return None
+        gap = max(nearby, key=lambda item: abs(_as_float(item.get("freezeGapMw")) or 0.0))
+    return _drop_none_values({
+        "source": "freezeImpact.largestGaps",
+        "hour": gap.get("hour"),
+        "publishedForecastMw": _round_number(gap.get("publishedForecastMw")),
+        "latestRecalculatedForecastMw": _round_number(
+            gap.get("latestRecalculatedForecastMw")
+        ),
+        "freezeGapMw": _round_number(gap.get("freezeGapMw")),
+    })
+
+
+def _recommended_ticket_for_event(event: dict) -> dict | None:
+    hour = _hour_from_point(event)
+    event_id = str(event.get("id") or "")
+    direction = str(event.get("modelErrorDirection") or "")
+    if hour is None:
+        return None
+    if 6 <= hour <= 10:
+        return {
+            "eventId": event_id,
+            "target": "intraday_correction.business_type_transition",
+            "testWindowJst": "06:00-11:00",
+            "triggerFields": [
+                "morningTransitionDiagnostics.rows[].morningLagDeltaExcessMw",
+                "morningTransitionDiagnostics.rows[].lag24BusinessTypeMismatch",
+                "focusedRows[].publishedVsLatestRecalculatedGapMw",
+            ],
+            "tuningDirection": (
+                "Backtest whether business-return transition thresholds or "
+                "morning published-line freeze handling explain the same-hour "
+                f"{direction or 'signed'} miss before changing production logic."
+            ),
+            "acceptanceMetrics": [
+                "06-11 MAE/WAPE",
+                "max absolute error",
+                "same-hour TEPCO absolute-error gap",
+            ],
+            "failureMode": (
+                "Too much damping can suppress a genuine business-day or "
+                "cooling-demand ramp."
+            ),
+            "proposedReplayCommand": (
+                "python -m python.eval.ai_daily_report --public-dir web/public "
+                "--max-days 1 --languages en --no-openai --overwrite-existing"
+            ),
+        }
+    if 11 <= hour <= 15:
+        return {
+            "eventId": event_id,
+            "target": "business_midday_x_lag_24h_delta",
+            "testWindowJst": "10:00-16:00",
+            "triggerFields": [
+                "stageAttribution.stageDeltas.rawToPublishedMw",
+                "focusedRows[].publishedVsLatestRecalculatedGapMw",
+                "operationalCalibration.hourlyDiagnostics.sameDayActualSlopeMw",
+            ],
+            "tuningDirection": (
+                "Replay midday shape and freeze gaps together; only test feature "
+                "changes if raw_lgbm, analog adjustment, and published freeze do "
+                "not already explain the signed miss."
+            ),
+            "acceptanceMetrics": [
+                "11-15 MAE/WAPE",
+                "shape delta error",
+                "max error around lunch/daily peak",
+            ],
+            "failureMode": (
+                "A stronger midday guard can overfit a lunch dip and damage "
+                "13:00-15:00 recovery."
+            ),
+            "proposedReplayCommand": (
+                "python -m python.eval.ai_daily_report --public-dir web/public "
+                "--max-days 1 --languages en --no-openai --overwrite-existing"
+            ),
+        }
+    if 16 <= hour <= 19:
+        return {
+            "eventId": event_id,
+            "target": "intraday_correction.evening_decline_continuity_guard",
+            "testWindowJst": "15:00-20:00",
+            "triggerFields": [
+                "sameDayActualSlopeMw",
+                "forecastDeltaMw",
+                "temp_delta_1h",
+                "apparent_temp_delta_1h",
+            ],
+            "tuningDirection": (
+                "Backtest a near-term cap only when the served forecast rises "
+                "against a clear same-day evening decline."
+            ),
+            "acceptanceMetrics": [
+                "16-19 MAE/WAPE",
+                "shape delta error",
+                "overprediction tail error",
+            ],
+            "failureMode": "Over-damping can miss real late-day heat or activity rebound.",
+            "proposedReplayCommand": (
+                "python -m python.eval.ai_daily_report --public-dir web/public "
+                "--max-days 1 --languages en --no-openai --overwrite-existing"
+            ),
+        }
+    return None
+
+
+def _build_event_evidence_bundles(
+    analysis_priorities: dict | None,
+    focused_rows: list[dict],
+    diagnostics: dict | None,
+    calibration: dict | None,
+    freeze_impact: dict | None,
+) -> list[dict]:
+    if not isinstance(analysis_priorities, dict):
+        return []
+    events = analysis_priorities.get("events") or []
+    if not isinstance(events, list):
+        return []
+
+    focused_by_hour = _rows_by_hour(focused_rows)
+    calibration_by_hour = _rows_by_hour(
+        (calibration or {}).get("hourlyDiagnostics") if isinstance(calibration, dict) else []
+    )
+    morning_rows = (
+        ((diagnostics or {}).get("morningTransitionDiagnostics") or {}).get("rows")
+        if isinstance(diagnostics, dict)
+        else []
+    )
+    morning_by_hour = _rows_by_hour(morning_rows)
+
+    bundles: list[dict] = []
+    for event in events[:PRIORITY_EVENT_MAX_ITEMS]:
+        if not isinstance(event, dict):
+            continue
+        hour = _hour_from_point(event)
+        focused = focused_by_hour.get(hour) if hour is not None else None
+        calibration_row = calibration_by_hour.get(hour) if hour is not None else None
+        morning = morning_by_hour.get(hour) if hour is not None else None
+        stage_evidence = _stage_deltas_for_event(calibration_row, focused)
+        shape_evidence = None
+        if isinstance(calibration_row, dict):
+            shape_evidence = _drop_none_values({
+                "forecastDeltaMw": _round_number(calibration_row.get("forecastDeltaMw")),
+                "postCalibrationForecastDeltaMw": _round_number(
+                    calibration_row.get("postCalibrationForecastDeltaMw")
+                ),
+                "lag24DeltaMw": _round_number(calibration_row.get("lag24DeltaMw")),
+                "recentSameBusinessTypeDeltaMw": _round_number(
+                    calibration_row.get("recentSameBusinessTypeDeltaMw")
+                ),
+                "sameDayActualSlopeMw": _round_number(
+                    calibration_row.get("sameDayActualSlopeMw")
+                ),
+                "weatherDeltaC": _round_number(calibration_row.get("weatherDeltaC")),
+                "actualVsPreCalibrationResidualMw": _round_number(
+                    calibration_row.get("actualVsPreCalibrationResidualMw")
+                ),
+                "actualVsPostCalibrationResidualMw": _round_number(
+                    calibration_row.get("actualVsPostCalibrationResidualMw")
+                ),
+            })
+        morning_evidence = None
+        if isinstance(morning, dict):
+            morning_evidence = _drop_none_values({
+                "causeTags": morning.get("causeTags"),
+                "morningLagDeltaExcessMw": _round_number(
+                    morning.get("morningLagDeltaExcessMw")
+                ),
+                "lag24HourlyDeltaMw": _round_number(
+                    morning.get("lag24HourlyDeltaMw")
+                ),
+                "recentSameBusinessTypeDeltaMeanMw": _round_number(
+                    morning.get("recentSameBusinessTypeDeltaMeanMw")
+                ),
+                "lag24BusinessTypeMismatch": morning.get("lag24BusinessTypeMismatch"),
+                "tempC": _round_number(morning.get("tempC")),
+                "coolingDelta24hC": _round_number(morning.get("coolingDelta24hC")),
+                "humidityPct": _round_number(morning.get("humidityPct")),
+                "discomfortIndex": _round_number(morning.get("discomfortIndex")),
+                "weatherSourceConfidence": morning.get("weatherSourceConfidence"),
+            })
+        focused_evidence = None
+        if isinstance(focused, dict):
+            focused_evidence = _drop_none_values({
+                key: focused.get(key)
+                for key in (
+                    "actualMw",
+                    "publishedForecastMw",
+                    "preCalibrationForecastMw",
+                    "postCalibrationForecastMw",
+                    "publishedVsLatestRecalculatedGapMw",
+                    "modelErrorMw",
+                    "modelErrorDirection",
+                    "tepcoForecastMw",
+                    "tepcoErrorMw",
+                    "tepcoErrorDirection",
+                )
+            })
+        bundle = _drop_none_values({
+            "eventId": event.get("id"),
+            "eventType": event.get("eventType"),
+            "hour": hour,
+            "timeBand": event.get("timeBand"),
+            "modelErrorMw": _round_number(event.get("modelErrorMw")),
+            "modelAbsErrorMw": _round_number(event.get("modelAbsErrorMw")),
+            "modelErrorDirection": event.get("modelErrorDirection"),
+            "comparisonToTepcoAbsGapMw": _round_number(
+                event.get("comparisonToTepcoAbsGapMw")
+            ),
+            "diagnosticQuestion": (
+                (event.get("analysisContract") or {}).get("diagnosticQuestion")
+            ),
+            "focusedEvidence": focused_evidence,
+            "stageEvidence": stage_evidence,
+            "morningEvidence": morning_evidence,
+            "shapeEvidence": shape_evidence,
+            "freezeEvidence": _nearest_freeze_gap_for_hour(freeze_impact, hour),
+            "recommendedTicket": _recommended_ticket_for_event(event),
+        })
+        if bundle:
+            bundles.append(bundle)
+    return bundles
+
+
+def _build_recommendation_ticket_candidates(
+    event_evidence_bundles: list[dict],
+) -> list[dict]:
+    candidates = []
+    seen_targets: set[str] = set()
+    for bundle in event_evidence_bundles:
+        if not isinstance(bundle, dict):
+            continue
+        ticket = bundle.get("recommendedTicket")
+        if not isinstance(ticket, dict):
+            continue
+        target = str(ticket.get("target") or "")
+        if not target or target in seen_targets:
+            continue
+        seen_targets.add(target)
+        candidates.append(ticket)
+    return candidates[:3]
+
+
+def _analysis_quality_contract() -> dict:
+    return {
+        "goal": (
+            "Produce an engineering-grade operations analysis. Do not stop at "
+            "which hour missed; explain the mechanism, affected pipeline layer, "
+            "and next verification step."
+        ),
+        "hypothesisRequirements": [
+            "title must name a mechanism or uncertainty, not only 'forecast accuracy risk'",
+            "explanation must connect event -> evidence -> mechanism -> operational effect",
+            "mechanism must describe the likely lag/weather/calibration/freeze/band interaction",
+            "nextCheck must name the exact replay, field, or diagnostic to inspect next",
+        ],
+        "rejectedTitlePatterns": [
+            "Forecast Accuracy Risk in Hour X",
+            "Large Error at Hour X",
+            "Model missed hour X",
+            "Hour X discrepancy",
+        ],
+        "recommendationRequirements": [
+            "target one concrete feature, guard, calibration layer, or evaluation dataset",
+            "include a tuning direction or validation window, not only 'review this feature'",
+            "describe the failure mode if the experiment overcorrects",
+            "keep autoApply=false; recommendations are experiment tickets",
+        ],
+        "qualityBar": (
+            "A useful report should let an engineer decide what to replay tomorrow "
+            "without reading raw JSON first."
+        ),
+    }
+
+
 def _build_openai_fact_packet(
     public_dir: Path,
     fallback_reports: dict[str, dict],
@@ -3049,6 +3616,18 @@ def _build_openai_fact_packet(
             forecast,
         )
     freeze_impact = diagnostic_context.get("freezeImpact")
+    analysis_priorities = _build_analysis_priorities(
+        operation,
+        diagnostic_context,
+    )
+    focused_rows = _build_focused_rows(operation, actual, forecast, calibration)
+    event_evidence_bundles = _build_event_evidence_bundles(
+        analysis_priorities,
+        focused_rows,
+        diagnostics,
+        calibration,
+        freeze_impact,
+    )
     fact_packet = {
         "date": primary.get("date"),
         "timezone": TIMEZONE,
@@ -3064,9 +3643,11 @@ def _build_openai_fact_packet(
         "performance": primary.get("performance"),
         "dataQuality": primary.get("dataQuality"),
         "coverageContext": diagnostic_context.get("coverageContext"),
-        "analysisPriorities": _build_analysis_priorities(
-            operation,
-            diagnostic_context,
+        "analysisQualityContract": _analysis_quality_contract(),
+        "analysisPriorities": analysis_priorities,
+        "eventEvidenceBundles": event_evidence_bundles,
+        "recommendationTicketCandidates": _build_recommendation_ticket_candidates(
+            event_evidence_bundles
         ),
         "operationFacts": operation_facts,
         "diagnosticFacts": diagnostic_facts,
@@ -3075,7 +3656,7 @@ def _build_openai_fact_packet(
         ),
         "calibrationFacts": calibration_facts,
         "calibrationHistoryFacts": _compact_calibration_history(calibration_history),
-        "focusedRows": _build_focused_rows(operation, actual, forecast, calibration),
+        "focusedRows": focused_rows,
         "controlContext": _build_control_context(calibration, calibration_history),
         "controllerDiagnosis": diagnostic_context.get("controllerDiagnosis"),
         "stageAttribution": diagnostic_context.get("stageAttribution"),
@@ -3097,7 +3678,32 @@ def _openai_analysis_schema() -> dict:
     evidence_schema = {
         "type": "object",
         "properties": {
-            "source": {"type": "string"},
+            "source": {
+                "type": "string",
+                "enum": [
+                    "reports/daily",
+                    "focusedRows",
+                    "morningTransitionDiagnostics",
+                    "stageAttribution",
+                    "freezeImpact",
+                    "controllerDiagnosis",
+                    "calibrationFacts",
+                    "calibrationHistoryFacts",
+                    "operationFacts",
+                    "topMisses",
+                    "timeBands",
+                    "performance",
+                    "dataQuality",
+                    "coverageContext",
+                    "diagnosticFacts",
+                    "bandQuality",
+                    "rollingPatternContext",
+                    "controlContext",
+                    "analysisPriorities",
+                    "eventEvidenceBundles",
+                    "recommendationTicketCandidates",
+                ],
+            },
             "metric": {"type": "string"},
             "value": {"type": ["string", "number", "null"]},
             "unit": {"type": ["string", "null"]},
@@ -3119,6 +3725,13 @@ def _openai_analysis_schema() -> dict:
             },
             "title": {"type": "string"},
             "explanation": {"type": "string"},
+            "mechanism": {"type": "string"},
+            "nextCheck": {"type": "string"},
+            "sourceEventIds": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 3,
+            },
             "evidence": {
                 "type": "array",
                 "items": evidence_schema,
@@ -3152,6 +3765,9 @@ def _openai_analysis_schema() -> dict:
             "evidenceStatus",
             "title",
             "explanation",
+            "mechanism",
+            "nextCheck",
+            "sourceEventIds",
             "evidence",
             "relatedHours",
             "relatedTimeBands",
@@ -3269,16 +3885,41 @@ def _openai_domain_guidelines() -> str:
     return (
         "Reason like a power-demand operations analyst, not a text summarizer. "
         "Use only numeric facts, analysisPriorities, weather diagnostics, "
-        "topMisses, timeBands, focusedRows, morningTransitionDiagnostics, "
+        "topMisses, timeBands, focusedRows, eventEvidenceBundles, "
+        "recommendationTicketCandidates, morningTransitionDiagnostics, "
         "controlContext, controllerDiagnosis, stageAttribution, "
         "bandQuality, freezeContext, rollingPatternContext, and calibration flags "
         "from factPacket. Treat focusedRows as the detailed window around "
         "large misses or calibration-shape risk, not as a full-day table. "
+        "Minimum analysis depth contract: every rootCauseHypothesis must answer "
+        "four separate questions: what happened, why the pipeline could have "
+        "produced it, which layer or feature family is implicated, and what "
+        "exact check should be run next. The title must name a mechanism or "
+        "uncertainty such as lag inertia, weather-regime mismatch, residual "
+        "carryover, band compression, or published freeze gap. Never use "
+        "generic titles like Forecast Accuracy Risk in Hour 15, Large Error "
+        "at Hour 10, Model missed hour X, or Hour X discrepancy. Fill the "
+        "mechanism field with the causal path, not a restatement of the error. "
+        "Fill nextCheck with a concrete replay, diagnostic JSON field, time-band "
+        "comparison, or calibration snapshot to inspect next. Each hypothesis "
+        "must include sourceEventIds copied from analysisPriorities.events; for "
+        "mustDiscussEventIds, use the event's analysisContract.diagnosticQuestion, "
+        "minimumEvidence, and preferredNextCheck to frame the hypothesis. "
+        "Do not put event IDs such as top_miss_h8 in evidence.source; event IDs "
+        "belong only in sourceEventIds. evidence.source must name the factPacket "
+        "block that supplies the metric, such as focusedRows, stageAttribution, "
+        "morningTransitionDiagnostics, controllerDiagnosis, freezeImpact, "
+        "operationFacts, topMisses, timeBands, performance, bandQuality, "
+        "rollingPatternContext, controlContext, calibrationFacts, or "
+        "analysisPriorities, eventEvidenceBundles, or recommendationTicketCandidates. "
         "analysisPriorities is a generic evidence ranking produced by Python; "
         "it is not a prewritten conclusion. Unless contradicted by stronger "
         "evidence, address the top mustDiscussEventIds before generic lag or "
         "weather commentary, and cite the concrete hours and metrics from the "
-        "matching event. "
+        "matching event. For each discussed event, first inspect the matching "
+        "factPacket.eventEvidenceBundles item and use its focusedEvidence, "
+        "stageEvidence, morningEvidence, shapeEvidence, freezeEvidence, and "
+        "recommendedTicket fields before writing a hypothesis. "
         "Strict sign convention: modelErrorMw and modelBiasMw are forecast "
         "minus actual. Positive values mean overprediction or forecast above "
         "actual; negative values mean underprediction or forecast below actual. "
@@ -3326,7 +3967,11 @@ def _openai_domain_guidelines() -> str:
         "forecast gap; otherwise do not infer freeze effects. A negative "
         "freeze gap means the published line is below the latest recalculated "
         "line; do not describe that sign as actual-demand underprediction by "
-        "itself. If morning_ramp hours 06-10 "
+        "itself. If a hypothesis title, mechanism, or explanation claims a "
+        "published freeze effect, its evidence must cite freezeImpact, "
+        "stageAttribution, focusedRows publishedVsLatestRecalculatedGapMw, or "
+        "another explicit published/recalculated metric. Otherwise mention "
+        "freeze only as a nextCheck, not as a root cause. If morning_ramp hours 06-10 "
         "show large positive model bias and the data indicates a business-day "
         "to non-business-day transition, independently consider a lag_24h "
         "inertia or ramp contamination hypothesis. If observed demand slope "
@@ -3338,17 +3983,23 @@ def _openai_domain_guidelines() -> str:
         "a concrete target from featureCatalog or "
         "analysisPriorities.relatedFeatureCandidates when possible and must propose "
         "a specific trigger, threshold, decay, shrinkage, or validation replay; "
+        "Reject recommendation wording that only says review, consider, or "
+        "make this a candidate without naming the concrete parameter, guard "
+        "condition, feature interaction, or replay window to test. "
         "Feature recommendations must link only to hypothesis IDs that are "
         "present in the output, and the recommendation target should match one "
-        "of the linked hypothesis relatedFeatures when possible. "
+        "of the linked hypothesis relatedFeatures when possible. Prefer a "
+        "matching factPacket.recommendationTicketCandidates item when available: "
+        "carry its target, testWindowJst, triggerFields, acceptanceMetrics, "
+        "and failureMode into the recommendation prose. Do not turn a placeholder "
+        "or diagnostic command into a runnable replay command. "
         "write recommendations as experiment candidates, not production commands. "
         "Use wording like consider testing, backtest, evaluate, or make this a "
         "candidate; do not say to add, freeze, disable, or change production "
         "behavior directly unless the input includes explicit implemented evidence. "
-        "include proposedReplayCommand only when it is clearly a real or proposed "
-        "replay command. If there is no concrete command, set proposedReplayCommand "
-        "and commandStatus to null. If a command is proposed but not implemented, "
-        "set commandStatus to proposed_not_implemented rather than presenting it as real. "
+        "include proposedReplayCommand only when it is clearly an implemented "
+        "project CLI. If there is no implemented command, set proposedReplayCommand "
+        "to null and commandStatus to manual_validation. "
         "Use rollingPatternContext to decide whether a miss pattern is repeated "
         "or a single-day anomaly; if it is not repeated, recommend further "
         "observation before changing guards. "
@@ -3393,11 +4044,26 @@ def _openai_instructions(language: str) -> str:
         "analysisPriorities, morningTransitionDiagnostics, time-band statistics, "
         "calibration flags, control context, freeze-gap "
         "context, stage attribution, controller diagnosis, band-quality "
-        "coverage, rolling pattern context, and snapshot summaries. "
+        "coverage, rolling pattern context, eventEvidenceBundles, "
+        "recommendationTicketCandidates, and snapshot summaries. "
         "Start from factPacket.analysisPriorities when selecting the two or "
         "three root-cause hypotheses; it ranks the day's large point errors, "
         "shape breaks, time-band gaps, and serving freeze gaps without writing "
-        "the conclusion for you. "
+        "the conclusion for you. For each hypothesis, populate sourceEventIds "
+        "with the discussed analysisPriorities event IDs and use each event's "
+        "analysisContract to decide the mechanism and nextCheck. "
+        "For every sourceEventIds value you discuss, inspect the matching "
+        "eventEvidenceBundles item and cite at least one concrete field from "
+        "focusedEvidence, stageEvidence, morningEvidence, shapeEvidence, or "
+        "freezeEvidence in the explanation, mechanism, or nextCheck. Use "
+        "recommendationTicketCandidates for featureRecommendations when a "
+        "candidate target matches the hypothesis. "
+        "Never put event IDs such as top_miss_h8 in evidence.source; event IDs "
+        "belong only in sourceEventIds, while evidence.source must cite a "
+        "factPacket block such as focusedRows, stageAttribution, performance, "
+        "topMisses, timeBands, controlContext, controllerDiagnosis, "
+        "freezeImpact, morningTransitionDiagnostics, eventEvidenceBundles, "
+        "recommendationTicketCandidates, or analysisPriorities. "
         "Do not recompute deltas yourself: use stageAttribution stage "
         "value_mw/delta_mw pairs, controllerDiagnosis flags, and bandQuality "
         "coverage fields exactly as provided. "
@@ -3474,13 +4140,28 @@ def _openai_multilingual_instructions(languages: list[str]) -> str:
         "rows around abnormal windows, analysisPriorities, morningTransitionDiagnostics, "
         "time-band statistics, calibration flags, "
         "control context, freeze-gap context, stage attribution, controller "
-        "diagnosis, band-quality coverage, rolling pattern context, and snapshot summaries. Do not recompute "
+        "diagnosis, band-quality coverage, rolling pattern context, "
+        "eventEvidenceBundles, recommendationTicketCandidates, and snapshot summaries. Do not recompute "
         "deltas yourself: use stageAttribution stage value_mw/delta_mw pairs, "
         "controllerDiagnosis flags, and bandQuality coverage fields exactly as "
         "provided. Start from factPacket.analysisPriorities when selecting the "
         "two or three root-cause hypotheses; it ranks the day's large point "
         "errors, shape breaks, time-band gaps, and serving freeze gaps without "
-        "writing the conclusion for you. When morningTransitionDiagnostics has "
+        "writing the conclusion for you. Populate sourceEventIds from the "
+        "discussed analysisPriorities event IDs and use each event's "
+        "analysisContract to decide the mechanism and nextCheck. "
+        "For each sourceEventIds value, inspect the matching eventEvidenceBundles "
+        "item and use its focusedEvidence, stageEvidence, morningEvidence, "
+        "shapeEvidence, freezeEvidence, and recommendedTicket fields. Use "
+        "recommendationTicketCandidates as the preferred source for actionable "
+        "featureRecommendations. "
+        "Never put event IDs such as top_miss_h8 in evidence.source; event IDs "
+        "belong only in sourceEventIds, while evidence.source must cite a "
+        "factPacket block such as focusedRows, stageAttribution, performance, "
+        "topMisses, timeBands, controlContext, controllerDiagnosis, "
+        "freezeImpact, morningTransitionDiagnostics, eventEvidenceBundles, "
+        "recommendationTicketCandidates, or analysisPriorities. When "
+        "morningTransitionDiagnostics has "
         "causeTags, use those tags to separate raw morning transition risk, "
         "intraday carryover, humidity ramp, business-return, and freeze "
         "hypotheses. Do not describe "
@@ -3633,11 +4314,12 @@ def _openai_localization_instructions(languages: list[str]) -> str:
         "new metrics, hours, feature names, severities, confidence levels, "
         "evidenceStatus values, recommendation targets, or calibration events. "
         "Preserve the English master's logical structure, IDs, numeric evidence, "
-        "related hours, related time bands, related features, recommendation "
-        "priority/type/target/linkedHypotheses, and autoApply=false. Translate "
+        "sourceEventIds, related hours, related time bands, related features, "
+        "recommendation priority/type/target/linkedHypotheses, and autoApply=false. Translate "
         "and localize only natural-language fields: headline, summary, title, "
-        "explanation, counterEvidence, suggestion, expectedEffect, risk, "
-        "validationPlan, operatorNotes, and limitations. If a claim cannot be "
+        "explanation, mechanism, nextCheck, counterEvidence, suggestion, "
+        "expectedEffect, risk, validationPlan, operatorNotes, and limitations. "
+        "If a claim cannot be "
         "translated cleanly, keep the original numeric fact and translate the "
         "surrounding explanation conservatively. For ko, write natural Korean "
         "using Hangul-based sentences; do not emit mojibake, pseudo-CJK, or "
@@ -3986,13 +4668,56 @@ def _hypothesis_has_direction_conflict(
     ) or _hypothesis_has_shape_direction_conflict(title, explanation, evidence)
 
 
+def _hypothesis_claims_freeze_without_evidence(
+    title: str,
+    explanation: str,
+    mechanism: str,
+    evidence: list[dict],
+    related_features: list[str],
+) -> bool:
+    text = f"{title} {explanation} {mechanism}".lower()
+    mentions_freeze = (
+        "freeze" in text
+        or "published" in text
+        or "recalculated" in text
+        or "serving line" in text
+        or "serving" in text
+        or "serving.published_forecast_freeze" in related_features
+    )
+    if not mentions_freeze:
+        return False
+    if (
+        ("separate" in text or "separating" in text or "split" in text or "check whether" in text)
+        and ("assigning root cause" in text or "nextcheck" not in text)
+    ):
+        return False
+    for item in evidence:
+        source = str(item.get("source") or "").lower()
+        metric = str(item.get("metric") or "").lower()
+        if (
+            "freeze" in source
+            or "stageattribution" in source
+            or "focusedrows" in source
+            or "published" in metric
+            or "recalculated" in metric
+            or "freezegap" in metric
+            or "publishedvslatestrecalculatedgap" in metric
+        ):
+            return False
+    return True
+
+
 def _hypothesis_needs_directional_copy(hypothesis: dict) -> bool:
     title = str(hypothesis.get("title") or "")
     explanation = str(hypothesis.get("explanation") or "")
+    mechanism = str(hypothesis.get("mechanism") or "")
+    next_check = str(hypothesis.get("nextCheck") or "")
     evidence = _normalize_evidence(hypothesis.get("evidence"))
     if _primary_signed_error_evidence(evidence) is None:
         return False
     if _hypothesis_has_direction_conflict(title, explanation, evidence):
+        return True
+    if _hypothesis_detail_is_generic(mechanism) or _next_check_is_generic(next_check):
         return True
     return _hypothesis_has_generic_error_wording(hypothesis)
 
@@ -4005,8 +4730,28 @@ def _hypothesis_has_generic_error_wording(hypothesis: dict) -> bool:
         "single hour",
         "large error",
         "forecast error",
+        "forecast accuracy risk",
+        "hour discrepancy",
+        "model missed hour",
+        "large discrepancy",
         "peak hour error",
+        "peak timing",
+        "timing was missed",
+        "missed peak",
         "large single-hour miss",
+        "business-type transition error",
+        "business type transition error",
+        "business-type transition impact",
+        "business type transition impact",
+        "midday guard shape issue",
+        "published freeze gap at midday",
+        "shape issue during daytime",
+        "daytime shape issue",
+        "transition guard shape issue",
+        "morning positive residual carryover",
+        "carryover impact",
+        "published freeze gap issue",
+        "daily carryover",
         "단일 시간",
         "단일 대형 오차",
         "단일 대형",
@@ -4021,6 +4766,93 @@ def _hypothesis_has_generic_error_wording(hypothesis: dict) -> bool:
         "予測誤差",
     )
     return any(token in lowered or token in title for token in generic_tokens)
+
+
+def _hypothesis_is_low_value_empty_card(hypothesis: dict) -> bool:
+    if _hypothesis_is_freeze_only(hypothesis):
+        return False
+    if _as_string_list(hypothesis.get("sourceEventIds")):
+        return False
+    if _meaningful_text(hypothesis.get("mechanism")):
+        return False
+    if _meaningful_text(hypothesis.get("nextCheck")):
+        return False
+    if (
+        _primary_signed_error_evidence(
+            _normalize_evidence(hypothesis.get("evidence"))
+        )
+        is not None
+    ):
+        return False
+
+    title = _meaningful_text(hypothesis.get("title"))
+    explanation = _meaningful_text(hypothesis.get("explanation"))
+    if not title or not explanation:
+        return True
+    return (
+        _hypothesis_has_generic_error_wording(hypothesis)
+        or _hypothesis_detail_is_generic(title)
+        or _hypothesis_detail_is_generic(explanation)
+    )
+
+
+def _hypothesis_detail_is_generic(text: Any) -> bool:
+    lowered = str(text or "").lower()
+    if not lowered.strip():
+        return True
+    generic_phrases = (
+        "possible inadequacies",
+        "affecting demand predictions",
+        "transition management",
+        "manage transitions",
+        "managing transitions",
+        "potential carryover effects",
+        "complicate accuracy",
+        "further evidence needed",
+        "needs further evidence",
+        "actual dynamics",
+        "forecast discrepancies",
+        "transition patterns",
+        "connections among hours",
+        "not effectively capturing",
+        "business cycle",
+        "business-return dynamics",
+        "dynamics that were not fully captured",
+        "transition dynamics",
+        "possibly inadequately handled",
+        "actual consumption dynamics",
+        "did not capture the actual",
+        "valid calibration factors",
+        "did not adapt to midday",
+        "demanding expectations",
+        "not fully captured",
+        "potential gaps",
+        "failed to incorporate",
+        "publishing dynamics",
+        "misleading input metrics",
+        "prior days' business type variances",
+        "inflated morning forecasts",
+        "assess morningtransitiondiagnostics",
+    )
+    return any(phrase in lowered for phrase in generic_phrases)
+
+
+def _next_check_is_generic(text: Any) -> bool:
+    lowered = str(text or "").lower()
+    if not lowered.strip():
+        return True
+    if _hypothesis_detail_is_generic(lowered):
+        return True
+    concrete_tokens = (
+        "focusedrows",
+        "morningtransitiondiagnostics",
+        "stageattribution",
+        "freezeimpact",
+        "calibrationfacts",
+        "business_midday",
+        "publishedvslatestrecalculatedgap",
+    )
+    return "replay" in lowered and not any(token in lowered for token in concrete_tokens)
 
 
 def _hypothesis_first_hour(hypothesis: dict) -> int | None:
@@ -4053,6 +4885,26 @@ def _hypothesis_signed_error_key(hypothesis: dict) -> tuple[int | None, str] | N
     return (_hypothesis_first_hour(hypothesis), direction)
 
 
+def _hypothesis_event_priority_key(hypothesis: dict) -> tuple[int, float, int]:
+    source_event_ids = _as_string_list(hypothesis.get("sourceEventIds"))
+    is_top_miss = any(event_id.startswith("top_miss_h") for event_id in source_event_ids)
+    is_freeze = _hypothesis_is_freeze_only(hypothesis) or any(
+        event_id.startswith("freeze_gap_h") for event_id in source_event_ids
+    )
+    signed = _primary_signed_error_evidence(
+        _normalize_evidence(hypothesis.get("evidence"))
+    )
+    signed_abs = abs(_as_float(signed.get("value")) or 0.0) if signed else 0.0
+    hour = _hypothesis_first_hour(hypothesis)
+    if is_top_miss:
+        group = 0
+    elif is_freeze:
+        group = 2
+    else:
+        group = 1
+    return (group, -signed_abs, hour if hour is not None else 99)
+
+
 def _hydrate_hypothesis_related_features(hypothesis: dict) -> dict:
     features = [
         _normalize_feature_name(feature)
@@ -4071,13 +4923,14 @@ def _hydrate_hypothesis_related_features(hypothesis: dict) -> dict:
     return result
 
 
-def _hypothesis_quality_score(hypothesis: dict) -> tuple[int, int, int, int]:
+def _hypothesis_quality_score(hypothesis: dict) -> tuple[int, int, int, int, int]:
     evidence = _normalize_evidence(hypothesis.get("evidence"))
     has_signed = 1 if _primary_signed_error_evidence(evidence) is not None else 0
     has_features = 1 if _as_string_list(hypothesis.get("relatedFeatures")) else 0
+    has_mechanism = 1 if _meaningful_text(hypothesis.get("mechanism")) else 0
     is_specific = 0 if _hypothesis_has_generic_error_wording(hypothesis) else 1
     evidence_count = min(len(evidence), 9)
-    return (has_signed, has_features, is_specific, evidence_count)
+    return (has_signed, has_features, has_mechanism, is_specific, evidence_count)
 
 
 def _curate_hypotheses_with_fallback(
@@ -4157,19 +5010,82 @@ def _directional_hypothesis_copy(language: str, hypothesis: dict) -> dict | None
         return None
     hour = signed_evidence.get("hour")
     try:
-        hour_text = f"{int(hour):02d}:00 JST" if hour is not None else "해당 시간"
+        hour_int = int(hour) if hour is not None else None
+    except (TypeError, ValueError):
+        hour_int = None
+    try:
+        hour_text = f"{hour_int:02d}:00 JST" if hour_int is not None else "해당 시간"
     except (TypeError, ValueError):
         hour_text = "해당 시간"
+    band_blob = " ".join(
+        [
+            str(signed_evidence.get("timeBand") or ""),
+            *[str(item) for item in hypothesis.get("relatedTimeBands") or []],
+        ]
+    ).lower()
+    is_morning_window = (
+        (hour_int is not None and 6 <= hour_int <= 10)
+        or "morning" in band_blob
+        or "06-10" in band_blob
+        or "06:00-11:00" in band_blob
+    )
+    is_daytime_window = (
+        (hour_int is not None and 11 <= hour_int <= 15)
+        or "daytime" in band_blob
+        or "11-15" in band_blob
+        or "10:00-16:00" in band_blob
+    )
+    if hour_int is None:
+        if language == "en":
+            if is_morning_window:
+                hour_text = "the morning ramp"
+            elif is_daytime_window:
+                hour_text = "the daytime band"
+            else:
+                hour_text = "the affected window"
+        elif language == "ja":
+            if is_morning_window:
+                hour_text = "朝のランプ区間"
+            elif is_daytime_window:
+                hour_text = "日中帯"
+            else:
+                hour_text = "該当時間帯"
+        else:
+            if is_morning_window:
+                hour_text = "오전 ramp 구간"
+            elif is_daytime_window:
+                hour_text = "낮 시간대"
+            else:
+                hour_text = "해당 구간"
+    time_phrase = (
+        f"at {hour_text}" if hour_int is not None else f"during {hour_text}"
+    )
     abs_mw = abs(value)
     if value > 0.0:
         if language == "en":
-            title = f"The model overpredicted demand at {hour_text}."
-            explanation = (
-                f"The signed model error was +{abs_mw:.1f} MW, so the forecast "
-                "was above actual demand. Review the listed lag, weather, and "
-                "calibration features as candidates rather than treating the "
-                "whole day as one regime."
-            )
+            if is_daytime_window:
+                title = f"Daytime level overhang needs a raw-versus-serving split {time_phrase}."
+                explanation = (
+                    f"The signed model error was +{abs_mw:.1f} MW, so the served "
+                    "line sat above actual demand during a mixed-bias daytime band. "
+                    "Treat this as a shape/level attribution question, not as a "
+                    "whole-day overprediction regime."
+                )
+            elif is_morning_window:
+                title = f"Morning ramp overprediction needs transition-layer attribution {time_phrase}."
+                explanation = (
+                    f"The signed model error was +{abs_mw:.1f} MW inside the "
+                    "morning ramp. Separate raw lag inertia, business-type "
+                    "transition logic, and published-line effects before tuning."
+                )
+            else:
+                title = f"Point overprediction needs stage attribution {time_phrase}."
+                explanation = (
+                    f"The signed model error was +{abs_mw:.1f} MW, so the forecast "
+                    "was above actual demand. Use the related lag, weather, and "
+                    "calibration features to decide whether the error came from "
+                    "raw model level or serving adjustment."
+                )
         elif language == "ja":
             title = f"{hour_text} にモデルが実績を上回って予測しました。"
             explanation = (
@@ -4184,13 +5100,30 @@ def _directional_hypothesis_copy(language: str, hypothesis: dict) -> dict | None
             )
     else:
         if language == "en":
-            title = f"The model underpredicted demand at {hour_text}."
-            explanation = (
-                f"The signed model error was -{abs_mw:.1f} MW, so the forecast "
-                "was below actual demand. Review the listed lag, weather, and "
-                "calibration features as candidates rather than treating the "
-                "whole day as one regime."
-            )
+            if is_daytime_window:
+                title = f"Daytime underprediction needs freeze and midday-feature separation {time_phrase}."
+                explanation = (
+                    f"The signed model error was -{abs_mw:.1f} MW, so the served "
+                    "line was below actual demand while adjacent daytime hours "
+                    "had mixed signs. Check whether midday feature shape, residual "
+                    "carryover, or published freeze left the serving line below "
+                    "the latest recalculated curve."
+                )
+            elif is_morning_window:
+                title = f"Morning ramp underprediction needs carryover and freeze separation {time_phrase}."
+                explanation = (
+                    f"The signed model error was -{abs_mw:.1f} MW during the "
+                    "morning ramp. Separate raw ramp recovery from residual "
+                    "carryover and published-line preservation before tuning."
+                )
+            else:
+                title = f"Point underprediction needs stage attribution {time_phrase}."
+                explanation = (
+                    f"The signed model error was -{abs_mw:.1f} MW, so the forecast "
+                    "was below actual demand. Use the related lag, weather, and "
+                    "calibration features to decide whether the error came from "
+                    "raw model level or serving adjustment."
+                )
         elif language == "ja":
             title = f"{hour_text} にモデルが実績を下回って予測しました。"
             explanation = (
@@ -4206,12 +5139,54 @@ def _directional_hypothesis_copy(language: str, hypothesis: dict) -> dict | None
     repaired = dict(hypothesis)
     repaired["title"] = title
     repaired["explanation"] = explanation
+    if (
+        not _meaningful_text(repaired.get("mechanism"))
+        or _hypothesis_detail_is_generic(repaired.get("mechanism"))
+    ):
+        if is_morning_window:
+            repaired["mechanism"] = (
+                "Morning ramp misses can come from lag inertia, business-type "
+                "transition features, intraday residual carryover, or the "
+                "published line diverging from the latest recalculated curve."
+            )
+        elif is_daytime_window:
+            repaired["mechanism"] = (
+                "Daytime mixed-sign misses require separating raw LGBM level, "
+                "midday/analog shape adjustments, residual carryover, and "
+                "published freeze gaps before assigning root cause."
+            )
+        else:
+            repaired["mechanism"] = (
+                "Signed point error confirms the direction, but the specific "
+                "lag/weather/calibration mechanism needs the related features and "
+                "focused rows to be checked before changing production logic."
+            )
+    if (
+        not _meaningful_text(repaired.get("nextCheck"))
+        or _next_check_is_generic(repaired.get("nextCheck"))
+    ):
+        if is_morning_window:
+            repaired["nextCheck"] = (
+                "Replay hours 06:00-11:00 and compare focusedRows, "
+                "morningTransitionDiagnostics causeTags, stageAttribution, and "
+                "freezeImpact for the same hour."
+            )
+        elif is_daytime_window:
+            repaired["nextCheck"] = (
+                "Replay hours 10:00-16:00 and compare business_midday features, "
+                "stageAttribution stage deltas, freezeImpact gaps, and adjacent "
+                "focusedRows signs."
+            )
+        else:
+            repaired["nextCheck"] = (
+                "Replay the same hour with focusedRows, stageAttribution, and "
+                "calibrationFacts to separate raw-model error from serving adjustment."
+            )
+    if not _as_string_list(repaired.get("sourceEventIds")) and hour_int is not None:
+        repaired["sourceEventIds"] = [f"top_miss_h{hour_int}"]
     repaired["evidence"] = evidence
-    if hour is not None and not repaired.get("relatedHours"):
-        try:
-            repaired["relatedHours"] = [int(hour)]
-        except (TypeError, ValueError):
-            pass
+    if hour_int is not None and not repaired.get("relatedHours"):
+        repaired["relatedHours"] = [hour_int]
     return repaired
 
 
@@ -4237,6 +5212,24 @@ def _hypothesis_uses_only_controller_diagnostics(evidence: list[dict]) -> bool:
     )
 
 
+def _hypothesis_uses_only_snapshot_availability(evidence: list[dict]) -> bool:
+    if not evidence:
+        return False
+    for item in evidence:
+        source = str(item.get("source") or "").lower()
+        metric = str(item.get("metric") or "")
+        if "operational-calibration/snapshots" not in source:
+            return False
+        if metric not in {
+            "snapshotCount",
+            "dominantAppliedRegimeReason",
+            "dominantReasonCount",
+            "latestGeneratedAt",
+        }:
+            return False
+    return True
+
+
 def _hypothesis_is_freeze_only(hypothesis: dict) -> bool:
     features = set(_as_string_list(hypothesis.get("relatedFeatures")))
     if features:
@@ -4257,6 +5250,8 @@ def _hypothesis_has_concrete_non_freeze_evidence(hypothesis: dict) -> bool:
     if hypothesis.get("evidenceStatus") == "not_observed":
         return False
     evidence = _normalize_evidence(hypothesis.get("evidence"))
+    if evidence and _hypothesis_uses_only_snapshot_availability(evidence):
+        return False
     if evidence and _hypothesis_uses_only_daily_performance_evidence(evidence):
         return False
     features = set(_as_string_list(hypothesis.get("relatedFeatures")))
@@ -4274,6 +5269,128 @@ def _hypothesis_has_concrete_non_freeze_evidence(hypothesis: dict) -> bool:
     )
 
 
+def _event_hypotheses_from_fact_packet(language: str, fact_packet: dict | None) -> list[dict]:
+    if not isinstance(fact_packet, dict):
+        return []
+    result: list[dict] = []
+    for bundle in fact_packet.get("eventEvidenceBundles") or []:
+        if not isinstance(bundle, dict):
+            continue
+        event_id = _meaningful_text(bundle.get("eventId"))
+        focused = bundle.get("focusedEvidence") or {}
+        if not event_id or not isinstance(focused, dict):
+            continue
+        error = _as_float(focused.get("modelErrorMw") or bundle.get("modelErrorMw"))
+        hour = bundle.get("hour")
+        if error is None or abs(error) < PRIORITY_EVENT_LARGE_ERROR_MW:
+            continue
+        evidence = [
+            {
+                "source": "eventEvidenceBundles",
+                "metric": "modelErrorMw",
+                "value": _round_number(error),
+                "unit": "MW",
+                "hour": hour,
+                "timeBand": bundle.get("timeBand"),
+            },
+            {
+                "source": "eventEvidenceBundles",
+                "metric": "publishedForecastMw",
+                "value": _round_number(focused.get("publishedForecastMw")),
+                "unit": "MW",
+                "hour": hour,
+                "timeBand": bundle.get("timeBand"),
+            },
+            {
+                "source": "eventEvidenceBundles",
+                "metric": "actualMw",
+                "value": _round_number(focused.get("actualMw")),
+                "unit": "MW",
+                "hour": hour,
+                "timeBand": bundle.get("timeBand"),
+            },
+        ]
+        shape = bundle.get("shapeEvidence") or {}
+        if isinstance(shape, dict) and shape.get("sameDayActualSlopeMw") is not None:
+            evidence.append({
+                "source": "eventEvidenceBundles",
+                "metric": "sameDayActualSlopeMw",
+                "value": _round_number(shape.get("sameDayActualSlopeMw")),
+                "unit": "MW",
+                "hour": hour,
+                "timeBand": bundle.get("timeBand"),
+            })
+        ticket = bundle.get("recommendedTicket") or {}
+        features = []
+        if isinstance(ticket, dict) and ticket.get("target"):
+            features.append(_normalize_feature_name(ticket.get("target")))
+        if bundle.get("timeBand") == "morning_ramp":
+            features.extend([
+                "lag_24h_hourly_delta",
+                "recent_same_business_type_delta_mean",
+                "intraday_correction.business_type_transition",
+            ])
+        elif bundle.get("timeBand") == "daytime":
+            features.extend([
+                "business_midday_x_lag_24h_delta",
+                "recent_same_business_type_delta_mean",
+                "serving.published_forecast_freeze",
+            ])
+        seed = {
+            "id": f"event.{event_id}",
+            "severity": "warning",
+            "confidence": "medium",
+            "evidenceStatus": "partial",
+            "title": "Event-level miss requires attribution.",
+            "explanation": "The event bundle has enough signed-error evidence for a concrete review card.",
+            "sourceEventIds": [event_id],
+            "evidence": evidence,
+            "relatedHours": [hour] if isinstance(hour, int) else [],
+            "relatedTimeBands": [str(bundle.get("timeBand"))] if bundle.get("timeBand") else [],
+            "relatedFeatures": list(dict.fromkeys(feature for feature in features if feature)),
+            "counterEvidence": [],
+        }
+        result.append(_directional_hypothesis_copy(language, seed) or seed)
+    return result
+
+
+def _ticket_recommendations_from_fact_packet(
+    language: str,
+    fact_packet: dict | None,
+    source_event_ids: set[str],
+) -> list[dict]:
+    if not isinstance(fact_packet, dict):
+        return []
+    result: list[dict] = []
+    for index, ticket in enumerate(fact_packet.get("recommendationTicketCandidates") or [], start=1):
+        if not isinstance(ticket, dict):
+            continue
+        event_id = _meaningful_text(ticket.get("eventId"))
+        target = _normalize_feature_name(_meaningful_text(ticket.get("target")))
+        if not event_id or event_id not in source_event_ids:
+            continue
+        if target not in ALLOWED_RECOMMENDATION_TARGETS:
+            continue
+        copy = _recommendation_copy_override(language, target) or {}
+        result.append({
+            "id": f"ticket.{event_id}",
+            "priority": "high" if index == 1 else "medium",
+            "type": "calibration" if target.startswith("intraday_correction.") else "feature_engineering",
+            "target": target,
+            "suggestion": copy.get("suggestion") or str(ticket.get("tuningDirection") or ""),
+            "expectedEffect": copy.get("expectedEffect") or (
+                "Validate whether this targeted replay candidate reduces the linked top-miss window."
+            ),
+            "risk": copy.get("risk") or str(ticket.get("failureMode") or ""),
+            "validationPlan": copy.get("validationPlan") or (
+                "Compare the linked time-band MAE/WAPE, max error, and same-hour TEPCO gap."
+            ),
+            "linkedHypotheses": [f"event.{event_id}"],
+            "autoApply": False,
+        })
+    return result
+
+
 def _normalize_feature_name(value: Any) -> str:
     text = str(value or "").strip()
     return FEATURE_NAME_ALIASES.get(text, text)
@@ -4287,6 +5404,47 @@ def _recommendation_targets_operational_feature(recommendation: dict) -> bool:
         and target not in _DIAGNOSTIC_ONLY_FEATURES
         and target in ALLOWED_RECOMMENDATION_TARGETS
     )
+
+
+def _recommendation_is_too_generic(
+    suggestion: str,
+    expected_effect: str,
+    validation_plan: str,
+) -> bool:
+    text = f"{suggestion} {expected_effect} {validation_plan}".lower()
+    generic_phrases = (
+        "review the impact",
+        "review this feature",
+        "make this a candidate",
+        "consider reviewing",
+        "revisit the feature",
+        "check whether mae",
+    )
+    if any(phrase in text for phrase in generic_phrases):
+        detail_tokens = (
+            "threshold",
+            "cap",
+            "decay",
+            "shrinkage",
+            "damping",
+            "replay",
+            "backtest",
+            "window",
+            "timeband",
+            "time-band",
+            "06",
+            "09",
+            "12",
+            "18",
+            "p95",
+            "wape",
+            "rmse",
+            "stageattribution",
+            "focusedrows",
+            "calibration",
+        )
+        return not any(token in text for token in detail_tokens)
+    return False
 
 
 def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
@@ -4310,16 +5468,38 @@ def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
             severity = "info"
         title = _meaningful_text(item.get("title"))
         explanation = _meaningful_text(item.get("explanation"))
+        mechanism = _meaningful_text(item.get("mechanism"))
+        next_check = _meaningful_text(item.get("nextCheck"))
         if not title or _is_placeholder_title(title) or not explanation:
             continue
         evidence = _normalize_evidence(item.get("evidence"))
         if evidence_status != "not_observed" and not evidence:
             continue
+        if (
+            evidence_status == "not_observed"
+            and _primary_signed_error_evidence(evidence) is not None
+            and _as_string_list(item.get("sourceEventIds"))
+        ):
+            evidence_status = "partial"
+            if confidence == "low":
+                confidence = "medium"
         if _hypothesis_uses_only_daily_performance_evidence(evidence):
             continue
         if _hypothesis_uses_only_controller_diagnostics(evidence):
             continue
         if _hypothesis_has_direction_conflict(title, explanation, evidence):
+            continue
+        related_features = [
+            _normalize_feature_name(feature)
+            for feature in _as_string_list(item.get("relatedFeatures"))
+        ]
+        if _hypothesis_claims_freeze_without_evidence(
+            title,
+            explanation,
+            mechanism,
+            evidence,
+            related_features,
+        ):
             continue
         if (
             evidence_status == "confirmed"
@@ -4335,16 +5515,16 @@ def _normalize_hypotheses(value: Any, fallback: list[dict]) -> list[dict]:
             "evidenceStatus": evidence_status,
             "title": title,
             "explanation": explanation,
+            "mechanism": mechanism,
+            "nextCheck": next_check,
+            "sourceEventIds": _as_string_list(item.get("sourceEventIds")),
             "evidence": evidence,
             "relatedHours": [
                 int(hour) for hour in (item.get("relatedHours") or [])
                 if isinstance(hour, int)
             ],
             "relatedTimeBands": _as_string_list(item.get("relatedTimeBands")),
-            "relatedFeatures": [
-                _normalize_feature_name(feature)
-                for feature in _as_string_list(item.get("relatedFeatures"))
-            ],
+            "relatedFeatures": related_features,
             "counterEvidence": _as_string_list(item.get("counterEvidence")),
         })
     return result or fallback
@@ -4382,6 +5562,12 @@ def _normalize_recommendations(
             or not validation_plan
         ):
             continue
+        if _recommendation_is_too_generic(
+            suggestion,
+            expected_effect,
+            validation_plan,
+        ):
+            continue
         linked_hypotheses = _as_string_list(item.get("linkedHypotheses"))
         linked_features: list[str] = []
         if hypotheses_by_id is not None:
@@ -4406,7 +5592,11 @@ def _normalize_recommendations(
                 _normalize_feature_name(feature)
                 for feature in operational_linked_features
             ]
-            if operational_linked_features and target not in operational_linked_features:
+            if (
+                operational_linked_features
+                and target not in ALLOWED_RECOMMENDATION_TARGETS
+                and target not in operational_linked_features
+            ):
                 target = operational_linked_features[0]
         if target not in ALLOWED_RECOMMENDATION_TARGETS:
             continue
@@ -4421,6 +5611,8 @@ def _normalize_recommendations(
             }
             else None
         )
+        if proposed_replay_command and command_status is None:
+            command_status = "proposed_not_implemented"
         recommendation = {
             "id": str(item.get("id") or f"r{index}"),
             "priority": priority,
@@ -4453,7 +5645,12 @@ def _hypotheses_by_id(hypotheses: Any) -> dict[str, dict]:
     }
 
 
-def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) -> dict:
+def _merge_openai_analysis(
+    fallback_report: dict,
+    analysis: dict,
+    model: str,
+    fact_packet: dict | None = None,
+) -> dict:
     report = json.loads(json.dumps(fallback_report, ensure_ascii=False))
     summary = analysis.get("executiveSummary") if isinstance(analysis, dict) else {}
     if not isinstance(summary, dict):
@@ -4504,6 +5701,9 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
                     _normalize_evidence(hypothesis.get("evidence"))
                 )
                 or _hypothesis_uses_only_controller_diagnostics(
+                    _normalize_evidence(hypothesis.get("evidence"))
+                )
+                or _hypothesis_uses_only_snapshot_availability(
                     _normalize_evidence(hypothesis.get("evidence"))
                 )
             )
@@ -4561,10 +5761,53 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
         freeze_hypothesis = _deterministic_freeze_hypothesis(report)
         if freeze_hypothesis is not None:
             normalized_hypotheses.append(freeze_hypothesis)
+    existing_source_event_ids = {
+        source_event_id
+        for hypothesis in normalized_hypotheses
+        if isinstance(hypothesis, dict)
+        for source_event_id in _as_string_list(hypothesis.get("sourceEventIds"))
+    }
+    for event_hypothesis in _event_hypotheses_from_fact_packet(
+        report.get("language", "ko"),
+        fact_packet,
+    ):
+        event_ids = _as_string_list(event_hypothesis.get("sourceEventIds"))
+        if not event_ids:
+            continue
+        replaced = False
+        for index, hypothesis in enumerate(normalized_hypotheses):
+            if not isinstance(hypothesis, dict):
+                continue
+            hypothesis_event_ids = set(_as_string_list(hypothesis.get("sourceEventIds")))
+            if not hypothesis_event_ids.intersection(event_ids):
+                continue
+            if (
+                any(event_id.startswith("top_miss_h") for event_id in event_ids)
+                or
+                _primary_signed_error_evidence(
+                    _normalize_evidence(hypothesis.get("evidence"))
+                )
+                is None
+                or _hypothesis_needs_directional_copy(hypothesis)
+            ):
+                normalized_hypotheses[index] = event_hypothesis
+            replaced = True
+            break
+        if replaced:
+            existing_source_event_ids.update(event_ids)
+            continue
+        normalized_hypotheses.append(event_hypothesis)
+        existing_source_event_ids.update(event_ids)
     unique_hypotheses = []
     freeze_seen = False
+    seen_source_events: set[str] = set()
     for hypothesis in normalized_hypotheses:
         if not isinstance(hypothesis, dict):
+            continue
+        hypothesis_source_events = set(_as_string_list(hypothesis.get("sourceEventIds")))
+        if hypothesis_source_events and hypothesis_source_events.intersection(seen_source_events):
+            continue
+        if _hypothesis_is_low_value_empty_card(hypothesis):
             continue
         if _hypothesis_is_freeze_only(hypothesis):
             if freeze_seen:
@@ -4573,8 +5816,15 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
             deterministic_freeze = _deterministic_freeze_hypothesis(report)
             if deterministic_freeze is not None:
                 hypothesis = deterministic_freeze
+                hypothesis_source_events = set(
+                    _as_string_list(hypothesis.get("sourceEventIds"))
+                )
+        seen_source_events.update(hypothesis_source_events)
         unique_hypotheses.append(hypothesis)
-    normalized_hypotheses = unique_hypotheses[:3]
+    normalized_hypotheses = sorted(
+        unique_hypotheses,
+        key=_hypothesis_event_priority_key,
+    )[:3]
     report["rootCauseHypotheses"] = normalized_hypotheses
     messages = MESSAGES.get(report.get("language"), MESSAGES["ko"])
     report["featureRecommendations"] = _normalize_recommendations(
@@ -4582,6 +5832,22 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
         _recommendations(report["rootCauseHypotheses"], messages),
         _hypotheses_by_id(report["rootCauseHypotheses"]),
     )
+    source_event_ids = {
+        source_event_id
+        for hypothesis in report["rootCauseHypotheses"]
+        if isinstance(hypothesis, dict)
+        for source_event_id in _as_string_list(hypothesis.get("sourceEventIds"))
+    }
+    ticket_recommendations = _ticket_recommendations_from_fact_packet(
+        report.get("language", "ko"),
+        fact_packet,
+        source_event_ids,
+    )
+    if ticket_recommendations:
+        report["featureRecommendations"] = [
+            *ticket_recommendations,
+            *report["featureRecommendations"],
+        ]
     if not any(
         isinstance(recommendation, dict)
         and _recommendation_targets_operational_feature(recommendation)
@@ -4632,6 +5898,11 @@ def _merge_openai_analysis(fallback_report: dict, analysis: dict, model: str) ->
     seen_targets = set()
     for recommendation in report["featureRecommendations"]:
         if not isinstance(recommendation, dict):
+            continue
+        if ticket_recommendations and not (
+            str(recommendation.get("id") or "").startswith("ticket.")
+            or recommendation.get("target") == "serving.published_forecast_freeze"
+        ):
             continue
         target = recommendation.get("target")
         if target != "serving.published_forecast_freeze" and target not in ALLOWED_RECOMMENDATION_TARGETS:
@@ -4707,6 +5978,166 @@ def _merge_openai_multilingual_analysis(
         else:
             merged[language] = fallback_report
     return merged
+
+
+def _event_hypothesis_copy_override(language: str, hypothesis: dict) -> dict[str, Any] | None:
+    evidence = _normalize_evidence(hypothesis.get("evidence"))
+    signed = _primary_signed_error_evidence(evidence)
+    if signed is None:
+        return None
+    hour = signed.get("hour")
+    try:
+        hour_int = int(hour) if hour is not None else None
+    except (TypeError, ValueError):
+        hour_int = None
+    value = _as_float(signed.get("value"))
+    if hour_int is None or value is None:
+        return None
+
+    features = set(_as_string_list(hypothesis.get("relatedFeatures")))
+    evidence_by_metric = {
+        str(item.get("metric")): item
+        for item in evidence
+        if isinstance(item, dict) and item.get("metric")
+    }
+    published = _as_float(
+        (evidence_by_metric.get("publishedForecastMw") or {}).get("value")
+    )
+    actual = _as_float((evidence_by_metric.get("actualMw") or {}).get("value"))
+    slope = _as_float(
+        (evidence_by_metric.get("sameDayActualSlopeMw") or {}).get("value")
+    )
+    direction_en = "overprediction" if value > 0 else "underprediction"
+    direction_ko = "과대예측" if value > 0 else "과소예측"
+    direction_ja = "過大予測" if value > 0 else "過小予測"
+    published_actual_en = (
+        f"published forecast {published:.1f} MW versus actual {actual:.1f} MW"
+        if published is not None and actual is not None
+        else "the published forecast versus actual demand"
+    )
+    published_actual_ko = (
+        f"공개 예측 {published:.1f} MW, 실측 {actual:.1f} MW"
+        if published is not None and actual is not None
+        else "공개 예측과 실측"
+    )
+    published_actual_ja = (
+        f"公開予測{published:.1f} MW、実績{actual:.1f} MW"
+        if published is not None and actual is not None
+        else "公開予測と実績"
+    )
+    slope_en = f" The same-day actual slope was {slope:+.1f} MW." if slope is not None else ""
+    slope_ko = f" 당일 실측 기울기는 {slope:+.1f} MW였습니다." if slope is not None else ""
+    slope_ja = f" 当日実績の傾きは{slope:+.1f} MWでした。" if slope is not None else ""
+
+    if (
+        "intraday_correction.business_type_transition" in features
+        and 6 <= hour_int <= 10
+    ):
+        if language == "en":
+            return {
+                "title": f"{hour_int:02d}:00 morning transition {direction_en}.",
+                "explanation": (
+                    f"At {hour_int:02d}:00, {published_actual_en}; signed error was "
+                    f"{value:+.1f} MW.{slope_en} This is a morning transition case, "
+                    "not a generic all-day bias."
+                ),
+                "mechanism": (
+                    "The likely check is whether previous-day lag inertia ran above "
+                    "recent same-business anchors while the business-type transition "
+                    "layer did not damp the served line enough."
+                ),
+                "nextCheck": (
+                    "Replay 06:00-11:00 and compare morningLagDeltaExcessMw, "
+                    "lag24BusinessTypeMismatch, and published-versus-recalculated gaps; "
+                    "accept only if real ramp-up days are not suppressed."
+                ),
+            }
+        if language == "ja":
+            return {
+                "title": f"{hour_int:02d}:00 JST 朝の営業区分遷移による{direction_ja}。",
+                "explanation": (
+                    f"{hour_int:02d}:00は{published_actual_ja}で、符号付き誤差は{value:+.1f} MWです。"
+                    f"{slope_ja}日全体のバイアスではなく、朝の営業区分遷移として扱います。"
+                ),
+                "mechanism": (
+                    "前日lag慣性が同一営業区分anchorより強く出て、営業区分遷移レイヤーが"
+                    "配信線を十分に抑えなかったかを確認します。"
+                ),
+                "nextCheck": (
+                    "06:00〜11:00をreplayし、遷移しきい値が実需要の立ち上がりを抑えずに"
+                    "該当top-miss時刻を改善するか確認します。"
+                ),
+            }
+        return {
+            "title": f"{hour_int:02d}:00 JST 오전 영업일 전환 {direction_ko}.",
+            "explanation": (
+                f"{hour_int:02d}:00에는 {published_actual_ko}였고, 부호 있는 오차는 {value:+.1f} MW입니다."
+                f"{slope_ko} 하루 전체 바이어스가 아니라 오전 영업일 전환 문제로 봅니다."
+            ),
+            "mechanism": (
+                "전날 lag 관성이 최근 같은 영업형태 anchor보다 강했고, 영업일 전환 레이어가 "
+                "서빙 예측선을 충분히 낮추지 못했는지 확인합니다."
+            ),
+            "nextCheck": (
+                "06:00~11:00 replay에서 전환 threshold가 실제 ramp-up 수요를 누르지 않으면서 "
+                "연결된 top-miss 시간을 개선하는지 확인합니다."
+            ),
+        }
+
+    if (
+        "business_midday_x_lag_24h_delta" in features
+        and 10 <= hour_int <= 15
+    ):
+        if language == "en":
+            return {
+                "title": f"{hour_int:02d}:00 daytime curve {direction_en}.",
+                "explanation": (
+                    f"At {hour_int:02d}:00, {published_actual_en}; signed error was "
+                    f"{value:+.1f} MW.{slope_en} Review raw LGBM level, midday "
+                    "features, residual carryover, and published freeze gaps separately."
+                ),
+                "mechanism": (
+                    "The daytime curve has mixed error signs, so a rigid lunch or "
+                    "midday rule could fix one hour while damaging lunch recovery or "
+                    "the daily peak."
+                ),
+                "nextCheck": (
+                    "Replay 10:00-16:00 and compare 11-15 MAE/WAPE, shape delta error, "
+                    "stageAttribution deltas, and freezeImpact gaps."
+                ),
+            }
+        if language == "ja":
+            return {
+                "title": f"{hour_int:02d}:00 JST 日中カーブの{direction_ja}。",
+                "explanation": (
+                    f"{hour_int:02d}:00は{published_actual_ja}で、符号付き誤差は{value:+.1f} MWです。"
+                    f"{slope_ja}raw LGBM水準、正午特徴量、残差持ち越し、公開予測フリーズ差分を分けて確認します。"
+                ),
+                "mechanism": (
+                    "日中shapeは符号が混在しやすく、固定的な正午ルールは一部時刻を改善しても"
+                    "昼食後の回復や日中ピークを悪化させる可能性があります。"
+                ),
+                "nextCheck": (
+                    "10:00〜16:00をreplayし、11〜15時MAE/WAPE、shape delta error、"
+                    "stageAttribution差分、freezeImpact差分を比較します。"
+                ),
+            }
+        return {
+            "title": f"{hour_int:02d}:00 JST 낮 시간대 곡선 {direction_ko}.",
+            "explanation": (
+                f"{hour_int:02d}:00에는 {published_actual_ko}였고, 부호 있는 오차는 {value:+.1f} MW입니다."
+                f"{slope_ko} raw LGBM 레벨, 정오 피처, 잔차 이월, 공개 예측선 프리즈 격차를 분리해 봅니다."
+            ),
+            "mechanism": (
+                "낮 시간대 곡선은 오차 부호가 섞이기 쉬워, 고정된 정오 규칙이 한 시간은 개선해도 "
+                "점심 이후 회복이나 일중 피크를 해칠 수 있습니다."
+            ),
+            "nextCheck": (
+                "10:00~16:00 replay에서 11~15시 MAE/WAPE, shape delta error, "
+                "stageAttribution delta, freezeImpact gap을 비교합니다."
+            ),
+        }
+    return None
 
 
 def _analysis_layer_from_report(report: dict) -> dict:
@@ -4824,6 +6255,38 @@ def _final_coverage_note(language: str) -> str:
     )
 
 
+def _analysis_scope_note(language: str) -> str:
+    if language == "en":
+        return (
+            "Scope: finalized 24-hour actuals, top-miss event bundles, focused "
+            "row evidence, and retained calibration snapshots were used."
+        )
+    if language == "ja":
+        return (
+            "範囲: 確定済み24時間実績、top-missイベント束、focused row根拠、"
+            "保持済み補正スナップショットを使用しています。"
+        )
+    return (
+        "분석 범위: 확정 24시간 실측, top-miss 이벤트 번들, focused row 근거, "
+        "보존된 보정 스냅샷을 사용했습니다."
+    )
+
+
+def _looks_like_data_granularity_limitation(note: str) -> bool:
+    lowered = note.lower()
+    return (
+        "granularity" in lowered
+        or "raw time-series" in lowered
+        or "raw time series" in lowered
+        or "raw timeseries" in lowered
+        or "데이터 세분성" in note
+        or "원시 시계열" in note
+        or "未処理の時系列" in note
+        or "細分化" in note
+        or "粒度" in note
+    )
+
+
 def _clarify_operator_notes_coverage(report: dict) -> dict:
     if not _final_actual_coverage_is_complete(report):
         return report
@@ -4843,6 +6306,34 @@ def _clarify_operator_notes_coverage(report: dict) -> dict:
             continue
         result.append(note)
     report["operatorNotes"] = result
+    return report
+
+
+def _clarify_limitations_scope(report: dict) -> dict:
+    language = str(report.get("language") or "ko")
+    scope_note = _analysis_scope_note(language)
+    limitations = _as_string_list(report.get("limitations"))
+    if not limitations:
+        report["limitations"] = [scope_note]
+        return report
+    result = []
+    replaced = False
+    for note in limitations:
+        if _looks_like_data_granularity_limitation(note):
+            if not replaced:
+                result.append(scope_note)
+                replaced = True
+            continue
+        result.append(note)
+    if not result:
+        result = [scope_note]
+    elif not replaced and len(result) == len(limitations):
+        # Keep the section useful without making it sound like missing evidence.
+        result = [
+            note for note in result
+            if not _looks_like_data_granularity_limitation(note)
+        ] or [scope_note]
+    report["limitations"] = result[:2]
     return report
 
 
@@ -4900,6 +6391,139 @@ def _recommendation_copy_override(language: str, target: str) -> dict[str, str] 
             ),
             "validationPlan": (
                 "최근 2~4주 replay에서 06~11시 MAE/WAPE, 최대 오차, 같은 시간대 TEPCO 격차를 비교합니다."
+            ),
+        }
+    if target == "intraday_correction.business_type_transition":
+        if language == "en":
+            return {
+                "suggestion": (
+                    "Backtest the business-type transition layer on hours "
+                    "06:00-11:00 using morningLagDeltaExcessMw, "
+                    "lag24BusinessTypeMismatch, and published-vs-recalculated "
+                    "gap as explicit triggers before changing production rules."
+                ),
+                "expectedEffect": (
+                    "Reduce morning ramp misses where lag_24h inertia or "
+                    "business-day mismatch lifts the served line above actual "
+                    "demand, while preserving real ramp-up days."
+                ),
+                "risk": (
+                    "If the trigger is too broad, genuine early cooling or "
+                    "business-return demand can be underpredicted."
+                ),
+                "validationPlan": (
+                    "Replay recent 2-4 weeks and compare 06-11 MAE/WAPE, max "
+                    "error, top_miss_h8-style events, and same-hour TEPCO "
+                    "absolute-error gap."
+                ),
+            }
+        if language == "ja":
+            return {
+                "suggestion": (
+                    "06:00〜11:00の時間帯で、morningLagDeltaExcessMw、"
+                    "lag24BusinessTypeMismatch、公開予測線と再計算予測線の差分を"
+                    "明示的なトリガーとして、営業日/非営業日区分の遷移レイヤーを"
+                    "バックテスト候補にします。"
+                ),
+                "expectedEffect": (
+                    "lag_24hの慣性や営業日区分の不一致で配信予測線が実績を上回る"
+                    "朝のランプアップ誤差を抑えつつ、本当に需要が立ち上がる日を"
+                    "過度に抑えないか確認できます。"
+                ),
+                "risk": (
+                    "トリガーが広すぎると、早朝の冷房需要や営業日復帰需要を"
+                    "過小予測する可能性があります。"
+                ),
+                "validationPlan": (
+                    "直近2〜4週間をreplayし、06:00〜11:00のMAE/WAPE、最大誤差、"
+                    "top_miss_h8型イベント、同時刻TEPCO絶対誤差差分を比較します。"
+                ),
+            }
+        return {
+            "suggestion": (
+                "06:00~11:00 replay에서 morningLagDeltaExcessMw, "
+                "lag24BusinessTypeMismatch, 공개 예측선-재계산선 차이를 "
+                "명시적 트리거로 두고 영업일 구분 전환 레이어를 백테스트 후보로 "
+                "검증합니다."
+            ),
+            "expectedEffect": (
+                "lag_24h 관성이나 영업일 구분 불일치로 서빙 예측선이 실측보다 "
+                "높아지는 아침 램프업 오차를 줄이되, 실제 수요가 강하게 "
+                "상승하는 날을 누르지 않는지 확인합니다."
+            ),
+            "risk": (
+                "트리거가 넓으면 이른 냉방 수요나 영업일 복귀 수요까지 "
+                "과소예측할 수 있습니다."
+            ),
+            "validationPlan": (
+                "최근 2~4주 replay에서 06~11시 MAE/WAPE, 최대 오차, "
+                "top_miss_h8 유형 이벤트, 같은 시각 TEPCO 절대오차 격차를 "
+                "비교합니다."
+            ),
+        }
+    if target in {
+        "business_midday_x_lag_24h_delta",
+        "business_midday_x_recent_delta_mean",
+    }:
+        if language == "en":
+            return {
+                "suggestion": (
+                    "Use a 10:00-16:00 replay to test whether midday interaction "
+                    "features need a shape-specific threshold, separating raw "
+                    "LGBM level from analog adjustment, residual carryover, and "
+                    "published freeze gaps."
+                ),
+                "expectedEffect": (
+                    "Improve 11-15 shape accuracy when lunch/daily-peak recovery "
+                    "is mixed-sign, without forcing a fixed midday dip."
+                ),
+                "risk": (
+                    "A stronger midday rule can overfit one lunch pattern and "
+                    "increase 13:00-15:00 overprediction on rebound days."
+                ),
+                "validationPlan": (
+                    "Compare 11-15 MAE/WAPE, shape delta error, and max error "
+                    "around hours 11:00, 12:00, and 15:00 across recent 2-4 weeks."
+                ),
+            }
+        if language == "ja":
+            return {
+                "suggestion": (
+                    "10:00〜16:00のreplayで、raw LGBMレベル、アナログ補正、"
+                    "残差持ち越し、公開予測フリーズ差分を切り分けたうえで、"
+                    "正午特徴量に形状専用しきい値が必要かを検証候補にします。"
+                ),
+                "expectedEffect": (
+                    "昼食時間帯から日中ピークへの回復で誤差方向が混在する日に、"
+                    "固定的な正午dipを強制せず11:00〜15:00の形状精度を改善できるか"
+                    "確認します。"
+                ),
+                "risk": (
+                    "正午ルールを強くしすぎると、反発する日の13:00〜15:00で"
+                    "過大予測が増える可能性があります。"
+                ),
+                "validationPlan": (
+                    "直近2〜4週間で11:00〜15:00のMAE/WAPE、shape delta error、"
+                    "11:00・12:00・15:00周辺の最大誤差を比較します。"
+                ),
+            }
+        return {
+            "suggestion": (
+                "10:00~16:00 replay에서 raw LGBM 레벨, 유사일 보정, 잔차 이월, "
+                "공개 예측선 프리즈 격차를 분리한 뒤 정오 interaction 피처에 "
+                "형상 전용 threshold가 필요한지 백테스트 후보로 검증합니다."
+            ),
+            "expectedEffect": (
+                "점심 dip 이후 회복과 일중 피크 구간의 오차 방향이 섞이는 날에, "
+                "고정된 정오 dip을 강제하지 않고 11~15시 shape 정확도를 개선할 수 "
+                "있는지 확인합니다."
+            ),
+            "risk": (
+                "정오 규칙이 강해지면 반등일의 13~15시 과대예측이 늘 수 있습니다."
+            ),
+            "validationPlan": (
+                "최근 2~4주 기준 11~15시 MAE/WAPE, shape delta error, "
+                "11시·12시·15시 주변 최대 오차를 비교합니다."
             ),
         }
     if target == "intraday_correction.positive_residual_slope_damping":
@@ -5149,7 +6773,7 @@ def _deterministic_executive_summary_copy(report: dict) -> dict | None:
         freeze_sentence = ""
         if freeze_gap is not None:
             freeze_sentence = (
-                " 公開予測と再計算線の最大差は"
+                " 公開予測線と再計算予測線の最大差は"
                 f"{freeze_gap.get('hour')}:00 JSTで"
                 f"{_format_mw(freeze_gap.get('freezeGapMw'))}でした。"
             )
@@ -5169,7 +6793,7 @@ def _deterministic_executive_summary_copy(report: dict) -> dict | None:
         freeze_sentence = ""
         if freeze_gap is not None:
             freeze_sentence = (
-                " 가장 큰 발표선-재계산선 차이는 "
+                " 가장 큰 공개 예측선-재계산선 차이는 "
                 f"{freeze_gap.get('hour')}:00 JST에 "
                 f"{_format_mw(freeze_gap.get('freezeGapMw'))}였습니다."
             )
@@ -5222,11 +6846,28 @@ def _deterministic_freeze_hypothesis(report: dict) -> dict | None:
             "post-calibration line, so served chart shape should be reviewed "
             "separately from raw model accuracy."
         )
+        mechanism = (
+            "A published forecast freeze can keep the UI serving line above or "
+            "below the latest post-calibration curve after later intraday "
+            "evidence arrives."
+        )
+        next_check = (
+            "Inspect freezeImpact.largestGaps and stageAttribution published "
+            "deltas for the same hours before changing model features."
+        )
     elif language == "ja":
         title = "公開予測の固定により表示線に差が残りました。"
         explanation = (
             "公開された予測線と最新の再計算後ラインに大きな差があるため、"
             "rawモデル精度とは分けて表示上の形状リスクを確認します。"
+        )
+        mechanism = (
+            "公開予測の固定により、後続のintraday実績が入ってもUIの配信線が"
+            "最新のpost-calibration曲線より高く、または低く残ることがあります。"
+        )
+        next_check = (
+            "モデル特徴量を変更する前に、同じ時間帯のfreezeImpact.largestGapsと"
+            "stageAttributionのpublished deltaを確認します。"
         )
     else:
         title = "예측선 보존 정책으로 표시선 격차가 남았습니다."
@@ -5234,6 +6875,18 @@ def _deterministic_freeze_hypothesis(report: dict) -> dict | None:
             "공개된 예측선과 최신 재계산 후 라인 사이에 큰 차이가 있어, "
             "raw 모델 정확도와 별도로 화면에 남는 곡선 형태 리스크를 확인해야 합니다."
         )
+        mechanism = (
+            "공개 예측선 보존 정책은 이후 intraday 실측 근거가 들어와도 UI에 서빙된 "
+            "예측선을 최신 post-calibration 곡선보다 높거나 낮게 남길 수 있습니다."
+        )
+        next_check = (
+            "모델 피처를 바꾸기 전에 같은 시간대의 freezeImpact.largestGaps와 "
+            "stageAttribution published delta를 확인합니다."
+        )
+    source_event_ids = [
+        f"freeze_gap_h{hour}"
+        for hour in related_hours[:3]
+    ]
     return {
         "id": "serving.published_forecast_freeze",
         "severity": "warning",
@@ -5241,6 +6894,9 @@ def _deterministic_freeze_hypothesis(report: dict) -> dict | None:
         "evidenceStatus": "partial",
         "title": title,
         "explanation": explanation,
+        "mechanism": mechanism,
+        "nextCheck": next_check,
+        "sourceEventIds": source_event_ids,
         "evidence": evidence,
         "relatedHours": related_hours,
         "relatedTimeBands": [],
@@ -5277,11 +6933,14 @@ def _polish_report_language(report: dict) -> dict:
     for hypothesis in report.get("rootCauseHypotheses") or []:
         if not isinstance(hypothesis, dict):
             continue
-        if _hypothesis_needs_directional_copy(hypothesis):
+        override = _event_hypothesis_copy_override(language, hypothesis)
+        if override:
+            hypothesis.update(override)
+        elif _hypothesis_needs_directional_copy(hypothesis):
             repaired = _directional_hypothesis_copy(language, hypothesis)
             if repaired is not None:
                 hypothesis.update(repaired)
-        for field in ("title", "explanation", "counterEvidence"):
+        for field in ("title", "explanation", "mechanism", "nextCheck", "counterEvidence"):
             hypothesis[field] = _polish_localized_text(language, hypothesis.get(field))
 
     for recommendation in report.get("featureRecommendations") or []:
@@ -5293,11 +6952,30 @@ def _polish_report_language(report: dict) -> dict:
         )
         if override:
             recommendation.update(override)
+        if str(recommendation.get("id") or "").startswith("ticket."):
+            recommendation.pop("proposedReplayCommand", None)
+            recommendation.pop("commandStatus", None)
         for field in ("suggestion", "expectedEffect", "risk", "validationPlan"):
             recommendation[field] = _polish_localized_text(
                 language,
                 recommendation.get(field),
             )
+
+    ticket_recommendations = [
+        recommendation for recommendation in report.get("featureRecommendations") or []
+        if isinstance(recommendation, dict)
+        and str(recommendation.get("id") or "").startswith("ticket.")
+    ]
+    if ticket_recommendations:
+        freeze_recommendations = [
+            recommendation for recommendation in report.get("featureRecommendations") or []
+            if isinstance(recommendation, dict)
+            and recommendation.get("target") == "serving.published_forecast_freeze"
+        ]
+        report["featureRecommendations"] = [
+            *ticket_recommendations,
+            *freeze_recommendations,
+        ][:3]
 
     report["operatorNotes"] = _polish_localized_text(
         language,
@@ -5307,6 +6985,7 @@ def _polish_report_language(report: dict) -> dict:
         language,
         report.get("limitations") or [],
     )
+    report = _clarify_limitations_scope(report)
     report = _clarify_operator_notes_coverage(report)
     if isinstance(report.get("dataQuality"), dict):
         report["dataQuality"]["limitations"] = report["limitations"]
@@ -5370,6 +7049,16 @@ def _align_localized_analysis(master: dict, localized: dict) -> dict:
                 "explanation",
                 aligned.get("explanation", ""),
             )
+            aligned["mechanism"] = _localized_text(
+                candidate,
+                "mechanism",
+                aligned.get("mechanism", ""),
+            )
+            aligned["nextCheck"] = _localized_text(
+                candidate,
+                "nextCheck",
+                aligned.get("nextCheck", ""),
+            )
             aligned["counterEvidence"] = _localized_text(
                 candidate,
                 "counterEvidence",
@@ -5424,6 +7113,8 @@ def _analysis_text_blob(analysis: dict) -> str:
             parts.extend([
                 str(hypothesis.get("title") or ""),
                 str(hypothesis.get("explanation") or ""),
+                str(hypothesis.get("mechanism") or ""),
+                str(hypothesis.get("nextCheck") or ""),
             ])
     for recommendation in analysis.get("featureRecommendations") or []:
         if isinstance(recommendation, dict):
@@ -5452,6 +7143,8 @@ def _critical_analysis_text_blob(analysis: dict) -> str:
             parts.extend([
                 str(hypothesis.get("title") or ""),
                 str(hypothesis.get("explanation") or ""),
+                str(hypothesis.get("mechanism") or ""),
+                str(hypothesis.get("nextCheck") or ""),
             ])
     for recommendation in analysis.get("featureRecommendations") or []:
         if isinstance(recommendation, dict):
@@ -5523,6 +7216,7 @@ def _merge_localized_reports_from_payload(
     localization_targets: list[str],
     analysis_model: str,
     localization_model: str,
+    fact_packet: dict | None = None,
 ) -> dict[str, dict]:
     localized_reports = localized_payload.get("reports")
     if not isinstance(localized_reports, dict):
@@ -5539,6 +7233,7 @@ def _merge_localized_reports_from_payload(
             fallback_reports[language],
             aligned_analysis,
             analysis_model,
+            fact_packet,
         )
         merged_reports[language]["contentLanguage"] = language
         merged_reports[language]["generator"]["localizationModel"] = localization_model
@@ -5595,6 +7290,7 @@ def _run_openai_master_localization_chain(
         english_fallback,
         master_analysis,
         analysis_model,
+        master_context.get("factPacket"),
     )
     master_report["contentLanguage"] = "en"
     master_report["generator"]["localizationStatus"] = "not_requested"
@@ -5630,6 +7326,7 @@ def _run_openai_master_localization_chain(
                     localization_targets,
                     analysis_model,
                     localization_model,
+                    master_context.get("factPacket"),
                 )
             )
             localization_error = None
@@ -5714,7 +7411,12 @@ def build_ai_daily_report(
             _load_openai_context(public_dir, fallback_report)
         )
         analysis = _call_openai_analysis(context, api_key, model)
-        return _merge_openai_analysis(fallback_report, analysis, model)
+        return _merge_openai_analysis(
+            fallback_report,
+            analysis,
+            model,
+            context.get("factPacket"),
+        )
     except (OSError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as e:
         messages = MESSAGES.get(fallback_report.get("language"), MESSAGES["ko"])
         fallback_report["operatorNotes"] = [
