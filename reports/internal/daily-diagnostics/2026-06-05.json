@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-06-08T01:51:11+09:00",
+  "generatedAt": "2026-06-08T03:49:46+09:00",
   "date": "2026-06-05",
   "availability": "ok",
   "visibility": {
@@ -17,7 +17,7 @@
   "operationReport": {
     "schemaVersion": "1.0.0",
     "timezone": "Asia/Tokyo",
-    "generatedAt": "2026-06-08T01:51:11+09:00",
+    "generatedAt": "2026-06-08T03:49:46+09:00",
     "date": "2026-06-05",
     "availability": "ok",
     "model": {
@@ -489,6 +489,20 @@
         "humidity-ramp": 2,
         "freeze": 2
       }
+    },
+    "nonBusinessMiddayShape": {
+      "rows": 0,
+      "modelMaeMw": null,
+      "modelBiasMw": null,
+      "maxErrorHour": null,
+      "maxAbsErrorMw": null,
+      "maxShapeDeltaErrorHour": null,
+      "maxAbsShapeDeltaErrorMw": null,
+      "shapeDeltaBiasMw": null,
+      "coolingDelta24hMeanC": null,
+      "actualRiseModelDropHours": [],
+      "publishedVsRecalculatedGapMaxAbsMw": null,
+      "causeTagCounts": {}
     }
   },
   "morningTransitionDiagnostics": {
@@ -664,6 +678,38 @@
         ]
       }
     ]
+  },
+  "nonBusinessMiddayShapeDiagnostics": {
+    "schemaVersion": "1.0.0",
+    "hours": [
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "summary": {
+      "rows": 0,
+      "modelMaeMw": null,
+      "modelBiasMw": null,
+      "maxErrorHour": null,
+      "maxAbsErrorMw": null,
+      "maxShapeDeltaErrorHour": null,
+      "maxAbsShapeDeltaErrorMw": null,
+      "shapeDeltaBiasMw": null,
+      "coolingDelta24hMeanC": null,
+      "actualRiseModelDropHours": [],
+      "publishedVsRecalculatedGapMaxAbsMw": null,
+      "causeTagCounts": {}
+    },
+    "tagDefinitions": {
+      "weekend-cooling-ramp-underpredicted": "non-business midday demand rose under warm or cooling-load context, while the served model underpredicted materially.",
+      "model-dropped-against-actual-rise": "served forecast fell from the previous hour while actual demand rose.",
+      "rebound-shape-underfit": "served forecast hour-to-hour shape was materially below the actual shape.",
+      "lag-shape-conflict": "lag_24h shape failed to support an observed non-business midday rebound.",
+      "freeze": "served forecast differs materially from the latest recalculated post-calibration line."
+    },
+    "rows": []
   },
   "rows": [
     {
