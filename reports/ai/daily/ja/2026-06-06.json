@@ -3,14 +3,14 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-06-06",
-  "generatedAt": "2026-06-07T07:34:56+09:00",
+  "generatedAt": "2026-06-07T12:21:41+09:00",
   "availability": "ok",
   "language": "ja",
   "contentLanguage": "ja",
   "generator": {
     "provider": "openai",
     "model": "gpt-4o-mini",
-    "promptVersion": "openai_ops_report_v4",
+    "promptVersion": "openai_ops_report_v5",
     "schemaVersion": "1.0.0",
     "localizationModel": "gpt-4o-mini",
     "localizationStatus": "ok"
@@ -27,22 +27,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-06-07T07:34:56+09:00",
-    "fingerprint": "sha256:e5b18adb7ad2b4f01de0433b53696a96b10a8242d26f3c3b878ecc365d0afd10",
+    "createdAt": "2026-06-07T12:21:41+09:00",
+    "fingerprint": "sha256:6bdaf71160c8aad8bb303e7a41f182086d215897855830aaa6a9ce6b4ddb2325",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-06-06.json",
         "exists": true,
         "date": "2026-06-06",
-        "generatedAt": "2026-06-07T07:34:31+09:00",
-        "fingerprint": "sha256:72a304c6fa030e8388cd79ae03be33477857866adc2a4d99c78db811be6d9188"
+        "generatedAt": "2026-06-07T08:32:13+09:00",
+        "fingerprint": "sha256:1354ac4e235a0897b0851818c6405153a584538e4d2f4aad6a1c3785525c2d44"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-06-06.json",
         "exists": true,
         "date": "2026-06-06",
-        "generatedAt": "2026-06-07T07:34:31+09:00",
-        "fingerprint": "sha256:828ca60d6e0729cb1bf4a1c574ce5549a651fade08c5bfc83c20da8571227997"
+        "generatedAt": "2026-06-07T08:32:13+09:00",
+        "fingerprint": "sha256:17730bcf089f1032051648483e3d5590653af4e974bbf3584331c8b9d6a548b6"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-06-06.json",
@@ -55,8 +55,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-06-06/index.json",
         "exists": true,
         "date": "2026-06-06",
-        "generatedAt": "2026-06-07T07:30:33+09:00",
-        "fingerprint": "sha256:77d83db5f6d7ffefc2c55cb7d907f8e0c8784841f1f3fbc1c7edd6a33aac5b6b"
+        "generatedAt": "2026-06-07T08:31:31+09:00",
+        "fingerprint": "sha256:9155fdd8c506373074de64e5e11d8e4b7e19cdb27eb0379d6f52500d97efde1f"
       },
       "alerts": {
         "path": "alerts/2026-06-06.json",
@@ -83,8 +83,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-06-07T07:31:03+09:00",
-        "fingerprint": "sha256:b756bdeba94e79fb59fd36249c914bcbbad9ea23c45ec2d3aa25f845089a6772"
+        "generatedAt": "2026-06-07T08:32:13+09:00",
+        "fingerprint": "sha256:c056374b6a159caaa3f513c4f836a932c59fa150b1e82ab5dfa35bd0a9411ae6"
       }
     }
   },
@@ -94,7 +94,7 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 18,
     "limitations": [
-      "分析は要約された運用指標と保持された補正スナップショットに基づいています。"
+      "範囲: 確定済み24時間実績、top-missイベント束、focused row根拠、保持済み補正スナップショットを使用しています。"
     ]
   },
   "diagnosticContext": {
@@ -641,7 +641,7 @@
   "executiveSummary": {
     "severity": "critical",
     "headline": "TEPCO予測の日次誤差はモデルより小さくなりました。",
-    "summary": "比較可能な24時間で、モデルはMAE 356.2 MW, WAPE 1.48%、TEPCOはMAE 242.1 MW, WAPE 1.00%でした。モデル優位は8/24、TEPCO優位は16/24です。 公開予測と再計算線の最大差は12:00 JSTで743.6 MWでした。",
+    "summary": "比較可能な24時間で、モデルはMAE 356.2 MW, WAPE 1.48%、TEPCOはMAE 242.1 MW, WAPE 1.00%でした。モデル優位は8/24、TEPCO優位は16/24です。 公開予測線と再計算予測線の最大差は12:00 JSTで743.6 MWでした。",
     "modelVerdict": "tepco_better",
     "confidence": "high"
   },
@@ -670,17 +670,44 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "top_miss_h15",
+      "id": "event.top_miss_h15",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "15時の予測精度リスク",
-      "explanation": "1456.9 MWの大きなオーバー予測エラーが、主に昼間帯(11〜15時台)に発生しました。これは、我々の予測と実際の需要との間に大きな不一致があることを示しています。",
+      "title": "15:00 JST 日中カーブの過大予測。",
+      "explanation": "15:00は公開予測27516.9 MW、実績26060.0 MWで、符号付き誤差は+1456.9 MWです。 当日実績の傾きは-400.0 MWでした。raw LGBM水準、正午特徴量、残差持ち越し、公開予測フリーズ差分を分けて確認します。",
+      "sourceEventIds": [
+        "top_miss_h15"
+      ],
       "evidence": [
         {
-          "source": "top_miss_h15",
-          "metric": "modelAbsErrorMw",
+          "source": "eventEvidenceBundles",
+          "metric": "modelErrorMw",
           "value": 1456.9,
+          "unit": "MW",
+          "hour": 15,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "publishedForecastMw",
+          "value": 27516.9,
+          "unit": "MW",
+          "hour": 15,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "actualMw",
+          "value": 26060.0,
+          "unit": "MW",
+          "hour": 15,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "sameDayActualSlopeMw",
+          "value": -400.0,
           "unit": "MW",
           "hour": 15,
           "timeBand": "daytime"
@@ -693,23 +720,53 @@
         "daytime"
       ],
       "relatedFeatures": [
-        "business_midday_x_recent_delta_mean",
-        "intraday_correction.morning_positive_residual_carryover_damping"
+        "business_midday_x_lag_24h_delta",
+        "recent_same_business_type_delta_mean",
+        "serving.published_forecast_freeze"
       ],
-      "counterEvidence": []
+      "counterEvidence": [],
+      "mechanism": "日中shapeは符号が混在しやすく、固定的な正午ルールは一部時刻を改善しても昼食後の回復や日中ピークを悪化させる可能性があります。",
+      "nextCheck": "10:00〜16:00をreplayし、11〜15時MAE/WAPE、shape delta error、stageAttribution差分、freezeImpact差分を比較します。"
     },
     {
-      "id": "top_miss_h8",
+      "id": "event.top_miss_h8",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "8時の予測精度リスク",
-      "explanation": "朝のランプ(06〜10時台)で1070.2 MWのオーバー予測が記録されました。これは、営業日/非営業日区分の遷移影響と関係しています。",
+      "title": "08:00 JST 朝の営業区分遷移による過大予測。",
+      "explanation": "08:00は公開予測23660.2 MW、実績22590.0 MWで、符号付き誤差は+1070.2 MWです。 当日実績の傾きは+980.0 MWでした。日全体のバイアスではなく、朝の営業区分遷移として扱います。",
+      "sourceEventIds": [
+        "top_miss_h8"
+      ],
       "evidence": [
         {
-          "source": "top_miss_h8",
-          "metric": "modelAbsErrorMw",
+          "source": "eventEvidenceBundles",
+          "metric": "modelErrorMw",
           "value": 1070.2,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "publishedForecastMw",
+          "value": 23660.2,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "actualMw",
+          "value": 22590.0,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "sameDayActualSlopeMw",
+          "value": 980.0,
           "unit": "MW",
           "hour": 8,
           "timeBand": "morning_ramp"
@@ -723,22 +780,52 @@
       ],
       "relatedFeatures": [
         "intraday_correction.business_type_transition",
-        "intraday_correction.positive_residual_mitigation"
+        "lag_24h_hourly_delta",
+        "recent_same_business_type_delta_mean"
       ],
-      "counterEvidence": []
+      "counterEvidence": [],
+      "mechanism": "前日lag慣性が同一営業区分anchorより強く出て、営業区分遷移レイヤーが配信線を十分に抑えなかったかを確認します。",
+      "nextCheck": "06:00〜11:00をreplayし、遷移しきい値が実需要の立ち上がりを抑えずに該当top-miss時刻を改善するか確認します。"
     },
     {
-      "id": "top_miss_h11",
+      "id": "event.top_miss_h11",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "11時の過小予測リスク",
-      "explanation": "11時には-1022.0 MWの負のモデル誤差があり、実際の需要に対して過小予測されていることが示されています。キャリブレーションの改善が必要です。",
+      "title": "11:00 JST 日中カーブの過小予測。",
+      "explanation": "11:00は公開予測25408.0 MW、実績26430.0 MWで、符号付き誤差は-1022.0 MWです。 当日実績の傾きは+1200.0 MWでした。raw LGBM水準、正午特徴量、残差持ち越し、公開予測フリーズ差分を分けて確認します。",
+      "sourceEventIds": [
+        "top_miss_h11"
+      ],
       "evidence": [
         {
-          "source": "top_miss_h11",
-          "metric": "modelAbsErrorMw",
-          "value": 1022.0,
+          "source": "eventEvidenceBundles",
+          "metric": "modelErrorMw",
+          "value": -1022.0,
+          "unit": "MW",
+          "hour": 11,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "publishedForecastMw",
+          "value": 25408.0,
+          "unit": "MW",
+          "hour": 11,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "actualMw",
+          "value": 26430.0,
+          "unit": "MW",
+          "hour": 11,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "sameDayActualSlopeMw",
+          "value": 1200.0,
           "unit": "MW",
           "hour": 11,
           "timeBand": "daytime"
@@ -751,31 +838,50 @@
         "daytime"
       ],
       "relatedFeatures": [
-        "intraday_correction.positive_residual_slope_damping"
+        "business_midday_x_lag_24h_delta",
+        "recent_same_business_type_delta_mean",
+        "serving.published_forecast_freeze"
       ],
-      "counterEvidence": []
+      "counterEvidence": [],
+      "mechanism": "日中shapeは符号が混在しやすく、固定的な正午ルールは一部時刻を改善しても昼食後の回復や日中ピークを悪化させる可能性があります。",
+      "nextCheck": "10:00〜16:00をreplayし、11〜15時MAE/WAPE、shape delta error、stageAttribution差分、freezeImpact差分を比較します。"
     }
   ],
   "featureRecommendations": [
     {
-      "id": "intraday_correction.morning_positive_residual_carryover_damping",
-      "priority": "medium",
-      "type": "evaluation",
-      "target": "intraday_correction.business_type_transition",
-      "suggestion": "この条件を朝のランプの残差緩和のための検証候補とします。",
-      "expectedEffect": "朝のランプ時間帯におけるオーバー予測を抑えることを目指します。",
-      "risk": "適切にキャリブレーションされていない場合、過小予測に悪影響を及ぼす可能性があります。",
-      "validationPlan": "来週の朝の時間帯の効果をモニタリングします。",
+      "id": "ticket.top_miss_h15",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "business_midday_x_lag_24h_delta",
+      "suggestion": "10:00〜16:00のreplayで、raw LGBMレベル、アナログ補正、残差持ち越し、公開予測フリーズ差分を切り分けたうえで、正午特徴量に形状専用しきい値が必要かを検証候補にします。",
+      "expectedEffect": "昼食時間帯から日中ピークへの回復で誤差方向が混在する日に、固定的な正午dipを強制せず11:00〜15:00の形状精度を改善できるか確認します。",
+      "risk": "正午ルールを強くしすぎると、反発する日の13:00〜15:00で過大予測が増える可能性があります。",
+      "validationPlan": "直近2〜4週間で11:00〜15:00のMAE/WAPE、shape delta error、11:00・12:00・15:00周辺の最大誤差を比較します。",
       "linkedHypotheses": [
-        "top_miss_h8"
+        "event.top_miss_h15"
+      ],
+      "autoApply": false
+    },
+    {
+      "id": "ticket.top_miss_h8",
+      "priority": "medium",
+      "type": "calibration",
+      "target": "intraday_correction.business_type_transition",
+      "suggestion": "06:00〜11:00の時間帯で、morningLagDeltaExcessMw、lag24BusinessTypeMismatch、公開予測線と再計算予測線の差分を明示的なトリガーとして、営業日/非営業日区分の遷移レイヤーをバックテスト候補にします。",
+      "expectedEffect": "lag_24hの慣性や営業日区分の不一致で配信予測線が実績を上回る朝のランプアップ誤差を抑えつつ、本当に需要が立ち上がる日を過度に抑えないか確認できます。",
+      "risk": "トリガーが広すぎると、早朝の冷房需要や営業日復帰需要を過小予測する可能性があります。",
+      "validationPlan": "直近2〜4週間をreplayし、06:00〜11:00のMAE/WAPE、最大誤差、top_miss_h8型イベント、同時刻TEPCO絶対誤差差分を比較します。",
+      "linkedHypotheses": [
+        "event.top_miss_h8"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
-    "15時、8時、11時の予測パフォーマンスのギャップは即時の注意が必要です。"
+    "featureRecommendationsはレビュー候補であり、自動的に適用されることはありません。",
+    "運用キャリブレーション信号カタログ：intraday_correction.business_type_transition_prior、intraday_correction.business_type_transition、intraday_correction.positive_residual_mitigation、intraday_correction.positive_residual_slope_damping、intraday_correction.morning_positive_residual_carryover_damping、intraday_correction.negative_residual_recovery_damping、intraday_correction.negative_residual_continuity_floor、intraday_correction.negative_residual_near_term_floor、intraday_correction.morning_warm_lag_overreaction_guard、intraday_correction.evening_decline_continuity_guard、intraday_correction.day_boundary_carryover、intraday_correction.day_level_scale、serving.published_forecast_freeze"
   ],
   "limitations": [
-    "分析は要約された運用指標と保持された補正スナップショットに基づいています。"
+    "範囲: 確定済み24時間実績、top-missイベント束、focused row根拠、保持済み補正スナップショットを使用しています。"
   ]
 }
