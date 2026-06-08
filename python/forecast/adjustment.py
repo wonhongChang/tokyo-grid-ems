@@ -341,6 +341,10 @@ class PostHolidayTimeBandGuard:
         self._business_return_max_clipping_mw = float(
             business_return_config.get("max_clipping_mw", 1_000.0)
         )
+        self._business_return_min_shape_shortfall_mw = max(
+            float(business_return_config.get("min_shape_shortfall_mw", 800.0)),
+            0.0,
+        )
         raw_shrinkage_map = business_return_config.get(
             "shrinkage_map",
             {6: 0.25, 7: 0.35, 8: 0.45, 9: 0.50, 10: 0.30, 11: 0.20},
@@ -364,7 +368,7 @@ class PostHolidayTimeBandGuard:
             business_return_excess_config.get("enabled", True)
         )
         self._business_return_excess_hours: set[int] = set()
-        for hour in business_return_excess_config.get("target_hours", [8, 9, 10]):
+        for hour in business_return_excess_config.get("target_hours", [8, 9, 10, 11]):
             try:
                 self._business_return_excess_hours.add(int(hour))
             except (TypeError, ValueError):
@@ -481,6 +485,32 @@ class PostHolidayTimeBandGuard:
                 return True
         return False
 
+    def _business_return_shape_shortfall_mw(
+        self,
+        forecast,
+        row,
+        forecasts_by_hour: dict[int, object],
+    ) -> float | None:
+        if self._business_return_min_shape_shortfall_mw <= 0.0:
+            return None
+        hour = pd.Timestamp(forecast.ts).hour
+        previous_forecast = forecasts_by_hour.get(hour - 1)
+        if previous_forecast is None:
+            return None
+        recent_delta_mw = self._finite_float(
+            row.get("recent_same_business_type_delta_mean")
+        )
+        forecast_mw = self._finite_float(forecast.forecast_mw)
+        previous_forecast_mw = self._finite_float(previous_forecast.forecast_mw)
+        if (
+            recent_delta_mw is None
+            or forecast_mw is None
+            or previous_forecast_mw is None
+        ):
+            return None
+        forecast_delta_mw = forecast_mw - previous_forecast_mw
+        return recent_delta_mw - forecast_delta_mw
+
     def _apply_business_return_anchor_shortfall(
         self,
         forecasts: list,
@@ -495,6 +525,10 @@ class PostHolidayTimeBandGuard:
             if hour is not None:
                 rows_by_hour[int(hour)] = row
 
+        forecasts_by_hour = {
+            pd.Timestamp(forecast.ts).hour: forecast
+            for forecast in forecasts
+        }
         result = []
         changed = False
         for forecast in forecasts:
@@ -520,6 +554,18 @@ class PostHolidayTimeBandGuard:
 
             gap_mw = recent_mean - lag_24h
             if gap_mw < self._business_return_gap_threshold_mw:
+                result.append(forecast)
+                continue
+
+            shape_shortfall_mw = self._business_return_shape_shortfall_mw(
+                forecast,
+                row,
+                forecasts_by_hour,
+            )
+            if (
+                shape_shortfall_mw is not None
+                and shape_shortfall_mw < self._business_return_min_shape_shortfall_mw
+            ):
                 result.append(forecast)
                 continue
 

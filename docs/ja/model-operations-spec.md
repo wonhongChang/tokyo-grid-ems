@@ -215,7 +215,7 @@ Raw LightGBM Forecast
 |---|---|---|
 | Analogous day | `AnalogousDayAdjuster` | 類似過去日のresidualでraw forecastを補正 |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 類似日補正の誤方向shiftを制限 |
-| Business return anchor shortfall | `PostHolidayTimeBandGuard` | 非営業日lagが営業日朝を下げすぎる問題を緩和 |
+| Business return anchor shortfall | `PostHolidayTimeBandGuard` | 予測shapeも不足している場合のみ、非営業日lagが営業日朝を下げすぎる問題を緩和 |
 | Midday transition guard | `MiddayTransitionGuard` | 営業日12時のlunch dip形状を復元 |
 | Intraday residual correction | `IntradayResidualCorrector` | 当日実績residualを未来時間へ反映 |
 | Day-boundary carryover | intraday calibration | 最後の実績residualを日付境界で弱くcarry-over |
@@ -248,6 +248,7 @@ Raw LightGBM Forecast
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 非営業日の予測線が安定した当日plateauより下へ押された場合に戻せる最大値です。上げると土曜plateau保護は強くなりますが、実際の下落反映が遅れる場合があります。 |
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 最新実績plateauよりどれだけ下がったらfloorを作動させるかのbufferです。下げると早めに介入し、上げると明確なundercut時だけ作動します。 |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 夕方下落局面で局所的なreboundだけでなく、高水準に残るoverhangも制限します。暑い夕方の実需要まで抑える場合だけ無効化を検討します。 |
+| post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 営業日復帰anchorのリフト前に、予測ランプが最近の同営業タイプランプより十分に不足しているかを確認します。下げるとリフト頻度が増え、上げると健全なraw shapeを過剰に支援するリスクを抑えます。 |
 | forecast snapshots | `retention_days` | 21 | 公開lead-time forecast履歴の保持期間です。 |
 | calibration snapshots | `retention_days` | 14 | 内部calibration履歴です。短すぎると障害分析が難しくなります。 |
 | reserve risk | warning | 92% | TEPCO基準のwarning thresholdです。下げると警告が増え、上げると早期警戒性が弱まります。 |

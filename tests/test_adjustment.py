@@ -416,6 +416,7 @@ def _guard_config(
                     "gap_threshold_mw": 6_000.0,
                     "allowance_mw": 1_000.0,
                     "max_clipping_mw": 1_000.0,
+                    "min_shape_shortfall_mw": 800.0,
                     "shrinkage_map": {
                         6: 0.25,
                         7: 0.35,
@@ -427,7 +428,7 @@ def _guard_config(
                 },
                 "business_return_anchor_excess_cap": {
                     "enabled": True,
-                    "target_hours": [8, 9, 10],
+                    "target_hours": [8, 9, 10, 11],
                     "gap_threshold_mw": 1_000.0,
                     "allowance_mw": 500.0,
                     "weather_allowance_mw_per_c": 100.0,
@@ -884,8 +885,10 @@ def test_guard_skips_lag24_cap_when_previous_day_business_type_differs():
     """Do not cap a Monday business-day recovery against Sunday's low lag_24h."""
     config = _guard_config(warm_day=True)
     daytime_config = config["adjustment"]["post_holiday_timeband_guard"]["daytime"]
+    guard_config = config["adjustment"]["post_holiday_timeband_guard"]
     daytime_config["lag24_warm_day_cap_enabled"] = True
     daytime_config["lag24_warm_day_max_increase_mw"] = 2500.0
+    guard_config["business_return_anchor_excess_cap"]["enabled"] = False
     guard = PostHolidayTimeBandGuard(config)
     target = date(2026, 5, 25)  # Monday after a non-business day
     raw = _make_raw_forecasts(target, 33_000.0)
@@ -912,6 +915,7 @@ def test_guard_lifts_business_return_anchor_shortfall():
     inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
     inf.loc[inf["hour"] == 9, "lag_24h"] = 22_830.0
     inf.loc[inf["hour"] == 9, "recent_same_business_type_mean"] = 31_795.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_delta_mean"] = 1_500.0
     inf.loc[inf["hour"] == 9, "lag_24h_business_type_mismatch"] = 1
 
     result = guard.apply(raw, adj, inf)
@@ -920,6 +924,43 @@ def test_guard_lifts_business_return_anchor_shortfall():
     assert result[9].p95_lower_mw == pytest.approx(29_182.5)
     assert result[9].p95_upper_mw == pytest.approx(31_182.5)
     assert result[8].forecast_mw == pytest.approx(29_570.0)
+
+
+def test_guard_skips_business_return_lift_when_shape_is_already_supported():
+    """Business return level anchor should not lift an already healthy morning ramp."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 6, 8)
+    raw = _make_raw_forecasts(target, 30_000.0)
+    adj = _make_raw_forecasts(target, 30_000.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+
+    for h, value in {8: 28_477.3, 9: 30_800.7, 10: 31_143.4}.items():
+        raw[h] = HourlyForecast(
+            ts=raw[h].ts,
+            forecast_mw=value,
+            p95_lower_mw=value - 1_000.0,
+            p95_upper_mw=value + 1_000.0,
+            p99_lower_mw=value - 1_500.0,
+            p99_upper_mw=value + 1_500.0,
+        )
+        adj[h] = HourlyForecast(
+            ts=adj[h].ts,
+            forecast_mw=value,
+            p95_lower_mw=value - 1_000.0,
+            p95_upper_mw=value + 1_000.0,
+            p99_lower_mw=value - 1_500.0,
+            p99_upper_mw=value + 1_500.0,
+        )
+
+    inf.loc[inf["hour"] == 9, "lag_24h"] = 22_830.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_mean"] = 32_000.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_delta_mean"] = 2_938.8
+    inf.loc[inf["hour"] == 9, "lag_24h_business_type_mismatch"] = 1
+
+    result = guard.apply(raw, adj, inf)
+
+    assert result[9].forecast_mw == pytest.approx(30_800.7)
+    assert result[9].p95_upper_mw == pytest.approx(31_800.7)
 
 
 def test_guard_caps_business_return_anchor_excess():
@@ -941,6 +982,26 @@ def test_guard_caps_business_return_anchor_excess():
     assert result[9].forecast_mw == pytest.approx(36_160.0)
     assert result[9].p95_lower_mw == pytest.approx(35_160.0)
     assert result[8].forecast_mw == pytest.approx(37_000.0)
+
+
+def test_guard_caps_business_return_anchor_excess_at_11():
+    """The excess cap also covers the late morning handoff hour."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 6, 8)
+    raw = _make_raw_forecasts(target, 36_000.0)
+    adj = _make_raw_forecasts(target, 36_000.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"] == 11, "lag_24h"] = 30_000.0
+    inf.loc[inf["hour"] == 11, "recent_same_business_type_mean"] = 34_000.0
+    inf.loc[inf["hour"] == 11, "lag_24h_business_type_mismatch"] = 1
+    inf.loc[inf["hour"] == 11, "temp_delta_24h"] = 1.0
+    inf.loc[inf["hour"] == 11, "temp_anomaly_doy"] = 0.0
+
+    result = guard.apply(raw, adj, inf)
+
+    # upper bound = 34000 + 500 + 100; excess 1400 * 0.6 = 840
+    assert result[11].forecast_mw == pytest.approx(35_160.0)
+    assert result[11].p95_lower_mw == pytest.approx(34_160.0)
 
 
 def test_guard_does_not_lift_business_return_without_mismatch():

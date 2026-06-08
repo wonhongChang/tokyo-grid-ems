@@ -217,7 +217,7 @@ The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_
 |---|---|---|
 | Analogous day | `AnalogousDayAdjuster` | shifts raw forecast using residuals from similar historical days |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | blocks analogous-day shifts in the wrong direction |
-| Business return anchor shortfall | `PostHolidayTimeBandGuard` | protects Monday/business-return morning ramps from non-business lag drag |
+| Business return anchor shortfall | `PostHolidayTimeBandGuard` | protects Monday/business-return morning ramps from non-business lag drag only when the forecast shape is also short |
 | Midday transition guard | `MiddayTransitionGuard` | restores business-day 12:00 lunch dip shape |
 | Intraday residual correction | `IntradayResidualCorrector` | applies same-day actual residuals to future hours |
 | Day-boundary carryover | intraday calibration | carries the last real residual across midnight |
@@ -250,6 +250,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | Upper bound for restoring a non-business-day forecast that has been pulled below a stable same-day plateau. Raising it protects Saturday plateaus more strongly but can hide real demand drops. |
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | Buffer below the latest observed plateau before restoration begins. Lower values intervene sooner; higher values require a clearer undercut. |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | Extends the evening guard from local rebound spikes to high-but-flat overhangs after observed demand is falling. Disable only if it suppresses genuine hot-evening demand. |
+| post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | Requires the forecast ramp to be materially weaker than the recent same-business ramp before lifting a Monday/business-return anchor shortfall. Lower values lift more often; higher values avoid over-helping an already healthy raw shape. |
 | forecast snapshots | `retention_days` | 21 | Public lead-time forecast history for operational review. |
 | calibration snapshots | `retention_days` | 14 | Internal calibration history. Too short makes incident analysis harder. |
 | reserve risk | warning | 92% | TEPCO reserve warning threshold. Lower values create more warnings; higher values reduce early warning behavior. |

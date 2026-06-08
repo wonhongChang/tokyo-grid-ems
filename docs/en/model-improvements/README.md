@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-08 business-return shape veto](model-improvement-2026-06-08-business-return-shape-veto.md)
 - [2026-06-07 actual JSON cache persistence](model-improvement-2026-06-07-actual-cache-persistence.md)
 - [2026-06-05 morning positive residual carryover damping](model-improvement-2026-06-05-morning-positive-carryover-damping.md)
 - [2026-06-04 morning warm-lag overreaction guard](model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)
