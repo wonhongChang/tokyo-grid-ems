@@ -66,6 +66,7 @@ FEATURE_CATALOG = [
     "intraday_correction.negative_residual_near_term_floor",
     "intraday_correction.morning_warm_lag_overreaction_guard",
     "intraday_correction.morning_observed_anchor_cap",
+    "intraday_correction.afternoon_observed_anchor_cap",
     "intraday_correction.evening_decline_continuity_guard",
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
@@ -82,6 +83,7 @@ FEATURE_NAME_ALIASES = {
     "negative_residual_near_term_floor": "intraday_correction.negative_residual_near_term_floor",
     "morning_warm_lag_overreaction_guard": "intraday_correction.morning_warm_lag_overreaction_guard",
     "morning_observed_anchor_cap": "intraday_correction.morning_observed_anchor_cap",
+    "afternoon_observed_anchor_cap": "intraday_correction.afternoon_observed_anchor_cap",
     "evening_decline_continuity_guard": "intraday_correction.evening_decline_continuity_guard",
 }
 ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
@@ -1685,6 +1687,21 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
         "morningObservedAnchorCapLatestResidualMw": _round_number(
             item.get("morningObservedAnchorCapLatestResidualMw")
         ),
+        "afternoonObservedAnchorCapReductionMw": _round_number(
+            item.get("afternoonObservedAnchorCapReductionMw")
+        ),
+        "afternoonObservedAnchorCapMw": _round_number(
+            item.get("afternoonObservedAnchorCapMw")
+        ),
+        "afternoonObservedAnchorCapCumulativeSupportMw": _round_number(
+            item.get("afternoonObservedAnchorCapCumulativeSupportMw")
+        ),
+        "afternoonObservedAnchorCapLatestResidualMw": _round_number(
+            item.get("afternoonObservedAnchorCapLatestResidualMw")
+        ),
+        "afternoonObservedAnchorCapMeanResidualMw": _round_number(
+            item.get("afternoonObservedAnchorCapMeanResidualMw")
+        ),
         "eveningDeclineContinuityMode": item.get("eveningDeclineContinuityMode"),
         "eveningDeclineContinuityReductionMw": _round_number(
             item.get("eveningDeclineContinuityReductionMw")
@@ -1733,6 +1750,10 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
             (_as_float(item.get("morningObservedAnchorCapReductionMw")) or 0.0)
             > 0.0
         )
+        afternoon_anchor_cap = (
+            (_as_float(item.get("afternoonObservedAnchorCapReductionMw")) or 0.0)
+            > 0.0
+        )
         evening_guard = (
             (_as_float(item.get("eveningDeclineContinuityReductionMw")) or 0.0)
             > 0.0
@@ -1747,6 +1768,7 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
                 or near_term_floor
                 or morning_warm_guard
                 or morning_anchor_cap
+                or afternoon_anchor_cap
                 or evening_guard
                 or large
             )
@@ -1798,6 +1820,10 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
         "negativeResidualNearTermFloorMaxRestoreMw": correction.get("negativeResidualNearTermFloorMaxRestoreMw"),
         "morningWarmLagOverreactionGuardApplied": correction.get("morningWarmLagOverreactionGuardApplied"),
         "morningWarmLagOverreactionMaxReductionMw": correction.get("morningWarmLagOverreactionMaxReductionMw"),
+        "morningObservedAnchorCapApplied": correction.get("morningObservedAnchorCapApplied"),
+        "morningObservedAnchorCapMaxReductionMw": correction.get("morningObservedAnchorCapMaxReductionMw"),
+        "afternoonObservedAnchorCapApplied": correction.get("afternoonObservedAnchorCapApplied"),
+        "afternoonObservedAnchorCapMaxReductionMw": correction.get("afternoonObservedAnchorCapMaxReductionMw"),
         "negResidualRecoveryDampingApplied": correction.get("negResidualRecoveryDampingApplied"),
         "negResidualRecoveryDampingFactor": correction.get("negResidualRecoveryDampingFactor"),
         "residualCarryoverByHour": residual_carryover,
@@ -3055,6 +3081,11 @@ def _build_control_context(
         for item in residual_items
         if (_as_float(item.get("morningObservedAnchorCapReductionMw")) or 0.0) > 0.0
     ]
+    afternoon_anchor_cap_items = [
+        item
+        for item in residual_items
+        if (_as_float(item.get("afternoonObservedAnchorCapReductionMw")) or 0.0) > 0.0
+    ]
     snapshots = (calibration_history or {}).get("snapshots") or []
     context = {
         "sourceConfidence": correction.get("sourceConfidence")
@@ -3104,6 +3135,16 @@ def _build_control_context(
                 item.get("hour") for item in morning_anchor_cap_items
             ],
             "sample": morning_anchor_cap_items,
+        }),
+        "afternoonObservedAnchorCap": _drop_none_values({
+            "applied": correction.get("afternoonObservedAnchorCapApplied"),
+            "maxReducedMw": _round_number(
+                correction.get("afternoonObservedAnchorCapMaxReductionMw")
+            ),
+            "affectedHours": [
+                item.get("hour") for item in afternoon_anchor_cap_items
+            ],
+            "sample": afternoon_anchor_cap_items,
         }),
         "positiveResidualMitigation": _drop_none_values({
             "applied": correction.get("positiveResidualMitigationApplied"),

@@ -8,6 +8,7 @@
 
 ## 2026-06
 
+- [2026-06-09 오후 실측 anchor cap](model-improvement-2026-06-09-afternoon-observed-anchor-cap.md)
 - [2026-06-09 오전 실측 앵커 상한 가드](model-improvement-2026-06-09-morning-observed-anchor-cap.md)
 
 - [2026-06-08 영업일 복귀 shape veto](model-improvement-2026-06-08-business-return-shape-veto.md)

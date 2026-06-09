@@ -243,6 +243,8 @@ Raw LightGBM Forecast
 | intraday | `lookback_hours` | 3 | 短いほど反応が速く、長いほど滑らかですが遅れます。 |
 | intraday | `decay_per_hour` | 0.92 | 高いほどresidualが遠い時間まで残り、低いほど近距離中心になります。shape汚染時は引き下げを検討します。 |
 | intraday | `max_abs_adjustment_mw` | 1200 | 当日residual補正のhard capです。上げると大きなmissに追従しやすい一方、overshootリスクが増えます。 |
+| intraday | `morning_observed_anchor_cap.max_reduction_mw` | 800 | 当日実績がすでにモデルの過大予測を示し、lag/recent shape が公開予測レベルを説明できない場合に、近い 10-13 時の予測だけを制限します。 |
+| intraday | `afternoon_observed_anchor_cap.max_reduction_mw` | 1200 | 午後の当日実績が継続的な過大予測を示す場合に、近い 14-16 時の plateau overhang だけを制限します。上げると unsupported daytime plateau に速く反応しますが、実際の午後需要上昇を抑えるリスクがあります。 |
 | intraday | `morning_warm_lag_overreaction_guard.max_reduction_mw` | 800 | 暖かくなった朝のlag/気象上昇シグナルが当日実績で確認されない場合のq50追加下方ブレーキを制限します。上げると過大予測への反応は速くなりますが、実際の冷房rampを抑える可能性があります。 |
 | intraday | `morning_positive_residual_carryover_damping.damping_factor` | 0.4 | 朝の早い時間帯の過少予測から生じた正の residual が、対象slotのlag/recent ramp根拠なしに10-13時へ過伝播する場合、一部だけ通過させます。下げると過伝播を速く抑え、上げると実際のramp momentumをより保持します。 |
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 非営業日の予測線が安定した当日plateauより下へ押された場合に戻せる最大値です。上げると土曜plateau保護は強くなりますが、実際の下落反映が遅れる場合があります。 |

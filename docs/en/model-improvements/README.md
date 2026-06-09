@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-09 afternoon observed anchor cap](model-improvement-2026-06-09-afternoon-observed-anchor-cap.md)
 - [2026-06-09 morning observed anchor cap](model-improvement-2026-06-09-morning-observed-anchor-cap.md)
 - [2026-06-08 business-return shape veto](model-improvement-2026-06-08-business-return-shape-veto.md)
 - [2026-06-07 actual JSON cache persistence](model-improvement-2026-06-07-actual-cache-persistence.md)

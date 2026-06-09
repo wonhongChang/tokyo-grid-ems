@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-06
 
+- [2026-06-09 午後実績 anchor cap](model-improvement-2026-06-09-afternoon-observed-anchor-cap.md)
 - [2026-06-09 午前の実績アンカー上限制御](model-improvement-2026-06-09-morning-observed-anchor-cap.md)
 
 - [2026-06-08 営業日復帰 shape veto](model-improvement-2026-06-08-business-return-shape-veto.md)

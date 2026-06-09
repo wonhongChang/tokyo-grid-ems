@@ -1739,6 +1739,18 @@ def _operational_calibration_snapshot_entry(path: Path, out_dir: Path) -> dict |
         "morningRampContinuityMaxRestoreMw": correction.get(
             "morningRampContinuityMaxRestoreMw",
         ),
+        "morningObservedAnchorCapApplied": correction.get(
+            "morningObservedAnchorCapApplied",
+        ),
+        "morningObservedAnchorCapMaxReductionMw": correction.get(
+            "morningObservedAnchorCapMaxReductionMw",
+        ),
+        "afternoonObservedAnchorCapApplied": correction.get(
+            "afternoonObservedAnchorCapApplied",
+        ),
+        "afternoonObservedAnchorCapMaxReductionMw": correction.get(
+            "afternoonObservedAnchorCapMaxReductionMw",
+        ),
         "eveningDeclineContinuityGuardApplied": correction.get(
             "eveningDeclineContinuityGuardApplied",
         ),

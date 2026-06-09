@@ -56,6 +56,8 @@ class IntradayCorrectionResult:
     negative_residual_near_term_floor_max_restore_mw: float = 0.0
     morning_observed_anchor_cap_applied: bool = False
     morning_observed_anchor_cap_max_reduction_mw: float = 0.0
+    afternoon_observed_anchor_cap_applied: bool = False
+    afternoon_observed_anchor_cap_max_reduction_mw: float = 0.0
 
     def metadata(self) -> dict:
         return {
@@ -134,6 +136,13 @@ class IntradayCorrectionResult:
             ),
             "morningObservedAnchorCapMaxReductionMw": round(
                 float(self.morning_observed_anchor_cap_max_reduction_mw),
+                1,
+            ),
+            "afternoonObservedAnchorCapApplied": (
+                self.afternoon_observed_anchor_cap_applied
+            ),
+            "afternoonObservedAnchorCapMaxReductionMw": round(
+                float(self.afternoon_observed_anchor_cap_max_reduction_mw),
                 1,
             ),
             "eveningDeclineContinuityGuardApplied": (
@@ -663,6 +672,65 @@ class IntradayResidualCorrector:
         )
         self._morning_anchor_min_reduction_mw = max(
             float(morning_anchor_config.get("min_reduction_mw", 100.0)),
+            0.0,
+        )
+        afternoon_anchor_config = correction_config.get(
+            "afternoon_observed_anchor_cap",
+            {},
+        )
+        self._afternoon_anchor_cap_enabled = bool(
+            afternoon_anchor_config.get("enabled", False)
+        )
+        self._afternoon_anchor_business_day_only = bool(
+            afternoon_anchor_config.get("business_day_only", True)
+        )
+        self._afternoon_anchor_target_hours = {
+            int(hour)
+            for hour in afternoon_anchor_config.get(
+                "target_hours",
+                [14, 15, 16],
+            )
+        }
+        self._afternoon_anchor_min_reference_hour = int(
+            afternoon_anchor_config.get("min_reference_hour", 12)
+        )
+        self._afternoon_anchor_max_reference_hour = int(
+            afternoon_anchor_config.get("max_reference_hour", 15)
+        )
+        self._afternoon_anchor_max_lead_hours = max(
+            int(afternoon_anchor_config.get("max_lead_hours", 3)),
+            1,
+        )
+        self._afternoon_anchor_lookback_hours = max(
+            int(afternoon_anchor_config.get("lookback_observed_hours", 3)),
+            1,
+        )
+        self._afternoon_anchor_min_latest_overforecast_mw = max(
+            float(afternoon_anchor_config.get("min_latest_overforecast_mw", 500.0)),
+            0.0,
+        )
+        self._afternoon_anchor_min_mean_overforecast_mw = max(
+            float(afternoon_anchor_config.get("min_mean_overforecast_mw", 500.0)),
+            0.0,
+        )
+        self._afternoon_anchor_cap_buffer_mw = max(
+            float(afternoon_anchor_config.get("cap_buffer_mw", 400.0)),
+            0.0,
+        )
+        self._afternoon_anchor_support_fraction = min(
+            max(float(afternoon_anchor_config.get("support_fraction", 0.6)), 0.0),
+            1.0,
+        )
+        self._afternoon_anchor_shrinkage = min(
+            max(float(afternoon_anchor_config.get("shrinkage", 0.75)), 0.0),
+            1.0,
+        )
+        self._afternoon_anchor_max_reduction_mw = max(
+            float(afternoon_anchor_config.get("max_reduction_mw", 900.0)),
+            0.0,
+        )
+        self._afternoon_anchor_min_reduction_mw = max(
+            float(afternoon_anchor_config.get("min_reduction_mw", 100.0)),
             0.0,
         )
         evening_decline_config = correction_config.get(
@@ -1806,6 +1874,132 @@ class IntradayResidualCorrector:
             "latestResidualMw": context["latestResidualMw"],
         }
 
+    def _afternoon_observed_anchor_cap_context(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        actual_mw_by_hour: dict[int, float],
+        residuals_by_hour: list[_ResidualPoint],
+        last_observed_hour: int | None,
+    ) -> dict | None:
+        if (
+            not self._afternoon_anchor_cap_enabled
+            or last_observed_hour is None
+            or last_observed_hour < self._afternoon_anchor_min_reference_hour
+            or last_observed_hour > self._afternoon_anchor_max_reference_hour
+            or last_observed_hour not in actual_mw_by_hour
+            or self._afternoon_anchor_max_reduction_mw <= 0.0
+        ):
+            return None
+
+        recent_points = [
+            point
+            for point in residuals_by_hour
+            if point.hour <= last_observed_hour
+        ][-self._afternoon_anchor_lookback_hours:]
+        if not recent_points:
+            return None
+
+        latest_residual = float(recent_points[-1].residual_mw)
+        mean_residual = float(np.mean([point.residual_mw for point in recent_points]))
+        if (
+            latest_residual > -self._afternoon_anchor_min_latest_overforecast_mw
+            or mean_residual > -self._afternoon_anchor_min_mean_overforecast_mw
+        ):
+            return None
+
+        if self._afternoon_anchor_business_day_only:
+            row = self._feature_row_for_hour(inference_features, last_observed_hour)
+            if row is not None:
+                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+                if is_non_business_day == 1.0:
+                    return None
+            elif forecasts:
+                forecast_ts = pd.Timestamp(forecasts[0].ts)
+                if _is_nonworking_day(forecast_ts):
+                    return None
+
+        return {
+            "lastObservedHour": last_observed_hour,
+            "lastActualMw": round(actual_mw_by_hour[last_observed_hour], 1),
+            "latestResidualMw": round(latest_residual, 1),
+            "meanResidualMw": round(mean_residual, 1),
+        }
+
+    def _afternoon_observed_anchor_cap_reduction(
+        self,
+        context: dict | None,
+        inference_features: pd.DataFrame | None,
+        forecast_hour: int,
+        lead_hours: int,
+        final_before_guard_mw: float,
+    ) -> dict | None:
+        if (
+            context is None
+            or inference_features is None
+            or inference_features.empty
+            or forecast_hour not in self._afternoon_anchor_target_hours
+            or lead_hours <= 0
+            or lead_hours > self._afternoon_anchor_max_lead_hours
+        ):
+            return None
+
+        row = self._feature_row_for_hour(inference_features, forecast_hour)
+        if row is None:
+            return None
+        if self._afternoon_anchor_business_day_only:
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day == 1.0:
+                return None
+
+        last_observed_hour = int(context["lastObservedHour"])
+        cumulative_support_mw = 0.0
+        for hour in range(last_observed_hour + 1, forecast_hour + 1):
+            support_row = self._feature_row_for_hour(inference_features, hour)
+            if support_row is None:
+                return None
+            support_candidates = [
+                value
+                for value in (
+                    self._finite_float(support_row.get("lag_24h_hourly_delta")),
+                    self._finite_float(
+                        support_row.get("recent_same_business_type_delta_mean")
+                    ),
+                )
+                if value is not None
+            ]
+            if not support_candidates:
+                return None
+            cumulative_support_mw += (
+                max(0.0, max(support_candidates))
+                * self._afternoon_anchor_support_fraction
+            )
+
+        cap_mw = (
+            float(context["lastActualMw"])
+            + cumulative_support_mw
+            + self._afternoon_anchor_cap_buffer_mw
+        )
+        overhang_mw = final_before_guard_mw - cap_mw
+        if overhang_mw <= 0.0:
+            return None
+
+        reduction_mw = min(
+            overhang_mw * self._afternoon_anchor_shrinkage,
+            self._afternoon_anchor_max_reduction_mw,
+        )
+        reduction_mw = round(float(reduction_mw), 1)
+        if reduction_mw < self._afternoon_anchor_min_reduction_mw:
+            return None
+
+        return {
+            "capMw": round(float(cap_mw), 1),
+            "reductionMw": reduction_mw,
+            "cumulativeSupportMw": round(float(cumulative_support_mw), 1),
+            "latestResidualMw": context["latestResidualMw"],
+            "meanResidualMw": context["meanResidualMw"],
+        }
+
     def _negative_residual_continuity_floor_context(
         self,
         actual_mw_by_hour: dict[int, float],
@@ -2538,6 +2732,13 @@ class IntradayResidualCorrector:
             residuals_by_hour,
             last_observed_hour,
         )
+        afternoon_anchor_context = self._afternoon_observed_anchor_cap_context(
+            transition_prior_guarded_forecasts,
+            inference_features,
+            actual_mw_by_hour,
+            residuals_by_hour,
+            last_observed_hour,
+        )
         negative_floor_context = self._negative_residual_continuity_floor_context(
             actual_mw_by_hour,
             last_observed_hour,
@@ -2558,6 +2759,8 @@ class IntradayResidualCorrector:
         morning_warm_reduced_values: list[float] = []
         morning_anchor_cap_applied = False
         morning_anchor_cap_reduced_values: list[float] = []
+        afternoon_anchor_cap_applied = False
+        afternoon_anchor_cap_reduced_values: list[float] = []
         evening_decline_guard_applied = False
         evening_decline_reduced_values: list[float] = []
         negative_floor_applied = False
@@ -2611,6 +2814,11 @@ class IntradayResidualCorrector:
             morning_anchor_reduction_mw = 0.0
             morning_anchor_cumulative_support_mw = None
             morning_anchor_latest_residual_mw = None
+            afternoon_anchor_cap_mw = None
+            afternoon_anchor_reduction_mw = 0.0
+            afternoon_anchor_cumulative_support_mw = None
+            afternoon_anchor_latest_residual_mw = None
+            afternoon_anchor_mean_residual_mw = None
             pre_evening_decline_adjustment_mw = decayed_adjustment_mw
             evening_decline_cap_mw = None
             evening_decline_reduction_mw = 0.0
@@ -2833,6 +3041,38 @@ class IntradayResidualCorrector:
                 morning_anchor_cap_reduced_values.append(
                     morning_anchor_reduction_mw
                 )
+            final_before_afternoon_anchor_cap_mw = (
+                forecast.forecast_mw + decayed_adjustment_mw
+            )
+            afternoon_anchor_cap = self._afternoon_observed_anchor_cap_reduction(
+                afternoon_anchor_context,
+                inference_features,
+                forecast_hour,
+                lead_hours,
+                final_before_afternoon_anchor_cap_mw,
+            )
+            if afternoon_anchor_cap is not None:
+                afternoon_anchor_reduction_mw = float(
+                    afternoon_anchor_cap["reductionMw"]
+                )
+                decayed_adjustment_mw = round(
+                    decayed_adjustment_mw - afternoon_anchor_reduction_mw,
+                    1,
+                )
+                afternoon_anchor_cap_mw = afternoon_anchor_cap["capMw"]
+                afternoon_anchor_cumulative_support_mw = (
+                    afternoon_anchor_cap["cumulativeSupportMw"]
+                )
+                afternoon_anchor_latest_residual_mw = (
+                    afternoon_anchor_cap["latestResidualMw"]
+                )
+                afternoon_anchor_mean_residual_mw = (
+                    afternoon_anchor_cap["meanResidualMw"]
+                )
+                afternoon_anchor_cap_applied = True
+                afternoon_anchor_cap_reduced_values.append(
+                    afternoon_anchor_reduction_mw
+                )
             pre_evening_decline_adjustment_mw = decayed_adjustment_mw
             previous_final_mw = (
                 adjusted_forecasts[-1].forecast_mw
@@ -2991,6 +3231,30 @@ class IntradayResidualCorrector:
                     if morning_anchor_latest_residual_mw is not None
                     else None
                 ),
+                "afternoonObservedAnchorCapMw": (
+                    round(float(afternoon_anchor_cap_mw), 1)
+                    if afternoon_anchor_cap_mw is not None
+                    else None
+                ),
+                "afternoonObservedAnchorCapReductionMw": round(
+                    afternoon_anchor_reduction_mw,
+                    1,
+                ),
+                "afternoonObservedAnchorCapCumulativeSupportMw": (
+                    round(float(afternoon_anchor_cumulative_support_mw), 1)
+                    if afternoon_anchor_cumulative_support_mw is not None
+                    else None
+                ),
+                "afternoonObservedAnchorCapLatestResidualMw": (
+                    round(float(afternoon_anchor_latest_residual_mw), 1)
+                    if afternoon_anchor_latest_residual_mw is not None
+                    else None
+                ),
+                "afternoonObservedAnchorCapMeanResidualMw": (
+                    round(float(afternoon_anchor_mean_residual_mw), 1)
+                    if afternoon_anchor_mean_residual_mw is not None
+                    else None
+                ),
                 "preEveningDeclineContinuityAdjustmentMw": round(
                     pre_evening_decline_adjustment_mw,
                     1,
@@ -3037,6 +3301,8 @@ class IntradayResidualCorrector:
             applied_reasons.append("morning_warm_lag_overreaction_guard")
         if morning_anchor_cap_applied:
             applied_reasons.append("morning_observed_anchor_cap")
+        if afternoon_anchor_cap_applied:
+            applied_reasons.append("afternoon_observed_anchor_cap")
         if negative_floor_applied:
             applied_reasons.append("negative_residual_continuity_floor")
         if near_negative_floor_applied:
@@ -3111,4 +3377,6 @@ class IntradayResidualCorrector:
             round(max(near_negative_floor_restored_values or [0.0]), 1),
             morning_anchor_cap_applied,
             round(max(morning_anchor_cap_reduced_values or [0.0]), 1),
+            afternoon_anchor_cap_applied,
+            round(max(afternoon_anchor_cap_reduced_values or [0.0]), 1),
         )
