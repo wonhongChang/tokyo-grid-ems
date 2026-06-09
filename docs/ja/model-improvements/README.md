@@ -8,6 +8,8 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-06
 
+- [2026-06-09 午前の実績アンカー上限制御](model-improvement-2026-06-09-morning-observed-anchor-cap.md)
+
 - [2026-06-08 営業日復帰 shape veto](model-improvement-2026-06-08-business-return-shape-veto.md)
 - [2026-06-07 actual JSON キャッシュ永続化](model-improvement-2026-06-07-actual-cache-persistence.md)
 - [2026-06-05 朝の正の残差 carryover 減衰](model-improvement-2026-06-05-morning-positive-carryover-damping.md)

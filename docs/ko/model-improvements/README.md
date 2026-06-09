@@ -8,6 +8,8 @@
 
 ## 2026-06
 
+- [2026-06-09 오전 실측 앵커 상한 가드](model-improvement-2026-06-09-morning-observed-anchor-cap.md)
+
 - [2026-06-08 영업일 복귀 shape veto](model-improvement-2026-06-08-business-return-shape-veto.md)
 - [2026-06-07 actual JSON 캐시 영속화](model-improvement-2026-06-07-actual-cache-persistence.md)
 - [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvement-2026-06-05-morning-positive-carryover-damping.md)
