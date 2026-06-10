@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-06-10T09:31:29+09:00",
+  "generatedAt": "2026-06-10T11:05:57+09:00",
   "date": "2026-06-10",
   "snapshots": [
     {
@@ -403,6 +403,47 @@
       "residualCarryoverHours": 15,
       "changedForecastHours": 24,
       "maxAbsCalibrationDeltaMw": 182.2
+    },
+    {
+      "date": "2026-06-10",
+      "generatedAt": "2026-06-10T11:05:57+09:00",
+      "path": "reports/internal/operational-calibration/snapshots/2026-06-10/2026-06-10T11-05-57-09-00.json",
+      "model": "lgbm_quantile_q50",
+      "applied": true,
+      "observedHours": 10,
+      "fallbackActualHours": 0,
+      "lastObservedHour": 9,
+      "baseAdjustmentMw": -175.9,
+      "appliedDayBiasMw": 0.0,
+      "appliedRegimeReason": [
+        "intraday_observed_residual",
+        "morning_ramp_continuity_guard"
+      ],
+      "sourceConfidence": {
+        "level": "observed",
+        "actualHours": 10,
+        "usableObservedHours": 10,
+        "fallbackIgnoredHours": 0,
+        "missingHours": 14
+      },
+      "businessTypeTransitionPriorApplied": false,
+      "businessTypeTransitionApplied": false,
+      "positiveResidualMitigationApplied": false,
+      "positiveResidualSlopeDampingApplied": false,
+      "positiveResidualSlopeDampingFactor": 1.0,
+      "positiveResidualSlopeDampingMaxMw": 0.0,
+      "morningRampContinuityGuardApplied": true,
+      "morningRampContinuityMaxRestoreMw": 175.9,
+      "morningObservedAnchorCapApplied": false,
+      "morningObservedAnchorCapMaxReductionMw": 0.0,
+      "afternoonObservedAnchorCapApplied": false,
+      "afternoonObservedAnchorCapMaxReductionMw": 0.0,
+      "eveningDeclineContinuityGuardApplied": false,
+      "eveningDeclineContinuityMaxReductionMw": 0.0,
+      "negResidualRecoveryDampingApplied": false,
+      "residualCarryoverHours": 14,
+      "changedForecastHours": 24,
+      "maxAbsCalibrationDeltaMw": 148.9
     }
   ]
 }
