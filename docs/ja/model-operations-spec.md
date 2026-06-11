@@ -25,7 +25,7 @@
 | 実装 | `python/forecast/lgbm_model.py` |
 | 特徴量生成 | `python/forecast/feature_builder.py` |
 | 後処理 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| interval version | `q025_q50_q975_p95_v9_weather_direction` |
+| interval version | `q025_q50_q975_p95_v10_humidity_discomfort` |
 | 最小学習量 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
@@ -89,7 +89,7 @@ TEPCO forecast fallbackは継続性のための一時入力です。lag構築に
 
 ## 4. 特徴量カタログ
 
-現在のLightGBM学習特徴量は56個です。現在の実装ではLightGBMに`categorical_feature`を明示的に渡しておらず、多くの特徴量はnumeric matrixとして入力されます。そのため「論理型」は人間が解釈する意味、「モデル入力型」はモデルに渡る形式を表します。
+現在のLightGBM学習特徴量は63個です。現在の実装ではLightGBMに`categorical_feature`を明示的に渡しておらず、多くの特徴量はnumeric matrixとして入力されます。そのため「論理型」は人間が解釈する意味、「モデル入力型」はモデルに渡る形式を表します。
 
 ### カレンダー
 
@@ -171,6 +171,13 @@ TEPCO forecast fallbackは継続性のための一時入力です。lag構築に
 | 54 | `lag_24h_to_last_biz_gap` | continuous gap | Float/Numeric | derived | 直前営業日需要 - `lag_24h` | 復帰shortfall |
 | 55 | `lag_24h_to_same_business_type_gap` | continuous gap | Float/Numeric | derived | 同営業タイプanchor - `lag_24h` | business return guard入力 |
 | 56 | `lag_24h_gap_x_business_hour` | interaction | Float/Numeric | derived | gap x 営業時間 | 日中lag gap |
+| 57 | `humidity_pct` | continuous weather | Float/Numeric | JMA/AMeDAS or fallback | 相対湿度 | 高湿度負荷の直接信号 |
+| 58 | `discomfort_index` | continuous derived | Float/Numeric | temp + humidity | 湿度考慮の不快指数 | 暖かく湿った日の需要信号 |
+| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | 前日同時刻からの湿度変化 | 朝/日中の体感変化 |
+| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | 前日からの不快指数変化 | 体感負荷regime変化 |
+| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | 営業日朝 x 湿度変化 | 湿った朝ramp文脈 |
+| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | 営業日朝 x 不快指数変化 | 高湿度の営業日朝冷房負荷 |
+| 63 | `business_daytime_x_discomfort_index` | interaction | Float/Numeric | derived | 営業日日中 x 不快指数 | 高湿度日中レベル文脈 |
 
 ---
 
@@ -205,11 +212,12 @@ Raw LightGBM Forecast
   -> Analogous Day Adjustment
   -> Post-holiday / Timeband Guard
   -> Midday Transition Guard
+  -> Localized Shape Spike Guard
   -> Intraday Residual Correction
   -> Forecast Snapshots / Operational Calibration / Reports
 ```
 
-現在の`run_batch.py`のstage名は`raw_lgbm`、`analog_adjusted`、`post_holiday_guarded`、`midday_guarded`、`pre_calibration`です。Intraday residual correctionは`pre_calibration`の後に当日実績を反映する運用補正段階です。
+現在の`run_batch.py`のstage名は`raw_lgbm`、`analog_adjusted`、`post_holiday_guarded`、`midday_guarded`、`localized_shape_guarded`、`pre_calibration`です。Intraday residual correctionは`pre_calibration`の後に当日実績を反映する運用補正段階です。
 
 | レイヤー | 実装 | 目的 |
 |---|---|---|
@@ -217,6 +225,7 @@ Raw LightGBM Forecast
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 類似日補正の誤方向shiftを制限 |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | 予測shapeも不足している場合のみ、非営業日lagが営業日朝を下げすぎる問題を緩和 |
 | Midday transition guard | `MiddayTransitionGuard` | 営業日12時のlunch dip形状を復元 |
+| Localized shape spike guard | `LocalizedShapeSpikeGuard` | intraday residual適用前に、根拠の弱い1時間だけの午後ピークを減衰 |
 | Intraday residual correction | `IntradayResidualCorrector` | 当日実績residualを未来時間へ反映 |
 | Day-boundary carryover | intraday calibration | 最後の実績residualを日付境界で弱くcarry-over |
 | Business transition prior | intraday calibration | 観測不足時の営業/非営業遷移prior |
@@ -251,6 +260,8 @@ Raw LightGBM Forecast
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 最新実績plateauよりどれだけ下がったらfloorを作動させるかのbufferです。下げると早めに介入し、上げると明確なundercut時だけ作動します。 |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 夕方下落局面で局所的なreboundだけでなく、高水準に残るoverhangも制限します。暑い夕方の実需要まで抑える場合だけ無効化を検討します。 |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 営業日復帰anchorのリフト前に、予測ランプが最近の同営業タイプランプより十分に不足しているかを確認します。下げるとリフト頻度が増え、上げると健全なraw shapeを過剰に支援するリスクを抑えます。 |
+| post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday補正前に、根拠の弱い単独午後ピークを減らせる最大値です。上げるとartifact除去が強くなり、下げるとraw/analogピークshapeをより保持します。 |
+| post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | 両隣の時間よりこの値以上高い場合だけguardを評価します。下げると小さなartifactも拾いますが、正当な局所ピークに触れる可能性があります。 |
 | forecast snapshots | `retention_days` | 21 | 公開lead-time forecast履歴の保持期間です。 |
 | calibration snapshots | `retention_days` | 14 | 内部calibration履歴です。短すぎると障害分析が難しくなります。 |
 | reserve risk | warning | 92% | TEPCO基準のwarning thresholdです。下げると警告が増え、上げると早期警戒性が弱まります。 |

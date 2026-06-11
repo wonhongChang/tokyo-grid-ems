@@ -146,6 +146,19 @@ def load_config(config_path: Path) -> dict:
                 "same_day_softening_delta_mw": -300,
                 "use_recent_quantile_when_softening": True,
             },
+            "localized_shape_spike_guard": {
+                "enabled": True,
+                "business_day_only": True,
+                "hours": [13, 14, 15, 16, 17],
+                "min_neighbor_excess_mw": 600,
+                "neighbor_buffer_mw": 450,
+                "max_supporting_delta_mw": 500,
+                "max_weather_delta_c": 2.0,
+                "max_same_day_slope_mw": 900,
+                "shrinkage": 0.75,
+                "max_reduction_mw": 700,
+                "min_reduction_mw": 100,
+            },
         },
         "forecast_snapshots": {
             "enabled": True,
@@ -1104,6 +1117,19 @@ def _make_midday_guard(config: dict):
         return None
 
 
+def _make_localized_shape_spike_guard(config: dict):
+    """Instantiate LocalizedShapeSpikeGuard from config. Returns None on import failure."""
+    try:
+        from python.forecast.adjustment import LocalizedShapeSpikeGuard
+        cfg = config.get("adjustment", {}).get("localized_shape_spike_guard", {})
+        if not cfg.get("enabled", True):
+            return None
+        return LocalizedShapeSpikeGuard(config)
+    except Exception as e:
+        print(f"[WARN] LocalizedShapeSpikeGuard init failed: {e}", file=sys.stderr)
+        return None
+
+
 def _build_forecast_pipeline(
     forecaster,
     cache: pd.DataFrame,
@@ -1114,6 +1140,7 @@ def _build_forecast_pipeline(
     adjuster=None,
     guard=None,
     midday_guard=None,
+    localized_shape_guard=None,
 ) -> ForecastBuildResult:
     """Return forecast output plus intermediate stages.
 
@@ -1151,15 +1178,21 @@ def _build_forecast_pipeline(
                 if midday_guard
                 else guarded_forecasts
             )
+            localized_shape_guarded_forecasts = (
+                localized_shape_guard.apply(midday_guarded_forecasts, inference_features)
+                if localized_shape_guard
+                else midday_guarded_forecasts
+            )
             return ForecastBuildResult(
-                forecasts=midday_guarded_forecasts,
+                forecasts=localized_shape_guarded_forecasts,
                 model_name="lgbm_quantile_q50",
                 stages={
                     "raw_lgbm": raw_lgbm_forecasts,
                     "analog_adjusted": analog_adjusted_forecasts,
                     "post_holiday_guarded": guarded_forecasts,
                     "midday_guarded": midday_guarded_forecasts,
-                    "pre_calibration": midday_guarded_forecasts,
+                    "localized_shape_guarded": localized_shape_guarded_forecasts,
+                    "pre_calibration": localized_shape_guarded_forecasts,
                 },
             )
         except Exception as e:
@@ -1185,6 +1218,7 @@ def _build_forecast_with_fallback(
     adjuster=None,
     guard=None,
     midday_guard=None,
+    localized_shape_guard=None,
 ) -> tuple[list, str]:
     """Return (forecasts, model_name), preserving the historical helper API."""
     result = _build_forecast_pipeline(
@@ -1197,6 +1231,7 @@ def _build_forecast_with_fallback(
         adjuster,
         guard,
         midday_guard,
+        localized_shape_guard,
     )
     return result.forecasts, result.model_name
 
@@ -1628,6 +1663,31 @@ def _operational_calibration_rows(
             ),
             "weatherDeltaC": _round_mw(
                 feature_row.get("temp_delta_24h")
+                if feature_row is not None
+                else None
+            ),
+            "coolingDelta24hC": _round_mw(
+                feature_row.get("cooling_delta_24h")
+                if feature_row is not None
+                else None
+            ),
+            "humidityPct": _round_mw(
+                feature_row.get("humidity_pct")
+                if feature_row is not None
+                else None
+            ),
+            "humidityDelta24hPct": _round_mw(
+                feature_row.get("humidity_delta_24h")
+                if feature_row is not None
+                else None
+            ),
+            "discomfortIndex": _round_mw(
+                feature_row.get("discomfort_index")
+                if feature_row is not None
+                else None
+            ),
+            "discomfortDelta24h": _round_mw(
+                feature_row.get("discomfort_delta_24h")
                 if feature_row is not None
                 else None
             ),
@@ -2347,6 +2407,7 @@ def _run_status_only(
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
     midday_guard = _make_midday_guard(config)
+    localized_shape_guard = _make_localized_shape_spike_guard(config)
 
     # Inject recent missing actuals (yesterday + today) for both forecasts
     extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
@@ -2360,7 +2421,7 @@ def _run_status_only(
     # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
     today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,
-        config, adjuster, guard, midday_guard
+        config, adjuster, guard, midday_guard, localized_shape_guard
     )
     today_fc, today_model = today_build.forecasts, today_build.model_name
     today_fc, today_model = _apply_intraday_residual_correction(
@@ -2379,7 +2440,7 @@ def _run_status_only(
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
     tomorrow_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
-        config, adjuster, guard, midday_guard
+        config, adjuster, guard, midday_guard, localized_shape_guard
     )
     tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
 
@@ -2582,6 +2643,7 @@ def main() -> None:
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
     midday_guard = _make_midday_guard(config)
+    localized_shape_guard = _make_localized_shape_spike_guard(config)
 
     # Re-generate backfilled forecasts using LightGBM only when no operational
     # forecast JSON already existed for that date.
@@ -2592,7 +2654,7 @@ def main() -> None:
                 historical_cache = hourly_cache[hourly_cache["ts"] < pd.Timestamp(d, tz=JST)].copy()
                 fc_list, model_name = _build_forecast_with_fallback(
                     historical_forecaster, historical_cache, d, n_weeks, min_samples,
-                    config, adjuster, guard, midday_guard
+                    config, adjuster, guard, midday_guard, localized_shape_guard
                 )
                 write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
                            build_forecast_json(d, fc_list, config, model_name))
@@ -2620,7 +2682,7 @@ def main() -> None:
     save_hourly_cache(out_dir, display_with_actuals)
     today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,
-        config, adjuster, guard, midday_guard
+        config, adjuster, guard, midday_guard, localized_shape_guard
     )
     today_fc, today_model = today_build.forecasts, today_build.model_name
     today_fc, today_model = _apply_intraday_residual_correction(
@@ -2638,7 +2700,7 @@ def main() -> None:
     )
     tomorrow_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
-        config, adjuster, guard, midday_guard
+        config, adjuster, guard, midday_guard, localized_shape_guard
     )
     tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
 

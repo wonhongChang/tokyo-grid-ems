@@ -70,6 +70,7 @@ FEATURE_CATALOG = [
     "intraday_correction.evening_decline_continuity_guard",
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
+    "adjustment.localized_shape_spike_guard",
     "serving.published_forecast_freeze",
 ]
 FEATURE_NAME_ALIASES = {
@@ -85,6 +86,8 @@ FEATURE_NAME_ALIASES = {
     "morning_observed_anchor_cap": "intraday_correction.morning_observed_anchor_cap",
     "afternoon_observed_anchor_cap": "intraday_correction.afternoon_observed_anchor_cap",
     "evening_decline_continuity_guard": "intraday_correction.evening_decline_continuity_guard",
+    "localized_shape_spike_guard": "adjustment.localized_shape_spike_guard",
+    "local_shape_spike_guard": "adjustment.localized_shape_spike_guard",
 }
 ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
     "lag_24h",
@@ -94,6 +97,9 @@ ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
     "recent_same_business_type_delta_mean",
     "temp_c",
     "humidity_pct",
+    "humidity_delta_24h",
+    "discomfort_index",
+    "discomfort_delta_24h",
     "apparent_temp_c",
     "temp_delta_1h",
     "temp_delta_2h",
@@ -103,6 +109,9 @@ ALLOWED_RECOMMENDATION_TARGETS = set(FEATURE_CATALOG) | {
     "business_late_afternoon_x_temp_delta_1h",
     "business_midday_x_lag_24h_delta",
     "business_midday_x_recent_delta_mean",
+    "business_morning_x_humidity_delta_24h",
+    "business_morning_x_discomfort_delta_24h",
+    "business_daytime_x_discomfort_index",
     "cooling_load_3d_mean",
     "weather_source",
 }

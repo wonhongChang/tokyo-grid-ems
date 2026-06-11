@@ -10,6 +10,7 @@ import pytest
 
 from python.forecast.adjustment import (
     AnalogousDayAdjuster,
+    LocalizedShapeSpikeGuard,
     MiddayTransitionGuard,
     PostHolidayTimeBandGuard,
 )
@@ -1239,3 +1240,107 @@ def test_midday_transition_guard_does_not_use_quantile_without_same_day_softenin
 
     # Without same-day softening, the guard keeps using the mean transition.
     assert result[12].forecast_mw == pytest.approx(35_525.0)
+
+
+# ---------------------------------------------------------------------------
+# Localized shape spike guard
+# ---------------------------------------------------------------------------
+
+def _localized_spike_config(**overrides) -> dict:
+    guard_config = {
+        "enabled": True,
+        "business_day_only": True,
+        "hours": [13, 14, 15, 16, 17],
+        "min_neighbor_excess_mw": 600.0,
+        "neighbor_buffer_mw": 450.0,
+        "max_supporting_delta_mw": 500.0,
+        "max_weather_delta_c": 2.0,
+        "max_same_day_slope_mw": 900.0,
+        "shrinkage": 0.75,
+        "max_reduction_mw": 700.0,
+        "min_reduction_mw": 100.0,
+    }
+    guard_config.update(overrides)
+    return {"adjustment": {"localized_shape_spike_guard": guard_config}}
+
+
+def _localized_spike_inf(
+    is_non_business_day: int = 0,
+    lag_delta: float = 180.0,
+    recent_delta: float = -300.0,
+    temp_delta: float = 0.8,
+    cooling_delta: float = 0.8,
+    same_day_slope: float = 670.0,
+) -> pd.DataFrame:
+    rows = []
+    for hour in range(24):
+        rows.append({
+            "hour": hour,
+            "is_non_business_day": is_non_business_day,
+            "lag_24h_hourly_delta": lag_delta,
+            "recent_same_business_type_delta_mean": recent_delta,
+            "temp_delta_24h": temp_delta,
+            "cooling_delta_24h": cooling_delta,
+            "same_day_latest_hourly_delta": same_day_slope,
+        })
+    return pd.DataFrame(rows)
+
+
+def test_localized_shape_spike_guard_dampens_unsupported_single_hour_peak():
+    target = date(2026, 6, 10)
+    forecasts = _make_raw_forecasts(target, 30_700.0)
+    forecasts[14] = HourlyForecast(
+        ts=forecasts[14].ts,
+        forecast_mw=30_700.0,
+        p95_lower_mw=29_700.0,
+        p95_upper_mw=31_700.0,
+        p99_lower_mw=29_200.0,
+        p99_upper_mw=32_200.0,
+    )
+    forecasts[15] = HourlyForecast(
+        ts=forecasts[15].ts,
+        forecast_mw=31_759.3,
+        p95_lower_mw=30_759.3,
+        p95_upper_mw=32_759.3,
+        p99_lower_mw=30_259.3,
+        p99_upper_mw=33_259.3,
+    )
+    forecasts[16] = HourlyForecast(
+        ts=forecasts[16].ts,
+        forecast_mw=30_933.0,
+        p95_lower_mw=29_933.0,
+        p95_upper_mw=31_933.0,
+        p99_lower_mw=29_433.0,
+        p99_upper_mw=32_433.0,
+    )
+
+    result = LocalizedShapeSpikeGuard(_localized_spike_config()).apply(
+        forecasts,
+        _localized_spike_inf(),
+    )
+
+    assert result[15].forecast_mw == pytest.approx(31_389.7)
+    assert result[15].p95_upper_mw == pytest.approx(32_389.7)
+    assert result[14].forecast_mw == pytest.approx(30_700.0)
+    assert result[16].forecast_mw == pytest.approx(30_933.0)
+
+
+def test_localized_shape_spike_guard_keeps_weather_supported_peak():
+    target = date(2026, 6, 10)
+    forecasts = _make_raw_forecasts(target, 30_700.0)
+    forecasts[15] = HourlyForecast(
+        ts=forecasts[15].ts,
+        forecast_mw=31_759.3,
+        p95_lower_mw=30_759.3,
+        p95_upper_mw=32_759.3,
+        p99_lower_mw=30_259.3,
+        p99_upper_mw=33_259.3,
+    )
+
+    result = LocalizedShapeSpikeGuard(_localized_spike_config()).apply(
+        forecasts,
+        _localized_spike_inf(temp_delta=3.0, cooling_delta=3.0),
+    )
+
+    assert result is forecasts
+    assert result[15].forecast_mw == pytest.approx(31_759.3)

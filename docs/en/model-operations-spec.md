@@ -25,7 +25,7 @@ Operational rules:
 | Implementation | `python/forecast/lgbm_model.py` |
 | Feature builder | `python/forecast/feature_builder.py` |
 | Post-processing | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| Interval version | `q025_q50_q975_p95_v9_weather_direction` |
+| Interval version | `q025_q50_q975_p95_v10_humidity_discomfort` |
 | Minimum training rows | `90 * 24 = 2160` hourly rows |
 | Fallback | `baseline_dow_hour_mean` |
 
@@ -89,7 +89,7 @@ Operational tuning should start with data quality, lag regime, and calibration b
 
 ## 4. Feature Catalog
 
-The current LightGBM training feature set contains 56 explicit features. The implementation does not explicitly pass `categorical_feature` to LightGBM; most features are supplied as a numeric matrix. "Logical type" describes how humans should reason about the feature, while "model input type" describes how it is encoded for the model.
+The current LightGBM training feature set contains 63 explicit features. The implementation does not explicitly pass `categorical_feature` to LightGBM; most features are supplied as a numeric matrix. "Logical type" describes how humans should reason about the feature, while "model input type" describes how it is encoded for the model.
 
 ### Calendar
 
@@ -171,6 +171,13 @@ The current LightGBM training feature set contains 56 explicit features. The imp
 | 54 | `lag_24h_to_last_biz_gap` | continuous gap | Float/Numeric | derived | last business demand minus `lag_24h` | post-holiday return shortfall |
 | 55 | `lag_24h_to_same_business_type_gap` | continuous gap | Float/Numeric | derived | same-business anchor minus `lag_24h` | business return guard input |
 | 56 | `lag_24h_gap_x_business_hour` | interaction | Float/Numeric | derived | gap focused on business hours | daytime lag gap signal |
+| 57 | `humidity_pct` | continuous weather | Float/Numeric | JMA/AMeDAS or fallback | relative humidity | direct humid-load signal |
+| 58 | `discomfort_index` | continuous derived | Float/Numeric | temp + humidity | humidity-aware discomfort index | warm-humid demand signal |
+| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | humidity change vs yesterday | morning/daytime comfort shift |
+| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | discomfort change vs yesterday | perceived-load regime shift |
+| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | business morning x humidity change | sticky morning ramp context |
+| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | business morning x discomfort change | humid business-morning HVAC load |
+| 63 | `business_daytime_x_discomfort_index` | interaction | Float/Numeric | derived | business daytime x discomfort level | humid daytime level context |
 
 ---
 
@@ -207,11 +214,12 @@ Raw LightGBM Forecast
   -> Analogous Day Adjustment
   -> Post-holiday / Timeband Guard
   -> Midday Transition Guard
+  -> Localized Shape Spike Guard
   -> Intraday Residual Correction
   -> Forecast Snapshots / Operational Calibration / Reports
 ```
 
-The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_holiday_guarded`, `midday_guarded`, and `pre_calibration`. Intraday residual correction runs after `pre_calibration` and applies same-day actual feedback.
+The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_holiday_guarded`, `midday_guarded`, `localized_shape_guarded`, and `pre_calibration`. Intraday residual correction runs after `pre_calibration` and applies same-day actual feedback.
 
 | Layer | Implementation | Purpose |
 |---|---|---|
@@ -219,6 +227,7 @@ The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | blocks analogous-day shifts in the wrong direction |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | protects Monday/business-return morning ramps from non-business lag drag only when the forecast shape is also short |
 | Midday transition guard | `MiddayTransitionGuard` | restores business-day 12:00 lunch dip shape |
+| Localized shape spike guard | `LocalizedShapeSpikeGuard` | dampens unsupported one-hour afternoon peaks before intraday residuals are applied |
 | Intraday residual correction | `IntradayResidualCorrector` | applies same-day actual residuals to future hours |
 | Day-boundary carryover | intraday calibration | carries the last real residual across midnight |
 | Business transition prior | intraday calibration | weak prior during business/non-business transition before observations accumulate |
@@ -253,6 +262,8 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | Buffer below the latest observed plateau before restoration begins. Lower values intervene sooner; higher values require a clearer undercut. |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | Extends the evening guard from local rebound spikes to high-but-flat overhangs after observed demand is falling. Disable only if it suppresses genuine hot-evening demand. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | Requires the forecast ramp to be materially weaker than the recent same-business ramp before lifting a Monday/business-return anchor shortfall. Lower values lift more often; higher values avoid over-helping an already healthy raw shape. |
+| post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | Caps how much a single unsupported afternoon peak can be reduced before intraday correction. Raising it removes artifacts more aggressively; lowering it preserves more raw/analog peak shape. |
+| post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | Minimum one-hour excess over both neighboring hours before the guard evaluates. Lower values catch smaller artifacts but may touch legitimate local peaks. |
 | forecast snapshots | `retention_days` | 21 | Public lead-time forecast history for operational review. |
 | calibration snapshots | `retention_days` | 14 | Internal calibration history. Too short makes incident analysis harder. |
 | reserve risk | warning | 92% | TEPCO reserve warning threshold. Lower values create more warnings; higher values reduce early warning behavior. |

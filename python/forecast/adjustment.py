@@ -971,3 +971,140 @@ class MiddayTransitionGuard:
             result[hour] = self._shift_forecast(current_forecast, shift)
 
         return result
+
+
+# ---------------------------------------------------------------------------
+# LocalizedShapeSpikeGuard
+# ---------------------------------------------------------------------------
+
+class LocalizedShapeSpikeGuard:
+    """Dampen isolated one-hour forecast spikes unsupported by lag/weather shape.
+
+    This guard is intentionally narrow. It does not suppress broad daytime peaks;
+    it only looks for a single hour that rises above both neighboring forecast
+    hours while lag/recent-business deltas and weather deltas do not support a
+    local peak.
+    """
+
+    def __init__(self, config: dict) -> None:
+        guard_config = config.get("adjustment", {}).get("localized_shape_spike_guard", {})
+        self._enabled = bool(guard_config.get("enabled", True))
+        self._business_day_only = bool(guard_config.get("business_day_only", True))
+        self._hours = {
+            int(hour)
+            for hour in guard_config.get("hours", [13, 14, 15, 16, 17])
+        }
+        self._min_neighbor_excess_mw = float(
+            guard_config.get("min_neighbor_excess_mw", 600.0)
+        )
+        self._neighbor_buffer_mw = float(guard_config.get("neighbor_buffer_mw", 450.0))
+        self._max_supporting_delta_mw = float(
+            guard_config.get("max_supporting_delta_mw", 500.0)
+        )
+        self._max_weather_delta_c = float(guard_config.get("max_weather_delta_c", 2.0))
+        self._max_same_day_slope_mw = float(
+            guard_config.get("max_same_day_slope_mw", 900.0)
+        )
+        self._shrinkage = min(max(float(guard_config.get("shrinkage", 0.75)), 0.0), 1.0)
+        self._max_reduction_mw = float(guard_config.get("max_reduction_mw", 700.0))
+        self._min_reduction_mw = float(guard_config.get("min_reduction_mw", 100.0))
+
+    @staticmethod
+    def _finite_float(value) -> float | None:
+        if value is None or pd.isna(value):
+            return None
+        parsed = float(value)
+        if not np.isfinite(parsed):
+            return None
+        return parsed
+
+    @staticmethod
+    def _shift_forecast(forecast, shift_mw: float):
+        from python.forecast.baseline import HourlyForecast
+
+        return HourlyForecast(
+            ts=forecast.ts,
+            forecast_mw=round(forecast.forecast_mw + shift_mw, 1),
+            p95_lower_mw=round(forecast.p95_lower_mw + shift_mw, 1),
+            p95_upper_mw=round(forecast.p95_upper_mw + shift_mw, 1),
+            p99_lower_mw=round(forecast.p99_lower_mw + shift_mw, 1),
+            p99_upper_mw=round(forecast.p99_upper_mw + shift_mw, 1),
+        )
+
+    def _unsupported_by_context(self, row) -> bool:
+        support_values = []
+        for column in [
+            "lag_24h_hourly_delta",
+            "recent_same_business_type_delta_mean",
+        ]:
+            value = self._finite_float(row.get(column))
+            if value is not None:
+                support_values.append(value)
+        if support_values and max(support_values) > self._max_supporting_delta_mw:
+            return False
+
+        weather_values = []
+        for column in ["temp_delta_24h", "cooling_delta_24h"]:
+            value = self._finite_float(row.get(column))
+            if value is not None:
+                weather_values.append(value)
+        if weather_values and max(weather_values) > self._max_weather_delta_c:
+            return False
+
+        same_day_slope = self._finite_float(row.get("same_day_latest_hourly_delta"))
+        if same_day_slope is not None and same_day_slope > self._max_same_day_slope_mw:
+            return False
+        return True
+
+    def apply(self, forecasts: list, inference_features: pd.DataFrame) -> list:
+        if (
+            not self._enabled
+            or not forecasts
+            or inference_features is None
+            or inference_features.empty
+        ):
+            return forecasts
+        if (
+            self._business_day_only
+            and self._finite_float(inference_features.iloc[0].get("is_non_business_day")) != 0.0
+        ):
+            return forecasts
+
+        features_by_hour = {
+            int(row["hour"]): row
+            for _, row in inference_features.iterrows()
+            if "hour" in row and pd.notna(row.get("hour"))
+        }
+        result = list(forecasts)
+        changed = False
+        for index in range(1, len(result) - 1):
+            forecast = result[index]
+            hour = pd.Timestamp(forecast.ts).hour
+            if hour not in self._hours:
+                continue
+            row = features_by_hour.get(hour)
+            if row is None or not self._unsupported_by_context(row):
+                continue
+
+            prev_forecast = result[index - 1]
+            next_forecast = result[index + 1]
+            max_neighbor_mw = max(prev_forecast.forecast_mw, next_forecast.forecast_mw)
+            if forecast.forecast_mw - max_neighbor_mw < self._min_neighbor_excess_mw:
+                continue
+
+            neighbor_anchor_mw = (
+                prev_forecast.forecast_mw + next_forecast.forecast_mw
+            ) / 2.0
+            cap_mw = neighbor_anchor_mw + self._neighbor_buffer_mw
+            if forecast.forecast_mw <= cap_mw:
+                continue
+            reduction_mw = min(
+                (forecast.forecast_mw - cap_mw) * self._shrinkage,
+                self._max_reduction_mw,
+            )
+            if reduction_mw < self._min_reduction_mw:
+                continue
+            result[index] = self._shift_forecast(forecast, -reduction_mw)
+            changed = True
+
+        return result if changed else forecasts

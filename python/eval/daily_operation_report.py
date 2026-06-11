@@ -57,6 +57,8 @@ _INTERNAL_LAG_FEATURES = [
 _INTERNAL_WEATHER_FEATURES = [
     "temp_c",
     "apparent_temp_c",
+    "humidity_pct",
+    "discomfort_index",
     "cooling_degree",
     "heating_degree",
     "apparent_cooling_degree",
@@ -70,6 +72,8 @@ _INTERNAL_WEATHER_FEATURES = [
     "temp_delta_2h",
     "apparent_temp_delta_1h",
     "cooling_delta_1h",
+    "humidity_delta_24h",
+    "discomfort_delta_24h",
     "cooling_degree_3h_mean",
     "cooling_degree_6h_mean",
     "heating_degree_3h_mean",
@@ -79,6 +83,9 @@ _INTERNAL_WEATHER_FEATURES = [
     "heating_degree_72h_mean",
     "business_late_afternoon_x_temp_delta_1h",
     "business_late_afternoon_x_cooling_delta_1h",
+    "business_morning_x_humidity_delta_24h",
+    "business_morning_x_discomfort_delta_24h",
+    "business_daytime_x_discomfort_index",
 ]
 
 

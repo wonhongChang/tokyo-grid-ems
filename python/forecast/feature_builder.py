@@ -31,6 +31,7 @@ FEATURE_COLS: list[str] = [
     # Temperature
     "temp_c", "cooling_degree", "heating_degree",
     "apparent_temp_c", "apparent_cooling_degree",
+    "humidity_pct", "discomfort_index",
     "temp_anomaly_7d",   # temp_c minus trailing 7-day mean (how abnormal vs recent week)
     "temp_anomaly_doy",  # temp_c minus historical (month, hour) mean; kept for model compatibility
     "temp_delta_24h",       # current temp_c minus previous-day same-hour temp_c
@@ -41,6 +42,8 @@ FEATURE_COLS: list[str] = [
     "temp_delta_2h",        # current temp_c minus two-hours-ago temp_c
     "apparent_temp_delta_1h",
     "cooling_delta_1h",
+    "humidity_delta_24h",
+    "discomfort_delta_24h",
     "cooling_degree_3h_mean",  # recent cooling load inertia, including current hour
     "cooling_degree_6h_mean",
     "heating_degree_3h_mean",  # recent heating load inertia, including current hour
@@ -51,6 +54,9 @@ FEATURE_COLS: list[str] = [
     "business_morning_x_temp_delta_24h",   # weekday morning ramp x same-hour temp change vs yesterday
     "business_morning_x_temp_anomaly_7d",  # weekday morning ramp x temp anomaly vs recent week
     "business_morning_x_temp_anomaly_doy", # weekday morning ramp x seasonal same-hour temp anomaly
+    "business_morning_x_humidity_delta_24h",     # weekday morning ramp x humidity change
+    "business_morning_x_discomfort_delta_24h",   # weekday morning ramp x discomfort-index change
+    "business_daytime_x_discomfort_index",       # weekday daytime cooling discomfort level
     "business_late_afternoon_x_temp_delta_1h",    # weekday 15-18 demand hysteresis x temp direction
     "business_late_afternoon_x_cooling_delta_1h", # weekday 15-18 cooling-load direction
     # Interaction: holiday × heat surplus (captures post-holiday demand spike on hot days)
@@ -94,6 +100,7 @@ _SEASON_RANGES = [
 
 _DEFAULT_COOLING_BASE_TEMP_C = 22.0
 _DEFAULT_HEATING_BASE_TEMP_C = 18.0
+_DEFAULT_HUMIDITY_PCT = 65.0
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +223,49 @@ def _cooling_degree(temp_c: float, cooling_base_temp_c: float) -> float:
 
 def _heating_degree(temp_c: float, heating_base_temp_c: float) -> float:
     return max(0.0, heating_base_temp_c - temp_c)
+
+
+def _discomfort_index(temp_c, humidity_pct) -> float:
+    if pd.isna(temp_c) or pd.isna(humidity_pct):
+        return float("nan")
+    return float(0.81 * temp_c + 0.01 * humidity_pct * (0.99 * temp_c - 14.3) + 46.3)
+
+
+def _fill_humidity_and_discomfort(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill humidity-derived feature inputs without dropping legacy cache rows."""
+    df = df.copy()
+    if "humidity_pct" not in df.columns:
+        df["humidity_pct"] = np.nan
+    df["humidity_pct"] = pd.to_numeric(df["humidity_pct"], errors="coerce").clip(20.0, 100.0)
+    if df["humidity_pct"].isna().any() and "ts" in df.columns:
+        month_hour_mean = (
+            df.assign(_month=df["ts"].dt.month, _hour=df["ts"].dt.hour)
+              .groupby(["_month", "_hour"])["humidity_pct"]
+              .transform("mean")
+        )
+        hour_mean = (
+            df.assign(_hour=df["ts"].dt.hour)
+              .groupby("_hour")["humidity_pct"]
+              .transform("mean")
+        )
+        df["humidity_pct"] = (
+            df["humidity_pct"]
+            .fillna(month_hour_mean)
+            .fillna(hour_mean)
+        )
+    df["humidity_pct"] = df["humidity_pct"].fillna(_DEFAULT_HUMIDITY_PCT)
+
+    computed_discomfort = [
+        _discomfort_index(temp, humidity)
+        for temp, humidity in zip(df["temp_c"], df["humidity_pct"])
+    ]
+    if "discomfort_index" not in df.columns:
+        df["discomfort_index"] = np.nan
+    df["discomfort_index"] = (
+        pd.to_numeric(df["discomfort_index"], errors="coerce")
+        .fillna(pd.Series(computed_discomfort, index=df.index))
+    )
+    return df
 
 
 def _add_lag_gap_cols(df: pd.DataFrame) -> pd.DataFrame:
@@ -418,6 +468,7 @@ def build_training_features(
         if "apparent_temp_c" not in df.columns:
             df["apparent_temp_c"] = df["temp_c"]
         df["apparent_temp_c"] = df["apparent_temp_c"].fillna(df["temp_c"])
+        df = _fill_humidity_and_discomfort(df)
         df["cooling_degree"]  = (df["temp_c"] - cooling_base_temp_c).clip(lower=0.0)
         df["heating_degree"]  = (heating_base_temp_c - df["temp_c"]).clip(lower=0.0)
         df["apparent_cooling_degree"] = (
@@ -451,6 +502,9 @@ def build_training_features(
         temp_history = df[[
             "ts", "temp_c", "apparent_temp_c", "cooling_degree",
         ]].copy()
+        comfort_history = df[[
+            "ts", "humidity_pct", "discomfort_index",
+        ]].copy()
         shifted_temp_1h = (
             temp_history.assign(ts=temp_history["ts"] + pd.Timedelta(hours=1))
                 .rename(columns={
@@ -472,6 +526,14 @@ def build_training_features(
                     "cooling_degree": "cooling_degree_24h",
                 })
         )
+        shifted_comfort_24h = (
+            comfort_history[["ts", "humidity_pct", "discomfort_index"]]
+                .assign(ts=comfort_history["ts"] + pd.Timedelta(hours=24))
+                .rename(columns={
+                    "humidity_pct": "humidity_pct_24h",
+                    "discomfort_index": "discomfort_index_24h",
+                })
+        )
         shifted_temp_168h = (
             temp_history[["ts", "temp_c", "cooling_degree"]]
                 .assign(ts=temp_history["ts"] + pd.Timedelta(hours=168))
@@ -483,6 +545,7 @@ def build_training_features(
         df = df.merge(shifted_temp_1h, on="ts", how="left")
         df = df.merge(shifted_temp_2h, on="ts", how="left")
         df = df.merge(shifted_temp_24h, on="ts", how="left")
+        df = df.merge(shifted_comfort_24h, on="ts", how="left")
         df = df.merge(shifted_temp_168h, on="ts", how="left")
         df["temp_delta_24h"] = df["temp_c"] - df["temp_c_24h"]
         df["cooling_delta_24h"] = df["cooling_degree"] - df["cooling_degree_24h"]
@@ -494,12 +557,20 @@ def build_training_features(
             df["apparent_temp_c"] - df["apparent_temp_c_1h"]
         )
         df["cooling_delta_1h"] = df["cooling_degree"] - df["cooling_degree_1h"]
+        df["humidity_delta_24h"] = (
+            df["humidity_pct"] - df["humidity_pct_24h"]
+        ).clip(lower=-30.0, upper=30.0)
+        df["discomfort_delta_24h"] = (
+            df["discomfort_index"] - df["discomfort_index_24h"]
+        ).clip(lower=-8.0, upper=8.0)
     else:
         df["temp_c"]           = np.nan
         df["cooling_degree"]   = np.nan
         df["heating_degree"]   = np.nan
         df["apparent_temp_c"] = np.nan
         df["apparent_cooling_degree"] = np.nan
+        df["humidity_pct"] = np.nan
+        df["discomfort_index"] = np.nan
         df["temp_anomaly_7d"]  = np.nan
         df["temp_anomaly_doy"] = np.nan
         df["temp_delta_24h"] = np.nan
@@ -510,6 +581,8 @@ def build_training_features(
         df["temp_delta_2h"] = np.nan
         df["apparent_temp_delta_1h"] = np.nan
         df["cooling_delta_1h"] = np.nan
+        df["humidity_delta_24h"] = np.nan
+        df["discomfort_delta_24h"] = np.nan
         df["cooling_degree_3h_mean"] = np.nan
         df["cooling_degree_6h_mean"] = np.nan
         df["heating_degree_3h_mean"] = np.nan
@@ -519,6 +592,21 @@ def build_training_features(
         df["heating_degree_72h_mean"] = np.nan
 
     df = _add_relative_weather_interactions(df)
+    df["business_morning_x_humidity_delta_24h"] = (
+        df["hour"].between(5, 11).astype(float)
+        * (df["is_non_business_day"] == 0).astype(float)
+        * df["humidity_delta_24h"]
+    )
+    df["business_morning_x_discomfort_delta_24h"] = (
+        df["hour"].between(5, 11).astype(float)
+        * (df["is_non_business_day"] == 0).astype(float)
+        * df["discomfort_delta_24h"]
+    )
+    df["business_daytime_x_discomfort_index"] = (
+        df["hour"].between(9, 18).astype(float)
+        * (df["is_non_business_day"] == 0).astype(float)
+        * df["discomfort_index"]
+    )
 
     # Interaction features: holiday × heat surplus
     positive_temp_anomaly_7d = df["temp_anomaly_7d"].clip(lower=0.0)
@@ -581,6 +669,11 @@ def build_inference_features(
         cache_weather["apparent_temp_c"] = cache_weather["apparent_temp_c"].fillna(
             cache_weather["temp_c"]
         )
+        if "humidity_pct" in cache.columns:
+            cache_weather["humidity_pct"] = cache["humidity_pct"]
+        if "discomfort_index" in cache.columns:
+            cache_weather["discomfort_index"] = cache["discomfort_index"]
+        cache_weather = _fill_humidity_and_discomfort(cache_weather)
         target_day_temps = cache_weather[
             cache_weather["ts"].dt.date == target_date
         ].dropna(subset=["temp_c"])
@@ -591,6 +684,14 @@ def build_inference_features(
             int(row["ts"].hour): float(row["apparent_temp_c"])
             for _, row in target_day_temps.iterrows()
         }
+        hour_to_humidity: dict[int, float] = {
+            int(row["ts"].hour): float(row["humidity_pct"])
+            for _, row in target_day_temps.iterrows()
+        }
+        hour_to_discomfort: dict[int, float] = {
+            int(row["ts"].hour): float(row["discomfort_index"])
+            for _, row in target_day_temps.iterrows()
+        }
         temp_by_ts: dict[pd.Timestamp, float] = {
             row["ts"]: float(row["temp_c"])
             for _, row in cache_weather.dropna(subset=["temp_c"]).iterrows()
@@ -599,11 +700,23 @@ def build_inference_features(
             row["ts"]: float(row["apparent_temp_c"])
             for _, row in cache_weather.dropna(subset=["apparent_temp_c"]).iterrows()
         }
+        humidity_by_ts: dict[pd.Timestamp, float] = {
+            row["ts"]: float(row["humidity_pct"])
+            for _, row in cache_weather.dropna(subset=["humidity_pct"]).iterrows()
+        }
+        discomfort_by_ts: dict[pd.Timestamp, float] = {
+            row["ts"]: float(row["discomfort_index"])
+            for _, row in cache_weather.dropna(subset=["discomfort_index"]).iterrows()
+        }
     else:
         hour_to_temp = {}
         hour_to_apparent_temp = {}
+        hour_to_humidity = {}
+        hour_to_discomfort = {}
         temp_by_ts = {}
         apparent_temp_by_ts = {}
+        humidity_by_ts = {}
+        discomfort_by_ts = {}
 
     # Trailing 7-day mean temperature (same for all 24 hours of target_date)
     target_start = pd.Timestamp(
@@ -642,6 +755,16 @@ def build_inference_features(
         if lookup_ts.date() == target_date:
             return hour_to_apparent_temp.get(int(lookup_ts.hour), float("nan"))
         return apparent_temp_by_ts.get(lookup_ts, float("nan"))
+
+    def _humidity_at(lookup_ts: pd.Timestamp) -> float:
+        if lookup_ts.date() == target_date:
+            return hour_to_humidity.get(int(lookup_ts.hour), _DEFAULT_HUMIDITY_PCT)
+        return humidity_by_ts.get(lookup_ts, _DEFAULT_HUMIDITY_PCT)
+
+    def _discomfort_at(lookup_ts: pd.Timestamp) -> float:
+        if lookup_ts.date() == target_date:
+            return hour_to_discomfort.get(int(lookup_ts.hour), float("nan"))
+        return discomfort_by_ts.get(lookup_ts, float("nan"))
 
     def _degree_window_mean(
         lookup_ts: pd.Timestamp,
@@ -706,6 +829,11 @@ def build_inference_features(
         has_hour_temp = not np.isnan(hour_temp_c)
         hour_apparent_temp_c = hour_to_apparent_temp.get(hour, hour_temp_c)
         has_hour_apparent_temp = not np.isnan(hour_apparent_temp_c)
+        hour_humidity_pct = hour_to_humidity.get(hour, _DEFAULT_HUMIDITY_PCT)
+        hour_discomfort_index = hour_to_discomfort.get(
+            hour,
+            _discomfort_index(hour_temp_c, hour_humidity_pct),
+        )
         cooling = _cooling_degree(hour_temp_c, cooling_base_temp_c) if has_hour_temp else np.nan
         heating = _heating_degree(hour_temp_c, heating_base_temp_c) if has_hour_temp else np.nan
         apparent_cooling = (
@@ -745,6 +873,8 @@ def build_inference_features(
             lambda temp: _heating_degree(temp, heating_base_temp_c),
         )
         temp_24h = temp_by_ts.get(ts - pd.Timedelta(hours=24), float("nan"))
+        humidity_24h = _humidity_at(ts - pd.Timedelta(hours=24))
+        discomfort_24h = _discomfort_at(ts - pd.Timedelta(hours=24))
         has_temp_24h = not np.isnan(temp_24h)
         cooling_24h = (
             _cooling_degree(temp_24h, cooling_base_temp_c)
@@ -766,6 +896,16 @@ def build_inference_features(
         cooling_delta_24h = (
             cooling - cooling_24h
             if has_hour_temp and has_temp_24h
+            else np.nan
+        )
+        humidity_delta_24h = (
+            hour_humidity_pct - humidity_24h
+            if not np.isnan(hour_humidity_pct) and not np.isnan(humidity_24h)
+            else np.nan
+        )
+        discomfort_delta_24h = (
+            hour_discomfort_index - discomfort_24h
+            if not np.isnan(hour_discomfort_index) and not np.isnan(discomfort_24h)
             else np.nan
         )
         temp_delta_168h = (
@@ -837,6 +977,7 @@ def build_inference_features(
             int(9 <= hour <= 18) * is_recent_post_holiday * positive_temp_anomaly_7d
         )
         business_morning = int(is_target_non_business_day == 0 and 5 <= hour <= 11)
+        business_daytime = int(is_target_non_business_day == 0 and 9 <= hour <= 18)
         business_late_afternoon = int(
             is_target_non_business_day == 0 and 15 <= hour <= 18
         )
@@ -914,6 +1055,8 @@ def build_inference_features(
             "heating_degree":   heating,
             "apparent_temp_c":   hour_apparent_temp_c,
             "apparent_cooling_degree": apparent_cooling,
+            "humidity_pct": hour_humidity_pct,
+            "discomfort_index": hour_discomfort_index,
             "temp_anomaly_7d":  temp_anomaly_vs_7d_mean,
             "temp_anomaly_doy": temp_anomaly_vs_month_hour_mean,
             "temp_delta_24h":       temp_delta_24h,
@@ -924,6 +1067,10 @@ def build_inference_features(
             "temp_delta_2h":        temp_delta_2h,
             "apparent_temp_delta_1h": apparent_temp_delta_1h,
             "cooling_delta_1h":     cooling_delta_1h,
+            "humidity_delta_24h": max(-30.0, min(30.0, humidity_delta_24h))
+            if not np.isnan(humidity_delta_24h) else np.nan,
+            "discomfort_delta_24h": max(-8.0, min(8.0, discomfort_delta_24h))
+            if not np.isnan(discomfort_delta_24h) else np.nan,
             "cooling_degree_3h_mean": cooling_3h_mean,
             "cooling_degree_6h_mean": cooling_6h_mean,
             "heating_degree_3h_mean": heating_3h_mean,
@@ -939,6 +1086,17 @@ def build_inference_features(
             ),
             "business_morning_x_temp_anomaly_doy": (
                 business_morning * temp_anomaly_vs_month_hour_mean
+            ),
+            "business_morning_x_humidity_delta_24h": (
+                business_morning * max(-30.0, min(30.0, humidity_delta_24h))
+                if not np.isnan(humidity_delta_24h) else np.nan
+            ),
+            "business_morning_x_discomfort_delta_24h": (
+                business_morning * max(-8.0, min(8.0, discomfort_delta_24h))
+                if not np.isnan(discomfort_delta_24h) else np.nan
+            ),
+            "business_daytime_x_discomfort_index": (
+                business_daytime * hour_discomfort_index
             ),
             "business_late_afternoon_x_temp_delta_1h": (
                 business_late_afternoon * temp_delta_1h

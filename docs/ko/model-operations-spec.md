@@ -25,7 +25,7 @@
 | 구현 | `python/forecast/lgbm_model.py` |
 | 피처 생성 | `python/forecast/feature_builder.py` |
 | 후처리 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| interval version | `q025_q50_q975_p95_v9_weather_direction` |
+| interval version | `q025_q50_q975_p95_v10_humidity_discomfort` |
 | 최소 학습량 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
@@ -97,7 +97,7 @@ TEPCO forecast fallback은 pipeline continuity를 위한 임시값입니다. Lig
 
 ## 4. 전체 피처 카탈로그
 
-현재 LightGBM 학습 피처는 56개입니다. 현재 구현은 LightGBM에 `categorical_feature`를 명시적으로 넘기지 않고 대부분 numeric matrix로 학습합니다. 따라서 아래의 "논리 타입"은 사람이 해석하는 의미이고, "모델 입력 타입"은 실제 모델에 들어가는 형태입니다.
+현재 LightGBM 학습 피처는 63개입니다. 현재 구현은 LightGBM에 `categorical_feature`를 명시적으로 넘기지 않고 대부분 numeric matrix로 학습합니다. 따라서 아래의 "논리 타입"은 사람이 해석하는 의미이고, "모델 입력 타입"은 실제 모델에 들어가는 형태입니다.
 
 ### 캘린더
 
@@ -179,6 +179,13 @@ TEPCO forecast fallback은 pipeline continuity를 위한 임시값입니다. Lig
 | 54 | `lag_24h_to_last_biz_gap` | continuous gap | Float/Numeric | derived | 직전 영업일 수요 - `lag_24h` | 휴일 후 평일 복귀 shortfall 감지 |
 | 55 | `lag_24h_to_same_business_type_gap` | continuous gap | Float/Numeric | derived | same-business anchor - `lag_24h` | business return guard와 연결 |
 | 56 | `lag_24h_gap_x_business_hour` | interaction | Float/Numeric | derived | gap x 영업시간 | 낮 시간대 lag 부족/과열 신호 |
+| 57 | `humidity_pct` | continuous weather | Float/Numeric | JMA/AMeDAS or fallback | 상대습도 | 고습 부하 직접 신호 |
+| 58 | `discomfort_index` | continuous derived | Float/Numeric | temp + humidity | 습도 기반 불쾌지수 | 덥고 습한 날 수요 신호 |
+| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | 전날 같은 시간 대비 습도 변화 | 오전/낮 체감 변화 |
+| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | 전날 대비 불쾌지수 변화 | 체감 부하 regime 변화 |
+| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | 영업일 오전 x 습도 변화 | 습한 오전 ramp 문맥 |
+| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | 영업일 오전 x 불쾌지수 변화 | 고습 영업일 오전 냉방 부하 |
+| 63 | `business_daytime_x_discomfort_index` | interaction | Float/Numeric | derived | 영업일 낮 x 불쾌지수 | 고습 낮 시간대 레벨 문맥 |
 
 ---
 
@@ -215,11 +222,12 @@ Raw LightGBM Forecast
   -> Analogous Day Adjustment
   -> Post-holiday / Timeband Guard
   -> Midday Transition Guard
+  -> Localized Shape Spike Guard
   -> Intraday Residual Correction
   -> Forecast Snapshots / Operational Calibration / Reports
 ```
 
-현재 `run_batch.py` 기준 stage 이름은 `raw_lgbm`, `analog_adjusted`, `post_holiday_guarded`, `midday_guarded`, `pre_calibration`입니다. Intraday residual correction은 `pre_calibration` 이후 당일 실측을 반영하는 운영 보정 단계입니다.
+현재 `run_batch.py` 기준 stage 이름은 `raw_lgbm`, `analog_adjusted`, `post_holiday_guarded`, `midday_guarded`, `localized_shape_guarded`, `pre_calibration`입니다. Intraday residual correction은 `pre_calibration` 이후 당일 실측을 반영하는 운영 보정 단계입니다.
 
 | 레이어 | 구현 | 목적 |
 |---|---|---|
@@ -227,6 +235,7 @@ Raw LightGBM Forecast
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 유사일 보정이 잘못된 방향으로 밀리는 것을 제한 |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | 예측 shape도 부족할 때만 휴일/주말 lag가 영업일 오전을 과도하게 낮추는 문제 완화 |
 | Midday transition guard | `MiddayTransitionGuard` | 영업일 12시 lunch dip이 지나치게 평활화되는 문제 완화 |
+| Localized shape spike guard | `LocalizedShapeSpikeGuard` | intraday residual 적용 전에 근거 없는 한 시간짜리 오후 피크를 감쇠 |
 | Intraday residual correction | `IntradayResidualCorrector` | 당일 실측 residual을 남은 시간에 보수적으로 반영 |
 | Day-boundary carryover | intraday calibration | 자정 경계에서 마지막 진짜 실측 residual을 약하게 이월 |
 | Business transition prior | intraday calibration | 실측 부족 구간에서 영업/비영업 전환 prior 적용 |
@@ -266,6 +275,8 @@ Raw LightGBM Forecast
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 최신 실측 plateau보다 어느 정도 낮아져야 floor가 개입할지 정하는 버퍼입니다. 낮추면 더 빨리 개입하고, 높이면 명확한 undercut에서만 작동합니다. |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 저녁 하락 국면에서 국소 rebound뿐 아니라 높은 레벨로 버티는 overhang도 제한합니다. 더운 저녁의 실제 수요까지 누르는 경우에만 비활성화를 검토합니다. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 영업일 복귀 anchor 리프트 전에 예측 램프가 최근 같은 영업 타입 램프보다 충분히 부족한지 확인합니다. 낮추면 더 자주 올리고, 높이면 이미 건강한 raw shape를 과하게 돕는 위험을 줄입니다. |
+| post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday 보정 전에 근거 없는 단일 오후 피크를 줄일 수 있는 최대치입니다. 올리면 artifact 제거가 강해지고, 내리면 raw/analog 피크 shape를 더 보존합니다. |
+| post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | 양쪽 이웃 시간보다 이 값 이상 높을 때만 guard를 평가합니다. 낮추면 작은 artifact도 잡지만 실제 국소 피크를 건드릴 수 있습니다. |
 | forecast snapshots | `retention_days` | 21 | 예측선 변화를 사후 분석할 수 있는 공개 snapshot 보관 기간입니다. |
 | calibration snapshots | `retention_days` | 14 | 보정 레이어 원인 분석용 내부 snapshot 보관 기간입니다. 너무 짧으면 장애 원인 추적이 어려워집니다. |
 | reserve risk | warning | 92% | TEPCO 기준 경고 구간입니다. 낮추면 경고가 많아지고, 높이면 사전 경보성이 약해집니다. |

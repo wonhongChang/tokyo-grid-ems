@@ -672,7 +672,7 @@ def test_inference_has_interaction_columns():
 def test_interaction_feature_cols_count():
     """FEATURE_COLS should include weather-delta, inertia, and lag context."""
     from python.forecast.feature_builder import FEATURE_COLS
-    assert len(FEATURE_COLS) == 56
+    assert len(FEATURE_COLS) == 63
 
 
 def test_holiday_x_heat_nonneg():

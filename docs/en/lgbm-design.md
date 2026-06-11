@@ -53,12 +53,12 @@ Feature engineering lives in `python/forecast/feature_builder.py`.
 | Lag | 24h, 48h, 168h, 336h | captures demand persistence |
 | Rolling stats | 4-week same hour/weekday mean and std | provides stable local history |
 | Holiday correction | last business day, consecutive holidays, days since holiday end | avoids underestimating post-holiday demand |
-| Weather | temperature, apparent temperature, configurable cooling/heating degree, temperature anomalies, 1h/2h/24h/168h temperature and cooling deltas, 3h/6h/72h thermal memory | captures HVAC-driven demand, weather direction, and day-over-day/week-over-week regime changes |
+| Weather | temperature, humidity, apparent temperature, discomfort index, configurable cooling/heating degree, temperature anomalies, 1h/2h/24h/168h temperature and cooling deltas, 24h humidity/discomfort deltas, 3h/6h/72h thermal memory | captures HVAC-driven demand, warm-humid discomfort, weather direction, and day-over-day/week-over-week regime changes |
 | Interactions | holiday x heat, post-holiday x heat | handles Golden Week and similar return-to-work spikes |
-| Business/weather interactions | business-morning x temperature delta/anomaly, late-afternoon x temperature/cooling delta | helps the model distinguish morning ramp-up, afternoon cooling decay, and hysteresis-like demand behavior |
+| Business/weather interactions | business-morning x temperature/humidity/discomfort delta, business-daytime x discomfort, late-afternoon x temperature/cooling delta | helps the model distinguish morning ramp-up, humid daytime load, afternoon cooling decay, and hysteresis-like demand behavior |
 | Lag context | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h business-type mismatch, recent same business-type mean, lag-to-anchor gaps | tells the model when lag values are holiday-contaminated or crossed a business/non-business boundary |
 
-The current feature set has 56 explicit LightGBM training features.
+The current feature set has 63 explicit LightGBM training features.
 
 Cooling/heating degree balance points are configured in `config.yaml`:
 
@@ -72,7 +72,9 @@ Weather enrichment now prefers JMA AMeDAS observations for past/current hours an
 
 `temp_delta_24h` and `cooling_delta_24h` help the model decide how much to trust yesterday's same-hour demand when today's weather has shifted. `temp_delta_168h` and `cooling_delta_168h` do the same for the same-hour value from one week ago. `temp_delta_1h`, `temp_delta_2h`, `apparent_temp_delta_1h`, and `cooling_delta_1h` capture short-term weather direction. `cooling_degree_3h_mean`, `cooling_degree_6h_mean`, `heating_degree_3h_mean`, `heating_degree_6h_mean`, `temp_72h_mean`, `cooling_degree_72h_mean`, and `heating_degree_72h_mean` capture sustained heat or cold. `apparent_temp_c` and `apparent_cooling_degree` add a feels-like temperature signal when the weather source provides one.
 
-`business_morning_x_temp_delta_24h`, `business_morning_x_temp_anomaly_7d`, and `business_morning_x_temp_anomaly_doy` help business-day morning ramps respond to weather regime changes. `business_late_afternoon_x_temp_delta_1h` and `business_late_afternoon_x_cooling_delta_1h` help the model avoid treating a cooling afternoon and a warming afternoon as the same demand state.
+`humidity_pct`, `discomfort_index`, `humidity_delta_24h`, and `discomfort_delta_24h` expose warm-humid discomfort directly instead of relying only on apparent temperature. The 24h deltas are clipped before model input so fallback humidity noise cannot dominate a forecast.
+
+`business_morning_x_temp_delta_24h`, `business_morning_x_temp_anomaly_7d`, and `business_morning_x_temp_anomaly_doy` help business-day morning ramps respond to weather regime changes. `business_morning_x_humidity_delta_24h`, `business_morning_x_discomfort_delta_24h`, and `business_daytime_x_discomfort_index` add direct humid-morning and humid-daytime context. `business_late_afternoon_x_temp_delta_1h` and `business_late_afternoon_x_cooling_delta_1h` help the model avoid treating a cooling afternoon and a warming afternoon as the same demand state.
 
 `lag_24h_business_type_mismatch` and `lag_24h_mismatch_x_business_hour` help the model treat Friday-to-Saturday and Sunday-to-Monday lag values more carefully, especially during daytime business hours. `recent_same_business_type_mean`, `lag_24h_to_last_biz_gap`, `lag_24h_to_same_business_type_gap`, and `lag_24h_gap_x_business_hour` provide broader same-hour anchors and gap signals from recent business or non-business days.
 
@@ -117,6 +119,8 @@ This fallback is allowed as an operational forecast input, but is excluded from 
 
 `python/forecast/adjustment.py` applies a conservative post-processing guard before intraday correction. On business days, when the same-hour 168h lag points to a holiday/weekend and the current daytime temperature anomaly is high, the guard prevents analogous-day adjustment from pushing daytime forecasts downward. It also applies a smaller warm-business-day guard when daytime temperature is high for the season, even without holiday-lag contamination. Non-business-day heat is left to the LightGBM weather features rather than a manual upward guard.
 
+The same post-processing stage also includes `LocalizedShapeSpikeGuard`, which dampens unsupported one-hour afternoon peaks after the midday guard but before intraday calibration. It only acts when neighboring hours, lag shape, recent same-business-type shape, same-day slope, and weather deltas do not support a real local peak.
+
 See [Daytime Heat Guard Improvement](model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md) for the incident analysis, implementation details, and validation result.
 
 See [Warm Daytime Bias Guard](model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md) for the follow-up warm-day generalization.
@@ -129,7 +133,7 @@ See [Business-Type Lag Features](model-improvements/model-improvement-2026-05-16
 
 See [Midday Transition Guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) and [Midday Transition Guard Re-enabled](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) for the 12:00 lag-shape follow-up.
 
-See [Business Return Anchor Shortfall Guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [Positive Residual Slope Damping](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [Morning Ramp Continuity Guard](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [Evening Decline Continuity Guard](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [Negative Residual Continuity Floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [Forecast Interval Tail Sanity Guard](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [Morning Warm-Lag Overreaction Guard](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [Morning Positive Residual Carryover Damping](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), [Actual JSON Cache Persistence](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md), and [Business-Return Shape Veto](model-improvements/model-improvement-2026-06-08-business-return-shape-veto.md) for the latest operational guard and data-continuity layers.
+See [Business Return Anchor Shortfall Guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [Positive Residual Slope Damping](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [Morning Ramp Continuity Guard](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [Evening Decline Continuity Guard](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [Negative Residual Continuity Floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [Forecast Interval Tail Sanity Guard](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [Morning Warm-Lag Overreaction Guard](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [Morning Positive Residual Carryover Damping](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), [Actual JSON Cache Persistence](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md), [Business-Return Shape Veto](model-improvements/model-improvement-2026-06-08-business-return-shape-veto.md), and [Humidity/Discomfort Features and Localized Shape Spike Guard](model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md) for the latest operational guard and data-continuity layers.
 
 ---
 

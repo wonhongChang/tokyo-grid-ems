@@ -32,7 +32,7 @@ _LGBM_PARAMS = {
 
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
-    INTERVAL_VERSION = "q025_q50_q975_p95_v9_weather_direction"
+    INTERVAL_VERSION = "q025_q50_q975_p95_v10_humidity_discomfort"
 
     def __init__(
         self,

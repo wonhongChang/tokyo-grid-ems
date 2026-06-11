@@ -53,12 +53,12 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | 래그 | 24h, 48h, 168h, 336h | 전력 수요의 관성 반영 |
 | 롤링 통계 | 최근 4주 같은 요일/시간 평균과 표준편차 | 안정적인 과거 기준 제공 |
 | 공휴일 보정 | 직전 평일, 연속 휴일 수, 휴일 종료 후 경과일 | 연휴 직후 과소예측 완화 |
-| 기상 | 기온, 체감온도, 설정 가능한 냉방/난방 degree, 기온 이상치, 1시간/2시간/24시간/168시간 기온·냉방 변화량, 3시간/6시간/72시간 열 관성 | 냉난방 수요, 기상 변화 방향, 전일/전주 대비 레짐 변화 반영 |
+| 기상 | 기온, 습도, 체감온도, 불쾌지수, 설정 가능한 냉방/난방 degree, 기온 이상치, 1시간/2시간/24시간/168시간 기온·냉방 변화량, 24시간 습도/불쾌지수 변화량, 3시간/6시간/72시간 열 관성 | 냉난방 수요, 고습 체감 부하, 기상 변화 방향, 전일/전주 대비 레짐 변화 반영 |
 | 교호작용 | holiday x heat, post-holiday x heat | 골든위크 이후 복귀 수요 보정 |
-| 영업/기상 교호작용 | business-morning x 기온 변화/이상치, late-afternoon x 기온·냉방 변화 | 오전 램프업, 오후 냉방 둔화, 같은 기온에서도 상승기/하강기가 다른 수요 패턴 반영 |
+| 영업/기상 교호작용 | business-morning x 기온/습도/불쾌지수 변화, business-daytime x 불쾌지수, late-afternoon x 기온·냉방 변화 | 오전 램프업, 고습 낮 부하, 오후 냉방 둔화, 같은 기온에서도 상승기/하강기가 다른 수요 패턴 반영 |
 | 래그 컨텍스트 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h 영업/비영업 mismatch, 최근 같은 영업타입 평균, lag-to-anchor gap | 래그값이 휴일 수요에 오염됐거나 영업/비영업 경계를 건넜는지 알려줌 |
 
-현재 명시적 LightGBM 학습 피처 수는 56개입니다.
+현재 명시적 LightGBM 학습 피처 수는 63개입니다.
 
 냉방/난방 degree의 기준온도는 `config.yaml`에서 설정합니다.
 
@@ -72,7 +72,9 @@ weather_features:
 
 `temp_delta_24h`와 `cooling_delta_24h`는 오늘 날씨가 어제 같은 시간과 달라졌을 때, 전날 수요 lag를 얼마나 믿을지 모델에 알려주는 피처입니다. `temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요에 대해 같은 역할을 합니다. `temp_delta_1h`, `temp_delta_2h`, `apparent_temp_delta_1h`, `cooling_delta_1h`는 단기 기상 변화 방향을 반영합니다. `cooling_degree_3h_mean`, `cooling_degree_6h_mean`, `heating_degree_3h_mean`, `heating_degree_6h_mean`, `temp_72h_mean`, `cooling_degree_72h_mean`, `heating_degree_72h_mean`은 지속적인 더위나 추위의 누적 효과를 반영합니다. `apparent_temp_c`와 `apparent_cooling_degree`는 데이터 소스가 체감온도를 제공할 때 이를 보완 신호로 사용합니다.
 
-`business_morning_x_temp_delta_24h`, `business_morning_x_temp_anomaly_7d`, `business_morning_x_temp_anomaly_doy`는 평일 오전 램프가 기상 레짐 변화에 반응하도록 돕습니다. `business_late_afternoon_x_temp_delta_1h`와 `business_late_afternoon_x_cooling_delta_1h`는 오후 기온 상승 국면과 하강 국면을 같은 수요 상태로 보지 않도록 돕습니다.
+`humidity_pct`, `discomfort_index`, `humidity_delta_24h`, `discomfort_delta_24h`는 습하고 더운 날의 체감 부하를 체감온도에만 의존하지 않고 직접 제공합니다. 24시간 변화량은 fallback 습도 noise가 모델을 지배하지 않도록 clipping합니다.
+
+`business_morning_x_temp_delta_24h`, `business_morning_x_temp_anomaly_7d`, `business_morning_x_temp_anomaly_doy`는 평일 오전 램프가 기상 레짐 변화에 반응하도록 돕습니다. `business_morning_x_humidity_delta_24h`, `business_morning_x_discomfort_delta_24h`, `business_daytime_x_discomfort_index`는 습한 오전과 습한 낮 시간대 문맥을 직접 추가합니다. `business_late_afternoon_x_temp_delta_1h`와 `business_late_afternoon_x_cooling_delta_1h`는 오후 기온 상승 국면과 하강 국면을 같은 수요 상태로 보지 않도록 돕습니다.
 
 `lag_24h_business_type_mismatch`와 `lag_24h_mismatch_x_business_hour`는 금요일→토요일, 일요일→월요일처럼 전날 lag가 영업/비영업 경계를 건너는 경우를 모델에 알려줍니다. 특히 낮 시간대 업무 수요 차이를 조심해서 보게 하는 신호입니다. `recent_same_business_type_mean`, `lag_24h_to_last_biz_gap`, `lag_24h_to_same_business_type_gap`, `lag_24h_gap_x_business_hour`는 최근 같은 영업 타입의 같은 시간대 평균과 gap 기준선을 제공합니다.
 
@@ -119,6 +121,8 @@ residual = actualMw - modelForecastMw
 
 `python/forecast/adjustment.py`는 intraday 보정 전에 보수적인 후처리 보호 장치를 적용합니다. 영업일에 같은 시간대 168시간 래그가 휴일 또는 주말을 가리키고, 현재 주간 기온 편차가 높은 경우 유사일 보정이 낮 시간대 예측을 아래로 끌어내리지 못하게 막습니다. 또 휴일 래그가 없어도 계절 대비 따뜻한 평일 낮에는 더 작은 일반 고온 guard를 적용합니다. 비영업일의 더위 효과는 수동 상향 guard가 아니라 LightGBM 날씨 피처에 맡깁니다.
 
+같은 후처리 단계에는 `LocalizedShapeSpikeGuard`도 포함됩니다. 이 가드는 점심 가드 이후, intraday 보정 이전에 작동하며, 주변 시간과 lag shape, 최근 같은 영업 타입 shape, 당일 실측 기울기, 기상 delta가 실제 국소 피크를 지지하지 않을 때만 한 시간짜리 오후 spike를 감쇠합니다.
+
 자세한 사고 분석, 구현 내용, 검증 결과는 [2026-05-13 주간 고온 보호 보정](model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md)에 정리했습니다.
 
 후속 일반화 내용은 [2026-05-14 따뜻한 낮 시간대 과소예측 보정](model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md)에 정리했습니다.
@@ -131,7 +135,7 @@ residual = actualMw - modelForecastMw
 
 12:00 시간 전환 개선은 [2026-05-20 점심 시간대 전환 guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md)와 [2026-05-27 점심 전환 가드 재활성화](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md)에 정리했습니다.
 
-최신 운영 보정 및 데이터 연속성 레이어는 [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [2026-05-25 양수 잔차 슬로프 감쇠](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [2026-05-27 오전 램프 연속성 가드](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [2026-05-27 저녁 하락 연속성 가드](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [2026-05-30 음수 잔차 연속성 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [2026-06-03 예측 구간 상단 tail 안정화](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [2026-06-04 오전 warm-lag 과반응 가드](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), [2026-06-07 actual JSON 캐시 영속화](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)에 정리했습니다.
+최신 운영 보정 및 데이터 연속성 레이어는 [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [2026-05-25 양수 잔차 슬로프 감쇠](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [2026-05-27 오전 램프 연속성 가드](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [2026-05-27 저녁 하락 연속성 가드](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [2026-05-30 음수 잔차 연속성 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [2026-06-03 예측 구간 상단 tail 안정화](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [2026-06-04 오전 warm-lag 과반응 가드](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), [2026-06-07 actual JSON 캐시 영속화](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md), [2026-06-11 습도/불쾌지수 피처와 국소 shape spike 가드](model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)에 정리했습니다.
 
 ---
 

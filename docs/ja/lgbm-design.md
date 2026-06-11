@@ -53,12 +53,12 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | ラグ | 24h, 48h, 168h, 336h | 電力需要の慣性を表す |
 | ローリング統計 | 直近4週の同曜日・同時刻平均と標準偏差 | 安定した過去基準を与える |
 | 祝日補正 | 直前平日、連続休日数、休日終了後日数 | 連休直後の過少予測を抑える |
-| 気象 | 気温、体感温度、設定可能な冷房/暖房degree、気温偏差、1時間/2時間/24時間/168時間の気温・冷房変化量、3時間/6時間/72時間の熱慣性 | 冷暖房需要、気象変化方向、前日比/前週比のレジーム変化を反映する |
+| 気象 | 気温、湿度、体感温度、不快指数、設定可能な冷房/暖房degree、気温偏差、1時間/2時間/24時間/168時間の気温・冷房変化量、24時間の湿度/不快指数変化量、3時間/6時間/72時間の熱慣性 | 冷暖房需要、高湿度の体感負荷、気象変化方向、前日比/前週比のレジーム変化を反映する |
 | 交互作用 | holiday x heat, post-holiday x heat | GW後などの復帰需要を補正する |
-| 営業/気象交互作用 | business-morning x 気温変化/偏差、late-afternoon x 気温・冷房変化 | 朝のramp-up、午後の冷房減衰、同じ気温でも上昇局面と下降局面で異なる需要を表す |
+| 営業/気象交互作用 | business-morning x 気温/湿度/不快指数変化、business-daytime x 不快指数、late-afternoon x 気温・冷房変化 | 朝のramp-up、高湿度の日中負荷、午後の冷房減衰、同じ気温でも上昇局面と下降局面で異なる需要を表す |
 | ラグ文脈 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h営業/非営業mismatch, 直近同営業タイプ平均, lag-to-anchor gap | ラグ値が休日需要に影響されたか、または営業/非営業境界をまたいだかを伝える |
 
-現在の明示的なLightGBM学習特徴量数は56個です。
+現在の明示的なLightGBM学習特徴量数は63個です。
 
 冷房/暖房degreeの基準温度は `config.yaml` で設定します。
 
@@ -72,7 +72,9 @@ weather_features:
 
 `temp_delta_24h` と `cooling_delta_24h` は、今日の天候が前日同時刻から変わった場合に、前日需要ラグをどの程度信頼するかをモデルに伝える特徴量です。`temp_delta_168h` と `cooling_delta_168h` は、前週同時刻の需要に対して同じ役割を持ちます。`temp_delta_1h`、`temp_delta_2h`、`apparent_temp_delta_1h`、`cooling_delta_1h` は短期の気象変化方向を表します。`cooling_degree_3h_mean`、`cooling_degree_6h_mean`、`heating_degree_3h_mean`、`heating_degree_6h_mean`、`temp_72h_mean`、`cooling_degree_72h_mean`、`heating_degree_72h_mean` は、持続的な暑さや寒さの蓄積効果を反映します。`apparent_temp_c` と `apparent_cooling_degree` は、データソースが体感温度を提供する場合に補助信号として使います。
 
-`business_morning_x_temp_delta_24h`、`business_morning_x_temp_anomaly_7d`、`business_morning_x_temp_anomaly_doy` は、営業日の朝rampが気象レジーム変化に反応するための特徴量です。`business_late_afternoon_x_temp_delta_1h` と `business_late_afternoon_x_cooling_delta_1h` は、午後の気温上昇局面と下降局面を同じ需要状態として扱わないための信号です。
+`humidity_pct`、`discomfort_index`、`humidity_delta_24h`、`discomfort_delta_24h` は、湿って暑い日の体感負荷を体感温度だけに依存せず直接渡します。24時間変化量は、fallback湿度のnoiseがモデルを支配しないようにclippingします。
+
+`business_morning_x_temp_delta_24h`、`business_morning_x_temp_anomaly_7d`、`business_morning_x_temp_anomaly_doy` は、営業日の朝rampが気象レジーム変化に反応するための特徴量です。`business_morning_x_humidity_delta_24h`、`business_morning_x_discomfort_delta_24h`、`business_daytime_x_discomfort_index` は、湿度の高い朝と日中の文脈を直接追加します。`business_late_afternoon_x_temp_delta_1h` と `business_late_afternoon_x_cooling_delta_1h` は、午後の気温上昇局面と下降局面を同じ需要状態として扱わないための信号です。
 
 `lag_24h_business_type_mismatch` と `lag_24h_mismatch_x_business_hour` は、金曜→土曜、日曜→月曜のように前日ラグが営業/非営業境界をまたぐ場合をモデルに伝えます。特に日中の業務需要差を慎重に扱うための信号です。`recent_same_business_type_mean`、`lag_24h_to_last_biz_gap`、`lag_24h_to_same_business_type_gap`、`lag_24h_gap_x_business_hour` は、直近同営業タイプの同時刻平均とgap基準を与えます。
 
@@ -119,6 +121,8 @@ residual = actualMw - modelForecastMw
 
 `python/forecast/adjustment.py` はintraday補正の前に、保守的な後処理ガードを適用します。営業日に同時刻168時間ラグが祝日または週末を指し、現在の日中気温偏差が高い場合、類似日補正が日中予測を下方向へ押し下げることを防ぎます。また、祝日ラグがない場合でも、季節に対して暖かい平日の日中には小さめの通常高温ガードを適用します。非営業日の暑さ効果は手動の上方向ガードではなく、LightGBMの気象特徴量に任せます。
 
+同じ後処理段階には `LocalizedShapeSpikeGuard` も含まれます。このガードは昼休みガードの後、intraday補正の前に動作し、前後時間、lag shape、直近同営業タイプshape、当日実績slope、気象deltaが実際の局所ピークを支持しない場合だけ、1時間の午後spikeを減衰します。
+
 詳しい事象分析、実装内容、検証結果は [2026-05-13 日中高温ガード改善](model-improvements/model-improvement-2026-05-13-daytime-heat-guard.md) に整理しています。
 
 後続の一般化は [2026-05-14 暖かい日中の過少予測補正](model-improvements/model-improvement-2026-05-14-warm-daytime-bias-guard.md) に整理しています。
@@ -131,7 +135,7 @@ residual = actualMw - modelForecastMw
 
 12:00の時間遷移改善は [2026-05-20 昼時間帯の遷移ガード](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) と [2026-05-27 昼休み遷移ガード再有効化](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) に整理しています。
 
-最新の運用補正およびデータ連続性レイヤーは [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)、[2026-05-25 正の残差スロープ減衰](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)、[2026-05-27 朝ランプ継続ガード](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)、[2026-05-27 夕方下落継続ガード](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)、[2026-05-30 負の残差連続性 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)、[2026-06-03 予測区間の上側 tail 安定化](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)、[2026-06-04 朝の warm-lag 過反応ガード](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)、[2026-06-05 朝の正の残差 carryover 減衰](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)、[2026-06-07 actual JSON キャッシュ永続化](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md) に整理しています。
+最新の運用補正およびデータ連続性レイヤーは [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)、[2026-05-25 正の残差スロープ減衰](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)、[2026-05-27 朝ランプ継続ガード](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)、[2026-05-27 夕方下落継続ガード](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)、[2026-05-30 負の残差連続性 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)、[2026-06-03 予測区間の上側 tail 安定化](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)、[2026-06-04 朝の warm-lag 過反応ガード](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)、[2026-06-05 朝の正の残差 carryover 減衰](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)、[2026-06-07 actual JSON キャッシュ永続化](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)、[2026-06-11 湿度/不快指数特徴量と局所shape spikeガード](model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md) に整理しています。
 
 ---
 
