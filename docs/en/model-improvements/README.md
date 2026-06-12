@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-12 morning observed ramp floor and band tail tightening](model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)
 - [2026-06-11 humidity/discomfort features and localized shape spike guard](model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)
 - [2026-06-09 afternoon observed anchor cap](model-improvement-2026-06-09-afternoon-observed-anchor-cap.md)
 - [2026-06-09 morning observed anchor cap](model-improvement-2026-06-09-morning-observed-anchor-cap.md)

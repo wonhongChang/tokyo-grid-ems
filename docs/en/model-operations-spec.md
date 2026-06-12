@@ -235,6 +235,7 @@ The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_
 | Negative residual continuity floor | intraday calibration | prevents early negative residuals from pulling a stable non-business-day plateau too far below observed demand |
 | Positive residual slope damping | intraday calibration | damps positive residuals when actual slope rolls over |
 | Morning ramp continuity guard | intraday calibration | avoids near-term dips during confirmed business morning ramps |
+| Morning observed ramp floor | intraday calibration | supports the next one or two business-morning buckets when same-day actuals have already proven a strong ramp |
 | Evening decline continuity guard | intraday calibration | limits near-term rebound spikes and high-level overhang during evening decline |
 
 Every guard should have a cap, shrinkage, and metadata footprint.
@@ -251,9 +252,12 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | weather | `heating_base_temp_c` | 18.0 | Higher values strengthen heating signals; lower values reduce winter over-sensitivity. |
 | weather bias | `min_abs_bias_c` | 1.5 | Lower values apply forecast-bias correction more often; too low may chase weather noise. |
 | interval | `min_p95_half_width_mw` | 500 | Prevents narrow bands. Raising it improves visual stability but may reduce alert sensitivity. |
+| interval | `max_p95_half_width_mw` | 3000 | Caps rare one-sided quantile-tail explosions. Lower values make the band easier to read but can understate real uncertainty on unstable days. |
+| interval | `max_p95_asymmetry_ratio` | 2.5 | Limits upper/lower tail imbalance. Lower values make bands more symmetric; higher values preserve more model-estimated skew. |
 | intraday | `lookback_hours` | 3 | Shorter windows react faster; longer windows are smoother but slower. |
 | intraday | `decay_per_hour` | 0.92 | Higher values carry residuals farther into the day; lower values keep corrections near-term. Lower it when carryover contaminates shape. |
 | intraday | `max_abs_adjustment_mw` | 1200 | Hard cap for same-day residual correction. Raising it follows large misses faster but increases overshoot risk. |
+| intraday | `morning_observed_ramp_floor.max_lift_mw` | 1200 | Supports near-term 08-11 business-morning forecasts only after observed same-day ramp evidence is strong. Raising it helps sudden ramp underprediction but can over-lift if early actuals are a temporary surge. |
 | intraday | `morning_warm_lag_overreaction_guard.max_reduction_mw` | 800 | Caps the extra morning q50 reduction when warm lag/weather signals are not confirmed by same-day actuals. Raising it reacts faster to overprediction but can suppress real heat-driven morning ramps. |
 | intraday | `morning_positive_residual_carryover_damping.damping_factor` | 0.4 | Keeps only part of a positive morning residual when the target slot no longer has strong lag/recent ramp support. Lower values reduce post-ramp overextension faster; higher values preserve real ramp momentum. |
 | intraday | `morning_observed_anchor_cap.max_reduction_mw` | 800 | Caps near-term 10-13 forecasts only after same-day observations show the model is already high and the lag/recent shape path cannot justify the published level. Raising it reacts faster to late-morning overprediction; lowering it preserves more raw ramp energy. |

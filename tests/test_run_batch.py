@@ -672,9 +672,9 @@ def test_build_forecast_json_caps_extreme_one_sided_band():
     config = {
         "interval_calibration": {
             "min_p95_half_width_mw": 500.0,
-            "max_p95_half_width_mw": 4_500.0,
-            "max_p95_asymmetry_ratio": 4.0,
-            "asymmetry_reference_half_width_mw": 1_000.0,
+            "max_p95_half_width_mw": 3_000.0,
+            "max_p95_asymmetry_ratio": 2.5,
+            "asymmetry_reference_half_width_mw": 900.0,
         }
     }
 
@@ -682,10 +682,10 @@ def test_build_forecast_json_caps_extreme_one_sided_band():
     point = result["series"][0]
 
     assert point["p95LowerMw"] == 30_200.0
-    assert point["p95UpperMw"] == 35_000.0
+    assert point["p95UpperMw"] == 33_250.0
     assert point["p99LowerMw"] == 29_400.0
-    assert point["p99UpperMw"] == 39_000.0
-    assert result["peak"]["interval"]["p95Upper"] == 35_000.0
+    assert point["p99UpperMw"] == 35_500.0
+    assert result["peak"]["interval"]["p95Upper"] == 33_250.0
 
 
 def _forecast_point(d: date, forecast_mw: float) -> HourlyForecast:

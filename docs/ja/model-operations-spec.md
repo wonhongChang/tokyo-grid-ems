@@ -233,6 +233,7 @@ Raw LightGBM Forecast
 | Negative residual continuity floor | intraday calibration | 非営業日序盤の負residualが安定した当日plateauを実績水準より押し下げすぎることを防止 |
 | Positive residual slope damping | intraday calibration | 実績slope鈍化時の正residual伝播を抑制 |
 | Morning ramp continuity guard | intraday calibration | 営業日朝の近距離dipを防止 |
+| Morning observed ramp floor | intraday calibration | 当日実績がすでに強い朝rampを示した場合、次の1-2時間の営業日朝予測を保守的に支える |
 | Evening decline continuity guard | intraday calibration | 夕方下落時の近距離反発spikeと高水準overhangを制限 |
 
 各guardにはcap、shrinkage、metadataを持たせます。
@@ -249,9 +250,12 @@ Raw LightGBM Forecast
 | weather | `heating_base_temp_c` | 18.0 | 上げると暖房信号が強くなり、下げると冬の過敏反応を抑えます。 |
 | weather bias | `min_abs_bias_c` | 1.5 | 下げると予報bias補正が頻繁に作動します。低すぎると気象noiseを追います。 |
 | interval | `min_p95_half_width_mw` | 500 | 狭すぎるbandを防ぎます。上げると安定しますがalert感度が下がる場合があります。 |
+| interval | `max_p95_half_width_mw` | 3000 | まれな片側quantile tailの過大化を制限します。下げるとbandは読みやすくなりますが、不安定日の実際の不確実性を小さく見せる場合があります。 |
+| interval | `max_p95_asymmetry_ratio` | 2.5 | 上側/下側tailの非対称を制限します。下げるとbandはより対称的になり、上げるとモデルが推定したskewをより保持します。 |
 | intraday | `lookback_hours` | 3 | 短いほど反応が速く、長いほど滑らかですが遅れます。 |
 | intraday | `decay_per_hour` | 0.92 | 高いほどresidualが遠い時間まで残り、低いほど近距離中心になります。shape汚染時は引き下げを検討します。 |
 | intraday | `max_abs_adjustment_mw` | 1200 | 当日residual補正のhard capです。上げると大きなmissに追従しやすい一方、overshootリスクが増えます。 |
+| intraday | `morning_observed_ramp_floor.max_lift_mw` | 1200 | 当日実績のramp証拠が強い場合だけ、08-11時の近距離営業日朝予測を支えます。上げると急なramp過小予測に強くなりますが、一時的な実績急騰を過度に追う可能性があります。 |
 | intraday | `morning_observed_anchor_cap.max_reduction_mw` | 800 | 当日実績がすでにモデルの過大予測を示し、lag/recent shape が公開予測レベルを説明できない場合に、近い 10-13 時の予測だけを制限します。 |
 | intraday | `afternoon_observed_anchor_cap.max_reduction_mw` | 1200 | 午後の当日実績が継続的な過大予測を示す場合に、近い 14-16 時の plateau overhang だけを制限します。上げると unsupported daytime plateau に速く反応しますが、実際の午後需要上昇を抑えるリスクがあります。 |
 | intraday | `morning_warm_lag_overreaction_guard.max_reduction_mw` | 800 | 暖かくなった朝のlag/気象上昇シグナルが当日実績で確認されない場合のq50追加下方ブレーキを制限します。上げると過大予測への反応は速くなりますが、実際の冷房rampを抑える可能性があります。 |

@@ -19,9 +19,9 @@ weather_forecast_bias_correction:
 
 interval_calibration:
   min_p95_half_width_mw: 500 # prevent unrealistically narrow LightGBM bands
-  max_p95_half_width_mw: 4500 # cap rare quantile-tail explosions after weather-regime shifts
-  max_p95_asymmetry_ratio: 4.0 # limit one-sided p95 tails relative to the opposite side
-  asymmetry_reference_half_width_mw: 1000 # avoid over-tight caps when one side collapses to the floor
+  max_p95_half_width_mw: 3000 # cap rare quantile-tail explosions after weather-regime shifts
+  max_p95_asymmetry_ratio: 2.5 # limit one-sided p95 tails relative to the opposite side
+  asymmetry_reference_half_width_mw: 900 # avoid over-tight caps when one side collapses to the floor
   mirror_collapsed_side: false # avoid mirroring one-sided quantile uncertainty into the other side
 
 intraday_correction:
@@ -144,6 +144,19 @@ intraday_correction:
     max_floor_delta_mw: 900
     max_restore_mw: 700        # never lift above the pre-calibration forecast
     min_restore_mw: 100
+  morning_observed_ramp_floor:
+    enabled: true
+    business_day_only: true
+    target_hours: [8, 9, 10, 11]
+    min_reference_hour: 7
+    max_reference_hour: 10
+    max_lead_hours: 2
+    min_recent_slope_mw: 1200  # require observed same-day ramp evidence
+    min_mean_slope_mw: 1200
+    floor_slope_fraction: 0.85
+    max_floor_delta_mw: 2200
+    max_lift_mw: 1200
+    min_lift_mw: 100
   morning_warm_lag_overreaction_guard:
     enabled: true
     business_day_only: true

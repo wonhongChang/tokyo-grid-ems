@@ -1666,6 +1666,18 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
         "morningPositiveResidualCarryoverSupportDeltaMw": _round_number(
             item.get("morningPositiveResidualCarryoverSupportDeltaMw")
         ),
+        "morningObservedRampFloorLiftMw": _round_number(
+            item.get("morningObservedRampFloorLiftMw")
+        ),
+        "morningObservedRampFloorMw": _round_number(
+            item.get("morningObservedRampFloorMw")
+        ),
+        "morningObservedRampFloorDeltaMw": _round_number(
+            item.get("morningObservedRampFloorDeltaMw")
+        ),
+        "morningObservedRampLatestSlopeMw": _round_number(
+            item.get("morningObservedRampLatestSlopeMw")
+        ),
         "negativeResidualContinuityFloorMw": _round_number(
             item.get("negativeResidualContinuityFloorMw")
         ),
@@ -1755,6 +1767,10 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
             (_as_float(item.get("morningWarmLagOverreactionReductionMw")) or 0.0)
             > 0.0
         )
+        morning_observed_ramp_floor = (
+            (_as_float(item.get("morningObservedRampFloorLiftMw")) or 0.0)
+            > 0.0
+        )
         morning_anchor_cap = (
             (_as_float(item.get("morningObservedAnchorCapReductionMw")) or 0.0)
             > 0.0
@@ -1776,6 +1792,7 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
                 or continuity_floor
                 or near_term_floor
                 or morning_warm_guard
+                or morning_observed_ramp_floor
                 or morning_anchor_cap
                 or afternoon_anchor_cap
                 or evening_guard
@@ -1829,6 +1846,8 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
         "negativeResidualNearTermFloorMaxRestoreMw": correction.get("negativeResidualNearTermFloorMaxRestoreMw"),
         "morningWarmLagOverreactionGuardApplied": correction.get("morningWarmLagOverreactionGuardApplied"),
         "morningWarmLagOverreactionMaxReductionMw": correction.get("morningWarmLagOverreactionMaxReductionMw"),
+        "morningObservedRampFloorApplied": correction.get("morningObservedRampFloorApplied"),
+        "morningObservedRampFloorMaxLiftMw": correction.get("morningObservedRampFloorMaxLiftMw"),
         "morningObservedAnchorCapApplied": correction.get("morningObservedAnchorCapApplied"),
         "morningObservedAnchorCapMaxReductionMw": correction.get("morningObservedAnchorCapMaxReductionMw"),
         "afternoonObservedAnchorCapApplied": correction.get("afternoonObservedAnchorCapApplied"),
@@ -3090,6 +3109,11 @@ def _build_control_context(
         for item in residual_items
         if (_as_float(item.get("morningObservedAnchorCapReductionMw")) or 0.0) > 0.0
     ]
+    morning_observed_ramp_floor_items = [
+        item
+        for item in residual_items
+        if (_as_float(item.get("morningObservedRampFloorLiftMw")) or 0.0) > 0.0
+    ]
     afternoon_anchor_cap_items = [
         item
         for item in residual_items
@@ -3134,6 +3158,16 @@ def _build_control_context(
                 item.get("hour") for item in morning_positive_damped_items
             ],
             "sample": morning_positive_damped_items,
+        }),
+        "morningObservedRampFloor": _drop_none_values({
+            "applied": correction.get("morningObservedRampFloorApplied"),
+            "maxLiftedMw": _round_number(
+                correction.get("morningObservedRampFloorMaxLiftMw")
+            ),
+            "affectedHours": [
+                item.get("hour") for item in morning_observed_ramp_floor_items
+            ],
+            "sample": morning_observed_ramp_floor_items,
         }),
         "morningObservedAnchorCap": _drop_none_values({
             "applied": correction.get("morningObservedAnchorCapApplied"),

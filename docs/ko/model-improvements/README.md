@@ -8,6 +8,7 @@
 
 ## 2026-06
 
+- [2026-06-12 오전 실측 램프 floor와 밴드 tail 축소](model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)
 - [2026-06-11 습도/불쾌지수 피처와 국소 shape spike 가드](model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)
 - [2026-06-09 오후 실측 anchor cap](model-improvement-2026-06-09-afternoon-observed-anchor-cap.md)
 - [2026-06-09 오전 실측 앵커 상한 가드](model-improvement-2026-06-09-morning-observed-anchor-cap.md)

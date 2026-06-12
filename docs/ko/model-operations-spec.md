@@ -243,6 +243,7 @@ Raw LightGBM Forecast
 | Negative residual continuity floor | intraday calibration | 비영업일 초반 음수 residual이 안정적인 당일 plateau를 최신 실측보다 과하게 낮추는 문제 방지 |
 | Positive residual slope damping | intraday calibration | 실측 slope 둔화/하락 시 양수 residual 폭주 방지 |
 | Morning ramp continuity guard | intraday calibration | 영업일 오전 near-term dip 방지 |
+| Morning observed ramp floor | intraday calibration | 당일 실측이 이미 강한 오전 ramp를 보였을 때 다음 1~2시간 영업일 오전 예측을 보수적으로 지지 |
 | Evening decline continuity guard | intraday calibration | 저녁 하락 국면의 near-term rebound spike와 높은 레벨 overhang 제한 |
 
 후처리 레이어의 기본 원칙:
@@ -264,9 +265,12 @@ Raw LightGBM Forecast
 | weather | `heating_base_temp_c` | 18.0 | 올리면 난방 수요 신호가 강해지고, 내리면 겨울철 과민 반응을 줄입니다. |
 | weather bias | `min_abs_bias_c` | 1.5 | 낮추면 예보 bias correction이 자주 켜지고, 높이면 작은 예보 오차를 무시합니다. 너무 낮으면 날씨 noise를 추종합니다. |
 | interval | `min_p95_half_width_mw` | 500 | 밴드 과소폭 방지 하한입니다. 올리면 안정적으로 보이지만 경보 민감도가 낮아질 수 있습니다. |
+| interval | `max_p95_half_width_mw` | 3000 | 드문 한쪽 quantile tail 폭주를 제한합니다. 낮추면 밴드가 읽기 쉬워지지만 불안정한 날의 실제 불확실성을 과소표현할 수 있습니다. |
+| interval | `max_p95_asymmetry_ratio` | 2.5 | 상단/하단 tail 비대칭을 제한합니다. 낮추면 밴드가 더 대칭적이고, 높이면 모델이 추정한 skew를 더 보존합니다. |
 | intraday | `lookback_hours` | 3 | 짧게 잡으면 최근 변화에 민감하고, 길게 잡으면 안정적이지만 반응이 늦습니다. |
 | intraday | `decay_per_hour` | 0.92 | 높이면 residual 영향이 먼 미래까지 남고, 낮추면 근거리 보정 중심이 됩니다. shape 오염이 있으면 낮추는 쪽을 검토합니다. |
 | intraday | `max_abs_adjustment_mw` | 1200 | 당일 residual 보정의 하드 상한입니다. 올리면 큰 오차를 빠르게 따라가지만 폭주 위험이 커집니다. |
+| intraday | `morning_observed_ramp_floor.max_lift_mw` | 1200 | 당일 실측 ramp 증거가 강할 때만 08~11시 근거리 영업일 오전 예측을 지지합니다. 올리면 갑작스러운 ramp 과소예측에는 강해지지만, 일시적 실측 급등을 과도하게 따라갈 수 있습니다. |
 | intraday | `morning_observed_anchor_cap.max_reduction_mw` | 800 | 당일 실측이 이미 모델 과대예측을 보여주고 lag/recent shape가 공개 예측 레벨을 설명하지 못할 때, 가까운 10~13시 예측만 제한합니다. |
 | intraday | `afternoon_observed_anchor_cap.max_reduction_mw` | 1200 | 당일 오후 실측이 지속적인 과대예측을 보여줄 때, 가까운 14~16시 plateau overhang만 제한합니다. 올리면 미지원 낮 시간대 plateau에 더 빨리 반응하지만 실제 오후 수요 상승을 누를 수 있습니다. |
 | intraday | `morning_warm_lag_overreaction_guard.max_reduction_mw` | 800 | 따뜻해진 오전의 lag/기상 상승 신호가 당일 실측으로 확인되지 않을 때 q50 추가 하방 제동을 제한합니다. 올리면 과대예측 반응은 빨라지지만 실제 냉방 ramp를 누를 수 있습니다. |

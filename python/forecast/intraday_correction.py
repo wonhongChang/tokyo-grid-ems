@@ -58,6 +58,8 @@ class IntradayCorrectionResult:
     morning_observed_anchor_cap_max_reduction_mw: float = 0.0
     afternoon_observed_anchor_cap_applied: bool = False
     afternoon_observed_anchor_cap_max_reduction_mw: float = 0.0
+    morning_observed_ramp_floor_applied: bool = False
+    morning_observed_ramp_floor_max_lift_mw: float = 0.0
 
     def metadata(self) -> dict:
         return {
@@ -136,6 +138,13 @@ class IntradayCorrectionResult:
             ),
             "morningObservedAnchorCapMaxReductionMw": round(
                 float(self.morning_observed_anchor_cap_max_reduction_mw),
+                1,
+            ),
+            "morningObservedRampFloorApplied": (
+                self.morning_observed_ramp_floor_applied
+            ),
+            "morningObservedRampFloorMaxLiftMw": round(
+                float(self.morning_observed_ramp_floor_max_lift_mw),
                 1,
             ),
             "afternoonObservedAnchorCapApplied": (
@@ -563,6 +572,55 @@ class IntradayResidualCorrector:
         )
         self._morning_ramp_min_restore_mw = max(
             float(morning_ramp_config.get("min_restore_mw", 100.0)),
+            0.0,
+        )
+        morning_observed_ramp_config = correction_config.get(
+            "morning_observed_ramp_floor",
+            {},
+        )
+        self._morning_observed_ramp_enabled = bool(
+            morning_observed_ramp_config.get("enabled", False)
+        )
+        self._morning_observed_ramp_business_day_only = bool(
+            morning_observed_ramp_config.get("business_day_only", True)
+        )
+        self._morning_observed_ramp_target_hours = {
+            int(hour)
+            for hour in morning_observed_ramp_config.get(
+                "target_hours",
+                [8, 9, 10, 11],
+            )
+        }
+        self._morning_observed_ramp_min_reference_hour = int(
+            morning_observed_ramp_config.get("min_reference_hour", 7)
+        )
+        self._morning_observed_ramp_max_reference_hour = int(
+            morning_observed_ramp_config.get("max_reference_hour", 10)
+        )
+        self._morning_observed_ramp_max_lead_hours = max(
+            int(morning_observed_ramp_config.get("max_lead_hours", 2)),
+            1,
+        )
+        self._morning_observed_ramp_min_slope_mw = float(
+            morning_observed_ramp_config.get("min_recent_slope_mw", 1_200.0)
+        )
+        self._morning_observed_ramp_min_mean_slope_mw = float(
+            morning_observed_ramp_config.get("min_mean_slope_mw", 1_200.0)
+        )
+        self._morning_observed_ramp_floor_slope_fraction = max(
+            float(morning_observed_ramp_config.get("floor_slope_fraction", 0.85)),
+            0.0,
+        )
+        self._morning_observed_ramp_max_floor_delta_mw = max(
+            float(morning_observed_ramp_config.get("max_floor_delta_mw", 2_200.0)),
+            0.0,
+        )
+        self._morning_observed_ramp_max_lift_mw = max(
+            float(morning_observed_ramp_config.get("max_lift_mw", 1_200.0)),
+            0.0,
+        )
+        self._morning_observed_ramp_min_lift_mw = max(
+            float(morning_observed_ramp_config.get("min_lift_mw", 100.0)),
             0.0,
         )
         morning_warm_config = correction_config.get(
@@ -1645,6 +1703,109 @@ class IntradayResidualCorrector:
             "floorDeltaMw": round(float(floor_delta_mw), 1),
         }
 
+    def _morning_observed_ramp_floor_context(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        actual_mw_by_hour: dict[int, float],
+        last_observed_hour: int | None,
+    ) -> dict | None:
+        if (
+            not self._morning_observed_ramp_enabled
+            or last_observed_hour is None
+            or last_observed_hour < self._morning_observed_ramp_min_reference_hour
+            or last_observed_hour > self._morning_observed_ramp_max_reference_hour
+            or self._morning_observed_ramp_max_lift_mw <= 0.0
+        ):
+            return None
+
+        required_hours = [
+            last_observed_hour - 2,
+            last_observed_hour - 1,
+            last_observed_hour,
+        ]
+        if any(hour not in actual_mw_by_hour for hour in required_hours):
+            return None
+
+        if self._morning_observed_ramp_business_day_only:
+            row = self._feature_row_for_hour(inference_features, last_observed_hour)
+            if row is not None:
+                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+                if is_non_business_day == 1.0:
+                    return None
+            elif forecasts:
+                forecast_ts = pd.Timestamp(forecasts[0].ts)
+                if _is_nonworking_day(forecast_ts):
+                    return None
+
+        actual_values = [actual_mw_by_hour[hour] for hour in required_hours]
+        recent_slopes = [
+            actual_values[1] - actual_values[0],
+            actual_values[2] - actual_values[1],
+        ]
+        if min(recent_slopes) < self._morning_observed_ramp_min_slope_mw:
+            return None
+        mean_slope = float(np.mean(recent_slopes))
+        if mean_slope < self._morning_observed_ramp_min_mean_slope_mw:
+            return None
+
+        floor_delta_mw = (
+            mean_slope * self._morning_observed_ramp_floor_slope_fraction
+        )
+        if self._morning_observed_ramp_max_floor_delta_mw > 0.0:
+            floor_delta_mw = min(
+                floor_delta_mw,
+                self._morning_observed_ramp_max_floor_delta_mw,
+            )
+        if floor_delta_mw <= 0.0:
+            return None
+
+        return {
+            "lastObservedHour": last_observed_hour,
+            "lastActualMw": round(actual_mw_by_hour[last_observed_hour], 1),
+            "previousSlopeMw": round(recent_slopes[0], 1),
+            "latestSlopeMw": round(recent_slopes[1], 1),
+            "meanSlopeMw": round(mean_slope, 1),
+            "floorDeltaMw": round(float(floor_delta_mw), 1),
+        }
+
+    def _morning_observed_ramp_floor_lift(
+        self,
+        context: dict | None,
+        forecast_hour: int,
+        lead_hours: int,
+        final_before_guard_mw: float,
+    ) -> dict | None:
+        if (
+            context is None
+            or forecast_hour not in self._morning_observed_ramp_target_hours
+            or lead_hours <= 0
+            or lead_hours > self._morning_observed_ramp_max_lead_hours
+        ):
+            return None
+
+        floor_mw = (
+            float(context["lastActualMw"])
+            + float(context["floorDeltaMw"]) * lead_hours
+        )
+        shortfall_mw = floor_mw - final_before_guard_mw
+        if shortfall_mw <= 0.0:
+            return None
+
+        lift_mw = min(shortfall_mw, self._morning_observed_ramp_max_lift_mw)
+        lift_mw = round(float(lift_mw), 1)
+        if lift_mw < self._morning_observed_ramp_min_lift_mw:
+            return None
+
+        return {
+            "floorMw": round(float(floor_mw), 1),
+            "liftMw": lift_mw,
+            "previousSlopeMw": context["previousSlopeMw"],
+            "latestSlopeMw": context["latestSlopeMw"],
+            "meanSlopeMw": context["meanSlopeMw"],
+            "floorDeltaMw": context["floorDeltaMw"],
+        }
+
     def _morning_warm_lag_overreaction_context(
         self,
         forecasts: list[HourlyForecast],
@@ -2718,6 +2879,12 @@ class IntradayResidualCorrector:
             last_observed_hour,
             base_adjustment_mw,
         )
+        morning_observed_ramp_context = self._morning_observed_ramp_floor_context(
+            transition_prior_guarded_forecasts,
+            inference_features,
+            actual_mw_by_hour,
+            last_observed_hour,
+        )
         morning_warm_context = self._morning_warm_lag_overreaction_context(
             transition_prior_guarded_forecasts,
             inference_features,
@@ -2755,6 +2922,8 @@ class IntradayResidualCorrector:
         )
         morning_ramp_guard_applied = False
         morning_ramp_restored_values: list[float] = []
+        morning_observed_ramp_floor_applied = False
+        morning_observed_ramp_floor_lift_values: list[float] = []
         morning_warm_guard_applied = False
         morning_warm_reduced_values: list[float] = []
         morning_anchor_cap_applied = False
@@ -2799,6 +2968,11 @@ class IntradayResidualCorrector:
             morning_positive_recent_delta_mw = None
             morning_ramp_restore_mw = 0.0
             morning_ramp_floor_mw = None
+            morning_observed_ramp_floor_mw = None
+            morning_observed_ramp_floor_lift_mw = 0.0
+            morning_observed_ramp_floor_delta_mw = None
+            morning_observed_ramp_latest_slope_mw = None
+            morning_observed_ramp_mean_slope_mw = None
             negative_floor_restore_mw = 0.0
             negative_floor_mw = None
             near_negative_floor_restore_mw = 0.0
@@ -2981,6 +3155,33 @@ class IntradayResidualCorrector:
                     )
                     near_negative_floor_applied = True
                     near_negative_floor_restored_values.append(restore_mw)
+            final_before_observed_ramp_floor_mw = (
+                forecast.forecast_mw + decayed_adjustment_mw
+            )
+            morning_observed_ramp_floor = self._morning_observed_ramp_floor_lift(
+                morning_observed_ramp_context,
+                forecast_hour,
+                lead_hours,
+                final_before_observed_ramp_floor_mw,
+            )
+            if morning_observed_ramp_floor is not None:
+                lift_mw = float(morning_observed_ramp_floor["liftMw"])
+                decayed_adjustment_mw = round(decayed_adjustment_mw + lift_mw, 1)
+                morning_observed_ramp_floor_mw = (
+                    morning_observed_ramp_floor["floorMw"]
+                )
+                morning_observed_ramp_floor_lift_mw = lift_mw
+                morning_observed_ramp_floor_delta_mw = (
+                    morning_observed_ramp_floor["floorDeltaMw"]
+                )
+                morning_observed_ramp_latest_slope_mw = (
+                    morning_observed_ramp_floor["latestSlopeMw"]
+                )
+                morning_observed_ramp_mean_slope_mw = (
+                    morning_observed_ramp_floor["meanSlopeMw"]
+                )
+                morning_observed_ramp_floor_applied = True
+                morning_observed_ramp_floor_lift_values.append(lift_mw)
             final_before_morning_warm_guard_mw = forecast.forecast_mw + decayed_adjustment_mw
             morning_warm_guard = self._morning_warm_lag_overreaction_reduction(
                 morning_warm_context,
@@ -3160,6 +3361,30 @@ class IntradayResidualCorrector:
                     morning_ramp_restore_mw,
                     1,
                 ),
+                "morningObservedRampFloorMw": (
+                    round(float(morning_observed_ramp_floor_mw), 1)
+                    if morning_observed_ramp_floor_mw is not None
+                    else None
+                ),
+                "morningObservedRampFloorLiftMw": round(
+                    morning_observed_ramp_floor_lift_mw,
+                    1,
+                ),
+                "morningObservedRampFloorDeltaMw": (
+                    round(float(morning_observed_ramp_floor_delta_mw), 1)
+                    if morning_observed_ramp_floor_delta_mw is not None
+                    else None
+                ),
+                "morningObservedRampLatestSlopeMw": (
+                    round(float(morning_observed_ramp_latest_slope_mw), 1)
+                    if morning_observed_ramp_latest_slope_mw is not None
+                    else None
+                ),
+                "morningObservedRampMeanSlopeMw": (
+                    round(float(morning_observed_ramp_mean_slope_mw), 1)
+                    if morning_observed_ramp_mean_slope_mw is not None
+                    else None
+                ),
                 "negativeResidualContinuityFloorMw": (
                     round(float(negative_floor_mw), 1)
                     if negative_floor_mw is not None
@@ -3297,6 +3522,8 @@ class IntradayResidualCorrector:
             applied_reasons.append("morning_positive_residual_carryover_damping")
         if morning_ramp_guard_applied:
             applied_reasons.append("morning_ramp_continuity_guard")
+        if morning_observed_ramp_floor_applied:
+            applied_reasons.append("morning_observed_ramp_floor")
         if morning_warm_guard_applied:
             applied_reasons.append("morning_warm_lag_overreaction_guard")
         if morning_anchor_cap_applied:
@@ -3379,4 +3606,6 @@ class IntradayResidualCorrector:
             round(max(morning_anchor_cap_reduced_values or [0.0]), 1),
             afternoon_anchor_cap_applied,
             round(max(afternoon_anchor_cap_reduced_values or [0.0]), 1),
+            morning_observed_ramp_floor_applied,
+            round(max(morning_observed_ramp_floor_lift_values or [0.0]), 1),
         )

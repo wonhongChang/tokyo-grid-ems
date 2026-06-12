@@ -250,9 +250,9 @@ def test_predict_caps_extreme_one_sided_interval_when_configured(monkeypatch):
     f.config = {
         "interval_calibration": {
             "min_p95_half_width_mw": 500.0,
-            "max_p95_half_width_mw": 4_500.0,
-            "max_p95_asymmetry_ratio": 4.0,
-            "asymmetry_reference_half_width_mw": 1_000.0,
+            "max_p95_half_width_mw": 3_000.0,
+            "max_p95_asymmetry_ratio": 2.5,
+            "asymmetry_reference_half_width_mw": 900.0,
         }
     }
     f.interval_version = LGBMForecaster.INTERVAL_VERSION
@@ -264,9 +264,9 @@ def test_predict_caps_extreme_one_sided_interval_when_configured(monkeypatch):
 
     for point in result:
         assert point.p95_lower_mw == 30_200.0
-        assert point.p95_upper_mw == 35_000.0
+        assert point.p95_upper_mw == 33_250.0
         assert point.p99_lower_mw == 29_400.0
-        assert point.p99_upper_mw == 39_000.0
+        assert point.p99_upper_mw == 35_500.0
 
 
 def test_predict_can_mirror_collapsed_side_when_configured(monkeypatch):
