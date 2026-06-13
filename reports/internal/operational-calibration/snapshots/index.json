@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-06-13T16:37:24+09:00",
+  "generatedAt": "2026-06-13T18:29:34+09:00",
   "retentionDays": 14,
   "maxPerDay": 24,
   "dates": [
@@ -619,34 +619,36 @@
     {
       "date": "2026-06-13",
       "path": "reports/internal/operational-calibration/snapshots/2026-06-13/index.json",
-      "snapshotCount": 15,
+      "snapshotCount": 16,
       "latest": {
         "date": "2026-06-13",
-        "generatedAt": "2026-06-13T16:37:24+09:00",
-        "path": "reports/internal/operational-calibration/snapshots/2026-06-13/2026-06-13T16-37-24-09-00.json",
+        "generatedAt": "2026-06-13T18:29:34+09:00",
+        "path": "reports/internal/operational-calibration/snapshots/2026-06-13/2026-06-13T18-29-34-09-00.json",
         "model": "lgbm_quantile_q50",
         "applied": true,
-        "observedHours": 16,
+        "observedHours": 18,
         "fallbackActualHours": 0,
-        "lastObservedHour": 15,
-        "baseAdjustmentMw": 963.0,
+        "lastObservedHour": 17,
+        "baseAdjustmentMw": 777.1,
         "appliedDayBiasMw": 0.0,
         "appliedRegimeReason": [
-          "intraday_observed_residual"
+          "intraday_observed_residual",
+          "positive_residual_slope_damping_triggered",
+          "non_business_evening_positive_residual_damping"
         ],
         "sourceConfidence": {
           "level": "observed",
-          "actualHours": 16,
-          "usableObservedHours": 16,
+          "actualHours": 18,
+          "usableObservedHours": 18,
           "fallbackIgnoredHours": 0,
-          "missingHours": 8
+          "missingHours": 6
         },
         "businessTypeTransitionPriorApplied": false,
         "businessTypeTransitionApplied": false,
         "positiveResidualMitigationApplied": false,
-        "positiveResidualSlopeDampingApplied": false,
-        "positiveResidualSlopeDampingFactor": 1.0,
-        "positiveResidualSlopeDampingMaxMw": 0.0,
+        "positiveResidualSlopeDampingApplied": true,
+        "positiveResidualSlopeDampingFactor": 0.4,
+        "positiveResidualSlopeDampingMaxMw": 466.3,
         "morningRampContinuityGuardApplied": false,
         "morningRampContinuityMaxRestoreMw": 0.0,
         "morningObservedRampFloorApplied": false,
@@ -658,9 +660,9 @@
         "eveningDeclineContinuityGuardApplied": false,
         "eveningDeclineContinuityMaxReductionMw": 0.0,
         "negResidualRecoveryDampingApplied": false,
-        "residualCarryoverHours": 8,
+        "residualCarryoverHours": 6,
         "changedForecastHours": 24,
-        "maxAbsCalibrationDeltaMw": 963.0
+        "maxAbsCalibrationDeltaMw": 605.1
       }
     }
   ]
