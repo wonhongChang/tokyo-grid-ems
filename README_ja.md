@@ -202,13 +202,13 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-06-13 非営業日のanalogおよびcarryoverガード](docs/ja/model-improvements/model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md)
+- [2026-06-12 朝の実績ランプfloorと予測バンドtail縮小](docs/ja/model-improvements/model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)
+- [2026-06-11 湿度/不快指数特徴量と局所shape spikeガード](docs/ja/model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)
+- [2026-06-09 朝の実績anchor cap](docs/ja/model-improvements/model-improvement-2026-06-09-morning-observed-anchor-cap.md)
+- [2026-06-08 営業日復帰shape veto](docs/ja/model-improvements/model-improvement-2026-06-08-business-return-shape-veto.md)
 - [2026-06-07 actual JSON キャッシュ永続化](docs/ja/model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)
-- [2026-06-05 朝の正の残差 carryover 減衰](docs/ja/model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)
-- [2026-06-04 朝の warm-lag 過反応ガード](docs/ja/model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)
-- [2026-06-03 予測区間の上側 tail 安定化](docs/ja/model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
-- [2026-05-30 負の残差連続性 floor](docs/ja/model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)
-- [2026-05-29 夕方レベル overhang ガード](docs/ja/model-improvements/model-improvement-2026-05-29-evening-level-overhang-guard.md)
-- [2026-05-27 夕方下落継続ガード](docs/ja/model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)
+- [2026-06-05 朝の正の残差carryover減衰](docs/ja/model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 

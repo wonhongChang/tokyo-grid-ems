@@ -1045,6 +1045,58 @@ def test_guard_business_return_off_keeps_other_guards_active():
     assert result[10].forecast_mw == pytest.approx(29_820.0)
 
 
+def test_guard_caps_non_business_analog_downshift_when_ramp_is_supported():
+    """Weekend analog shifts should not erase a supported same-day ramp."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    raw = _make_raw_forecasts(date(2026, 6, 13), 25_000.0)
+    adjusted = _make_raw_forecasts(date(2026, 6, 13), 25_000.0)
+    adjusted[9] = HourlyForecast(
+        ts=raw[9].ts,
+        forecast_mw=23_900.0,
+        p95_lower_mw=22_900.0,
+        p95_upper_mw=24_900.0,
+        p99_lower_mw=22_400.0,
+        p99_upper_mw=25_400.0,
+    )
+    inf = _make_post_holiday_inf(is_non_business_day=1)
+    inf.loc[9, "lag_24h_hourly_delta"] = 3_790.0
+    inf.loc[9, "recent_same_business_type_delta_mean"] = 1_628.8
+    inf.loc[9, "recent_same_business_type_mean"] = 26_000.0
+
+    result = guard.apply(raw, adjusted, inf)
+
+    assert result[9].forecast_mw == pytest.approx(24_700.0)
+    assert result[9].p95_lower_mw == pytest.approx(23_700.0)
+
+
+def test_guard_keeps_non_business_analog_downshift_without_shape_support():
+    """Declining weekend afternoon shape can keep the analog downward shift."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    raw = _make_raw_forecasts(date(2026, 6, 13), 25_000.0)
+    adjusted = _make_raw_forecasts(date(2026, 6, 13), 25_000.0)
+    adjusted[14] = HourlyForecast(
+        ts=raw[14].ts,
+        forecast_mw=23_900.0,
+        p95_lower_mw=22_900.0,
+        p95_upper_mw=24_900.0,
+        p99_lower_mw=22_400.0,
+        p99_upper_mw=25_400.0,
+    )
+    inf = _make_post_holiday_inf(
+        consec=0,
+        dsh=8,
+        temp_anomaly_daytime=0.5,
+        is_non_business_day=1,
+    )
+    inf.loc[14, "lag_24h_hourly_delta"] = -1_750.0
+    inf.loc[14, "recent_same_business_type_delta_mean"] = -110.0
+    inf.loc[14, "recent_same_business_type_mean"] = 23_000.0
+
+    result = guard.apply(raw, adjusted, inf)
+
+    assert result[14] is adjusted[14]
+
+
 # ---------------------------------------------------------------------------
 # Midday transition guard
 # ---------------------------------------------------------------------------

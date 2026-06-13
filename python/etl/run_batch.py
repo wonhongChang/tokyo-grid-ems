@@ -2101,6 +2101,15 @@ def _apply_intraday_residual_correction(
         if getattr(correction, "morning_ramp_continuity_guard_applied", False)
         else ""
     )
+    non_business_evening_positive_note = (
+        " non_business_evening_positive_damping=applied"
+        if getattr(
+            correction,
+            "non_business_evening_positive_residual_damping_applied",
+            False,
+        )
+        else ""
+    )
     print(
         "[INTRADAY] Residual correction "
         f"{target_date}: base={correction.base_adjustment_mw:+.1f} MW "
@@ -2114,6 +2123,7 @@ def _apply_intraday_residual_correction(
         f"{day_bias_note}"
         f"{positive_slope_note}"
         f"{morning_ramp_note}"
+        f"{non_business_evening_positive_note}"
     )
     return correction.forecasts, corrected_model_name
 

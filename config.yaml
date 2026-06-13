@@ -132,6 +132,16 @@ intraday_correction:
     weak_support_delta_mw: 1000 # damp only when lag/recent shape no longer supports a steep ramp
     damping_factor: 0.4
     min_damped_mw: 100
+  non_business_evening_positive_residual_damping:
+    enabled: true
+    target_hours: [18, 19, 20]
+    min_reference_hour: 12
+    min_lead_hours: 3
+    max_lead_hours: 6
+    min_base_adjustment_mw: 500
+    weak_support_delta_mw: 600 # damp only when weekend evening shape does not support a rebound
+    damping_factor: 0.45
+    min_damped_mw: 120
   morning_ramp_continuity_guard:
     enabled: true
     business_day_only: true
@@ -337,6 +347,13 @@ adjustment:
       max_weather_allowance_mw: 300
       shrinkage: 0.6
       max_clipping_mw: 900
+    non_business_analog_downshift_guard:
+      enabled: true
+      target_hours: [7, 8, 9, 10, 11, 12, 13]
+      min_negative_shift_mw: 500
+      max_allowed_downshift_mw: 300
+      min_supporting_delta_mw: 500
+      max_raw_anchor_excess_mw: 900
 
   midday_transition_guard:
     enabled: true

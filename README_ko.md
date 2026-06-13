@@ -225,13 +225,13 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-06-13 비영업일 analog 및 carryover 가드](docs/ko/model-improvements/model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md)
+- [2026-06-12 오전 실측 램프 floor와 밴드 tail 축소](docs/ko/model-improvements/model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)
+- [2026-06-11 습도/불쾌지수 피처와 국소 shape spike 가드](docs/ko/model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)
+- [2026-06-09 오전 실측 anchor cap](docs/ko/model-improvements/model-improvement-2026-06-09-morning-observed-anchor-cap.md)
+- [2026-06-08 영업일 복귀 shape veto](docs/ko/model-improvements/model-improvement-2026-06-08-business-return-shape-veto.md)
 - [2026-06-07 actual JSON 캐시 영속화](docs/ko/model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)
 - [2026-06-05 오전 양수 잔차 carryover 감쇠](docs/ko/model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)
-- [2026-06-04 오전 warm-lag 과반응 가드](docs/ko/model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)
-- [2026-06-03 예측 구간 상단 tail 안정화](docs/ko/model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)
-- [2026-05-30 음수 잔차 연속성 floor](docs/ko/model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)
-- [2026-05-29 저녁 레벨 overhang 가드](docs/ko/model-improvements/model-improvement-2026-05-29-evening-level-overhang-guard.md)
-- [2026-05-27 저녁 하락 연속성 가드](docs/ko/model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 

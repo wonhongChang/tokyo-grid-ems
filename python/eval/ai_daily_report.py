@@ -61,6 +61,7 @@ FEATURE_CATALOG = [
     "intraday_correction.positive_residual_mitigation",
     "intraday_correction.positive_residual_slope_damping",
     "intraday_correction.morning_positive_residual_carryover_damping",
+    "intraday_correction.non_business_evening_positive_residual_damping",
     "intraday_correction.negative_residual_recovery_damping",
     "intraday_correction.negative_residual_continuity_floor",
     "intraday_correction.negative_residual_near_term_floor",
@@ -70,6 +71,7 @@ FEATURE_CATALOG = [
     "intraday_correction.evening_decline_continuity_guard",
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
+    "adjustment.non_business_analog_downshift_guard",
     "adjustment.localized_shape_spike_guard",
     "serving.published_forecast_freeze",
 ]
@@ -79,6 +81,8 @@ FEATURE_NAME_ALIASES = {
     "positive_residual_mitigation": "intraday_correction.positive_residual_mitigation",
     "positive_residual_slope_damping": "intraday_correction.positive_residual_slope_damping",
     "morning_positive_residual_carryover_damping": "intraday_correction.morning_positive_residual_carryover_damping",
+    "non_business_evening_positive_residual_damping": "intraday_correction.non_business_evening_positive_residual_damping",
+    "non_business_analog_downshift_guard": "adjustment.non_business_analog_downshift_guard",
     "negative_residual_recovery_damping": "intraday_correction.negative_residual_recovery_damping",
     "negative_residual_continuity_floor": "intraday_correction.negative_residual_continuity_floor",
     "negative_residual_near_term_floor": "intraday_correction.negative_residual_near_term_floor",
@@ -1666,6 +1670,16 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
         "morningPositiveResidualCarryoverSupportDeltaMw": _round_number(
             item.get("morningPositiveResidualCarryoverSupportDeltaMw")
         ),
+        "nonBusinessEveningPositiveResidualDampingFactor": _round_number(
+            item.get("nonBusinessEveningPositiveResidualDampingFactor"),
+            digits=3,
+        ),
+        "nonBusinessEveningPositiveResidualDampedMw": _round_number(
+            item.get("nonBusinessEveningPositiveResidualDampedMw")
+        ),
+        "nonBusinessEveningPositiveResidualSupportDeltaMw": _round_number(
+            item.get("nonBusinessEveningPositiveResidualSupportDeltaMw")
+        ),
         "morningObservedRampFloorLiftMw": _round_number(
             item.get("morningObservedRampFloorLiftMw")
         ),
@@ -1840,6 +1854,9 @@ def _compact_calibration(calibration: dict | None) -> dict | None:
         "morningPositiveResidualCarryoverDampingApplied": correction.get("morningPositiveResidualCarryoverDampingApplied"),
         "morningPositiveResidualCarryoverDampingFactor": correction.get("morningPositiveResidualCarryoverDampingFactor"),
         "morningPositiveResidualCarryoverDampingMaxMw": correction.get("morningPositiveResidualCarryoverDampingMaxMw"),
+        "nonBusinessEveningPositiveResidualDampingApplied": correction.get("nonBusinessEveningPositiveResidualDampingApplied"),
+        "nonBusinessEveningPositiveResidualDampingFactor": correction.get("nonBusinessEveningPositiveResidualDampingFactor"),
+        "nonBusinessEveningPositiveResidualDampingMaxMw": correction.get("nonBusinessEveningPositiveResidualDampingMaxMw"),
         "negativeResidualContinuityFloorApplied": correction.get("negativeResidualContinuityFloorApplied"),
         "negativeResidualContinuityFloorMaxRestoreMw": correction.get("negativeResidualContinuityFloorMaxRestoreMw"),
         "negativeResidualNearTermFloorApplied": correction.get("negativeResidualNearTermFloorApplied"),
@@ -2766,6 +2783,8 @@ def _build_controller_diagnosis(
         flags.append("positiveResidualSlopeDampingApplied")
     if correction.get("morningPositiveResidualCarryoverDampingApplied"):
         flags.append("morningPositiveResidualCarryoverDampingApplied")
+    if correction.get("nonBusinessEveningPositiveResidualDampingApplied"):
+        flags.append("nonBusinessEveningPositiveResidualDampingApplied")
     if correction.get("eveningDeclineContinuityGuardApplied"):
         flags.append("eveningDeclineContinuityGuardApplied")
     if correction.get("morningRampContinuityGuardApplied"):
@@ -2812,6 +2831,16 @@ def _build_controller_diagnosis(
             ),
             "morningPositiveResidualCarryoverDampingMaxMw": _round_number(
                 correction.get("morningPositiveResidualCarryoverDampingMaxMw")
+            ),
+            "nonBusinessEveningPositiveResidualDampingApplied": correction.get(
+                "nonBusinessEveningPositiveResidualDampingApplied"
+            ),
+            "nonBusinessEveningPositiveResidualDampingFactor": _round_number(
+                correction.get("nonBusinessEveningPositiveResidualDampingFactor"),
+                digits=3,
+            ),
+            "nonBusinessEveningPositiveResidualDampingMaxMw": _round_number(
+                correction.get("nonBusinessEveningPositiveResidualDampingMaxMw")
             ),
             "morningRampContinuityGuardApplied": correction.get("morningRampContinuityGuardApplied"),
             "morningRampContinuityMaxRestoreMw": _round_number(
@@ -3104,6 +3133,17 @@ def _build_control_context(
         )
         < 0.999
     ]
+    non_business_evening_positive_damped_items = [
+        item
+        for item in residual_items
+        if (
+            _as_float(
+                item.get("nonBusinessEveningPositiveResidualDampingFactor")
+            )
+            or 1.0
+        )
+        < 0.999
+    ]
     morning_anchor_cap_items = [
         item
         for item in residual_items
@@ -3158,6 +3198,21 @@ def _build_control_context(
                 item.get("hour") for item in morning_positive_damped_items
             ],
             "sample": morning_positive_damped_items,
+        }),
+        "nonBusinessEveningPositiveResidualDamping": _drop_none_values({
+            "applied": correction.get("nonBusinessEveningPositiveResidualDampingApplied"),
+            "factor": _round_number(
+                correction.get("nonBusinessEveningPositiveResidualDampingFactor"),
+                digits=3,
+            ),
+            "maxReducedMw": _round_number(
+                correction.get("nonBusinessEveningPositiveResidualDampingMaxMw")
+            ),
+            "affectedHours": [
+                item.get("hour")
+                for item in non_business_evening_positive_damped_items
+            ],
+            "sample": non_business_evening_positive_damped_items,
         }),
         "morningObservedRampFloor": _drop_none_values({
             "applied": correction.get("morningObservedRampFloorApplied"),

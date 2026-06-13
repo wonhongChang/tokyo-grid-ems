@@ -404,6 +404,36 @@ class PostHolidayTimeBandGuard:
         self._business_return_excess_max_clipping_mw = float(
             business_return_excess_config.get("max_clipping_mw", 900.0)
         )
+        non_business_analog_config = guard_config.get(
+            "non_business_analog_downshift_guard",
+            {},
+        )
+        self._non_business_analog_guard_enabled = bool(
+            non_business_analog_config.get("enabled", True)
+        )
+        self._non_business_analog_guard_hours: set[int] = set()
+        for hour in non_business_analog_config.get(
+            "target_hours",
+            [7, 8, 9, 10, 11, 12, 13],
+        ):
+            try:
+                self._non_business_analog_guard_hours.add(int(hour))
+            except (TypeError, ValueError):
+                continue
+        self._non_business_analog_min_downshift_mw = max(
+            float(non_business_analog_config.get("min_negative_shift_mw", 500.0)),
+            0.0,
+        )
+        self._non_business_analog_max_downshift_mw = max(
+            float(non_business_analog_config.get("max_allowed_downshift_mw", 300.0)),
+            0.0,
+        )
+        self._non_business_analog_min_supporting_delta_mw = float(
+            non_business_analog_config.get("min_supporting_delta_mw", 500.0)
+        )
+        self._non_business_analog_max_raw_anchor_excess_mw = float(
+            non_business_analog_config.get("max_raw_anchor_excess_mw", 900.0)
+        )
 
     @staticmethod
     def _shift_forecast(forecast, shift_mw: float):
@@ -687,6 +717,97 @@ class PostHolidayTimeBandGuard:
 
         return result if changed else forecasts
 
+    def _non_business_analog_downshift_may_apply(
+        self,
+        inference_features: pd.DataFrame,
+    ) -> bool:
+        if (
+            not self._non_business_analog_guard_enabled
+            or not self._non_business_analog_guard_hours
+            or inference_features is None
+            or inference_features.empty
+            or "hour" not in inference_features.columns
+        ):
+            return False
+
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is None or int(hour) not in self._non_business_analog_guard_hours:
+                continue
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day == 1.0:
+                return True
+        return False
+
+    def _non_business_analog_downshift_supported(self, row, raw_forecast) -> bool:
+        lag_delta_mw = self._finite_float(row.get("lag_24h_hourly_delta"))
+        same_business_delta_mw = self._finite_float(
+            row.get("recent_same_business_type_delta_mean")
+        )
+        support_candidates = [
+            value
+            for value in (lag_delta_mw, same_business_delta_mw)
+            if value is not None
+        ]
+        if (
+            support_candidates
+            and max(support_candidates) >= self._non_business_analog_min_supporting_delta_mw
+        ):
+            return True
+
+        recent_mean = self._finite_float(row.get("recent_same_business_type_mean"))
+        raw_mw = self._finite_float(raw_forecast.forecast_mw)
+        if recent_mean is None or raw_mw is None:
+            return False
+        return raw_mw <= recent_mean + self._non_business_analog_max_raw_anchor_excess_mw
+
+    def _apply_non_business_analog_downshift_guard(
+        self,
+        raw_forecasts: list,
+        adjusted_forecasts: list,
+        inference_features: pd.DataFrame,
+    ) -> list:
+        if not self._non_business_analog_downshift_may_apply(inference_features):
+            return adjusted_forecasts
+
+        rows_by_hour = {}
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is not None:
+                rows_by_hour[int(hour)] = row
+
+        result = []
+        changed = False
+        for raw_forecast, adjusted_forecast in zip(raw_forecasts, adjusted_forecasts):
+            hour = pd.Timestamp(raw_forecast.ts).hour
+            row = rows_by_hour.get(hour)
+            if row is None or hour not in self._non_business_analog_guard_hours:
+                result.append(adjusted_forecast)
+                continue
+
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day != 1.0:
+                result.append(adjusted_forecast)
+                continue
+
+            shift_mw = adjusted_forecast.forecast_mw - raw_forecast.forecast_mw
+            if shift_mw >= -self._non_business_analog_min_downshift_mw:
+                result.append(adjusted_forecast)
+                continue
+            if not self._non_business_analog_downshift_supported(row, raw_forecast):
+                result.append(adjusted_forecast)
+                continue
+
+            guarded_shift_mw = -self._non_business_analog_max_downshift_mw
+            if guarded_shift_mw <= shift_mw:
+                result.append(adjusted_forecast)
+                continue
+
+            result.append(self._shift_forecast(raw_forecast, guarded_shift_mw))
+            changed = True
+
+        return result if changed else adjusted_forecasts
+
     def apply(
         self,
         raw_forecasts: list,
@@ -720,12 +841,16 @@ class PostHolidayTimeBandGuard:
         business_return_excess_active = (
             self._business_return_excess_may_apply(inference_features)
         )
+        non_business_analog_active = self._non_business_analog_downshift_may_apply(
+            inference_features
+        )
         if not (
             post_holiday_active
             or lag_holiday_active
             or self._activate_on_warm_day
             or business_return_shortfall_active
             or business_return_excess_active
+            or non_business_analog_active
         ):
             return adjusted_forecasts
 
@@ -827,6 +952,11 @@ class PostHolidayTimeBandGuard:
 
             result.append(adjusted_forecast)
 
+        result = self._apply_non_business_analog_downshift_guard(
+            raw_forecasts,
+            result,
+            inference_features,
+        )
         result = self._apply_business_return_anchor_shortfall(result, inference_features)
         return self._apply_business_return_anchor_excess_cap(result, inference_features)
 

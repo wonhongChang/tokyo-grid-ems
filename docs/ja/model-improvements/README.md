@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-06
 
+- [2026-06-13 非営業日のanalogおよびcarryoverガード](model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md)
 - [2026-06-12 朝の実績ランプ floor と予測バンド tail 縮小](model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)
 - [2026-06-11 湿度/不快指数特徴量と局所shape spikeガード](model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)
 - [2026-06-09 午後実績 anchor cap](model-improvement-2026-06-09-afternoon-observed-anchor-cap.md)

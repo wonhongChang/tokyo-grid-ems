@@ -926,6 +926,81 @@ def test_intraday_keeps_morning_positive_carryover_when_shape_support_is_strong(
     assert result.forecasts[10].forecast_mw == pytest.approx(31_400.1, abs=0.1)
 
 
+def test_intraday_damps_non_business_evening_positive_carryover_when_shape_is_weak():
+    target = date(2026, 6, 13)  # Saturday
+    forecasts = _make_forecasts(target, 20_000.0)
+    actual_series = [
+        _actual_point(target, 13, 21_000.0),
+        _actual_point(target, 14, 21_000.0),
+        _actual_point(target, 15, 21_000.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": hour, "is_non_business_day": 1}
+        for hour in range(24)
+    ])
+    inference_features.loc[18, "lag_24h_hourly_delta"] = -550.0
+    inference_features.loc[18, "recent_same_business_type_delta_mean"] = 548.0
+    inference_features.loc[19, "lag_24h_hourly_delta"] = -430.0
+    inference_features.loc[19, "recent_same_business_type_delta_mean"] = 14.0
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.6,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 0.92,
+            "operational_calibration": {
+                "business_type_transition_prior": {"enabled": False},
+                "business_type_transition": {"enabled": False},
+            },
+            "positive_residual_slope_damping": {"enabled": False},
+            "morning_positive_residual_carryover_damping": {"enabled": False},
+            "non_business_evening_positive_residual_damping": {
+                "enabled": True,
+                "target_hours": [18, 19, 20],
+                "min_reference_hour": 12,
+                "min_lead_hours": 3,
+                "max_lead_hours": 6,
+                "min_base_adjustment_mw": 500.0,
+                "weak_support_delta_mw": 600.0,
+                "damping_factor": 0.45,
+                "min_damped_mw": 120.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.base_adjustment_mw == pytest.approx(600.0, abs=0.1)
+    assert result.non_business_evening_positive_residual_damping_applied is True
+    assert (
+        result.non_business_evening_positive_residual_damping_factor
+        == pytest.approx(0.45)
+    )
+    assert (
+        result.non_business_evening_positive_residual_damping_max_mw
+        == pytest.approx(279.3, abs=0.1)
+    )
+    assert result.forecasts[16].forecast_mw == pytest.approx(20_600.0, abs=0.1)
+    assert result.forecasts[17].forecast_mw == pytest.approx(20_552.0, abs=0.1)
+    assert result.forecasts[18].forecast_mw == pytest.approx(20_228.5, abs=0.1)
+    assert result.forecasts[19].forecast_mw == pytest.approx(20_210.2, abs=0.1)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_18 = next(item for item in residual_logs if item["hour"] == 18)
+    assert (
+        hour_18["nonBusinessEveningPositiveResidualDampingFactor"]
+        == pytest.approx(0.45)
+    )
+    assert (
+        "non_business_evening_positive_residual_damping"
+        in result.applied_regime_reason
+    )
+
+
 def test_intraday_correction_clips_large_adjustment():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)
