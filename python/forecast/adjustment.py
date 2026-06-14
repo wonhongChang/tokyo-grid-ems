@@ -421,11 +421,11 @@ class PostHolidayTimeBandGuard:
             except (TypeError, ValueError):
                 continue
         self._non_business_analog_min_downshift_mw = max(
-            float(non_business_analog_config.get("min_negative_shift_mw", 500.0)),
+            float(non_business_analog_config.get("min_negative_shift_mw", 1.0)),
             0.0,
         )
         self._non_business_analog_max_downshift_mw = max(
-            float(non_business_analog_config.get("max_allowed_downshift_mw", 300.0)),
+            float(non_business_analog_config.get("max_allowed_downshift_mw", 0.0)),
             0.0,
         )
         self._non_business_analog_min_supporting_delta_mw = float(

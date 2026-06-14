@@ -758,10 +758,14 @@ def test_guard_adds_small_offset_for_ordinary_warm_day():
 
 def test_guard_does_not_add_warm_day_offset_on_non_business_day():
     """Weekend/holiday heat remains a model feature; manual warm-day offset is business-day only."""
-    guard = PostHolidayTimeBandGuard(_guard_config(
+    config = _guard_config(
         warm_day=True,
         warm_day_offset=250.0,
-    ))
+    )
+    config["adjustment"]["post_holiday_timeband_guard"][
+        "non_business_analog_downshift_guard"
+    ] = {"enabled": False}
+    guard = PostHolidayTimeBandGuard(config)
     target = date(2026, 5, 16)  # Saturday
     raw = _make_raw_forecasts(target, 28_000.0)
     adj = []
@@ -1065,8 +1069,8 @@ def test_guard_caps_non_business_analog_downshift_when_ramp_is_supported():
 
     result = guard.apply(raw, adjusted, inf)
 
-    assert result[9].forecast_mw == pytest.approx(24_700.0)
-    assert result[9].p95_lower_mw == pytest.approx(23_700.0)
+    assert result[9].forecast_mw == pytest.approx(25_000.0)
+    assert result[9].p95_lower_mw == pytest.approx(24_000.0)
 
 
 def test_guard_keeps_non_business_analog_downshift_without_shape_support():

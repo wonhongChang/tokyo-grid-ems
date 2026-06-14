@@ -142,6 +142,18 @@ intraday_correction:
     weak_support_delta_mw: 600 # damp only when weekend evening shape does not support a rebound
     damping_factor: 0.45
     min_damped_mw: 120
+  non_business_evening_negative_residual_damping:
+    enabled: true
+    target_hours: [18, 19, 20]
+    min_reference_hour: 16
+    min_lead_hours: 1
+    max_lead_hours: 3
+    min_abs_base_adjustment_mw: 500
+    min_latest_slope_mw: 600
+    min_mean_slope_mw: 300
+    min_support_delta_mw: 0 # require lag/recent weekend evening shape to allow flat or rising demand
+    damping_factor: 0.45
+    min_damped_mw: 120
   morning_ramp_continuity_guard:
     enabled: true
     business_day_only: true
@@ -198,8 +210,8 @@ intraday_correction:
     min_reduction_mw: 100
   afternoon_observed_anchor_cap:
     enabled: true
-    business_day_only: true
-    target_hours: [14, 15, 16]
+    business_day_only: false
+    target_hours: [14, 15, 16, 17]
     min_reference_hour: 12     # require afternoon evidence; avoid pre-lunch guesses
     max_reference_hour: 15
     max_lead_hours: 3
@@ -350,8 +362,8 @@ adjustment:
     non_business_analog_downshift_guard:
       enabled: true
       target_hours: [7, 8, 9, 10, 11, 12, 13]
-      min_negative_shift_mw: 500
-      max_allowed_downshift_mw: 300
+      min_negative_shift_mw: 1
+      max_allowed_downshift_mw: 0
       min_supporting_delta_mw: 500
       max_raw_anchor_excess_mw: 900
 
