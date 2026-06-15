@@ -776,6 +776,15 @@ class IntradayResidualCorrector:
             float(morning_observed_ramp_config.get("min_lift_mw", 100.0)),
             0.0,
         )
+        self._morning_observed_ramp_max_latest_overforecast_mw = max(
+            float(
+                morning_observed_ramp_config.get(
+                    "max_latest_overforecast_mw",
+                    500.0,
+                )
+            ),
+            0.0,
+        )
         morning_warm_config = correction_config.get(
             "morning_warm_lag_overreaction_guard",
             {},
@@ -2106,6 +2115,24 @@ class IntradayResidualCorrector:
                     return None
 
         actual_values = [actual_mw_by_hour[hour] for hour in required_hours]
+        latest_forecast = next(
+            (
+                float(forecast.forecast_mw)
+                for forecast in forecasts
+                if pd.Timestamp(forecast.ts).hour == last_observed_hour
+            ),
+            None,
+        )
+        if latest_forecast is not None:
+            latest_overforecast_mw = (
+                latest_forecast - actual_mw_by_hour[last_observed_hour]
+            )
+            if (
+                latest_overforecast_mw
+                >= self._morning_observed_ramp_max_latest_overforecast_mw
+            ):
+                return None
+
         recent_slopes = [
             actual_values[1] - actual_values[0],
             actual_values[2] - actual_values[1],

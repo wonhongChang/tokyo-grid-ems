@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-06
 
+- [2026-06-15 朝ramp floor過大予測veto](model-improvement-2026-06-15-morning-ramp-floor-overforecast-veto.md)
 - [2026-06-14 非営業日のshapeおよびresidualガード](model-improvement-2026-06-14-non-business-shape-and-residual-guards.md)
 - [2026-06-13 非営業日のanalogおよびcarryoverガード](model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md)
 - [2026-06-12 朝の実績ランプ floor と予測バンド tail 縮小](model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)

@@ -8,6 +8,7 @@
 
 ## 2026-06
 
+- [2026-06-15 오전 ramp floor 과대예측 veto](model-improvement-2026-06-15-morning-ramp-floor-overforecast-veto.md)
 - [2026-06-14 비영업일 shape 및 residual 가드](model-improvement-2026-06-14-non-business-shape-and-residual-guards.md)
 - [2026-06-13 비영업일 analog 및 carryover 가드](model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md)
 - [2026-06-12 오전 실측 램프 floor와 밴드 tail 축소](model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)

@@ -179,6 +179,7 @@ intraday_correction:
     max_floor_delta_mw: 2200
     max_lift_mw: 1200
     min_lift_mw: 100
+    max_latest_overforecast_mw: 500 # do not lift future ramp when the latest observed bucket is already materially over-forecast
   morning_warm_lag_overreaction_guard:
     enabled: true
     business_day_only: true
