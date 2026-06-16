@@ -132,6 +132,18 @@ intraday_correction:
     weak_support_delta_mw: 1000 # damp only when lag/recent shape no longer supports a steep ramp
     damping_factor: 0.4
     min_damped_mw: 100
+  afternoon_positive_residual_carryover_damping:
+    enabled: true
+    business_day_only: true
+    target_hours: [15, 16, 17, 18, 19]
+    min_reference_hour: 12
+    max_reference_hour: 15
+    min_lead_hours: 1
+    max_lead_hours: 5
+    min_base_adjustment_mw: 250
+    weak_support_delta_mw: 300 # damp positive carryover when afternoon/evening shape support is weak
+    damping_factor: 0.4
+    min_damped_mw: 100
   non_business_evening_positive_residual_damping:
     enabled: true
     target_hours: [18, 19, 20]
@@ -180,6 +192,7 @@ intraday_correction:
     max_lift_mw: 1200
     min_lift_mw: 100
     max_latest_overforecast_mw: 500 # do not lift future ramp when the latest observed bucket is already materially over-forecast
+    max_floor_delta_over_support_mw: 300 # avoid lifting far above target-hour lag/recent shape support
   morning_warm_lag_overreaction_guard:
     enabled: true
     business_day_only: true
@@ -204,7 +217,7 @@ intraday_correction:
     min_reference_hour: 8      # require same-day morning evidence before capping
     max_reference_hour: 12
     max_lead_hours: 4
-    min_latest_overforecast_mw: 200
+    min_latest_overforecast_mw: 500
     cap_buffer_mw: 250
     shrinkage: 0.75
     max_reduction_mw: 800
