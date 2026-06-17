@@ -69,6 +69,9 @@ class IntradayCorrectionResult:
     non_business_evening_negative_residual_damping_applied: bool = False
     non_business_evening_negative_residual_damping_factor: float = 1.0
     non_business_evening_negative_residual_damping_max_mw: float = 0.0
+    early_observed_residual_carryover_applied: bool = False
+    early_observed_residual_carryover_mw: float = 0.0
+    early_observed_residual_count: int = 0
 
     def metadata(self) -> dict:
         return {
@@ -79,6 +82,14 @@ class IntradayCorrectionResult:
             "fallbackResidualsIgnored": self.fallback_residuals_ignored,
             "carryoverAdjustmentMw": round(float(self.carryover_adjustment_mw), 1),
             "carryoverSourceHour": self.carryover_source_hour,
+            "earlyObservedResidualCarryoverApplied": (
+                self.early_observed_residual_carryover_applied
+            ),
+            "earlyObservedResidualCarryoverMw": round(
+                float(self.early_observed_residual_carryover_mw),
+                1,
+            ),
+            "earlyObservedResidualCount": int(self.early_observed_residual_count),
             "appliedDayBiasMw": round(float(self.applied_day_bias_mw), 1),
             "businessTypeTransitionPriorBiasMw": round(
                 float(self.business_type_transition_prior_bias_mw),
@@ -250,6 +261,32 @@ class IntradayResidualCorrector:
         self._shrinkage = float(correction_config.get("shrinkage", 0.6))
         self._max_abs_adjustment_mw = float(correction_config.get("max_abs_adjustment_mw", 1200.0))
         self._decay_per_hour = float(correction_config.get("decay_per_hour", 0.92))
+        early_carry_config = correction_config.get(
+            "early_observed_residual_carryover",
+            {},
+        )
+        self._early_observed_carryover_enabled = bool(
+            early_carry_config.get("enabled", True)
+        )
+        self._early_observed_carryover_min_hours = max(
+            int(early_carry_config.get("min_observed_hours", 2)),
+            1,
+        )
+        self._early_observed_carryover_min_abs_mean_mw = max(
+            float(early_carry_config.get("min_abs_mean_residual_mw", 500.0)),
+            0.0,
+        )
+        self._early_observed_carryover_require_same_sign = bool(
+            early_carry_config.get("require_same_sign", True)
+        )
+        self._early_observed_carryover_shrinkage = min(
+            max(float(early_carry_config.get("shrinkage", 0.5)), 0.0),
+            1.0,
+        )
+        self._early_observed_carryover_max_abs_mw = max(
+            float(early_carry_config.get("max_abs_adjustment_mw", 700.0)),
+            0.0,
+        )
         calibration_config = correction_config.get("operational_calibration", {})
         carry_config = calibration_config.get("day_boundary_carryover", {})
         self._carryover_enabled = bool(carry_config.get("enabled", True))
@@ -1239,6 +1276,38 @@ class IntradayResidualCorrector:
             p99_lower_mw=round(forecast.p99_lower_mw + shift_mw, 1),
             p99_upper_mw=round(forecast.p99_upper_mw + shift_mw, 1),
         )
+
+    def _early_observed_residual_carryover(
+        self,
+        residuals: list[_ResidualPoint],
+    ) -> float | None:
+        if not self._early_observed_carryover_enabled:
+            return None
+        if len(residuals) < self._early_observed_carryover_min_hours:
+            return None
+        if len(residuals) >= self._min_observed_hours:
+            return None
+
+        values = [float(point.residual_mw) for point in residuals]
+        if self._early_observed_carryover_require_same_sign:
+            has_positive = any(value > 0.0 for value in values)
+            has_negative = any(value < 0.0 for value in values)
+            if has_positive and has_negative:
+                return None
+
+        mean_residual_mw = float(np.mean(values))
+        if abs(mean_residual_mw) < self._early_observed_carryover_min_abs_mean_mw:
+            return None
+
+        adjustment_mw = mean_residual_mw * self._early_observed_carryover_shrinkage
+        adjustment_mw = float(np.clip(
+            adjustment_mw,
+            -self._early_observed_carryover_max_abs_mw,
+            self._early_observed_carryover_max_abs_mw,
+        ))
+        if adjustment_mw == 0.0:
+            return None
+        return round(adjustment_mw, 1)
 
     def _latest_previous_observed_residual(
         self,
@@ -3254,13 +3323,33 @@ class IntradayResidualCorrector:
 
             carryover_adjustment_mw = 0.0
             carryover_source_hour: int | None = None
+            early_carryover_adjustment_mw = 0.0
+            early_carryover_applied = False
+            early_carryover_count = 0
+            early_adjustment = self._early_observed_residual_carryover(
+                recent_residuals,
+            )
+            if early_adjustment is not None:
+                early_carryover_adjustment_mw = early_adjustment
+                early_carryover_applied = True
+                early_carryover_count = len(recent_residuals)
+                early_bias_by_hour = {
+                    pd.Timestamp(forecast.ts).hour: early_carryover_adjustment_mw
+                    for forecast in calibrated_forecasts
+                }
+                calibrated_forecasts, _ = self._apply_hourly_bias(
+                    calibrated_forecasts,
+                    early_bias_by_hour,
+                    last_observed_hour,
+                )
+                applied_reasons.append("early_observed_residual_carryover")
             first_forecast_ts = min(pd.Timestamp(forecast.ts) for forecast in forecasts)
             previous_residual = self._latest_previous_observed_residual(
                 previous_actual_series or [],
                 previous_forecasts or [],
                 first_forecast_ts,
             )
-            if previous_residual is not None:
+            if previous_residual is not None and not early_carryover_applied:
                 carryover_adjustment_mw, carryover_source_hour, _ = previous_residual
                 if carryover_adjustment_mw != 0.0:
                     carry_bias_by_hour = {
@@ -3312,6 +3401,7 @@ class IntradayResidualCorrector:
                     or shape_guard_applied
                     or applied_day_bias_mw != 0.0
                     or carryover_adjustment_mw != 0.0
+                    or early_carryover_applied
                     or business_type_transition_prior_bias_mw != 0.0
                 ),
                 len(residuals_by_hour),
@@ -3332,6 +3422,12 @@ class IntradayResidualCorrector:
                 False,
                 source_confidence,
                 tuple(applied_reasons),
+                early_observed_residual_carryover_applied=early_carryover_applied,
+                early_observed_residual_carryover_mw=round(
+                    early_carryover_adjustment_mw,
+                    1,
+                ),
+                early_observed_residual_count=early_carryover_count,
             )
 
         max_forecast_hour = max(forecast_by_hour)

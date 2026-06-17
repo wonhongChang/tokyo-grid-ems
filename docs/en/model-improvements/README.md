@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-18 early observed residual carryover](model-improvement-2026-06-18-early-observed-residual-carryover.md)
 - [2026-06-16 morning floor shape support and afternoon carryover damping](model-improvement-2026-06-16-morning-floor-shape-support-and-afternoon-carryover.md)
 - [2026-06-15 morning ramp floor over-forecast veto](model-improvement-2026-06-15-morning-ramp-floor-overforecast-veto.md)
 - [2026-06-14 non-business shape and residual guards](model-improvement-2026-06-14-non-business-shape-and-residual-guards.md)

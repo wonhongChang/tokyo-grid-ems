@@ -89,8 +89,8 @@ def test_intraday_correction_waits_for_minimum_observed_hours():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)
     actual_series = [
-        _actual_point(target, 9, 21_000.0),
-        _actual_point(target, 10, 21_000.0),
+        _actual_point(target, 9, 20_400.0),
+        _actual_point(target, 10, 20_400.0),
     ]
 
     result = IntradayResidualCorrector({}).apply(forecasts, actual_series)
@@ -103,8 +103,8 @@ def test_intraday_correction_ignores_tepco_forecast_fallback_for_residuals():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)
     actual_series = [
-        _actual_point(target, 8, 21_000.0),
-        _actual_point(target, 9, 21_000.0),
+        _actual_point(target, 8, 20_400.0),
+        _actual_point(target, 9, 20_400.0),
         {
             **_actual_point(target, 10, 21_000.0),
             "actualSource": "tepco_forecast_fallback",
@@ -173,6 +173,65 @@ def test_intraday_correction_carries_last_real_residual_across_midnight():
     assert result.carryover_adjustment_mw == pytest.approx(-1_000.0)
     assert result.forecasts[0].forecast_mw == pytest.approx(19_000.0)
     assert result.forecasts[23].forecast_mw == pytest.approx(19_000.0)
+
+
+def test_intraday_correction_prefers_early_same_day_residuals_over_stale_midnight_carryover():
+    target = date(2026, 6, 18)
+    previous = date(2026, 6, 17)
+    forecasts = _make_forecasts(target, 20_000.0)
+    previous_forecasts = _make_forecasts(previous, 20_000.0)
+    previous_actual_series = [
+        _actual_point(previous, 21, 19_000.0),
+        {
+            **_actual_point(previous, 22, 20_000.0),
+            "actualSource": "tepco_forecast_fallback",
+        },
+    ]
+    actual_series = [
+        _actual_point(target, 0, 21_000.0),
+        _actual_point(target, 1, 20_900.0),
+    ]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "min_observed_hours": 3,
+            "early_observed_residual_carryover": {
+                "enabled": True,
+                "min_observed_hours": 2,
+                "min_abs_mean_residual_mw": 500.0,
+                "require_same_sign": True,
+                "shrinkage": 0.5,
+                "max_abs_adjustment_mw": 700.0,
+            },
+            "operational_calibration": {
+                "day_boundary_carryover": {
+                    "enabled": True,
+                    "shrinkage": 1.0,
+                    "decay_per_hour": 1.0,
+                    "max_age_hours": 8,
+                    "max_abs_adjustment_mw": 1_200.0,
+                },
+                "day_level_scale": {"enabled": False},
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        previous_actual_series=previous_actual_series,
+        previous_forecasts=previous_forecasts,
+    )
+
+    assert result.applied is True
+    assert result.carryover_adjustment_mw == pytest.approx(0.0)
+    assert result.early_observed_residual_carryover_applied is True
+    assert result.early_observed_residual_carryover_mw == pytest.approx(475.0)
+    assert result.early_observed_residual_count == 2
+    assert result.forecasts[0].forecast_mw == pytest.approx(20_000.0)
+    assert result.forecasts[1].forecast_mw == pytest.approx(20_000.0)
+    assert result.forecasts[2].forecast_mw == pytest.approx(20_475.0)
+    assert "early_observed_residual_carryover" in result.applied_regime_reason
+    assert "day_boundary_residual_carryover" not in result.applied_regime_reason
 
 
 def test_intraday_correction_applies_day_level_scale_when_lag_is_overheated_and_cooler():

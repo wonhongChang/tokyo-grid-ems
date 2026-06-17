@@ -8,6 +8,7 @@
 
 ## 2026-06
 
+- [2026-06-18 새벽 early observed residual carryover](model-improvement-2026-06-18-early-observed-residual-carryover.md)
 - [2026-06-16 오전 floor shape 지지와 오후 carryover 감쇠](model-improvement-2026-06-16-morning-floor-shape-support-and-afternoon-carryover.md)
 - [2026-06-15 오전 ramp floor 과대예측 veto](model-improvement-2026-06-15-morning-ramp-floor-overforecast-veto.md)
 - [2026-06-14 비영업일 shape 및 residual 가드](model-improvement-2026-06-14-non-business-shape-and-residual-guards.md)

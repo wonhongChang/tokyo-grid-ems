@@ -31,6 +31,13 @@ intraday_correction:
   shrinkage: 0.6             # partial correction; avoids chasing noisy hourly residuals
   max_abs_adjustment_mw: 1200
   decay_per_hour: 0.92       # gradually fades the correction farther into the day
+  early_observed_residual_carryover:
+    enabled: true
+    min_observed_hours: 2    # use only when 0-1 JST both confirm the same miss direction
+    min_abs_mean_residual_mw: 500
+    require_same_sign: true
+    shrinkage: 0.5
+    max_abs_adjustment_mw: 700
   operational_calibration:
     day_boundary_carryover:
       enabled: true          # carry the last real observed residual across midnight
