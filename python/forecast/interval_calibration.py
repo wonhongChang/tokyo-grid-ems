@@ -72,4 +72,34 @@ def calibrate_p95_half_widths(
 
     capped_lo = _cap_side(half_lo, half_hi)
     capped_hi = _cap_side(half_hi, half_lo)
+
+    rebalance_ratio = _positive_float(
+        interval_config.get("rebalance_p95_asymmetry_ratio")
+    )
+    if rebalance_ratio is None:
+        rebalance_ratio = max_asymmetry_ratio
+    if (
+        interval_config.get("rebalance_extreme_asymmetry", False)
+        and rebalance_ratio is not None
+        and rebalance_ratio > 1.0
+    ):
+        larger = max(capped_lo, capped_hi)
+        smaller = min(capped_lo, capped_hi)
+        if larger > smaller * rebalance_ratio:
+            total_width = capped_lo + capped_hi
+            target_smaller = max(
+                min_half_width,
+                total_width / (rebalance_ratio + 1.0),
+            )
+            target_larger = max(min_half_width, total_width - target_smaller)
+            if target_larger > target_smaller * rebalance_ratio:
+                target_larger = target_smaller * rebalance_ratio
+            if max_half_width is not None:
+                target_larger = min(target_larger, max_half_width)
+                target_smaller = min(target_smaller, max_half_width)
+            if capped_lo >= capped_hi:
+                capped_lo, capped_hi = target_larger, target_smaller
+            else:
+                capped_lo, capped_hi = target_smaller, target_larger
+
     return capped_lo, capped_hi

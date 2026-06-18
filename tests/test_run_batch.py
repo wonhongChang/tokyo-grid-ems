@@ -688,6 +688,37 @@ def test_build_forecast_json_caps_extreme_one_sided_band():
     assert result["peak"]["interval"]["p95Upper"] == 33_250.0
 
 
+def test_build_forecast_json_rebalances_extreme_one_sided_band():
+    from python.forecast.baseline import HourlyForecast
+    fc = HourlyForecast(
+        ts="2024-01-01T09:00:00+09:00",
+        forecast_mw=31_000.0,
+        p95_lower_mw=28_750.0,
+        p95_upper_mw=31_500.0,
+        p99_lower_mw=26_500.0,
+        p99_upper_mw=32_000.0,
+    )
+    config = {
+        "interval_calibration": {
+            "min_p95_half_width_mw": 500.0,
+            "max_p95_half_width_mw": 3_000.0,
+            "max_p95_asymmetry_ratio": 2.5,
+            "asymmetry_reference_half_width_mw": 900.0,
+            "rebalance_extreme_asymmetry": True,
+            "rebalance_p95_asymmetry_ratio": 1.6,
+        }
+    }
+
+    result = build_forecast_json(date(2024, 1, 1), [fc], config)
+    point = result["series"][0]
+
+    assert point["p95LowerMw"] == pytest.approx(29_307.7, abs=0.1)
+    assert point["p95UpperMw"] == pytest.approx(32_057.7, abs=0.1)
+    assert point["p99LowerMw"] == pytest.approx(27_615.4, abs=0.1)
+    assert point["p99UpperMw"] == pytest.approx(33_115.4, abs=0.1)
+    assert result["peak"]["interval"]["p95Upper"] == point["p95UpperMw"]
+
+
 def _forecast_point(d: date, forecast_mw: float) -> HourlyForecast:
     return HourlyForecast(
         ts=f"{d.isoformat()}T11:00:00+09:00",

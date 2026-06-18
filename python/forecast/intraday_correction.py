@@ -600,7 +600,7 @@ class IntradayResidualCorrector:
             0.0,
         )
         self._morning_positive_weak_support_delta_mw = float(
-            morning_positive_config.get("weak_support_delta_mw", 1_000.0)
+            morning_positive_config.get("weak_support_delta_mw", 1_800.0)
         )
         self._morning_positive_damping_factor = min(
             max(float(morning_positive_config.get("damping_factor", 0.4)), 0.0),
@@ -886,7 +886,7 @@ class IntradayResidualCorrector:
             float(
                 morning_observed_ramp_config.get(
                     "max_floor_delta_over_support_mw",
-                    300.0,
+                    0.0,
                 )
             ),
             0.0,
@@ -1038,6 +1038,9 @@ class IntradayResidualCorrector:
         self._afternoon_anchor_min_mean_overforecast_mw = max(
             float(afternoon_anchor_config.get("min_mean_overforecast_mw", 500.0)),
             0.0,
+        )
+        self._afternoon_anchor_max_latest_slope_mw = float(
+            afternoon_anchor_config.get("max_latest_slope_mw", 500.0)
         )
         self._afternoon_anchor_cap_buffer_mw = max(
             float(afternoon_anchor_config.get("cap_buffer_mw", 400.0)),
@@ -2738,11 +2741,26 @@ class IntradayResidualCorrector:
                 if _is_nonworking_day(forecast_ts):
                     return None
 
+        latest_slope_mw = None
+        previous_observed_hour = last_observed_hour - 1
+        if previous_observed_hour in actual_mw_by_hour:
+            latest_slope_mw = (
+                actual_mw_by_hour[last_observed_hour]
+                - actual_mw_by_hour[previous_observed_hour]
+            )
+            if latest_slope_mw > self._afternoon_anchor_max_latest_slope_mw:
+                return None
+
         return {
             "lastObservedHour": last_observed_hour,
             "lastActualMw": round(actual_mw_by_hour[last_observed_hour], 1),
             "latestResidualMw": round(latest_residual, 1),
             "meanResidualMw": round(mean_residual, 1),
+            "latestSlopeMw": (
+                round(float(latest_slope_mw), 1)
+                if latest_slope_mw is not None
+                else None
+            ),
         }
 
     def _afternoon_observed_anchor_cap_reduction(
@@ -2817,6 +2835,7 @@ class IntradayResidualCorrector:
             "cumulativeSupportMw": round(float(cumulative_support_mw), 1),
             "latestResidualMw": context["latestResidualMw"],
             "meanResidualMw": context["meanResidualMw"],
+            "latestSlopeMw": context.get("latestSlopeMw"),
         }
 
     def _negative_residual_continuity_floor_context(
@@ -3730,6 +3749,7 @@ class IntradayResidualCorrector:
             afternoon_anchor_cumulative_support_mw = None
             afternoon_anchor_latest_residual_mw = None
             afternoon_anchor_mean_residual_mw = None
+            afternoon_anchor_latest_slope_mw = None
             pre_evening_decline_adjustment_mw = decayed_adjustment_mw
             evening_decline_cap_mw = None
             evening_decline_reduction_mw = 0.0
@@ -4134,6 +4154,9 @@ class IntradayResidualCorrector:
                 afternoon_anchor_mean_residual_mw = (
                     afternoon_anchor_cap["meanResidualMw"]
                 )
+                afternoon_anchor_latest_slope_mw = (
+                    afternoon_anchor_cap["latestSlopeMw"]
+                )
                 afternoon_anchor_cap_applied = True
                 afternoon_anchor_cap_reduced_values.append(
                     afternoon_anchor_reduction_mw
@@ -4426,6 +4449,11 @@ class IntradayResidualCorrector:
                 "afternoonObservedAnchorCapMeanResidualMw": (
                     round(float(afternoon_anchor_mean_residual_mw), 1)
                     if afternoon_anchor_mean_residual_mw is not None
+                    else None
+                ),
+                "afternoonObservedAnchorCapLatestSlopeMw": (
+                    round(float(afternoon_anchor_latest_slope_mw), 1)
+                    if afternoon_anchor_latest_slope_mw is not None
                     else None
                 ),
                 "preEveningDeclineContinuityAdjustmentMw": round(

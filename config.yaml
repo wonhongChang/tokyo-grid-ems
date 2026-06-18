@@ -22,6 +22,8 @@ interval_calibration:
   max_p95_half_width_mw: 3000 # cap rare quantile-tail explosions after weather-regime shifts
   max_p95_asymmetry_ratio: 2.5 # limit one-sided p95 tails relative to the opposite side
   asymmetry_reference_half_width_mw: 900 # avoid over-tight caps when one side collapses to the floor
+  rebalance_extreme_asymmetry: true # keep final bands visually centered when one quantile side collapses
+  rebalance_p95_asymmetry_ratio: 1.6 # preserve total p95 width while reducing one-sided band drift
   mirror_collapsed_side: false # avoid mirroring one-sided quantile uncertainty into the other side
 
 intraday_correction:
@@ -136,7 +138,7 @@ intraday_correction:
     max_lead_hours: 4
     min_base_adjustment_mw: 300
     min_recent_ramp_slope_mw: 1000
-    weak_support_delta_mw: 1000 # damp only when lag/recent shape no longer supports a steep ramp
+    weak_support_delta_mw: 1800 # damp when lag/recent shape only weakly supports a steep ramp
     damping_factor: 0.4
     min_damped_mw: 100
   afternoon_positive_residual_carryover_damping:
@@ -199,7 +201,7 @@ intraday_correction:
     max_lift_mw: 1200
     min_lift_mw: 100
     max_latest_overforecast_mw: 500 # do not lift future ramp when the latest observed bucket is already materially over-forecast
-    max_floor_delta_over_support_mw: 300 # avoid lifting far above target-hour lag/recent shape support
+    max_floor_delta_over_support_mw: 0 # never lift above target-hour lag/recent shape support
   morning_warm_lag_overreaction_guard:
     enabled: true
     business_day_only: true
@@ -239,6 +241,7 @@ intraday_correction:
     lookback_observed_hours: 3 # avoid reacting to a one-slot lunch dip only
     min_latest_overforecast_mw: 500
     min_mean_overforecast_mw: 500
+    max_latest_slope_mw: 500 # skip cap when same-day actuals are already recovering strongly
     cap_buffer_mw: 350
     support_fraction: 0.6    # lag/recent deltas explain part, not all, of afternoon rise
     shrinkage: 0.75
