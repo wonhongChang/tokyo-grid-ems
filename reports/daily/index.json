@@ -1,57 +1,57 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-06-18T22:32:56+09:00",
+  "generatedAt": "2026-06-19T01:01:58+09:00",
   "availability": "ok",
   "latest": {
     "schemaVersion": "1.0.0",
     "timezone": "Asia/Tokyo",
-    "generatedAt": "2026-06-18T22:32:56+09:00",
-    "date": "2026-06-17",
+    "generatedAt": "2026-06-19T01:01:58+09:00",
+    "date": "2026-06-18",
     "availability": "ok",
     "model": {
       "name": "lgbm_quantile_q50_intraday_residual",
       "family": "lgbm_quantile_q50"
     },
     "summary": {
-      "comparableHours": 24,
-      "modelMaeMw": 319.5,
-      "tepcoMaeMw": 167.1,
-      "modelWapePct": 1.1,
-      "tepcoWapePct": 0.57,
-      "modelRmseMw": 420.7,
-      "tepcoRmseMw": 221.5,
-      "modelMaxErrorMw": 870.8,
-      "tepcoMaxErrorMw": 680.0,
-      "modelMaxErrorHour": 15,
-      "tepcoMaxErrorHour": 14,
-      "maeGapMw": 152.4,
-      "wapeGapPct": 0.53,
+      "comparableHours": 22,
+      "modelMaeMw": 650.0,
+      "tepcoMaeMw": 347.7,
+      "modelWapePct": 2.21,
+      "tepcoWapePct": 1.18,
+      "modelRmseMw": 768.4,
+      "tepcoRmseMw": 459.4,
+      "modelMaxErrorMw": 1940.0,
+      "tepcoMaxErrorMw": 1340.0,
+      "modelMaxErrorHour": 10,
+      "tepcoMaxErrorHour": 10,
+      "maeGapMw": 302.3,
+      "wapeGapPct": 1.03,
       "verdict": "tepco_better",
-      "modelWins": 7,
-      "tepcoWins": 17,
+      "modelWins": 8,
+      "tepcoWins": 14,
       "ties": 0,
-      "modelAdvantageHours": 7,
-      "tepcoAdvantageHours": 17,
+      "modelAdvantageHours": 8,
+      "tepcoAdvantageHours": 14,
       "equalHours": 0,
-      "modelAdvantageRate": 0.292
+      "modelAdvantageRate": 0.364
     },
     "peak": {
       "actual": {
-        "hour": 13,
-        "actualMw": 35510.0
+        "hour": 15,
+        "actualMw": 34700.0
       },
       "model": {
-        "hour": 11,
-        "forecastMw": 35260.0,
-        "errorAtActualPeakMw": -364.5,
-        "timeErrorHours": -2
+        "hour": 16,
+        "forecastMw": 34044.1,
+        "errorAtActualPeakMw": -955.5,
+        "timeErrorHours": 1
       },
       "tepco": {
-        "hour": 13,
-        "forecastMw": 35270.0,
-        "errorAtActualPeakMw": -240.0,
-        "timeErrorHours": 0
+        "hour": 14,
+        "forecastMw": 34730.0,
+        "errorAtActualPeakMw": -290.0,
+        "timeErrorHours": -1
       }
     },
     "timeBands": [
@@ -59,99 +59,122 @@
         "code": "overnight",
         "label": "00-05",
         "hours": 6,
-        "modelMaeMw": 176.0,
-        "tepcoMaeMw": 138.3,
-        "modelBiasMw": -137.7,
-        "verdict": "close"
+        "modelMaeMw": 889.3,
+        "tepcoMaeMw": 158.3,
+        "modelBiasMw": -889.3,
+        "verdict": "tepco_better"
       },
       {
         "code": "morning_ramp",
         "label": "06-10",
         "hours": 5,
-        "modelMaeMw": 335.8,
-        "tepcoMaeMw": 90.0,
-        "modelBiasMw": -335.8,
+        "modelMaeMw": 845.7,
+        "tepcoMaeMw": 582.0,
+        "modelBiasMw": 139.6,
         "verdict": "tepco_better"
       },
       {
         "code": "daytime",
         "label": "11-15",
         "hours": 5,
-        "modelMaeMw": 546.8,
-        "tepcoMaeMw": 242.0,
-        "modelBiasMw": -546.8,
-        "verdict": "tepco_better"
+        "modelMaeMw": 432.1,
+        "tepcoMaeMw": 520.0,
+        "modelBiasMw": -206.3,
+        "verdict": "model_better"
       },
       {
         "code": "late_afternoon",
         "label": "16-18",
         "hours": 3,
-        "modelMaeMw": 295.1,
-        "tepcoMaeMw": 206.7,
-        "modelBiasMw": -295.1,
+        "modelMaeMw": 426.1,
+        "tepcoMaeMw": 256.7,
+        "modelBiasMw": -302.3,
         "verdict": "tepco_better"
       },
       {
         "code": "evening",
         "label": "19-23",
-        "hours": 5,
-        "modelMaeMw": 262.7,
-        "tepcoMaeMw": 180.0,
-        "modelBiasMw": -18.7,
+        "hours": 3,
+        "modelMaeMw": 432.1,
+        "tepcoMaeMw": 140.0,
+        "modelBiasMw": 432.1,
         "verdict": "tepco_better"
       }
     ],
     "shape": {
-      "transitionHours": 23,
-      "modelDeltaMaeMw": 298.2,
-      "tepcoDeltaMaeMw": 183.0,
-      "maxActualRiseMw": 3890.0,
-      "maxActualDropMw": -1680.0,
-      "maxModelRiseMw": 4195.5,
-      "maxModelDropMw": -1904.9,
+      "transitionHours": 21,
+      "modelDeltaMaeMw": 462.2,
+      "tepcoDeltaMaeMw": 385.7,
+      "maxActualRiseMw": 2950.0,
+      "maxActualDropMw": -1840.0,
+      "maxModelRiseMw": 4019.5,
+      "maxModelDropMw": -1625.0,
       "largestDeltaMiss": {
-        "fromHour": 21,
-        "toHour": 22,
-        "actualDeltaMw": -1160.0,
-        "modelDeltaMw": -1904.9,
-        "tepcoDeltaMw": -1150.0,
-        "modelDeltaErrorMw": -744.9,
-        "tepcoDeltaErrorMw": 10.0,
-        "modelAbsDeltaErrorMw": 744.9,
-        "tepcoAbsDeltaErrorMw": 10.0
+        "fromHour": 9,
+        "toHour": 10,
+        "actualDeltaMw": -610.0,
+        "modelDeltaMw": 1021.5,
+        "tepcoDeltaMw": 190.0,
+        "modelDeltaErrorMw": 1631.5,
+        "tepcoDeltaErrorMw": 800.0,
+        "modelAbsDeltaErrorMw": 1631.5,
+        "tepcoAbsDeltaErrorMw": 800.0
       },
-      "largeShapeBreaks": []
+      "largeShapeBreaks": [
+        {
+          "fromHour": 9,
+          "toHour": 10,
+          "actualDeltaMw": -610.0,
+          "modelDeltaMw": 1021.5,
+          "tepcoDeltaMw": 190.0,
+          "modelDeltaErrorMw": 1631.5,
+          "tepcoDeltaErrorMw": 800.0,
+          "modelAbsDeltaErrorMw": 1631.5,
+          "tepcoAbsDeltaErrorMw": 800.0
+        },
+        {
+          "fromHour": 10,
+          "toHour": 11,
+          "actualDeltaMw": 790.0,
+          "modelDeltaMw": -754.9,
+          "tepcoDeltaMw": 70.0,
+          "modelDeltaErrorMw": -1544.9,
+          "tepcoDeltaErrorMw": -720.0,
+          "modelAbsDeltaErrorMw": 1544.9,
+          "tepcoAbsDeltaErrorMw": 720.0
+        }
+      ]
     },
     "topMisses": [
       {
-        "hour": 15,
-        "actualMw": 34620.0,
-        "modelForecastMw": 33749.2,
-        "tepcoForecastMw": 34670.0,
-        "modelErrorMw": -870.8,
-        "tepcoErrorMw": 50.0,
-        "modelAbsErrorMw": 870.8,
-        "tepcoAbsErrorMw": 50.0
-      },
-      {
-        "hour": 14,
-        "actualMw": 35500.0,
-        "modelForecastMw": 34674.4,
-        "tepcoForecastMw": 34820.0,
-        "modelErrorMw": -825.6,
-        "tepcoErrorMw": -680.0,
-        "modelAbsErrorMw": 825.6,
-        "tepcoAbsErrorMw": 680.0
-      },
-      {
         "hour": 10,
-        "actualMw": 34520.0,
-        "modelForecastMw": 33809.6,
-        "tepcoForecastMw": 34420.0,
-        "modelErrorMw": -710.4,
-        "tepcoErrorMw": -100.0,
-        "modelAbsErrorMw": 710.4,
-        "tepcoAbsErrorMw": 100.0
+        "actualMw": 31960.0,
+        "modelForecastMw": 33900.0,
+        "tepcoForecastMw": 33300.0,
+        "modelErrorMw": 1940.0,
+        "tepcoErrorMw": 1340.0,
+        "modelAbsErrorMw": 1940.0,
+        "tepcoAbsErrorMw": 1340.0
+      },
+      {
+        "hour": 5,
+        "actualMw": 23620.0,
+        "modelForecastMw": 22521.2,
+        "tepcoForecastMw": 23300.0,
+        "modelErrorMw": -1098.8,
+        "tepcoErrorMw": -320.0,
+        "modelAbsErrorMw": 1098.8,
+        "tepcoAbsErrorMw": 320.0
+      },
+      {
+        "hour": 0,
+        "actualMw": 24240.0,
+        "modelForecastMw": 23233.7,
+        "tepcoForecastMw": 24060.0,
+        "modelErrorMw": -1006.3,
+        "tepcoErrorMw": -180.0,
+        "modelAbsErrorMw": 1006.3,
+        "tepcoAbsErrorMw": 180.0
       }
     ],
     "insights": [
@@ -160,81 +183,41 @@
         "severity": "warning",
         "title": "TEPCO was closer overall.",
         "evidence": {
-          "maeGapMw": 152.4,
-          "wapeGapPct": 0.53
+          "maeGapMw": 302.3,
+          "wapeGapPct": 1.03
         }
       },
       {
-        "code": "peak_timing_miss",
+        "code": "large_single_hour_miss",
         "severity": "warning",
-        "title": "The model peak occurred at a different hour than the actual peak.",
+        "title": "One or more hours had a large model error.",
         "evidence": {
-          "timeErrorHours": -2
+          "hour": 10,
+          "modelAbsErrorMw": 1940.0
+        }
+      },
+      {
+        "code": "sharp_model_rise_mismatch",
+        "severity": "warning",
+        "title": "The model line rose faster than actual demand.",
+        "evidence": {
+          "fromHour": 9,
+          "toHour": 10,
+          "modelDeltaMw": 1021.5,
+          "actualDeltaMw": -610.0
+        }
+      },
+      {
+        "code": "peak_level_underestimated",
+        "severity": "warning",
+        "title": "The actual peak level was higher than the model expected.",
+        "evidence": {
+          "errorAtActualPeakMw": -955.5
         }
       }
     ]
   },
   "reports": [
-    {
-      "date": "2026-06-04",
-      "availability": "ok",
-      "model": {
-        "name": "lgbm_quantile_q50_intraday_residual",
-        "family": "lgbm_quantile_q50"
-      },
-      "summary": {
-        "comparableHours": 24,
-        "modelMaeMw": 531.7,
-        "tepcoMaeMw": 320.0,
-        "modelWapePct": 1.94,
-        "tepcoWapePct": 1.17,
-        "modelRmseMw": 712.0,
-        "tepcoRmseMw": 439.8,
-        "modelMaxErrorMw": 1555.8,
-        "tepcoMaxErrorMw": 1150.0,
-        "modelMaxErrorHour": 11,
-        "tepcoMaxErrorHour": 8,
-        "maeGapMw": 211.7,
-        "wapeGapPct": 0.77,
-        "verdict": "tepco_better",
-        "modelWins": 7,
-        "tepcoWins": 17,
-        "ties": 0,
-        "modelAdvantageHours": 7,
-        "tepcoAdvantageHours": 17,
-        "equalHours": 0,
-        "modelAdvantageRate": 0.292
-      },
-      "insights": [
-        {
-          "code": "tepco_closer_overall",
-          "severity": "warning",
-          "title": "TEPCO was closer overall.",
-          "evidence": {
-            "maeGapMw": 211.7,
-            "wapeGapPct": 0.77
-          }
-        },
-        {
-          "code": "morning_ramp_overestimated",
-          "severity": "info",
-          "title": "Morning demand was lower than the model expected.",
-          "evidence": {
-            "band": "06-10",
-            "modelBiasMw": 1210.9
-          }
-        },
-        {
-          "code": "large_single_hour_miss",
-          "severity": "warning",
-          "title": "One or more hours had a large model error.",
-          "evidence": {
-            "hour": 11,
-            "modelAbsErrorMw": 1555.8
-          }
-        }
-      ]
-    },
     {
       "date": "2026-06-05",
       "availability": "ok",
@@ -940,6 +923,68 @@
           "title": "The model peak occurred at a different hour than the actual peak.",
           "evidence": {
             "timeErrorHours": -2
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-06-18",
+      "availability": "ok",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "family": "lgbm_quantile_q50"
+      },
+      "summary": {
+        "comparableHours": 22,
+        "modelMaeMw": 650.0,
+        "tepcoMaeMw": 347.7,
+        "modelWapePct": 2.21,
+        "tepcoWapePct": 1.18,
+        "modelRmseMw": 768.4,
+        "tepcoRmseMw": 459.4,
+        "modelMaxErrorMw": 1940.0,
+        "tepcoMaxErrorMw": 1340.0,
+        "modelMaxErrorHour": 10,
+        "tepcoMaxErrorHour": 10,
+        "maeGapMw": 302.3,
+        "wapeGapPct": 1.03,
+        "verdict": "tepco_better",
+        "modelWins": 8,
+        "tepcoWins": 14,
+        "ties": 0,
+        "modelAdvantageHours": 8,
+        "tepcoAdvantageHours": 14,
+        "equalHours": 0,
+        "modelAdvantageRate": 0.364
+      },
+      "insights": [
+        {
+          "code": "tepco_closer_overall",
+          "severity": "warning",
+          "title": "TEPCO was closer overall.",
+          "evidence": {
+            "maeGapMw": 302.3,
+            "wapeGapPct": 1.03
+          }
+        },
+        {
+          "code": "large_single_hour_miss",
+          "severity": "warning",
+          "title": "One or more hours had a large model error.",
+          "evidence": {
+            "hour": 10,
+            "modelAbsErrorMw": 1940.0
+          }
+        },
+        {
+          "code": "sharp_model_rise_mismatch",
+          "severity": "warning",
+          "title": "The model line rose faster than actual demand.",
+          "evidence": {
+            "fromHour": 9,
+            "toHour": 10,
+            "modelDeltaMw": 1021.5,
+            "actualDeltaMw": -610.0
           }
         }
       ]
