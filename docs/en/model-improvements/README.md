@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-19 daytime sustained underforecast lift](model-improvement-2026-06-19-daytime-sustained-underforecast-lift.md)
 - [2026-06-19 band rebalance and guard tightening](model-improvement-2026-06-19-band-rebalance-and-guard-tightening.md)
 - [2026-06-18 early observed residual carryover](model-improvement-2026-06-18-early-observed-residual-carryover.md)
 - [2026-06-16 morning floor shape support and afternoon carryover damping](model-improvement-2026-06-16-morning-floor-shape-support-and-afternoon-carryover.md)

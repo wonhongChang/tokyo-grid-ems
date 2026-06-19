@@ -2479,6 +2479,139 @@ def test_intraday_correction_caps_evening_rebound_after_observed_decline():
     assert "evening_decline_continuity_guard" in result.applied_regime_reason
 
 
+def test_intraday_daytime_sustained_underforecast_lifts_hot_business_day_future():
+    target = date(2026, 6, 19)  # Friday
+    forecasts = _make_forecasts(target, 30_000.0)
+    for hour, value in {
+        9: 34_000.0,
+        10: 35_000.0,
+        11: 36_000.0,
+        12: 36_500.0,
+        13: 36_000.0,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 9, 35_500.0),
+        _actual_point(target, 10, 37_000.0),
+        _actual_point(target, 11, 38_000.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 11, "is_non_business_day": 0},
+        {
+            "hour": 12,
+            "is_non_business_day": 0,
+            "temp_delta_24h": 5.0,
+            "cooling_delta_24h": 2.0,
+        },
+        {
+            "hour": 13,
+            "is_non_business_day": 0,
+            "temp_delta_24h": 5.0,
+            "cooling_delta_24h": 2.0,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "daytime_sustained_underforecast_lift": {
+                "enabled": True,
+                "target_hours": [12, 13],
+                "min_reference_hour": 8,
+                "max_reference_hour": 14,
+                "max_lead_hours": 4,
+                "min_base_adjustment_mw": 600.0,
+                "min_latest_residual_mw": 600.0,
+                "min_mean_residual_mw": 600.0,
+                "min_peak_residual_mw": 1_000.0,
+                "min_temp_delta_24h_c": 3.0,
+                "min_cooling_delta_24h_c": 1.0,
+                "floor_slope_fraction": 0.25,
+                "floor_slack_mw": 300.0,
+                "floor_shrinkage": 0.5,
+                "residual_pressure_shrinkage": 0.55,
+                "residual_slack_mw": 200.0,
+                "max_lift_mw": 900.0,
+                "min_lift_mw": 100.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.base_adjustment_mw == pytest.approx(1200.0)
+    assert result.daytime_sustained_underforecast_lift_applied is True
+    assert result.daytime_sustained_underforecast_max_lift_mw == pytest.approx(500.0)
+    assert result.forecasts[13].forecast_mw == pytest.approx(37_700.0)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_13 = next(item for item in residual_logs if item["hour"] == 13)
+    assert hour_13["daytimeSustainedUnderforecastLiftMw"] == pytest.approx(500.0)
+    assert "daytime_sustained_underforecast_lift" in result.applied_regime_reason
+
+
+def test_intraday_daytime_sustained_underforecast_requires_heat_context():
+    target = date(2026, 6, 19)
+    forecasts = _make_forecasts(target, 30_000.0)
+    forecasts[13] = HourlyForecast(
+        ts=f"{target.isoformat()}T13:00:00+09:00",
+        forecast_mw=36_000.0,
+        p95_lower_mw=35_500.0,
+        p95_upper_mw=36_500.0,
+        p99_lower_mw=35_200.0,
+        p99_upper_mw=36_800.0,
+    )
+    actual_series = [
+        _actual_point(target, 9, 31_500.0),
+        _actual_point(target, 10, 32_000.0),
+        _actual_point(target, 11, 32_000.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 11, "is_non_business_day": 0},
+        {
+            "hour": 13,
+            "is_non_business_day": 0,
+            "temp_delta_24h": 0.5,
+            "cooling_delta_24h": 0.0,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "daytime_sustained_underforecast_lift": {
+                "enabled": True,
+                "target_hours": [13],
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.daytime_sustained_underforecast_lift_applied is False
+    assert result.forecasts[13].forecast_mw == pytest.approx(37_200.0)
+
+
 def test_intraday_correction_caps_evening_level_overhang_without_local_rebound():
     target = date(2026, 5, 29)  # Friday hot-day overhang case
     forecasts = _make_forecasts(target, 30_000.0)

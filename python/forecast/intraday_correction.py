@@ -72,6 +72,8 @@ class IntradayCorrectionResult:
     early_observed_residual_carryover_applied: bool = False
     early_observed_residual_carryover_mw: float = 0.0
     early_observed_residual_count: int = 0
+    daytime_sustained_underforecast_lift_applied: bool = False
+    daytime_sustained_underforecast_max_lift_mw: float = 0.0
 
     def metadata(self) -> dict:
         return {
@@ -90,6 +92,13 @@ class IntradayCorrectionResult:
                 1,
             ),
             "earlyObservedResidualCount": int(self.early_observed_residual_count),
+            "daytimeSustainedUnderforecastLiftApplied": (
+                self.daytime_sustained_underforecast_lift_applied
+            ),
+            "daytimeSustainedUnderforecastMaxLiftMw": round(
+                float(self.daytime_sustained_underforecast_max_lift_mw),
+                1,
+            ),
             "appliedDayBiasMw": round(float(self.applied_day_bias_mw), 1),
             "businessTypeTransitionPriorBiasMw": round(
                 float(self.business_type_transition_prior_bias_mw),
@@ -889,6 +898,106 @@ class IntradayResidualCorrector:
                     0.0,
                 )
             ),
+            0.0,
+        )
+        daytime_underforecast_config = correction_config.get(
+            "daytime_sustained_underforecast_lift",
+            {},
+        )
+        self._daytime_underforecast_enabled = bool(
+            daytime_underforecast_config.get("enabled", True)
+        )
+        self._daytime_underforecast_business_day_only = bool(
+            daytime_underforecast_config.get("business_day_only", True)
+        )
+        self._daytime_underforecast_target_hours = {
+            int(hour)
+            for hour in daytime_underforecast_config.get(
+                "target_hours",
+                [10, 11, 12, 13, 14],
+            )
+        }
+        self._daytime_underforecast_min_reference_hour = int(
+            daytime_underforecast_config.get("min_reference_hour", 8)
+        )
+        self._daytime_underforecast_max_reference_hour = int(
+            daytime_underforecast_config.get("max_reference_hour", 14)
+        )
+        self._daytime_underforecast_max_lead_hours = max(
+            int(daytime_underforecast_config.get("max_lead_hours", 3)),
+            1,
+        )
+        self._daytime_underforecast_lookback_hours = max(
+            int(daytime_underforecast_config.get("lookback_observed_hours", 3)),
+            1,
+        )
+        self._daytime_underforecast_min_positive_count = max(
+            int(daytime_underforecast_config.get("min_positive_residual_count", 2)),
+            1,
+        )
+        self._daytime_underforecast_min_base_adjustment_mw = max(
+            float(daytime_underforecast_config.get("min_base_adjustment_mw", 600.0)),
+            0.0,
+        )
+        self._daytime_underforecast_min_latest_residual_mw = max(
+            float(daytime_underforecast_config.get("min_latest_residual_mw", 600.0)),
+            0.0,
+        )
+        self._daytime_underforecast_min_mean_residual_mw = max(
+            float(daytime_underforecast_config.get("min_mean_residual_mw", 600.0)),
+            0.0,
+        )
+        self._daytime_underforecast_min_peak_residual_mw = max(
+            float(daytime_underforecast_config.get("min_peak_residual_mw", 1_000.0)),
+            0.0,
+        )
+        self._daytime_underforecast_min_temp_delta_24h_c = float(
+            daytime_underforecast_config.get("min_temp_delta_24h_c", 3.0)
+        )
+        self._daytime_underforecast_min_cooling_delta_24h_c = float(
+            daytime_underforecast_config.get("min_cooling_delta_24h_c", 1.0)
+        )
+        self._daytime_underforecast_min_latest_slope_mw = float(
+            daytime_underforecast_config.get("min_latest_slope_mw", -800.0)
+        )
+        self._daytime_underforecast_floor_slope_fraction = max(
+            float(daytime_underforecast_config.get("floor_slope_fraction", 0.25)),
+            0.0,
+        )
+        self._daytime_underforecast_max_floor_delta_mw = max(
+            float(daytime_underforecast_config.get("max_floor_delta_mw", 900.0)),
+            0.0,
+        )
+        self._daytime_underforecast_floor_slack_mw = max(
+            float(daytime_underforecast_config.get("floor_slack_mw", 300.0)),
+            0.0,
+        )
+        self._daytime_underforecast_floor_shrinkage = min(
+            max(float(daytime_underforecast_config.get("floor_shrinkage", 0.5)), 0.0),
+            1.0,
+        )
+        self._daytime_underforecast_residual_pressure_shrinkage = min(
+            max(
+                float(
+                    daytime_underforecast_config.get(
+                        "residual_pressure_shrinkage",
+                        0.55,
+                    )
+                ),
+                0.0,
+            ),
+            1.0,
+        )
+        self._daytime_underforecast_residual_slack_mw = max(
+            float(daytime_underforecast_config.get("residual_slack_mw", 200.0)),
+            0.0,
+        )
+        self._daytime_underforecast_max_lift_mw = max(
+            float(daytime_underforecast_config.get("max_lift_mw", 900.0)),
+            0.0,
+        )
+        self._daytime_underforecast_min_lift_mw = max(
+            float(daytime_underforecast_config.get("min_lift_mw", 100.0)),
             0.0,
         )
         morning_warm_config = correction_config.get(
@@ -2467,6 +2576,175 @@ class IntradayResidualCorrector:
             ),
         }
 
+    def _daytime_sustained_underforecast_lift_context(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        actual_mw_by_hour: dict[int, float],
+        residuals_by_hour: list[_ResidualPoint],
+        last_observed_hour: int | None,
+        base_adjustment_mw: float,
+    ) -> dict | None:
+        if (
+            not self._daytime_underforecast_enabled
+            or base_adjustment_mw < self._daytime_underforecast_min_base_adjustment_mw
+            or last_observed_hour is None
+            or last_observed_hour < self._daytime_underforecast_min_reference_hour
+            or last_observed_hour > self._daytime_underforecast_max_reference_hour
+            or last_observed_hour not in actual_mw_by_hour
+            or self._daytime_underforecast_max_lift_mw <= 0.0
+        ):
+            return None
+
+        if self._daytime_underforecast_business_day_only:
+            row = self._feature_row_for_hour(inference_features, last_observed_hour)
+            if row is not None:
+                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+                if is_non_business_day == 1.0:
+                    return None
+            elif forecasts:
+                forecast_ts = pd.Timestamp(forecasts[0].ts)
+                if _is_nonworking_day(forecast_ts):
+                    return None
+
+        recent_points = [
+            point for point in residuals_by_hour if point.hour <= last_observed_hour
+        ][-self._daytime_underforecast_lookback_hours:]
+        if len(recent_points) < self._daytime_underforecast_min_positive_count:
+            return None
+
+        residual_values = [float(point.residual_mw) for point in recent_points]
+        positive_count = sum(value > 0.0 for value in residual_values)
+        latest_residual_mw = residual_values[-1]
+        mean_residual_mw = float(np.mean(residual_values))
+        peak_residual_mw = max(residual_values)
+        if (
+            positive_count < self._daytime_underforecast_min_positive_count
+            or latest_residual_mw < self._daytime_underforecast_min_latest_residual_mw
+            or mean_residual_mw < self._daytime_underforecast_min_mean_residual_mw
+            or peak_residual_mw < self._daytime_underforecast_min_peak_residual_mw
+        ):
+            return None
+
+        previous_hour = last_observed_hour - 1
+        latest_slope_mw = 0.0
+        if previous_hour in actual_mw_by_hour:
+            latest_slope_mw = (
+                actual_mw_by_hour[last_observed_hour]
+                - actual_mw_by_hour[previous_hour]
+            )
+            if latest_slope_mw < self._daytime_underforecast_min_latest_slope_mw:
+                return None
+
+        return {
+            "lastObservedHour": last_observed_hour,
+            "lastActualMw": round(actual_mw_by_hour[last_observed_hour], 1),
+            "latestResidualMw": round(float(latest_residual_mw), 1),
+            "meanResidualMw": round(float(mean_residual_mw), 1),
+            "peakResidualMw": round(float(peak_residual_mw), 1),
+            "latestSlopeMw": round(float(latest_slope_mw), 1),
+        }
+
+    def _daytime_sustained_underforecast_lift(
+        self,
+        context: dict | None,
+        inference_features: pd.DataFrame | None,
+        forecast_hour: int,
+        lead_hours: int,
+        decayed_adjustment_mw: float,
+        final_before_lift_mw: float,
+    ) -> dict | None:
+        if (
+            context is None
+            or inference_features is None
+            or inference_features.empty
+            or forecast_hour not in self._daytime_underforecast_target_hours
+            or lead_hours <= 0
+            or lead_hours > self._daytime_underforecast_max_lead_hours
+        ):
+            return None
+
+        row = self._feature_row_for_hour(inference_features, forecast_hour)
+        if row is None:
+            return None
+        if self._daytime_underforecast_business_day_only:
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day == 1.0:
+                return None
+
+        temp_delta_24h = self._finite_float(row.get("temp_delta_24h")) or 0.0
+        cooling_delta_24h = self._finite_float(row.get("cooling_delta_24h")) or 0.0
+        apparent_cooling_delta_24h = (
+            self._finite_float(row.get("apparent_cooling_delta_24h")) or 0.0
+        )
+        heat_signal_active = (
+            temp_delta_24h >= self._daytime_underforecast_min_temp_delta_24h_c
+            or cooling_delta_24h
+            >= self._daytime_underforecast_min_cooling_delta_24h_c
+            or apparent_cooling_delta_24h
+            >= self._daytime_underforecast_min_cooling_delta_24h_c
+        )
+        if not heat_signal_active:
+            return None
+
+        latest_slope_mw = float(context["latestSlopeMw"])
+        floor_delta_mw = max(0.0, latest_slope_mw)
+        floor_delta_mw *= self._daytime_underforecast_floor_slope_fraction
+        if self._daytime_underforecast_max_floor_delta_mw > 0.0:
+            floor_delta_mw = min(
+                floor_delta_mw,
+                self._daytime_underforecast_max_floor_delta_mw,
+            )
+        floor_mw = (
+            float(context["lastActualMw"])
+            + floor_delta_mw * lead_hours
+            - self._daytime_underforecast_floor_slack_mw
+        )
+        floor_shortfall_mw = max(0.0, floor_mw - final_before_lift_mw)
+        floor_lift_mw = (
+            floor_shortfall_mw * self._daytime_underforecast_floor_shrinkage
+        )
+
+        residual_pressure_mw = max(
+            float(context["latestResidualMw"]),
+            float(context["meanResidualMw"]),
+            float(context["peakResidualMw"]) * 0.75,
+        )
+        residual_shortfall_mw = max(
+            0.0,
+            residual_pressure_mw
+            - max(decayed_adjustment_mw, 0.0)
+            - self._daytime_underforecast_residual_slack_mw,
+        )
+        residual_lift_mw = (
+            residual_shortfall_mw
+            * self._daytime_underforecast_residual_pressure_shrinkage
+        )
+
+        lift_mw = min(
+            max(floor_lift_mw, residual_lift_mw),
+            self._daytime_underforecast_max_lift_mw,
+        )
+        lift_mw = round(float(lift_mw), 1)
+        if lift_mw < self._daytime_underforecast_min_lift_mw:
+            return None
+
+        return {
+            "liftMw": lift_mw,
+            "floorMw": round(float(floor_mw), 1),
+            "floorDeltaMw": round(float(floor_delta_mw), 1),
+            "floorShortfallMw": round(float(floor_shortfall_mw), 1),
+            "residualPressureMw": round(float(residual_pressure_mw), 1),
+            "residualShortfallMw": round(float(residual_shortfall_mw), 1),
+            "latestResidualMw": context["latestResidualMw"],
+            "meanResidualMw": context["meanResidualMw"],
+            "peakResidualMw": context["peakResidualMw"],
+            "latestSlopeMw": context["latestSlopeMw"],
+            "tempDelta24hC": round(float(temp_delta_24h), 1),
+            "coolingDelta24hC": round(float(cooling_delta_24h), 1),
+            "apparentCoolingDelta24hC": round(float(apparent_cooling_delta_24h), 1),
+        }
+
     def _morning_warm_lag_overreaction_context(
         self,
         forecasts: list[HourlyForecast],
@@ -3614,6 +3892,16 @@ class IntradayResidualCorrector:
             actual_mw_by_hour,
             last_observed_hour,
         )
+        daytime_underforecast_context = (
+            self._daytime_sustained_underforecast_lift_context(
+                transition_prior_guarded_forecasts,
+                inference_features,
+                actual_mw_by_hour,
+                residuals_by_hour,
+                last_observed_hour,
+                base_adjustment_mw,
+            )
+        )
         morning_warm_context = self._morning_warm_lag_overreaction_context(
             transition_prior_guarded_forecasts,
             inference_features,
@@ -3653,6 +3941,8 @@ class IntradayResidualCorrector:
         morning_ramp_restored_values: list[float] = []
         morning_observed_ramp_floor_applied = False
         morning_observed_ramp_floor_lift_values: list[float] = []
+        daytime_underforecast_lift_applied = False
+        daytime_underforecast_lift_values: list[float] = []
         morning_warm_guard_applied = False
         morning_warm_reduced_values: list[float] = []
         morning_anchor_cap_applied = False
@@ -3729,6 +4019,19 @@ class IntradayResidualCorrector:
             morning_observed_ramp_support_delta_mw = None
             morning_observed_ramp_latest_slope_mw = None
             morning_observed_ramp_mean_slope_mw = None
+            daytime_underforecast_lift_mw = 0.0
+            daytime_underforecast_floor_mw = None
+            daytime_underforecast_floor_delta_mw = None
+            daytime_underforecast_floor_shortfall_mw = None
+            daytime_underforecast_residual_pressure_mw = None
+            daytime_underforecast_residual_shortfall_mw = None
+            daytime_underforecast_latest_residual_mw = None
+            daytime_underforecast_mean_residual_mw = None
+            daytime_underforecast_peak_residual_mw = None
+            daytime_underforecast_latest_slope_mw = None
+            daytime_underforecast_temp_delta_24h_c = None
+            daytime_underforecast_cooling_delta_24h_c = None
+            daytime_underforecast_apparent_cooling_delta_24h_c = None
             negative_floor_restore_mw = 0.0
             negative_floor_mw = None
             near_negative_floor_restore_mw = 0.0
@@ -4066,6 +4369,57 @@ class IntradayResidualCorrector:
                 )
                 morning_observed_ramp_floor_applied = True
                 morning_observed_ramp_floor_lift_values.append(lift_mw)
+            final_before_daytime_underforecast_lift_mw = (
+                forecast.forecast_mw + decayed_adjustment_mw
+            )
+            daytime_underforecast_lift = self._daytime_sustained_underforecast_lift(
+                daytime_underforecast_context,
+                inference_features,
+                forecast_hour,
+                lead_hours,
+                decayed_adjustment_mw,
+                final_before_daytime_underforecast_lift_mw,
+            )
+            if daytime_underforecast_lift is not None:
+                lift_mw = float(daytime_underforecast_lift["liftMw"])
+                decayed_adjustment_mw = round(decayed_adjustment_mw + lift_mw, 1)
+                daytime_underforecast_lift_mw = lift_mw
+                daytime_underforecast_floor_mw = daytime_underforecast_lift["floorMw"]
+                daytime_underforecast_floor_delta_mw = (
+                    daytime_underforecast_lift["floorDeltaMw"]
+                )
+                daytime_underforecast_floor_shortfall_mw = (
+                    daytime_underforecast_lift["floorShortfallMw"]
+                )
+                daytime_underforecast_residual_pressure_mw = (
+                    daytime_underforecast_lift["residualPressureMw"]
+                )
+                daytime_underforecast_residual_shortfall_mw = (
+                    daytime_underforecast_lift["residualShortfallMw"]
+                )
+                daytime_underforecast_latest_residual_mw = (
+                    daytime_underforecast_lift["latestResidualMw"]
+                )
+                daytime_underforecast_mean_residual_mw = (
+                    daytime_underforecast_lift["meanResidualMw"]
+                )
+                daytime_underforecast_peak_residual_mw = (
+                    daytime_underforecast_lift["peakResidualMw"]
+                )
+                daytime_underforecast_latest_slope_mw = (
+                    daytime_underforecast_lift["latestSlopeMw"]
+                )
+                daytime_underforecast_temp_delta_24h_c = (
+                    daytime_underforecast_lift["tempDelta24hC"]
+                )
+                daytime_underforecast_cooling_delta_24h_c = (
+                    daytime_underforecast_lift["coolingDelta24hC"]
+                )
+                daytime_underforecast_apparent_cooling_delta_24h_c = (
+                    daytime_underforecast_lift["apparentCoolingDelta24hC"]
+                )
+                daytime_underforecast_lift_applied = True
+                daytime_underforecast_lift_values.append(lift_mw)
             final_before_morning_warm_guard_mw = forecast.forecast_mw + decayed_adjustment_mw
             morning_warm_guard = self._morning_warm_lag_overreaction_reduction(
                 morning_warm_context,
@@ -4356,6 +4710,70 @@ class IntradayResidualCorrector:
                     if morning_observed_ramp_mean_slope_mw is not None
                     else None
                 ),
+                "daytimeSustainedUnderforecastLiftMw": round(
+                    daytime_underforecast_lift_mw,
+                    1,
+                ),
+                "daytimeSustainedUnderforecastFloorMw": (
+                    round(float(daytime_underforecast_floor_mw), 1)
+                    if daytime_underforecast_floor_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastFloorDeltaMw": (
+                    round(float(daytime_underforecast_floor_delta_mw), 1)
+                    if daytime_underforecast_floor_delta_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastFloorShortfallMw": (
+                    round(float(daytime_underforecast_floor_shortfall_mw), 1)
+                    if daytime_underforecast_floor_shortfall_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastResidualPressureMw": (
+                    round(float(daytime_underforecast_residual_pressure_mw), 1)
+                    if daytime_underforecast_residual_pressure_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastResidualShortfallMw": (
+                    round(float(daytime_underforecast_residual_shortfall_mw), 1)
+                    if daytime_underforecast_residual_shortfall_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastLatestResidualMw": (
+                    round(float(daytime_underforecast_latest_residual_mw), 1)
+                    if daytime_underforecast_latest_residual_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastMeanResidualMw": (
+                    round(float(daytime_underforecast_mean_residual_mw), 1)
+                    if daytime_underforecast_mean_residual_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastPeakResidualMw": (
+                    round(float(daytime_underforecast_peak_residual_mw), 1)
+                    if daytime_underforecast_peak_residual_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastLatestSlopeMw": (
+                    round(float(daytime_underforecast_latest_slope_mw), 1)
+                    if daytime_underforecast_latest_slope_mw is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastTempDelta24hC": (
+                    round(float(daytime_underforecast_temp_delta_24h_c), 1)
+                    if daytime_underforecast_temp_delta_24h_c is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastCoolingDelta24hC": (
+                    round(float(daytime_underforecast_cooling_delta_24h_c), 1)
+                    if daytime_underforecast_cooling_delta_24h_c is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastApparentCoolingDelta24hC": (
+                    round(float(daytime_underforecast_apparent_cooling_delta_24h_c), 1)
+                    if daytime_underforecast_apparent_cooling_delta_24h_c is not None
+                    else None
+                ),
                 "negativeResidualContinuityFloorMw": (
                     round(float(negative_floor_mw), 1)
                     if negative_floor_mw is not None
@@ -4512,6 +4930,8 @@ class IntradayResidualCorrector:
             applied_reasons.append("morning_ramp_continuity_guard")
         if morning_observed_ramp_floor_applied:
             applied_reasons.append("morning_observed_ramp_floor")
+        if daytime_underforecast_lift_applied:
+            applied_reasons.append("daytime_sustained_underforecast_lift")
         if morning_warm_guard_applied:
             applied_reasons.append("morning_warm_lag_overreaction_guard")
         if morning_anchor_cap_applied:
@@ -4614,4 +5034,11 @@ class IntradayResidualCorrector:
                 3,
             ),
             round(max(non_business_evening_negative_damped_values or [0.0]), 1),
+            daytime_sustained_underforecast_lift_applied=(
+                daytime_underforecast_lift_applied
+            ),
+            daytime_sustained_underforecast_max_lift_mw=round(
+                max(daytime_underforecast_lift_values or [0.0]),
+                1,
+            ),
         )

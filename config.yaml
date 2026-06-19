@@ -202,6 +202,30 @@ intraday_correction:
     min_lift_mw: 100
     max_latest_overforecast_mw: 500 # do not lift future ramp when the latest observed bucket is already materially over-forecast
     max_floor_delta_over_support_mw: 0 # never lift above target-hour lag/recent shape support
+  daytime_sustained_underforecast_lift:
+    enabled: true
+    business_day_only: true
+    target_hours: [10, 11, 12, 13, 14]
+    min_reference_hour: 8
+    max_reference_hour: 14
+    max_lead_hours: 3
+    lookback_observed_hours: 3
+    min_positive_residual_count: 2
+    min_base_adjustment_mw: 600 # only after the intraday residual clearly says the model is low
+    min_latest_residual_mw: 600
+    min_mean_residual_mw: 600
+    min_peak_residual_mw: 1000
+    min_temp_delta_24h_c: 3.0 # same-day heat/ramp context; avoids lifting cool neutral days
+    min_cooling_delta_24h_c: 1.0
+    min_latest_slope_mw: -800 # skip if demand is already collapsing
+    floor_slope_fraction: 0.25
+    max_floor_delta_mw: 900
+    floor_slack_mw: 300
+    floor_shrinkage: 0.5
+    residual_pressure_shrinkage: 0.55
+    residual_slack_mw: 200
+    max_lift_mw: 900
+    min_lift_mw: 100
   morning_warm_lag_overreaction_guard:
     enabled: true
     business_day_only: true
