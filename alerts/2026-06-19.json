@@ -3,9 +3,30 @@
   "timezone": "Asia/Tokyo",
   "availability": "ok",
   "summary": {
-    "critical": 0,
+    "critical": 1,
     "warning": 0,
     "info": 0
   },
-  "events": []
+  "events": [
+    {
+      "id": "2026-06-19T10:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "critical",
+      "startAt": "2026-06-19T10:00:00+09:00",
+      "endAt": "2026-06-19T11:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 37430.0,
+      "expectedMw": 34536.1,
+      "interval": {
+        "p95Lower": 32743.1,
+        "p95Upper": 35656.8,
+        "p99Lower": 30950.1,
+        "p99Upper": 36777.5
+      },
+      "reason": "Actual 37430 MW exceeded p99 upper 36778 MW by 652 MW (1.74%)",
+      "tags": [
+        "interval"
+      ]
+    }
+  ]
 }
