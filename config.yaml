@@ -41,6 +41,10 @@ intraday_correction:
     shrinkage: 0.5
     max_abs_adjustment_mw: 700
   operational_calibration:
+    pre_observation_prior_stack_cap:
+      enabled: true          # prevent stacked no-observation priors from freezing a large early miss
+      max_observed_hours: 1
+      max_downshift_mw: 900
     day_boundary_carryover:
       enabled: true          # carry the last real observed residual across midnight
       decay_per_hour: 0.75   # fast decay; midnight continuity should not dominate the day
@@ -189,7 +193,7 @@ intraday_correction:
     min_restore_mw: 100
   morning_observed_ramp_floor:
     enabled: true
-    business_day_only: true
+    business_day_only: false
     target_hours: [8, 9, 10, 11]
     min_reference_hour: 7
     max_reference_hour: 10
@@ -197,26 +201,36 @@ intraday_correction:
     min_recent_slope_mw: 1200  # require observed same-day ramp evidence
     min_mean_slope_mw: 1200
     floor_slope_fraction: 0.85
+    non_business_floor_slope_fraction: 0.35 # weekend ramps are real but less commuter-like
     max_floor_delta_mw: 2200
     max_lift_mw: 1200
+    non_business_max_lift_mw: 700
     min_lift_mw: 100
     max_latest_overforecast_mw: 500 # do not lift future ramp when the latest observed bucket is already materially over-forecast
     max_floor_delta_over_support_mw: 0 # never lift above target-hour lag/recent shape support
   daytime_sustained_underforecast_lift:
     enabled: true
-    business_day_only: true
+    business_day_only: false
     target_hours: [10, 11, 12, 13, 14]
+    non_business_target_hours: [14, 15]
     min_reference_hour: 8
     max_reference_hour: 14
     max_lead_hours: 3
     lookback_observed_hours: 3
     min_positive_residual_count: 2
+    non_business_min_positive_residual_count: 2
     min_base_adjustment_mw: 600 # only after the intraday residual clearly says the model is low
+    non_business_min_base_adjustment_mw: 250
     min_latest_residual_mw: 600
+    non_business_min_latest_residual_mw: 350
     min_mean_residual_mw: 600
+    non_business_min_mean_residual_mw: 450
     min_peak_residual_mw: 1000
+    non_business_min_peak_residual_mw: 700
     min_temp_delta_24h_c: 3.0 # same-day heat/ramp context; avoids lifting cool neutral days
     min_cooling_delta_24h_c: 1.0
+    non_business_min_discomfort_index: 74.0
+    non_business_min_humidity_pct: 90.0
     min_latest_slope_mw: -800 # skip if demand is already collapsing
     floor_slope_fraction: 0.25
     max_floor_delta_mw: 900
@@ -225,6 +239,7 @@ intraday_correction:
     residual_pressure_shrinkage: 0.55
     residual_slack_mw: 200
     max_lift_mw: 900
+    non_business_max_lift_mw: 800
     min_lift_mw: 100
   morning_warm_lag_overreaction_guard:
     enabled: true

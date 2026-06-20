@@ -74,6 +74,8 @@ class IntradayCorrectionResult:
     early_observed_residual_count: int = 0
     daytime_sustained_underforecast_lift_applied: bool = False
     daytime_sustained_underforecast_max_lift_mw: float = 0.0
+    pre_observation_prior_stack_cap_applied: bool = False
+    pre_observation_prior_stack_cap_max_restore_mw: float = 0.0
 
     def metadata(self) -> dict:
         return {
@@ -97,6 +99,13 @@ class IntradayCorrectionResult:
             ),
             "daytimeSustainedUnderforecastMaxLiftMw": round(
                 float(self.daytime_sustained_underforecast_max_lift_mw),
+                1,
+            ),
+            "preObservationPriorStackCapApplied": (
+                self.pre_observation_prior_stack_cap_applied
+            ),
+            "preObservationPriorStackCapMaxRestoreMw": round(
+                float(self.pre_observation_prior_stack_cap_max_restore_mw),
                 1,
             ),
             "appliedDayBiasMw": round(float(self.applied_day_bias_mw), 1),
@@ -297,6 +306,21 @@ class IntradayResidualCorrector:
             0.0,
         )
         calibration_config = correction_config.get("operational_calibration", {})
+        prior_stack_cap_config = calibration_config.get(
+            "pre_observation_prior_stack_cap",
+            {},
+        )
+        self._prior_stack_cap_enabled = bool(
+            prior_stack_cap_config.get("enabled", True)
+        )
+        self._prior_stack_cap_max_downshift_mw = max(
+            float(prior_stack_cap_config.get("max_downshift_mw", 900.0)),
+            0.0,
+        )
+        self._prior_stack_cap_max_observed_hours = max(
+            int(prior_stack_cap_config.get("max_observed_hours", 1)),
+            0,
+        )
         carry_config = calibration_config.get("day_boundary_carryover", {})
         self._carryover_enabled = bool(carry_config.get("enabled", True))
         self._carryover_decay_per_hour = float(carry_config.get("decay_per_hour", 0.75))
@@ -870,12 +894,30 @@ class IntradayResidualCorrector:
             float(morning_observed_ramp_config.get("floor_slope_fraction", 0.85)),
             0.0,
         )
+        self._morning_observed_ramp_non_business_floor_slope_fraction = max(
+            float(
+                morning_observed_ramp_config.get(
+                    "non_business_floor_slope_fraction",
+                    self._morning_observed_ramp_floor_slope_fraction,
+                )
+            ),
+            0.0,
+        )
         self._morning_observed_ramp_max_floor_delta_mw = max(
             float(morning_observed_ramp_config.get("max_floor_delta_mw", 2_200.0)),
             0.0,
         )
         self._morning_observed_ramp_max_lift_mw = max(
             float(morning_observed_ramp_config.get("max_lift_mw", 1_200.0)),
+            0.0,
+        )
+        self._morning_observed_ramp_non_business_max_lift_mw = max(
+            float(
+                morning_observed_ramp_config.get(
+                    "non_business_max_lift_mw",
+                    self._morning_observed_ramp_max_lift_mw,
+                )
+            ),
             0.0,
         )
         self._morning_observed_ramp_min_lift_mw = max(
@@ -917,6 +959,13 @@ class IntradayResidualCorrector:
                 [10, 11, 12, 13, 14],
             )
         }
+        self._daytime_underforecast_non_business_target_hours = {
+            int(hour)
+            for hour in daytime_underforecast_config.get(
+                "non_business_target_hours",
+                list(self._daytime_underforecast_target_hours),
+            )
+        }
         self._daytime_underforecast_min_reference_hour = int(
             daytime_underforecast_config.get("min_reference_hour", 8)
         )
@@ -935,20 +984,65 @@ class IntradayResidualCorrector:
             int(daytime_underforecast_config.get("min_positive_residual_count", 2)),
             1,
         )
+        self._daytime_underforecast_non_business_min_positive_count = max(
+            int(
+                daytime_underforecast_config.get(
+                    "non_business_min_positive_residual_count",
+                    self._daytime_underforecast_min_positive_count,
+                )
+            ),
+            1,
+        )
         self._daytime_underforecast_min_base_adjustment_mw = max(
             float(daytime_underforecast_config.get("min_base_adjustment_mw", 600.0)),
+            0.0,
+        )
+        self._daytime_underforecast_non_business_min_base_adjustment_mw = max(
+            float(
+                daytime_underforecast_config.get(
+                    "non_business_min_base_adjustment_mw",
+                    self._daytime_underforecast_min_base_adjustment_mw,
+                )
+            ),
             0.0,
         )
         self._daytime_underforecast_min_latest_residual_mw = max(
             float(daytime_underforecast_config.get("min_latest_residual_mw", 600.0)),
             0.0,
         )
+        self._daytime_underforecast_non_business_min_latest_residual_mw = max(
+            float(
+                daytime_underforecast_config.get(
+                    "non_business_min_latest_residual_mw",
+                    self._daytime_underforecast_min_latest_residual_mw,
+                )
+            ),
+            0.0,
+        )
         self._daytime_underforecast_min_mean_residual_mw = max(
             float(daytime_underforecast_config.get("min_mean_residual_mw", 600.0)),
             0.0,
         )
+        self._daytime_underforecast_non_business_min_mean_residual_mw = max(
+            float(
+                daytime_underforecast_config.get(
+                    "non_business_min_mean_residual_mw",
+                    self._daytime_underforecast_min_mean_residual_mw,
+                )
+            ),
+            0.0,
+        )
         self._daytime_underforecast_min_peak_residual_mw = max(
             float(daytime_underforecast_config.get("min_peak_residual_mw", 1_000.0)),
+            0.0,
+        )
+        self._daytime_underforecast_non_business_min_peak_residual_mw = max(
+            float(
+                daytime_underforecast_config.get(
+                    "non_business_min_peak_residual_mw",
+                    self._daytime_underforecast_min_peak_residual_mw,
+                )
+            ),
             0.0,
         )
         self._daytime_underforecast_min_temp_delta_24h_c = float(
@@ -996,9 +1090,30 @@ class IntradayResidualCorrector:
             float(daytime_underforecast_config.get("max_lift_mw", 900.0)),
             0.0,
         )
+        self._daytime_underforecast_non_business_max_lift_mw = max(
+            float(
+                daytime_underforecast_config.get(
+                    "non_business_max_lift_mw",
+                    self._daytime_underforecast_max_lift_mw,
+                )
+            ),
+            0.0,
+        )
         self._daytime_underforecast_min_lift_mw = max(
             float(daytime_underforecast_config.get("min_lift_mw", 100.0)),
             0.0,
+        )
+        self._daytime_underforecast_non_business_min_discomfort_index = float(
+            daytime_underforecast_config.get(
+                "non_business_min_discomfort_index",
+                74.0,
+            )
+        )
+        self._daytime_underforecast_non_business_min_humidity_pct = float(
+            daytime_underforecast_config.get(
+                "non_business_min_humidity_pct",
+                90.0,
+            )
         )
         morning_warm_config = correction_config.get(
             "morning_warm_lag_overreaction_guard",
@@ -1558,6 +1673,51 @@ class IntradayResidualCorrector:
         if not applied_values:
             return result, 0.0
         return result, float(np.mean(applied_values))
+
+    def _cap_pre_observation_prior_stack(
+        self,
+        baseline_forecasts: list[HourlyForecast],
+        adjusted_forecasts: list[HourlyForecast],
+        observed_hours: int,
+        last_observed_hour: int | None,
+    ) -> tuple[list[HourlyForecast], bool, float]:
+        if (
+            not self._prior_stack_cap_enabled
+            or self._prior_stack_cap_max_downshift_mw <= 0.0
+            or observed_hours > self._prior_stack_cap_max_observed_hours
+        ):
+            return adjusted_forecasts, False, 0.0
+
+        baseline_by_hour = {
+            pd.Timestamp(forecast.ts).hour: forecast
+            for forecast in baseline_forecasts
+        }
+        capped: list[HourlyForecast] = []
+        restored_values: list[float] = []
+        for forecast in adjusted_forecasts:
+            forecast_hour = pd.Timestamp(forecast.ts).hour
+            if last_observed_hour is not None and forecast_hour <= last_observed_hour:
+                capped.append(forecast)
+                continue
+
+            baseline = baseline_by_hour.get(forecast_hour)
+            if baseline is None:
+                capped.append(forecast)
+                continue
+
+            total_shift_mw = forecast.forecast_mw - baseline.forecast_mw
+            min_shift_mw = -self._prior_stack_cap_max_downshift_mw
+            if total_shift_mw >= min_shift_mw:
+                capped.append(forecast)
+                continue
+
+            restore_mw = min_shift_mw - total_shift_mw
+            capped.append(self._shift_forecast(forecast, restore_mw))
+            restored_values.append(float(restore_mw))
+
+        if not restored_values:
+            return capped, False, 0.0
+        return capped, True, round(max(restored_values), 1)
 
     @staticmethod
     def _finite_float(value) -> float | None:
@@ -2448,16 +2608,17 @@ class IntradayResidualCorrector:
         if any(hour not in actual_mw_by_hour for hour in required_hours):
             return None
 
-        if self._morning_observed_ramp_business_day_only:
-            row = self._feature_row_for_hour(inference_features, last_observed_hour)
-            if row is not None:
-                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
-                if is_non_business_day == 1.0:
-                    return None
-            elif forecasts:
-                forecast_ts = pd.Timestamp(forecasts[0].ts)
-                if _is_nonworking_day(forecast_ts):
-                    return None
+        is_non_business_day = False
+        row = self._feature_row_for_hour(inference_features, last_observed_hour)
+        if row is not None:
+            is_non_business_day = (
+                self._finite_float(row.get("is_non_business_day")) == 1.0
+            )
+        elif forecasts:
+            forecast_ts = pd.Timestamp(forecasts[0].ts)
+            is_non_business_day = _is_nonworking_day(forecast_ts)
+        if self._morning_observed_ramp_business_day_only and is_non_business_day:
+            return None
 
         actual_values = [actual_mw_by_hour[hour] for hour in required_hours]
         latest_forecast = next(
@@ -2488,9 +2649,12 @@ class IntradayResidualCorrector:
         if mean_slope < self._morning_observed_ramp_min_mean_slope_mw:
             return None
 
-        floor_delta_mw = (
-            mean_slope * self._morning_observed_ramp_floor_slope_fraction
+        floor_slope_fraction = (
+            self._morning_observed_ramp_non_business_floor_slope_fraction
+            if is_non_business_day
+            else self._morning_observed_ramp_floor_slope_fraction
         )
+        floor_delta_mw = mean_slope * floor_slope_fraction
         if self._morning_observed_ramp_max_floor_delta_mw > 0.0:
             floor_delta_mw = min(
                 floor_delta_mw,
@@ -2506,6 +2670,15 @@ class IntradayResidualCorrector:
             "latestSlopeMw": round(recent_slopes[1], 1),
             "meanSlopeMw": round(mean_slope, 1),
             "floorDeltaMw": round(float(floor_delta_mw), 1),
+            "isNonBusinessDay": is_non_business_day,
+            "maxLiftMw": round(
+                float(
+                    self._morning_observed_ramp_non_business_max_lift_mw
+                    if is_non_business_day
+                    else self._morning_observed_ramp_max_lift_mw
+                ),
+                1,
+            ),
         }
 
     def _morning_observed_ramp_floor_lift(
@@ -2557,7 +2730,7 @@ class IntradayResidualCorrector:
         if shortfall_mw <= 0.0:
             return None
 
-        lift_mw = min(shortfall_mw, self._morning_observed_ramp_max_lift_mw)
+        lift_mw = min(shortfall_mw, float(context["maxLiftMw"]))
         lift_mw = round(float(lift_mw), 1)
         if lift_mw < self._morning_observed_ramp_min_lift_mw:
             return None
@@ -2587,30 +2760,47 @@ class IntradayResidualCorrector:
     ) -> dict | None:
         if (
             not self._daytime_underforecast_enabled
-            or base_adjustment_mw < self._daytime_underforecast_min_base_adjustment_mw
             or last_observed_hour is None
             or last_observed_hour < self._daytime_underforecast_min_reference_hour
             or last_observed_hour > self._daytime_underforecast_max_reference_hour
             or last_observed_hour not in actual_mw_by_hour
-            or self._daytime_underforecast_max_lift_mw <= 0.0
         ):
             return None
 
-        if self._daytime_underforecast_business_day_only:
-            row = self._feature_row_for_hour(inference_features, last_observed_hour)
-            if row is not None:
-                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
-                if is_non_business_day == 1.0:
-                    return None
-            elif forecasts:
-                forecast_ts = pd.Timestamp(forecasts[0].ts)
-                if _is_nonworking_day(forecast_ts):
-                    return None
+        is_non_business_day = False
+        row = self._feature_row_for_hour(inference_features, last_observed_hour)
+        if row is not None:
+            is_non_business_day = (
+                self._finite_float(row.get("is_non_business_day")) == 1.0
+            )
+        elif forecasts:
+            forecast_ts = pd.Timestamp(forecasts[0].ts)
+            is_non_business_day = _is_nonworking_day(forecast_ts)
+        if self._daytime_underforecast_business_day_only and is_non_business_day:
+            return None
+
+        min_base_adjustment_mw = (
+            self._daytime_underforecast_non_business_min_base_adjustment_mw
+            if is_non_business_day
+            else self._daytime_underforecast_min_base_adjustment_mw
+        )
+        max_lift_mw = (
+            self._daytime_underforecast_non_business_max_lift_mw
+            if is_non_business_day
+            else self._daytime_underforecast_max_lift_mw
+        )
+        if base_adjustment_mw < min_base_adjustment_mw or max_lift_mw <= 0.0:
+            return None
 
         recent_points = [
             point for point in residuals_by_hour if point.hour <= last_observed_hour
         ][-self._daytime_underforecast_lookback_hours:]
-        if len(recent_points) < self._daytime_underforecast_min_positive_count:
+        min_positive_count = (
+            self._daytime_underforecast_non_business_min_positive_count
+            if is_non_business_day
+            else self._daytime_underforecast_min_positive_count
+        )
+        if len(recent_points) < min_positive_count:
             return None
 
         residual_values = [float(point.residual_mw) for point in recent_points]
@@ -2618,11 +2808,26 @@ class IntradayResidualCorrector:
         latest_residual_mw = residual_values[-1]
         mean_residual_mw = float(np.mean(residual_values))
         peak_residual_mw = max(residual_values)
+        min_latest_residual_mw = (
+            self._daytime_underforecast_non_business_min_latest_residual_mw
+            if is_non_business_day
+            else self._daytime_underforecast_min_latest_residual_mw
+        )
+        min_mean_residual_mw = (
+            self._daytime_underforecast_non_business_min_mean_residual_mw
+            if is_non_business_day
+            else self._daytime_underforecast_min_mean_residual_mw
+        )
+        min_peak_residual_mw = (
+            self._daytime_underforecast_non_business_min_peak_residual_mw
+            if is_non_business_day
+            else self._daytime_underforecast_min_peak_residual_mw
+        )
         if (
-            positive_count < self._daytime_underforecast_min_positive_count
-            or latest_residual_mw < self._daytime_underforecast_min_latest_residual_mw
-            or mean_residual_mw < self._daytime_underforecast_min_mean_residual_mw
-            or peak_residual_mw < self._daytime_underforecast_min_peak_residual_mw
+            positive_count < min_positive_count
+            or latest_residual_mw < min_latest_residual_mw
+            or mean_residual_mw < min_mean_residual_mw
+            or peak_residual_mw < min_peak_residual_mw
         ):
             return None
 
@@ -2643,6 +2848,8 @@ class IntradayResidualCorrector:
             "meanResidualMw": round(float(mean_residual_mw), 1),
             "peakResidualMw": round(float(peak_residual_mw), 1),
             "latestSlopeMw": round(float(latest_slope_mw), 1),
+            "isNonBusinessDay": is_non_business_day,
+            "maxLiftMw": round(float(max_lift_mw), 1),
         }
 
     def _daytime_sustained_underforecast_lift(
@@ -2658,7 +2865,6 @@ class IntradayResidualCorrector:
             context is None
             or inference_features is None
             or inference_features.empty
-            or forecast_hour not in self._daytime_underforecast_target_hours
             or lead_hours <= 0
             or lead_hours > self._daytime_underforecast_max_lead_hours
         ):
@@ -2667,22 +2873,39 @@ class IntradayResidualCorrector:
         row = self._feature_row_for_hour(inference_features, forecast_hour)
         if row is None:
             return None
-        if self._daytime_underforecast_business_day_only:
-            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
-            if is_non_business_day == 1.0:
-                return None
+        is_non_business_day = bool(context.get("isNonBusinessDay"))
+        target_hours = (
+            self._daytime_underforecast_non_business_target_hours
+            if is_non_business_day
+            else self._daytime_underforecast_target_hours
+        )
+        if forecast_hour not in target_hours:
+            return None
+        if self._daytime_underforecast_business_day_only and is_non_business_day:
+            return None
 
         temp_delta_24h = self._finite_float(row.get("temp_delta_24h")) or 0.0
         cooling_delta_24h = self._finite_float(row.get("cooling_delta_24h")) or 0.0
         apparent_cooling_delta_24h = (
             self._finite_float(row.get("apparent_cooling_delta_24h")) or 0.0
         )
+        humidity_pct = self._finite_float(row.get("humidity_pct")) or 0.0
+        discomfort_index = self._finite_float(row.get("discomfort_index")) or 0.0
         heat_signal_active = (
             temp_delta_24h >= self._daytime_underforecast_min_temp_delta_24h_c
             or cooling_delta_24h
             >= self._daytime_underforecast_min_cooling_delta_24h_c
             or apparent_cooling_delta_24h
             >= self._daytime_underforecast_min_cooling_delta_24h_c
+            or (
+                is_non_business_day
+                and (
+                    discomfort_index
+                    >= self._daytime_underforecast_non_business_min_discomfort_index
+                    or humidity_pct
+                    >= self._daytime_underforecast_non_business_min_humidity_pct
+                )
+            )
         )
         if not heat_signal_active:
             return None
@@ -2723,7 +2946,7 @@ class IntradayResidualCorrector:
 
         lift_mw = min(
             max(floor_lift_mw, residual_lift_mw),
-            self._daytime_underforecast_max_lift_mw,
+            float(context["maxLiftMw"]),
         )
         lift_mw = round(float(lift_mw), 1)
         if lift_mw < self._daytime_underforecast_min_lift_mw:
@@ -2743,6 +2966,8 @@ class IntradayResidualCorrector:
             "tempDelta24hC": round(float(temp_delta_24h), 1),
             "coolingDelta24hC": round(float(cooling_delta_24h), 1),
             "apparentCoolingDelta24hC": round(float(apparent_cooling_delta_24h), 1),
+            "humidityPct": round(float(humidity_pct), 1),
+            "discomfortIndex": round(float(discomfort_index), 1),
         }
 
     def _morning_warm_lag_overreaction_context(
@@ -3680,6 +3905,22 @@ class IntradayResidualCorrector:
             if business_type_transition_prior_applied:
                 applied_reasons.append("business_type_transition_prior_lag_overheat")
 
+            prior_stack_cap_applied = False
+            prior_stack_cap_restore_mw = 0.0
+            if applied_day_bias_mw != 0.0 or business_type_transition_prior_applied:
+                (
+                    calibrated_forecasts,
+                    prior_stack_cap_applied,
+                    prior_stack_cap_restore_mw,
+                ) = self._cap_pre_observation_prior_stack(
+                    forecasts,
+                    calibrated_forecasts,
+                    len(residuals_by_hour),
+                    last_observed_hour,
+                )
+            if prior_stack_cap_applied:
+                applied_reasons.append("pre_observation_prior_stack_cap")
+
             shape_guarded_forecasts, shape_guard_applied = self._apply_shape_guard(
                 calibrated_forecasts,
                 last_observed_hour,
@@ -3700,6 +3941,7 @@ class IntradayResidualCorrector:
                     or carryover_adjustment_mw != 0.0
                     or early_carryover_applied
                     or business_type_transition_prior_bias_mw != 0.0
+                    or prior_stack_cap_applied
                 ),
                 len(residuals_by_hour),
                 last_observed_hour,
@@ -3725,6 +3967,10 @@ class IntradayResidualCorrector:
                     1,
                 ),
                 early_observed_residual_count=early_carryover_count,
+                pre_observation_prior_stack_cap_applied=prior_stack_cap_applied,
+                pre_observation_prior_stack_cap_max_restore_mw=(
+                    prior_stack_cap_restore_mw
+                ),
             )
 
         max_forecast_hour = max(forecast_by_hour)
@@ -4032,6 +4278,8 @@ class IntradayResidualCorrector:
             daytime_underforecast_temp_delta_24h_c = None
             daytime_underforecast_cooling_delta_24h_c = None
             daytime_underforecast_apparent_cooling_delta_24h_c = None
+            daytime_underforecast_humidity_pct = None
+            daytime_underforecast_discomfort_index = None
             negative_floor_restore_mw = 0.0
             negative_floor_mw = None
             near_negative_floor_restore_mw = 0.0
@@ -4418,6 +4666,12 @@ class IntradayResidualCorrector:
                 daytime_underforecast_apparent_cooling_delta_24h_c = (
                     daytime_underforecast_lift["apparentCoolingDelta24hC"]
                 )
+                daytime_underforecast_humidity_pct = (
+                    daytime_underforecast_lift["humidityPct"]
+                )
+                daytime_underforecast_discomfort_index = (
+                    daytime_underforecast_lift["discomfortIndex"]
+                )
                 daytime_underforecast_lift_applied = True
                 daytime_underforecast_lift_values.append(lift_mw)
             final_before_morning_warm_guard_mw = forecast.forecast_mw + decayed_adjustment_mw
@@ -4772,6 +5026,16 @@ class IntradayResidualCorrector:
                 "daytimeSustainedUnderforecastApparentCoolingDelta24hC": (
                     round(float(daytime_underforecast_apparent_cooling_delta_24h_c), 1)
                     if daytime_underforecast_apparent_cooling_delta_24h_c is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastHumidityPct": (
+                    round(float(daytime_underforecast_humidity_pct), 1)
+                    if daytime_underforecast_humidity_pct is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastDiscomfortIndex": (
+                    round(float(daytime_underforecast_discomfort_index), 1)
+                    if daytime_underforecast_discomfort_index is not None
                     else None
                 ),
                 "negativeResidualContinuityFloorMw": (

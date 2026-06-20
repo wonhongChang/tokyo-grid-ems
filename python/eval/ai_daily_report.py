@@ -56,13 +56,16 @@ TIME_BAND_HOUR_RANGES = {
 }
 
 FEATURE_CATALOG = [
+    "intraday_correction.pre_observation_prior_stack_cap",
     "intraday_correction.business_type_transition_prior",
     "intraday_correction.business_type_transition",
     "intraday_correction.positive_residual_mitigation",
     "intraday_correction.positive_residual_slope_damping",
     "intraday_correction.morning_positive_residual_carryover_damping",
+    "intraday_correction.morning_observed_ramp_floor",
     "intraday_correction.non_business_evening_positive_residual_damping",
     "intraday_correction.non_business_evening_negative_residual_damping",
+    "intraday_correction.daytime_sustained_underforecast_lift",
     "intraday_correction.negative_residual_recovery_damping",
     "intraday_correction.negative_residual_continuity_floor",
     "intraday_correction.negative_residual_near_term_floor",
@@ -79,11 +82,14 @@ FEATURE_CATALOG = [
 FEATURE_NAME_ALIASES = {
     "published_forecast_freeze": "serving.published_forecast_freeze",
     "forecast_freeze": "serving.published_forecast_freeze",
+    "pre_observation_prior_stack_cap": "intraday_correction.pre_observation_prior_stack_cap",
     "positive_residual_mitigation": "intraday_correction.positive_residual_mitigation",
     "positive_residual_slope_damping": "intraday_correction.positive_residual_slope_damping",
     "morning_positive_residual_carryover_damping": "intraday_correction.morning_positive_residual_carryover_damping",
+    "morning_observed_ramp_floor": "intraday_correction.morning_observed_ramp_floor",
     "non_business_evening_positive_residual_damping": "intraday_correction.non_business_evening_positive_residual_damping",
     "non_business_evening_negative_residual_damping": "intraday_correction.non_business_evening_negative_residual_damping",
+    "daytime_sustained_underforecast_lift": "intraday_correction.daytime_sustained_underforecast_lift",
     "non_business_analog_downshift_guard": "adjustment.non_business_analog_downshift_guard",
     "negative_residual_recovery_damping": "intraday_correction.negative_residual_recovery_damping",
     "negative_residual_continuity_floor": "intraday_correction.negative_residual_continuity_floor",

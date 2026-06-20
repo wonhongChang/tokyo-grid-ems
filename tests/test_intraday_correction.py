@@ -2563,6 +2563,238 @@ def test_intraday_daytime_sustained_underforecast_lifts_hot_business_day_future(
     assert "daytime_sustained_underforecast_lift" in result.applied_regime_reason
 
 
+def test_intraday_caps_pre_observation_prior_stack_before_weekend_actuals():
+    target = date(2026, 6, 20)  # Saturday after a hotter business day
+    forecasts = _make_forecasts(target, 30_000.0)
+    inference_features = pd.DataFrame([
+        {
+            "hour": 9,
+            "is_non_business_day": 1,
+            "lag_24h_business_type_mismatch": 1,
+            "lag_24h": 34_000.0,
+            "recent_same_business_type_mean": 30_000.0,
+            "temp_delta_24h": -5.0,
+            "heating_degree": 0.0,
+        }
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "min_observed_hours": 3,
+            "operational_calibration": {
+                "pre_observation_prior_stack_cap": {
+                    "enabled": True,
+                    "max_observed_hours": 1,
+                    "max_downshift_mw": 900.0,
+                },
+                "day_level_scale": {
+                    "enabled": True,
+                    "lag_overheat_threshold_mw": 0.0,
+                    "temp_drop_threshold_c": 0.0,
+                    "lag_overheat_weight": 1.0,
+                    "max_abs_bias_mw": 1_000.0,
+                    "observed_fade_hours": 3,
+                },
+                "business_type_transition_prior": {
+                    "enabled": True,
+                    "lag_overheat_threshold_mw": 0.0,
+                    "base_allowed_excess_mw": 0.0,
+                    "shrinkage": 1.0,
+                    "max_abs_bias_mw": 500.0,
+                },
+                "day_boundary_carryover": {"enabled": False},
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        [],
+        inference_features=inference_features,
+    )
+
+    assert result.pre_observation_prior_stack_cap_applied is True
+    assert result.forecasts[9].forecast_mw == pytest.approx(29_100.0)
+    assert result.pre_observation_prior_stack_cap_max_restore_mw == pytest.approx(100.0)
+    assert "pre_observation_prior_stack_cap" in result.applied_regime_reason
+
+
+def test_intraday_weekend_morning_ramp_floor_lifts_observed_non_business_ramp():
+    target = date(2026, 6, 20)
+    forecasts = _make_forecasts(target, 20_000.0)
+    forecasts[9] = HourlyForecast(
+        ts=f"{target.isoformat()}T09:00:00+09:00",
+        forecast_mw=27_600.0,
+        p95_lower_mw=27_100.0,
+        p95_upper_mw=28_100.0,
+        p99_lower_mw=26_800.0,
+        p99_upper_mw=28_400.0,
+    )
+    forecasts[10] = HourlyForecast(
+        ts=f"{target.isoformat()}T10:00:00+09:00",
+        forecast_mw=28_200.0,
+        p95_lower_mw=27_700.0,
+        p95_upper_mw=28_700.0,
+        p99_lower_mw=27_400.0,
+        p99_upper_mw=29_000.0,
+    )
+    forecasts[11] = HourlyForecast(
+        ts=f"{target.isoformat()}T11:00:00+09:00",
+        forecast_mw=28_400.0,
+        p95_lower_mw=27_900.0,
+        p95_upper_mw=28_900.0,
+        p99_lower_mw=27_600.0,
+        p99_upper_mw=29_200.0,
+    )
+    actual_series = [
+        _actual_point(target, 7, 23_800.0),
+        _actual_point(target, 8, 26_200.0),
+        _actual_point(target, 9, 28_200.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": hour,
+            "is_non_business_day": 1,
+            "lag_24h_hourly_delta": delta,
+            "recent_same_business_type_delta_mean": recent_delta,
+        }
+        for hour, delta, recent_delta in [
+            (9, 1_900.0, 1_700.0),
+            (10, 1_600.0, 1_100.0),
+            (11, 1_100.0, 800.0),
+        ]
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "morning_observed_ramp_floor": {
+                "enabled": True,
+                "business_day_only": False,
+                "target_hours": [8, 9, 10, 11],
+                "min_reference_hour": 7,
+                "max_reference_hour": 10,
+                "max_lead_hours": 2,
+                "min_recent_slope_mw": 1_200.0,
+                "min_mean_slope_mw": 1_200.0,
+                "floor_slope_fraction": 0.85,
+                "non_business_floor_slope_fraction": 0.35,
+                "max_floor_delta_mw": 2_200.0,
+                "max_lift_mw": 1_200.0,
+                "non_business_max_lift_mw": 700.0,
+                "min_lift_mw": 100.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.morning_observed_ramp_floor_applied is True
+    assert result.morning_observed_ramp_floor_max_lift_mw == pytest.approx(700.0)
+    assert result.forecasts[10].forecast_mw == pytest.approx(28_900.0)
+    assert result.forecasts[11].forecast_mw == pytest.approx(29_100.0)
+
+
+def test_intraday_weekend_humid_daytime_underforecast_lifts_plateau_hours():
+    target = date(2026, 6, 20)
+    forecasts = _make_forecasts(target, 20_000.0)
+    for hour, value in {
+        10: 28_200.0,
+        11: 28_400.0,
+        12: 28_400.0,
+        13: 28_500.0,
+        14: 27_800.0,
+        15: 27_600.0,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 10, 28_700.0),
+        _actual_point(target, 11, 29_100.0),
+        _actual_point(target, 12, 28_900.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": hour,
+            "is_non_business_day": 1,
+            "temp_delta_24h": -5.0,
+            "cooling_delta_24h": -4.0,
+            "apparent_cooling_delta_24h": -3.0,
+            "humidity_pct": 95.0,
+            "discomfort_index": 75.0,
+        }
+        for hour in [12, 13, 14, 15]
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.6,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "daytime_sustained_underforecast_lift": {
+                "enabled": True,
+                "business_day_only": False,
+                "target_hours": [10, 11, 12, 13, 14],
+                "non_business_target_hours": [14, 15],
+                "min_reference_hour": 8,
+                "max_reference_hour": 14,
+                "max_lead_hours": 3,
+                "lookback_observed_hours": 3,
+                "min_positive_residual_count": 2,
+                "non_business_min_positive_residual_count": 2,
+                "min_base_adjustment_mw": 600.0,
+                "non_business_min_base_adjustment_mw": 250.0,
+                "min_latest_residual_mw": 600.0,
+                "non_business_min_latest_residual_mw": 350.0,
+                "min_mean_residual_mw": 600.0,
+                "non_business_min_mean_residual_mw": 450.0,
+                "min_peak_residual_mw": 1_000.0,
+                "non_business_min_peak_residual_mw": 700.0,
+                "min_temp_delta_24h_c": 3.0,
+                "min_cooling_delta_24h_c": 1.0,
+                "non_business_min_discomfort_index": 74.0,
+                "non_business_min_humidity_pct": 90.0,
+                "min_latest_slope_mw": -800.0,
+                "floor_slope_fraction": 0.25,
+                "max_floor_delta_mw": 900.0,
+                "floor_slack_mw": 300.0,
+                "floor_shrinkage": 0.5,
+                "residual_pressure_shrinkage": 0.55,
+                "residual_slack_mw": 200.0,
+                "max_lift_mw": 900.0,
+                "non_business_max_lift_mw": 800.0,
+                "min_lift_mw": 100.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.daytime_sustained_underforecast_lift_applied is True
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_14 = next(item for item in residual_logs if item["hour"] == 14)
+    hour_15 = next(item for item in residual_logs if item["hour"] == 15)
+    assert hour_14["daytimeSustainedUnderforecastLiftMw"] > 0.0
+    assert hour_15["daytimeSustainedUnderforecastLiftMw"] > 0.0
+    assert hour_14["daytimeSustainedUnderforecastDiscomfortIndex"] == pytest.approx(75.0)
+    assert result.forecasts[13].forecast_mw == pytest.approx(28_840.0)
+
+
 def test_intraday_daytime_sustained_underforecast_requires_heat_context():
     target = date(2026, 6, 19)
     forecasts = _make_forecasts(target, 30_000.0)
