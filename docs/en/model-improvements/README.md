@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-21 non-business shape and evening carryover](model-improvement-2026-06-21-non-business-shape-and-evening-carryover.md)
 - [2026-06-20 non-business prior and plateau guards](model-improvement-2026-06-20-non-business-prior-and-plateau-guards.md)
 - [2026-06-19 daytime sustained underforecast lift](model-improvement-2026-06-19-daytime-sustained-underforecast-lift.md)
 - [2026-06-19 band rebalance and guard tightening](model-improvement-2026-06-19-band-rebalance-and-guard-tightening.md)

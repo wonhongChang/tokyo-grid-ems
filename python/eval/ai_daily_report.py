@@ -76,6 +76,7 @@ FEATURE_CATALOG = [
     "intraday_correction.day_boundary_carryover",
     "intraday_correction.day_level_scale",
     "adjustment.non_business_analog_downshift_guard",
+    "adjustment.non_business_morning_shape_floor_guard",
     "adjustment.localized_shape_spike_guard",
     "serving.published_forecast_freeze",
 ]
@@ -91,6 +92,7 @@ FEATURE_NAME_ALIASES = {
     "non_business_evening_negative_residual_damping": "intraday_correction.non_business_evening_negative_residual_damping",
     "daytime_sustained_underforecast_lift": "intraday_correction.daytime_sustained_underforecast_lift",
     "non_business_analog_downshift_guard": "adjustment.non_business_analog_downshift_guard",
+    "non_business_morning_shape_floor_guard": "adjustment.non_business_morning_shape_floor_guard",
     "negative_residual_recovery_damping": "intraday_correction.negative_residual_recovery_damping",
     "negative_residual_continuity_floor": "intraday_correction.negative_residual_continuity_floor",
     "negative_residual_near_term_floor": "intraday_correction.negative_residual_near_term_floor",

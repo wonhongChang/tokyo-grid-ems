@@ -163,7 +163,7 @@ intraday_correction:
     min_reference_hour: 12
     min_lead_hours: 3
     max_lead_hours: 6
-    min_base_adjustment_mw: 500
+    min_base_adjustment_mw: 350
     weak_support_delta_mw: 600 # damp only when weekend evening shape does not support a rebound
     damping_factor: 0.45
     min_damped_mw: 120
@@ -424,11 +424,19 @@ adjustment:
       max_clipping_mw: 900
     non_business_analog_downshift_guard:
       enabled: true
-      target_hours: [7, 8, 9, 10, 11, 12, 13]
+      target_hours: [7, 8, 9, 10, 11, 12, 13, 14, 15]
       min_negative_shift_mw: 1
       max_allowed_downshift_mw: 0
       min_supporting_delta_mw: 500
       max_raw_anchor_excess_mw: 900
+    non_business_morning_shape_floor_guard:
+      enabled: true
+      target_hours: [6, 7]
+      min_shape_shortfall_mw: 700
+      support_slack_mw: 250
+      shrinkage: 0.75
+      max_lift_mw: 800
+      min_lift_mw: 100
 
   midday_transition_guard:
     enabled: true

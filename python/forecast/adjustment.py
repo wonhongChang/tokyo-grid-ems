@@ -414,7 +414,7 @@ class PostHolidayTimeBandGuard:
         self._non_business_analog_guard_hours: set[int] = set()
         for hour in non_business_analog_config.get(
             "target_hours",
-            [7, 8, 9, 10, 11, 12, 13],
+            [7, 8, 9, 10, 11, 12, 13, 14, 15],
         ):
             try:
                 self._non_business_analog_guard_hours.add(int(hour))
@@ -433,6 +433,39 @@ class PostHolidayTimeBandGuard:
         )
         self._non_business_analog_max_raw_anchor_excess_mw = float(
             non_business_analog_config.get("max_raw_anchor_excess_mw", 900.0)
+        )
+        morning_shape_config = guard_config.get(
+            "non_business_morning_shape_floor_guard",
+            {},
+        )
+        self._non_business_morning_shape_enabled = bool(
+            morning_shape_config.get("enabled", True)
+        )
+        self._non_business_morning_shape_hours: set[int] = set()
+        for hour in morning_shape_config.get("target_hours", [6, 7]):
+            try:
+                self._non_business_morning_shape_hours.add(int(hour))
+            except (TypeError, ValueError):
+                continue
+        self._non_business_morning_shape_min_shortfall_mw = max(
+            float(morning_shape_config.get("min_shape_shortfall_mw", 700.0)),
+            0.0,
+        )
+        self._non_business_morning_shape_support_slack_mw = max(
+            float(morning_shape_config.get("support_slack_mw", 250.0)),
+            0.0,
+        )
+        self._non_business_morning_shape_shrinkage = min(
+            max(float(morning_shape_config.get("shrinkage", 0.75)), 0.0),
+            1.0,
+        )
+        self._non_business_morning_shape_max_lift_mw = max(
+            float(morning_shape_config.get("max_lift_mw", 800.0)),
+            0.0,
+        )
+        self._non_business_morning_shape_min_lift_mw = max(
+            float(morning_shape_config.get("min_lift_mw", 100.0)),
+            0.0,
         )
 
     @staticmethod
@@ -739,6 +772,28 @@ class PostHolidayTimeBandGuard:
                 return True
         return False
 
+    def _non_business_morning_shape_floor_may_apply(
+        self,
+        inference_features: pd.DataFrame,
+    ) -> bool:
+        if (
+            not self._non_business_morning_shape_enabled
+            or not self._non_business_morning_shape_hours
+            or inference_features is None
+            or inference_features.empty
+            or "hour" not in inference_features.columns
+        ):
+            return False
+
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is None or int(hour) not in self._non_business_morning_shape_hours:
+                continue
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day == 1.0:
+                return True
+        return False
+
     def _non_business_analog_downshift_supported(self, row, raw_forecast) -> bool:
         lag_delta_mw = self._finite_float(row.get("lag_24h_hourly_delta"))
         same_business_delta_mw = self._finite_float(
@@ -808,6 +863,85 @@ class PostHolidayTimeBandGuard:
 
         return result if changed else adjusted_forecasts
 
+    def _apply_non_business_morning_shape_floor_guard(
+        self,
+        forecasts: list,
+        inference_features: pd.DataFrame,
+    ) -> list:
+        if not self._non_business_morning_shape_floor_may_apply(inference_features):
+            return forecasts
+
+        rows_by_hour = {}
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is not None:
+                rows_by_hour[int(hour)] = row
+
+        forecasts_by_hour = {
+            pd.Timestamp(forecast.ts).hour: forecast
+            for forecast in forecasts
+        }
+        result = []
+        changed = False
+        for forecast in forecasts:
+            hour = pd.Timestamp(forecast.ts).hour
+            row = rows_by_hour.get(hour)
+            previous_forecast = forecasts_by_hour.get(hour - 1)
+            if (
+                row is None
+                or previous_forecast is None
+                or hour not in self._non_business_morning_shape_hours
+            ):
+                result.append(forecast)
+                continue
+
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day != 1.0:
+                result.append(forecast)
+                continue
+
+            support_candidates = [
+                value
+                for value in (
+                    self._finite_float(row.get("lag_24h_hourly_delta")),
+                    self._finite_float(row.get("recent_same_business_type_delta_mean")),
+                )
+                if value is not None
+            ]
+            if not support_candidates:
+                result.append(forecast)
+                continue
+
+            support_delta_mw = max(support_candidates)
+            forecast_delta_mw = forecast.forecast_mw - previous_forecast.forecast_mw
+            shape_shortfall_mw = support_delta_mw - forecast_delta_mw
+            if shape_shortfall_mw < self._non_business_morning_shape_min_shortfall_mw:
+                result.append(forecast)
+                continue
+
+            floor_mw = (
+                previous_forecast.forecast_mw
+                + support_delta_mw
+                - self._non_business_morning_shape_support_slack_mw
+            )
+            if forecast.forecast_mw >= floor_mw:
+                result.append(forecast)
+                continue
+
+            lift_mw = min(
+                (floor_mw - forecast.forecast_mw)
+                * self._non_business_morning_shape_shrinkage,
+                self._non_business_morning_shape_max_lift_mw,
+            )
+            if lift_mw < self._non_business_morning_shape_min_lift_mw:
+                result.append(forecast)
+                continue
+
+            result.append(self._shift_forecast(forecast, lift_mw))
+            changed = True
+
+        return result if changed else forecasts
+
     def apply(
         self,
         raw_forecasts: list,
@@ -844,6 +978,9 @@ class PostHolidayTimeBandGuard:
         non_business_analog_active = self._non_business_analog_downshift_may_apply(
             inference_features
         )
+        non_business_morning_shape_active = (
+            self._non_business_morning_shape_floor_may_apply(inference_features)
+        )
         if not (
             post_holiday_active
             or lag_holiday_active
@@ -851,6 +988,7 @@ class PostHolidayTimeBandGuard:
             or business_return_shortfall_active
             or business_return_excess_active
             or non_business_analog_active
+            or non_business_morning_shape_active
         ):
             return adjusted_forecasts
 
@@ -954,6 +1092,10 @@ class PostHolidayTimeBandGuard:
 
         result = self._apply_non_business_analog_downshift_guard(
             raw_forecasts,
+            result,
+            inference_features,
+        )
+        result = self._apply_non_business_morning_shape_floor_guard(
             result,
             inference_features,
         )

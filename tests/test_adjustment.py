@@ -1073,6 +1073,35 @@ def test_guard_caps_non_business_analog_downshift_when_ramp_is_supported():
     assert result[9].p95_lower_mw == pytest.approx(24_000.0)
 
 
+def test_guard_caps_non_business_afternoon_analog_downshift_when_anchor_supports_plateau():
+    """Weekend afternoon analog downshifts should not erase an anchor-supported plateau."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    raw = _make_raw_forecasts(date(2026, 6, 21), 28_135.7)
+    adjusted = _make_raw_forecasts(date(2026, 6, 21), 28_135.7)
+    adjusted[14] = HourlyForecast(
+        ts=raw[14].ts,
+        forecast_mw=27_485.1,
+        p95_lower_mw=26_485.1,
+        p95_upper_mw=28_485.1,
+        p99_lower_mw=25_985.1,
+        p99_upper_mw=28_985.1,
+    )
+    inf = _make_post_holiday_inf(
+        consec=0,
+        dsh=8,
+        temp_anomaly_daytime=0.5,
+        is_non_business_day=1,
+    )
+    inf.loc[14, "lag_24h_hourly_delta"] = -10.0
+    inf.loc[14, "recent_same_business_type_delta_mean"] = -236.2
+    inf.loc[14, "recent_same_business_type_mean"] = 28_800.0
+
+    result = guard.apply(raw, adjusted, inf)
+
+    assert result[14].forecast_mw == pytest.approx(28_135.7)
+    assert result[14].p95_lower_mw == pytest.approx(27_135.7)
+
+
 def test_guard_keeps_non_business_analog_downshift_without_shape_support():
     """Declining weekend afternoon shape can keep the analog downward shift."""
     guard = PostHolidayTimeBandGuard(_guard_config())
@@ -1099,6 +1128,43 @@ def test_guard_keeps_non_business_analog_downshift_without_shape_support():
     result = guard.apply(raw, adjusted, inf)
 
     assert result[14] is adjusted[14]
+
+
+def test_guard_lifts_non_business_morning_shape_floor_when_drop_is_unsupported():
+    """A weekend 06:00 trough should be softened when lag/recent shape is flat."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    raw = _make_raw_forecasts(date(2026, 6, 21), 22_000.0)
+    adjusted = _make_raw_forecasts(date(2026, 6, 21), 22_000.0)
+    adjusted[5] = HourlyForecast(
+        ts=raw[5].ts,
+        forecast_mw=21_640.8,
+        p95_lower_mw=20_640.8,
+        p95_upper_mw=22_640.8,
+        p99_lower_mw=20_140.8,
+        p99_upper_mw=23_140.8,
+    )
+    adjusted[6] = HourlyForecast(
+        ts=raw[6].ts,
+        forecast_mw=20_492.9,
+        p95_lower_mw=19_492.9,
+        p95_upper_mw=21_492.9,
+        p99_lower_mw=18_992.9,
+        p99_upper_mw=21_992.9,
+    )
+    inf = _make_post_holiday_inf(
+        consec=0,
+        dsh=8,
+        temp_anomaly_morning=0.5,
+        temp_anomaly_daytime=0.5,
+        is_non_business_day=1,
+    )
+    inf.loc[6, "lag_24h_hourly_delta"] = -10.0
+    inf.loc[6, "recent_same_business_type_delta_mean"] = -263.8
+
+    result = guard.apply(raw, adjusted, inf)
+
+    assert result[6].forecast_mw == pytest.approx(21_158.8)
+    assert result[6].p95_lower_mw == pytest.approx(20_158.8)
 
 
 # ---------------------------------------------------------------------------

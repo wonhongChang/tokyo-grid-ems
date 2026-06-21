@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-06
 
+- [2026-06-21 非営業日の shape と夕方 carryover](model-improvement-2026-06-21-non-business-shape-and-evening-carryover.md)
 - [2026-06-20 非営業日の prior と plateau ガード](model-improvement-2026-06-20-non-business-prior-and-plateau-guards.md)
 - [2026-06-19 昼間の継続的な過小予測リフト](model-improvement-2026-06-19-daytime-sustained-underforecast-lift.md)
 - [2026-06-19 バンド再配分とガード条件の引き締め](model-improvement-2026-06-19-band-rebalance-and-guard-tightening.md)
