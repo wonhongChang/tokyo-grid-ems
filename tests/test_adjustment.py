@@ -1009,6 +1009,48 @@ def test_guard_caps_business_return_anchor_excess_at_11():
     assert result[11].p95_lower_mw == pytest.approx(34_160.0)
 
 
+def test_guard_softens_business_return_excess_cap_when_shape_supports_ramp():
+    """A Monday return cap should not erase a supported warm morning ramp."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 6, 22)
+    raw = _make_raw_forecasts(target, 35_590.4)
+    adj = _make_raw_forecasts(target, 35_590.4)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"] == 10, "lag_24h"] = 28_000.0
+    inf.loc[inf["hour"] == 10, "recent_same_business_type_mean"] = 33_790.4
+    inf.loc[inf["hour"] == 10, "lag_24h_business_type_mismatch"] = 1
+    inf.loc[inf["hour"] == 10, "temp_delta_24h"] = 1.6
+    inf.loc[inf["hour"] == 10, "temp_anomaly_doy"] = 0.0
+    inf.loc[inf["hour"] == 10, "lag_24h_hourly_delta"] = 750.0
+    inf.loc[inf["hour"] == 10, "recent_same_business_type_delta_mean"] = 777.5
+
+    result = guard.apply(raw, adj, inf)
+
+    # Old cap hit max clipping (900 MW). Shape-supported cap leaves more ramp energy.
+    assert result[10].forecast_mw == pytest.approx(35_373.4)
+    assert result[10].forecast_mw > 35_000.0
+
+
+def test_guard_caps_business_afternoon_analog_excess_when_shape_support_is_weak():
+    """Analogous-day uplift should not create an unsupported afternoon plateau."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 6, 22)
+    raw = _make_raw_forecasts(target, 35_923.9)
+    adj = _make_raw_forecasts(target, 37_039.7)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"] == 13, "is_non_business_day"] = 0
+    inf.loc[inf["hour"] == 13, "lag_24h_hourly_delta"] = 300.0
+    inf.loc[inf["hour"] == 13, "recent_same_business_type_delta_mean"] = 898.8
+    inf.loc[inf["hour"] == 13, "cooling_delta_24h"] = 2.0
+    inf.loc[inf["hour"] == 13, "temp_delta_24h"] = 0.0
+
+    result = guard.apply(raw, adj, inf)
+
+    # allowed shift = 300 + min(2.0 * 120, 300) = 540 MW
+    assert result[13].forecast_mw == pytest.approx(36_463.9)
+    assert result[12].forecast_mw == pytest.approx(37_039.7)
+
+
 def test_guard_does_not_lift_business_return_without_mismatch():
     """Business return guard stays isolated on ordinary business-day sequences."""
     guard = PostHolidayTimeBandGuard(_guard_config())

@@ -76,6 +76,8 @@ class IntradayCorrectionResult:
     daytime_sustained_underforecast_max_lift_mw: float = 0.0
     pre_observation_prior_stack_cap_applied: bool = False
     pre_observation_prior_stack_cap_max_restore_mw: float = 0.0
+    post_lunch_decline_continuity_guard_applied: bool = False
+    post_lunch_decline_continuity_max_reduction_mw: float = 0.0
 
     def metadata(self) -> dict:
         return {
@@ -106,6 +108,13 @@ class IntradayCorrectionResult:
             ),
             "preObservationPriorStackCapMaxRestoreMw": round(
                 float(self.pre_observation_prior_stack_cap_max_restore_mw),
+                1,
+            ),
+            "postLunchDeclineContinuityGuardApplied": (
+                self.post_lunch_decline_continuity_guard_applied
+            ),
+            "postLunchDeclineContinuityMaxReductionMw": round(
+                float(self.post_lunch_decline_continuity_max_reduction_mw),
                 1,
             ),
             "appliedDayBiasMw": round(float(self.applied_day_bias_mw), 1),
@@ -1114,6 +1123,69 @@ class IntradayResidualCorrector:
                 "non_business_min_humidity_pct",
                 90.0,
             )
+        )
+        post_midday_shape_config = daytime_underforecast_config.get(
+            "post_midday_shape_gate",
+            {},
+        )
+        self._daytime_underforecast_post_midday_shape_enabled = bool(
+            post_midday_shape_config.get("enabled", False)
+        )
+        self._daytime_underforecast_post_midday_shape_hours = {
+            int(hour)
+            for hour in post_midday_shape_config.get("target_hours", [12, 13, 14])
+        }
+        self._daytime_underforecast_post_midday_min_lag_delta_mw = float(
+            post_midday_shape_config.get("min_lag_delta_mw", 600.0)
+        )
+        self._daytime_underforecast_post_midday_min_recent_delta_mw = float(
+            post_midday_shape_config.get("min_recent_delta_mw", 600.0)
+        )
+        post_lunch_decline_config = correction_config.get(
+            "post_lunch_decline_continuity_guard",
+            {},
+        )
+        self._post_lunch_decline_enabled = bool(
+            post_lunch_decline_config.get("enabled", False)
+        )
+        self._post_lunch_decline_business_day_only = bool(
+            post_lunch_decline_config.get("business_day_only", True)
+        )
+        self._post_lunch_decline_target_hours = {
+            int(hour)
+            for hour in post_lunch_decline_config.get("target_hours", [13, 14])
+        }
+        self._post_lunch_decline_min_reference_hour = int(
+            post_lunch_decline_config.get("min_reference_hour", 12)
+        )
+        self._post_lunch_decline_max_reference_hour = int(
+            post_lunch_decline_config.get("max_reference_hour", 13)
+        )
+        self._post_lunch_decline_max_lead_hours = max(
+            int(post_lunch_decline_config.get("max_lead_hours", 2)),
+            1,
+        )
+        self._post_lunch_decline_latest_slope_max_mw = float(
+            post_lunch_decline_config.get("latest_slope_max_mw", -700.0)
+        )
+        self._post_lunch_decline_max_support_delta_mw = float(
+            post_lunch_decline_config.get("max_supporting_delta_mw", 900.0)
+        )
+        self._post_lunch_decline_support_fraction = max(
+            float(post_lunch_decline_config.get("support_fraction", 0.35)),
+            0.0,
+        )
+        self._post_lunch_decline_cap_buffer_mw = max(
+            float(post_lunch_decline_config.get("cap_buffer_mw", 500.0)),
+            0.0,
+        )
+        self._post_lunch_decline_max_reduction_mw = max(
+            float(post_lunch_decline_config.get("max_reduction_mw", 900.0)),
+            0.0,
+        )
+        self._post_lunch_decline_min_reduction_mw = max(
+            float(post_lunch_decline_config.get("min_reduction_mw", 100.0)),
+            0.0,
         )
         morning_warm_config = correction_config.get(
             "morning_warm_lag_overreaction_guard",
@@ -2305,6 +2377,117 @@ class IntradayResidualCorrector:
             ),
         }
 
+    def _post_lunch_decline_continuity_context(
+        self,
+        forecasts: list[HourlyForecast],
+        inference_features: pd.DataFrame | None,
+        actual_mw_by_hour: dict[int, float],
+        last_observed_hour: int | None,
+    ) -> dict | None:
+        if (
+            not self._post_lunch_decline_enabled
+            or last_observed_hour is None
+            or last_observed_hour < self._post_lunch_decline_min_reference_hour
+            or last_observed_hour > self._post_lunch_decline_max_reference_hour
+            or last_observed_hour not in actual_mw_by_hour
+            or (last_observed_hour - 1) not in actual_mw_by_hour
+        ):
+            return None
+
+        if self._post_lunch_decline_business_day_only:
+            row = self._feature_row_for_hour(inference_features, last_observed_hour)
+            if row is not None:
+                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+                if is_non_business_day == 1.0:
+                    return None
+            elif forecasts:
+                forecast_ts = pd.Timestamp(forecasts[0].ts)
+                if _is_nonworking_day(forecast_ts):
+                    return None
+
+        latest_slope_mw = (
+            actual_mw_by_hour[last_observed_hour]
+            - actual_mw_by_hour[last_observed_hour - 1]
+        )
+        if latest_slope_mw > self._post_lunch_decline_latest_slope_max_mw:
+            return None
+
+        return {
+            "lastObservedHour": last_observed_hour,
+            "lastActualMw": round(float(actual_mw_by_hour[last_observed_hour]), 1),
+            "latestSlopeMw": round(float(latest_slope_mw), 1),
+        }
+
+    def _post_lunch_decline_continuity_reduction(
+        self,
+        context: dict | None,
+        inference_features: pd.DataFrame | None,
+        forecast_hour: int,
+        lead_hours: int,
+        final_before_guard_mw: float,
+    ) -> dict | None:
+        if (
+            context is None
+            or forecast_hour not in self._post_lunch_decline_target_hours
+            or lead_hours <= 0
+            or lead_hours > self._post_lunch_decline_max_lead_hours
+        ):
+            return None
+
+        row = self._feature_row_for_hour(inference_features, forecast_hour)
+        if row is None:
+            return None
+        if self._post_lunch_decline_business_day_only:
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day == 1.0:
+                return None
+
+        lag_delta_mw = self._finite_float(row.get("lag_24h_hourly_delta"))
+        same_business_delta_mw = self._finite_float(
+            row.get("recent_same_business_type_delta_mean")
+        )
+        support_candidates = [
+            value
+            for value in (lag_delta_mw, same_business_delta_mw)
+            if value is not None
+        ]
+        if not support_candidates:
+            return None
+        support_delta_mw = max(support_candidates)
+        if support_delta_mw > self._post_lunch_decline_max_support_delta_mw:
+            return None
+
+        cap_mw = (
+            float(context["lastActualMw"])
+            + max(support_delta_mw, 0.0) * self._post_lunch_decline_support_fraction
+            + self._post_lunch_decline_cap_buffer_mw
+        )
+        excess_mw = final_before_guard_mw - cap_mw
+        if excess_mw <= 0.0:
+            return None
+
+        reduction_mw = min(excess_mw, self._post_lunch_decline_max_reduction_mw)
+        reduction_mw = round(float(reduction_mw), 1)
+        if reduction_mw < self._post_lunch_decline_min_reduction_mw:
+            return None
+
+        return {
+            "capMw": round(float(cap_mw), 1),
+            "reductionMw": reduction_mw,
+            "supportDeltaMw": round(float(support_delta_mw), 1),
+            "lag24DeltaMw": (
+                round(float(lag_delta_mw), 1)
+                if lag_delta_mw is not None
+                else None
+            ),
+            "recentSameBusinessTypeDeltaMw": (
+                round(float(same_business_delta_mw), 1)
+                if same_business_delta_mw is not None
+                else None
+            ),
+            "latestSlopeMw": context["latestSlopeMw"],
+        }
+
     def _non_business_evening_positive_residual_context(
         self,
         forecasts: list[HourlyForecast],
@@ -2909,6 +3092,25 @@ class IntradayResidualCorrector:
         )
         if not heat_signal_active:
             return None
+
+        if (
+            not is_non_business_day
+            and self._daytime_underforecast_post_midday_shape_enabled
+            and forecast_hour in self._daytime_underforecast_post_midday_shape_hours
+        ):
+            lag_delta_mw = self._finite_float(row.get("lag_24h_hourly_delta"))
+            recent_delta_mw = self._finite_float(
+                row.get("recent_same_business_type_delta_mean")
+            )
+            if (
+                lag_delta_mw is None
+                or recent_delta_mw is None
+                or lag_delta_mw
+                < self._daytime_underforecast_post_midday_min_lag_delta_mw
+                or recent_delta_mw
+                < self._daytime_underforecast_post_midday_min_recent_delta_mw
+            ):
+                return None
 
         latest_slope_mw = float(context["latestSlopeMw"])
         floor_delta_mw = max(0.0, latest_slope_mw)
@@ -4108,6 +4310,12 @@ class IntradayResidualCorrector:
                 base_adjustment_mw,
             )
         )
+        post_lunch_decline_context = self._post_lunch_decline_continuity_context(
+            transition_prior_guarded_forecasts,
+            inference_features,
+            actual_mw_by_hour,
+            last_observed_hour,
+        )
         non_business_evening_positive_context = (
             self._non_business_evening_positive_residual_context(
                 transition_prior_guarded_forecasts,
@@ -4209,6 +4417,8 @@ class IntradayResidualCorrector:
         afternoon_positive_damping_applied = False
         afternoon_positive_damped_values: list[float] = []
         afternoon_positive_damping_factor_values: list[float] = []
+        post_lunch_decline_guard_applied = False
+        post_lunch_decline_reduced_values: list[float] = []
         non_business_evening_positive_damping_applied = False
         non_business_evening_positive_damped_values: list[float] = []
         non_business_evening_positive_factor_values: list[float] = []
@@ -4245,6 +4455,12 @@ class IntradayResidualCorrector:
             afternoon_positive_support_delta_mw = None
             afternoon_positive_lag24_delta_mw = None
             afternoon_positive_recent_delta_mw = None
+            post_lunch_decline_cap_mw = None
+            post_lunch_decline_reduction_mw = 0.0
+            post_lunch_decline_support_delta_mw = None
+            post_lunch_decline_lag24_delta_mw = None
+            post_lunch_decline_recent_delta_mw = None
+            post_lunch_decline_latest_slope_mw = None
             non_business_evening_positive_damping_factor = 1.0
             non_business_evening_positive_damped_mw = 0.0
             non_business_evening_positive_support_delta_mw = None
@@ -4674,6 +4890,43 @@ class IntradayResidualCorrector:
                 )
                 daytime_underforecast_lift_applied = True
                 daytime_underforecast_lift_values.append(lift_mw)
+            final_before_post_lunch_decline_guard_mw = (
+                forecast.forecast_mw + decayed_adjustment_mw
+            )
+            post_lunch_decline_guard = (
+                self._post_lunch_decline_continuity_reduction(
+                    post_lunch_decline_context,
+                    inference_features,
+                    forecast_hour,
+                    lead_hours,
+                    final_before_post_lunch_decline_guard_mw,
+                )
+            )
+            if post_lunch_decline_guard is not None:
+                post_lunch_decline_reduction_mw = float(
+                    post_lunch_decline_guard["reductionMw"]
+                )
+                decayed_adjustment_mw = round(
+                    decayed_adjustment_mw - post_lunch_decline_reduction_mw,
+                    1,
+                )
+                post_lunch_decline_cap_mw = post_lunch_decline_guard["capMw"]
+                post_lunch_decline_support_delta_mw = (
+                    post_lunch_decline_guard["supportDeltaMw"]
+                )
+                post_lunch_decline_lag24_delta_mw = (
+                    post_lunch_decline_guard["lag24DeltaMw"]
+                )
+                post_lunch_decline_recent_delta_mw = (
+                    post_lunch_decline_guard["recentSameBusinessTypeDeltaMw"]
+                )
+                post_lunch_decline_latest_slope_mw = (
+                    post_lunch_decline_guard["latestSlopeMw"]
+                )
+                post_lunch_decline_guard_applied = True
+                post_lunch_decline_reduced_values.append(
+                    post_lunch_decline_reduction_mw
+                )
             final_before_morning_warm_guard_mw = forecast.forecast_mw + decayed_adjustment_mw
             morning_warm_guard = self._morning_warm_lag_overreaction_reduction(
                 morning_warm_context,
@@ -5038,6 +5291,35 @@ class IntradayResidualCorrector:
                     if daytime_underforecast_discomfort_index is not None
                     else None
                 ),
+                "postLunchDeclineContinuityCapMw": (
+                    round(float(post_lunch_decline_cap_mw), 1)
+                    if post_lunch_decline_cap_mw is not None
+                    else None
+                ),
+                "postLunchDeclineContinuityReductionMw": round(
+                    post_lunch_decline_reduction_mw,
+                    1,
+                ),
+                "postLunchDeclineContinuitySupportDeltaMw": (
+                    round(float(post_lunch_decline_support_delta_mw), 1)
+                    if post_lunch_decline_support_delta_mw is not None
+                    else None
+                ),
+                "postLunchDeclineContinuityLag24DeltaMw": (
+                    round(float(post_lunch_decline_lag24_delta_mw), 1)
+                    if post_lunch_decline_lag24_delta_mw is not None
+                    else None
+                ),
+                "postLunchDeclineContinuityRecentDeltaMw": (
+                    round(float(post_lunch_decline_recent_delta_mw), 1)
+                    if post_lunch_decline_recent_delta_mw is not None
+                    else None
+                ),
+                "postLunchDeclineContinuityLatestSlopeMw": (
+                    round(float(post_lunch_decline_latest_slope_mw), 1)
+                    if post_lunch_decline_latest_slope_mw is not None
+                    else None
+                ),
                 "negativeResidualContinuityFloorMw": (
                     round(float(negative_floor_mw), 1)
                     if negative_floor_mw is not None
@@ -5196,6 +5478,8 @@ class IntradayResidualCorrector:
             applied_reasons.append("morning_observed_ramp_floor")
         if daytime_underforecast_lift_applied:
             applied_reasons.append("daytime_sustained_underforecast_lift")
+        if post_lunch_decline_guard_applied:
+            applied_reasons.append("post_lunch_decline_continuity_guard")
         if morning_warm_guard_applied:
             applied_reasons.append("morning_warm_lag_overreaction_guard")
         if morning_anchor_cap_applied:
@@ -5303,6 +5587,13 @@ class IntradayResidualCorrector:
             ),
             daytime_sustained_underforecast_max_lift_mw=round(
                 max(daytime_underforecast_lift_values or [0.0]),
+                1,
+            ),
+            post_lunch_decline_continuity_guard_applied=(
+                post_lunch_decline_guard_applied
+            ),
+            post_lunch_decline_continuity_max_reduction_mw=round(
+                max(post_lunch_decline_reduced_values or [0.0]),
                 1,
             ),
         )

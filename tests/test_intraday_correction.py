@@ -2563,6 +2563,170 @@ def test_intraday_daytime_sustained_underforecast_lifts_hot_business_day_future(
     assert "daytime_sustained_underforecast_lift" in result.applied_regime_reason
 
 
+def test_intraday_daytime_underforecast_lift_respects_post_midday_shape_gate():
+    target = date(2026, 6, 22)  # Monday, lunch-shape conflict
+    forecasts = _make_forecasts(target, 30_000.0)
+    for hour, value in {
+        9: 34_000.0,
+        10: 34_690.4,
+        11: 36_118.4,
+        12: 35_794.9,
+        13: 37_039.7,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 9, 34_990.0),
+        _actual_point(target, 10, 36_290.0),
+        _actual_point(target, 11, 37_030.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 11, "is_non_business_day": 0},
+        {
+            "hour": 12,
+            "is_non_business_day": 0,
+            "temp_delta_24h": 5.0,
+            "cooling_delta_24h": 5.5,
+            "lag_24h_hourly_delta": 420.0,
+            "recent_same_business_type_delta_mean": -860.0,
+        },
+        {
+            "hour": 13,
+            "is_non_business_day": 0,
+            "temp_delta_24h": 5.0,
+            "cooling_delta_24h": 2.0,
+            "lag_24h_hourly_delta": 300.0,
+            "recent_same_business_type_delta_mean": 898.8,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.6,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "daytime_sustained_underforecast_lift": {
+                "enabled": True,
+                "target_hours": [12, 13],
+                "min_reference_hour": 8,
+                "max_reference_hour": 14,
+                "max_lead_hours": 3,
+                "min_base_adjustment_mw": 600.0,
+                "min_latest_residual_mw": 600.0,
+                "min_mean_residual_mw": 600.0,
+                "min_peak_residual_mw": 1_000.0,
+                "min_temp_delta_24h_c": 3.0,
+                "min_cooling_delta_24h_c": 1.0,
+                "floor_slope_fraction": 0.25,
+                "floor_slack_mw": 300.0,
+                "floor_shrinkage": 0.5,
+                "residual_pressure_shrinkage": 0.55,
+                "residual_slack_mw": 200.0,
+                "max_lift_mw": 900.0,
+                "min_lift_mw": 100.0,
+                "post_midday_shape_gate": {
+                    "enabled": True,
+                    "target_hours": [12, 13],
+                    "min_lag_delta_mw": 600.0,
+                    "min_recent_delta_mw": 600.0,
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.base_adjustment_mw == pytest.approx(700.2, abs=0.1)
+    assert result.daytime_sustained_underforecast_lift_applied is False
+    assert result.forecasts[12].forecast_mw == pytest.approx(36_495.1, abs=0.1)
+    assert result.forecasts[13].forecast_mw == pytest.approx(37_739.9, abs=0.1)
+
+
+def test_intraday_post_lunch_decline_caps_near_term_overhang():
+    target = date(2026, 6, 22)
+    forecasts = _make_forecasts(target, 30_000.0)
+    for hour, value in {
+        12: 35_794.9,
+        13: 37_039.7,
+        14: 36_871.9,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 10, 36_290.0),
+        _actual_point(target, 11, 37_030.0),
+        _actual_point(target, 12, 35_860.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 12, "is_non_business_day": 0},
+        {
+            "hour": 13,
+            "is_non_business_day": 0,
+            "lag_24h_hourly_delta": 300.0,
+            "recent_same_business_type_delta_mean": 898.8,
+        },
+        {
+            "hour": 14,
+            "is_non_business_day": 0,
+            "lag_24h_hourly_delta": 580.0,
+            "recent_same_business_type_delta_mean": 41.2,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "post_lunch_decline_continuity_guard": {
+                "enabled": True,
+                "business_day_only": True,
+                "target_hours": [13, 14],
+                "min_reference_hour": 12,
+                "max_reference_hour": 13,
+                "max_lead_hours": 2,
+                "latest_slope_max_mw": -700.0,
+                "max_supporting_delta_mw": 900.0,
+                "support_fraction": 0.35,
+                "cap_buffer_mw": 500.0,
+                "max_reduction_mw": 900.0,
+                "min_reduction_mw": 100.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.post_lunch_decline_continuity_guard_applied is True
+    assert result.post_lunch_decline_continuity_max_reduction_mw == pytest.approx(365.1)
+    assert result.forecasts[13].forecast_mw == pytest.approx(36_674.6, abs=0.1)
+    assert result.forecasts[14].forecast_mw == pytest.approx(36_563.0, abs=0.1)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_13 = next(item for item in residual_logs if item["hour"] == 13)
+    assert hour_13["postLunchDeclineContinuityCapMw"] == pytest.approx(36_674.6)
+    assert "post_lunch_decline_continuity_guard" in result.applied_regime_reason
+
+
 def test_intraday_caps_pre_observation_prior_stack_before_weekend_actuals():
     target = date(2026, 6, 20)  # Saturday after a hotter business day
     forecasts = _make_forecasts(target, 30_000.0)

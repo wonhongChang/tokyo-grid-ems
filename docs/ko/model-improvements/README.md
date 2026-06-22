@@ -8,6 +8,7 @@
 
 ## 2026-06
 
+- [2026-06-22 낮 시간 shape 연쇄 가드](model-improvement-2026-06-22-daytime-shape-chain-guards.md)
 - [2026-06-21 비영업일 shape와 저녁 carryover](model-improvement-2026-06-21-non-business-shape-and-evening-carryover.md)
 - [2026-06-20 비영업일 prior 및 plateau 가드](model-improvement-2026-06-20-non-business-prior-and-plateau-guards.md)
 - [2026-06-19 낮 시간 지속 과소예측 리프트](model-improvement-2026-06-19-daytime-sustained-underforecast-lift.md)

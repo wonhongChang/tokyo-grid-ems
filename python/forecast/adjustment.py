@@ -404,6 +404,91 @@ class PostHolidayTimeBandGuard:
         self._business_return_excess_max_clipping_mw = float(
             business_return_excess_config.get("max_clipping_mw", 900.0)
         )
+        self._business_return_excess_shape_supported_hours: set[int] = set()
+        for hour in business_return_excess_config.get("shape_supported_hours", [9, 10, 11]):
+            try:
+                self._business_return_excess_shape_supported_hours.add(int(hour))
+            except (TypeError, ValueError):
+                continue
+        self._business_return_excess_strong_shape_delta_mw = float(
+            business_return_excess_config.get("strong_shape_support_delta_mw", 700.0)
+        )
+        self._business_return_excess_shape_allowance_fraction = max(
+            float(
+                business_return_excess_config.get(
+                    "shape_support_allowance_fraction",
+                    0.35,
+                )
+            ),
+            0.0,
+        )
+        self._business_return_excess_max_shape_allowance_mw = max(
+            float(
+                business_return_excess_config.get(
+                    "max_shape_support_allowance_mw",
+                    650.0,
+                )
+            ),
+            0.0,
+        )
+        self._business_return_excess_supported_shrinkage = min(
+            max(
+                float(
+                    business_return_excess_config.get(
+                        "supported_shrinkage",
+                        0.25,
+                    )
+                ),
+                0.0,
+            ),
+            1.0,
+        )
+        afternoon_analog_config = guard_config.get(
+            "business_afternoon_analog_excess_cap",
+            {},
+        )
+        self._business_afternoon_analog_enabled = bool(
+            afternoon_analog_config.get("enabled", True)
+        )
+        self._business_afternoon_analog_hours: set[int] = set()
+        for hour in afternoon_analog_config.get("target_hours", [13, 14, 15, 16]):
+            try:
+                self._business_afternoon_analog_hours.add(int(hour))
+            except (TypeError, ValueError):
+                continue
+        self._business_afternoon_analog_min_shift_mw = max(
+            float(afternoon_analog_config.get("min_positive_shift_mw", 600.0)),
+            0.0,
+        )
+        self._business_afternoon_analog_max_support_delta_mw = float(
+            afternoon_analog_config.get("max_supporting_delta_mw", 900.0)
+        )
+        self._business_afternoon_analog_max_allowed_shift_mw = max(
+            float(afternoon_analog_config.get("max_allowed_shift_mw", 300.0)),
+            0.0,
+        )
+        self._business_afternoon_analog_min_weather_delta_c = max(
+            float(afternoon_analog_config.get("min_weather_delta_c", 0.5)),
+            0.0,
+        )
+        self._business_afternoon_analog_weather_allowance_mw_per_c = max(
+            float(
+                afternoon_analog_config.get(
+                    "weather_allowance_mw_per_c",
+                    120.0,
+                )
+            ),
+            0.0,
+        )
+        self._business_afternoon_analog_max_weather_allowance_mw = max(
+            float(
+                afternoon_analog_config.get(
+                    "max_weather_allowance_mw",
+                    300.0,
+                )
+            ),
+            0.0,
+        )
         non_business_analog_config = guard_config.get(
             "non_business_analog_downshift_guard",
             {},
@@ -686,6 +771,31 @@ class PostHolidayTimeBandGuard:
             self._business_return_excess_max_weather_allowance_mw,
         )
 
+    def _business_return_shape_support(self, hour: int, row) -> tuple[float, float]:
+        if hour not in self._business_return_excess_shape_supported_hours:
+            return 0.0, self._business_return_excess_shrinkage
+
+        support_candidates = [
+            value
+            for value in (
+                self._finite_float(row.get("lag_24h_hourly_delta")),
+                self._finite_float(row.get("recent_same_business_type_delta_mean")),
+            )
+            if value is not None
+        ]
+        if not support_candidates:
+            return 0.0, self._business_return_excess_shrinkage
+
+        support_delta_mw = max(support_candidates)
+        if support_delta_mw < self._business_return_excess_strong_shape_delta_mw:
+            return 0.0, self._business_return_excess_shrinkage
+
+        support_allowance_mw = min(
+            support_delta_mw * self._business_return_excess_shape_allowance_fraction,
+            self._business_return_excess_max_shape_allowance_mw,
+        )
+        return support_allowance_mw, self._business_return_excess_supported_shrinkage
+
     def _apply_business_return_anchor_excess_cap(
         self,
         forecasts: list,
@@ -732,13 +842,18 @@ class PostHolidayTimeBandGuard:
                 + self._business_return_excess_allowance_mw
                 + self._business_return_weather_allowance_mw(row)
             )
+            shape_allowance_mw, shrinkage = self._business_return_shape_support(
+                hour,
+                row,
+            )
+            upper_bound_mw += shape_allowance_mw
             if forecast_mw <= upper_bound_mw:
                 result.append(forecast)
                 continue
 
             excess_mw = forecast_mw - upper_bound_mw
             reduction_mw = min(
-                excess_mw * self._business_return_excess_shrinkage,
+                excess_mw * shrinkage,
                 self._business_return_excess_max_clipping_mw,
             )
             if reduction_mw <= 0.0:
@@ -749,6 +864,119 @@ class PostHolidayTimeBandGuard:
             changed = True
 
         return result if changed else forecasts
+
+    def _business_afternoon_analog_may_apply(
+        self,
+        inference_features: pd.DataFrame,
+    ) -> bool:
+        if (
+            not self._business_afternoon_analog_enabled
+            or not self._business_afternoon_analog_hours
+            or inference_features is None
+            or inference_features.empty
+            or "hour" not in inference_features.columns
+        ):
+            return False
+
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is None or int(hour) not in self._business_afternoon_analog_hours:
+                continue
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if (
+                is_non_business_day == 0.0
+                and self._business_afternoon_analog_weather_delta_c(row)
+                >= self._business_afternoon_analog_min_weather_delta_c
+            ):
+                return True
+        return False
+
+    def _business_afternoon_analog_weather_allowance_mw(self, row) -> float:
+        weather_delta_c = max(
+            0.0,
+            self._finite_float(row.get("temp_delta_24h")) or 0.0,
+            self._finite_float(row.get("cooling_delta_24h")) or 0.0,
+            self._finite_float(row.get("apparent_cooling_delta_24h")) or 0.0,
+        )
+        return min(
+            weather_delta_c * self._business_afternoon_analog_weather_allowance_mw_per_c,
+            self._business_afternoon_analog_max_weather_allowance_mw,
+        )
+
+    def _business_afternoon_analog_weather_delta_c(self, row) -> float:
+        return max(
+            0.0,
+            self._finite_float(row.get("temp_delta_24h")) or 0.0,
+            self._finite_float(row.get("cooling_delta_24h")) or 0.0,
+            self._finite_float(row.get("apparent_cooling_delta_24h")) or 0.0,
+        )
+
+    def _apply_business_afternoon_analog_excess_cap(
+        self,
+        raw_forecasts: list,
+        adjusted_forecasts: list,
+        inference_features: pd.DataFrame,
+    ) -> list:
+        if not self._business_afternoon_analog_may_apply(inference_features):
+            return adjusted_forecasts
+
+        rows_by_hour = {}
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is not None:
+                rows_by_hour[int(hour)] = row
+
+        result = []
+        changed = False
+        for raw_forecast, adjusted_forecast in zip(raw_forecasts, adjusted_forecasts):
+            hour = pd.Timestamp(raw_forecast.ts).hour
+            row = rows_by_hour.get(hour)
+            if row is None or hour not in self._business_afternoon_analog_hours:
+                result.append(adjusted_forecast)
+                continue
+
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day != 0.0:
+                result.append(adjusted_forecast)
+                continue
+
+            shift_mw = adjusted_forecast.forecast_mw - raw_forecast.forecast_mw
+            if shift_mw < self._business_afternoon_analog_min_shift_mw:
+                result.append(adjusted_forecast)
+                continue
+            weather_delta_c = self._business_afternoon_analog_weather_delta_c(row)
+            if weather_delta_c < self._business_afternoon_analog_min_weather_delta_c:
+                result.append(adjusted_forecast)
+                continue
+
+            support_candidates = [
+                value
+                for value in (
+                    self._finite_float(row.get("lag_24h_hourly_delta")),
+                    self._finite_float(row.get("recent_same_business_type_delta_mean")),
+                )
+                if value is not None
+            ]
+            if (
+                support_candidates
+                and max(support_candidates)
+                > self._business_afternoon_analog_max_support_delta_mw
+            ):
+                result.append(adjusted_forecast)
+                continue
+
+            allowed_shift_mw = (
+                self._business_afternoon_analog_max_allowed_shift_mw
+                + self._business_afternoon_analog_weather_allowance_mw(row)
+            )
+            if shift_mw <= allowed_shift_mw:
+                result.append(adjusted_forecast)
+                continue
+
+            result.append(self._shift_forecast(raw_forecast, allowed_shift_mw))
+            changed = True
+
+        return result if changed else adjusted_forecasts
 
     def _non_business_analog_downshift_may_apply(
         self,
@@ -981,6 +1209,9 @@ class PostHolidayTimeBandGuard:
         non_business_morning_shape_active = (
             self._non_business_morning_shape_floor_may_apply(inference_features)
         )
+        business_afternoon_analog_active = self._business_afternoon_analog_may_apply(
+            inference_features
+        )
         if not (
             post_holiday_active
             or lag_holiday_active
@@ -989,6 +1220,7 @@ class PostHolidayTimeBandGuard:
             or business_return_excess_active
             or non_business_analog_active
             or non_business_morning_shape_active
+            or business_afternoon_analog_active
         ):
             return adjusted_forecasts
 
@@ -1100,7 +1332,12 @@ class PostHolidayTimeBandGuard:
             inference_features,
         )
         result = self._apply_business_return_anchor_shortfall(result, inference_features)
-        return self._apply_business_return_anchor_excess_cap(result, inference_features)
+        result = self._apply_business_return_anchor_excess_cap(result, inference_features)
+        return self._apply_business_afternoon_analog_excess_cap(
+            raw_forecasts,
+            result,
+            inference_features,
+        )
 
 
 # ---------------------------------------------------------------------------

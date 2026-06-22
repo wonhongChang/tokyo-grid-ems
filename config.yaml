@@ -148,13 +148,13 @@ intraday_correction:
   afternoon_positive_residual_carryover_damping:
     enabled: true
     business_day_only: true
-    target_hours: [15, 16, 17, 18, 19]
-    min_reference_hour: 12
+    target_hours: [13, 14, 15, 16, 17, 18, 19]
+    min_reference_hour: 11
     max_reference_hour: 15
     min_lead_hours: 1
     max_lead_hours: 5
     min_base_adjustment_mw: 250
-    weak_support_delta_mw: 300 # damp positive carryover when afternoon/evening shape support is weak
+    weak_support_delta_mw: 900 # damp positive carryover when afternoon/evening shape support is weak
     damping_factor: 0.4
     min_damped_mw: 100
   non_business_evening_positive_residual_damping:
@@ -241,6 +241,24 @@ intraday_correction:
     max_lift_mw: 900
     non_business_max_lift_mw: 800
     min_lift_mw: 100
+    post_midday_shape_gate:
+      enabled: true
+      target_hours: [12, 13, 14]
+      min_lag_delta_mw: 600
+      min_recent_delta_mw: 600
+  post_lunch_decline_continuity_guard:
+    enabled: true
+    business_day_only: true
+    target_hours: [13, 14]
+    min_reference_hour: 12
+    max_reference_hour: 13
+    max_lead_hours: 2
+    latest_slope_max_mw: -700
+    max_supporting_delta_mw: 900
+    support_fraction: 0.35
+    cap_buffer_mw: 500
+    max_reduction_mw: 900
+    min_reduction_mw: 100
   morning_warm_lag_overreaction_guard:
     enabled: true
     business_day_only: true
@@ -422,6 +440,20 @@ adjustment:
       max_weather_allowance_mw: 300
       shrinkage: 0.6
       max_clipping_mw: 900
+      shape_supported_hours: [9, 10, 11]
+      strong_shape_support_delta_mw: 700
+      shape_support_allowance_fraction: 0.35
+      max_shape_support_allowance_mw: 650
+      supported_shrinkage: 0.25
+    business_afternoon_analog_excess_cap:
+      enabled: true
+      target_hours: [13, 14, 15, 16]
+      min_positive_shift_mw: 600
+      max_supporting_delta_mw: 900
+      max_allowed_shift_mw: 300
+      min_weather_delta_c: 0.5
+      weather_allowance_mw_per_c: 120
+      max_weather_allowance_mw: 300
     non_business_analog_downshift_guard:
       enabled: true
       target_hours: [7, 8, 9, 10, 11, 12, 13, 14, 15]
