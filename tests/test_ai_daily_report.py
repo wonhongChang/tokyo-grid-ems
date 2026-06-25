@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from python.eval.ai_daily_report import (
     _openai_analysis_schema,
     _normalize_hypotheses,
     _normalize_recommendations,
+    _openai_request_json,
     _validate_localized_analysis,
     build_ai_daily_report,
     build_ai_daily_reports,
@@ -23,6 +25,57 @@ from python.eval.ai_daily_report import (
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_openai_request_retries_one_transient_server_error(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def read(self):
+            return json.dumps({
+                "output_text": json.dumps({"ok": True}),
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "total_tokens": 15,
+                },
+            }).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        calls.append((request, timeout))
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                500,
+                "Internal Server Error",
+                {},
+                None,
+            )
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_DAILY_REPORT_HTTP_ATTEMPTS", "2")
+    monkeypatch.setenv("OPENAI_DAILY_REPORT_RETRY_BASE_SECONDS", "0")
+    monkeypatch.setattr(
+        "python.eval.ai_daily_report.urllib.request.urlopen",
+        fake_urlopen,
+    )
+
+    result = _openai_request_json(
+        {"model": "gpt-4o-mini"},
+        "test-key",
+        timeout_seconds=90,
+        label="analysis",
+        model="gpt-4o-mini",
+    )
+
+    assert result["usage"]["total_tokens"] == 15
+    assert len(calls) == 2
 
 
 def _write_operation_fixture(tmp_path: Path, date_iso: str = "2026-05-23") -> None:

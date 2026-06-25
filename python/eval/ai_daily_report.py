@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -31,6 +32,9 @@ OPENAI_DEFAULT_LOCALES = "ko,en,ja"
 OPENAI_DEFAULT_MAX_CALLS_PER_RUN = 2
 OPENAI_DEFAULT_ANALYSIS_TIMEOUT_SECONDS = 90
 OPENAI_DEFAULT_LOCALIZATION_TIMEOUT_SECONDS = 180
+OPENAI_DEFAULT_HTTP_ATTEMPTS = 2
+OPENAI_DEFAULT_RETRY_BASE_SECONDS = 2
+OPENAI_RETRYABLE_HTTP_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
 REPORT_TYPE = "ai_daily_operation_report"
 FOCUSED_ROW_RADIUS_HOURS = 2
 MAX_FOCUSED_ROWS = 12
@@ -4534,6 +4538,66 @@ def _log_openai_usage(label: str, model: str, data: dict) -> None:
     )
 
 
+def _openai_request_json(
+    payload: dict,
+    api_key: str,
+    timeout_seconds: int,
+    label: str,
+    model: str,
+) -> dict:
+    attempts = max(
+        1,
+        _env_int(
+            "OPENAI_DAILY_REPORT_HTTP_ATTEMPTS",
+            OPENAI_DEFAULT_HTTP_ATTEMPTS,
+        ),
+    )
+    retry_base_seconds = max(
+        0,
+        _env_int(
+            "OPENAI_DAILY_REPORT_RETRY_BASE_SECONDS",
+            OPENAI_DEFAULT_RETRY_BASE_SECONDS,
+        ),
+    )
+    request_body = json.dumps(payload).encode("utf-8")
+
+    for attempt in range(1, attempts + 1):
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=request_body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            _log_openai_usage(label, model, data)
+            return data
+        except urllib.error.HTTPError as error:
+            retryable = (
+                error.code in OPENAI_RETRYABLE_HTTP_CODES
+                and attempt < attempts
+            )
+            if not retryable:
+                raise
+            wait_seconds = retry_base_seconds * (2 ** (attempt - 1))
+            request_id = error.headers.get("x-request-id") if error.headers else None
+            request_id_text = f" request_id={request_id}" if request_id else ""
+            print(
+                "[WARN] OpenAI request failed "
+                f"label={label} model={model} status={error.code} "
+                f"attempt={attempt}/{attempts}; retrying in {wait_seconds}s"
+                f"{request_id_text}"
+            )
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+
+    raise RuntimeError("OpenAI request retry loop ended unexpectedly")
+
+
 def _call_openai_analysis(context: dict, api_key: str, model: str) -> dict:
     context = _sanitize_openai_context(context)
     payload = {
@@ -4550,22 +4614,17 @@ def _call_openai_analysis(context: dict, api_key: str, model: str) -> dict:
         },
         "max_output_tokens": 4000,
     }
-    request = urllib.request.Request(
-        "https://api.openai.com/v1/responses",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
     timeout_seconds = _env_int(
         "OPENAI_DAILY_REPORT_TIMEOUT_SECONDS",
         OPENAI_DEFAULT_ANALYSIS_TIMEOUT_SECONDS,
     )
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    _log_openai_usage("analysis", model, data)
+    data = _openai_request_json(
+        payload,
+        api_key,
+        timeout_seconds,
+        "analysis",
+        model,
+    )
     return json.loads(_extract_response_text(data))
 
 
@@ -4590,22 +4649,17 @@ def _call_openai_multilingual_analysis(
         },
         "max_output_tokens": 9000,
     }
-    request = urllib.request.Request(
-        "https://api.openai.com/v1/responses",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
     timeout_seconds = _env_int(
         "OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS",
         OPENAI_DEFAULT_LOCALIZATION_TIMEOUT_SECONDS,
     )
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    _log_openai_usage("multilingual", model, data)
+    data = _openai_request_json(
+        payload,
+        api_key,
+        timeout_seconds,
+        "multilingual",
+        model,
+    )
     return json.loads(_extract_response_text(data))
 
 
@@ -4682,22 +4736,17 @@ def _call_openai_localization_analysis(
         },
         "max_output_tokens": 6000,
     }
-    request = urllib.request.Request(
-        "https://api.openai.com/v1/responses",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
     timeout_seconds = _env_int(
         "OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS",
         OPENAI_DEFAULT_LOCALIZATION_TIMEOUT_SECONDS,
     )
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    _log_openai_usage("localization", model, data)
+    data = _openai_request_json(
+        payload,
+        api_key,
+        timeout_seconds,
+        "localization",
+        model,
+    )
     return json.loads(_extract_response_text(data))
 
 
@@ -8117,13 +8166,21 @@ def main() -> None:
         _write_json(language_dir / "index.json", index)
         for report in reports:
             report_path = language_dir / f"{report['date']}.json"
-            if args.overwrite_existing or not report_path.exists():
+            if (
+                args.overwrite_existing
+                or not report_path.exists()
+                or (report.get("generator") or {}).get("provider") == "openai"
+            ):
                 _write_json(report_path, report)
         if language == args.language:
             _write_json(out_dir / "index.json", index)
             for report in reports:
                 report_path = out_dir / f"{report['date']}.json"
-                if args.overwrite_existing or not report_path.exists():
+                if (
+                    args.overwrite_existing
+                    or not report_path.exists()
+                    or (report.get("generator") or {}).get("provider") == "openai"
+                ):
                     _write_json(report_path, report)
             latest = index.get("latest") or {}
         total_reports += len(reports)

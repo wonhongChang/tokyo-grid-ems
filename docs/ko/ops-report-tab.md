@@ -193,6 +193,7 @@ OpenAI 비용을 막기 위해 다음 제어를 둡니다.
 - 최신 확정 일자만 OpenAI 대상
 - 기본 최대 호출 수 2회. 영어 마스터 1회와 한국어/일본어 현지화 1회를 기준으로 제한
 - 기존 리포트가 있으면 재생성하지 않음
+- OpenAI의 일시적인 HTTP 500/502/503/504 오류는 기본 1회 재시도합니다. 첫 아침 ETL에서 전날 리포트가 fallback으로 남으면 08:30/09:30 로컬 스케줄이 historical ETL 전체를 다시 돌리지 않고 리포트만 재시도하며, 성공 시 data branch와 Pages에 반영합니다.
 - OpenAI 입력은 압축된 fact packet만 전달
 - fact packet에는 `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, `rollingPatternContext` 같은 계산 완료 필드를 포함
 - 자연어 fallback 문장, 전체 hourly row, SHA fingerprint, 파일 path 등은 프롬프트에서 제외

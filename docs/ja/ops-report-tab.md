@@ -185,6 +185,7 @@ UIはフォルダ全体を走査せず、indexのみを読みます。既定のi
 - 既定では最新の確定済み日付だけがOpenAI対象
 - ETL 1回あたりOpenAI呼び出しは最大2回。英語マスター1回と韓国語/日本語ローカライズ1回に制限する
 - 既存レポートは保持して再生成しない
+- OpenAIの一時的なHTTP 500/502/503/504は既定で1回再試行する。最初の朝ETLで前日のレポートがfallbackのままなら、08:30/09:30のローカルスケジュールはhistorical ETL全体を再実行せず、レポートだけを再試行し、成功後にdata branchとPagesへ反映する
 - OpenAIには全時間帯raw rowではなく圧縮fact packetだけを渡す
 - fact packetには `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, `rollingPatternContext` などの計算済みフィールドを含める
 - fallback自然文、全hourly diagnostics、SHA fingerprint、file pathはプロンプトから除外

@@ -38,7 +38,10 @@ function Write-LocalEtlStatus {
         [bool]$IntradayTriggered = $false,
         [bool]$HistoricalEtlSkipped = $false,
         [string]$HistoricalEtlDate = "",
-        [string]$HistoricalEtlReason = ""
+        [string]$HistoricalEtlReason = "",
+        [bool]$AiReportRecoveryAttempted = $false,
+        [bool]$AiReportRecoverySucceeded = $false,
+        [string]$AiReportDate = ""
     )
 
     $opsDir = Join-Path $RepoRoot "web/public/ops"
@@ -56,6 +59,9 @@ function Write-LocalEtlStatus {
         historicalEtlSkipped = $HistoricalEtlSkipped
         historicalEtlDate = $HistoricalEtlDate
         historicalEtlReason = $HistoricalEtlReason
+        aiReportRecoveryAttempted = $AiReportRecoveryAttempted
+        aiReportRecoverySucceeded = $AiReportRecoverySucceeded
+        aiReportDate = $AiReportDate
     }
     $payload | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $opsDir "local_etl_status.json") -Encoding UTF8
 }
@@ -198,6 +204,72 @@ function Test-HistoricalEtlNeeded {
     }
 }
 
+function Test-AiReportRecoveryNeeded {
+    param(
+        [Parameter(Mandatory = $true)][string]$DateIso,
+        [Parameter(Mandatory = $true)][string]$OpenAiKeySource
+    )
+
+    if ($OpenAiKeySource -notin @("process_env", ".env")) {
+        return $false
+    }
+
+    $reportPath = Join-Path $RepoRoot "web/public/reports/ai/daily/$DateIso.json"
+    if (-not (Test-Path -LiteralPath $reportPath)) {
+        return $true
+    }
+
+    try {
+        $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        return ([string]$report.generator.provider -ne "openai")
+    }
+    catch {
+        return $true
+    }
+}
+
+function Invoke-AiReportRecovery {
+    param(
+        [Parameter(Mandatory = $true)][string]$DateIso
+    )
+
+    Write-Host "[AI-REPORT] Retrying OpenAI report only for $DateIso"
+    Invoke-Native -FilePath "py" -Arguments @(
+        "-3.14",
+        "-m",
+        "python.eval.ai_daily_report",
+        "--public-dir",
+        "web/public",
+        "--language",
+        "ko",
+        "--languages",
+        "ko,en,ja",
+        "--use-openai",
+        "--openai-max-calls",
+        "2"
+    )
+
+    $reportPath = Join-Path $RepoRoot "web/public/reports/ai/daily/$DateIso.json"
+    if (-not (Test-Path -LiteralPath $reportPath)) {
+        return $false
+    }
+
+    try {
+        $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $provider = [string]$report.generator.provider
+        if ($provider -eq "openai") {
+            Write-Host "[AI-REPORT] Recovery succeeded for $DateIso"
+            return $true
+        }
+        Write-Warning "[AI-REPORT] Recovery did not produce an OpenAI report for $DateIso (provider=$provider)"
+        return $false
+    }
+    catch {
+        Write-Warning "[AI-REPORT] Recovery output could not be validated for $DateIso`: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 function Invoke-IntradayDispatch {
     param(
         [bool]$Published = $false,
@@ -249,37 +321,120 @@ try {
 
     $historicalCheck = Test-HistoricalEtlNeeded
     if ($Publish -and -not $historicalCheck.Needed) {
+        $aiReportRecoveryAttempted = $false
+        $aiReportRecoverySucceeded = $false
+        $published = $false
+        $deployTriggered = $false
+        $aiReportDate = $historicalCheck.Yesterday
+
         Write-LocalEtlStatus `
             -Status "running" `
             -Stage "historical_etl_skipped" `
             -Message "Yesterday is already finalized; skipping Docker ETL and dispatching intraday only" `
             -HistoricalEtlSkipped $true `
             -HistoricalEtlDate $historicalCheck.Yesterday `
-            -HistoricalEtlReason $historicalCheck.Reason
+            -HistoricalEtlReason $historicalCheck.Reason `
+            -AiReportDate $aiReportDate
+
+        if (Test-AiReportRecoveryNeeded -DateIso $aiReportDate -OpenAiKeySource $openAiKeySource) {
+            $aiReportRecoveryAttempted = $true
+            Write-LocalEtlStatus `
+                -Status "running" `
+                -Stage "retry_ai_report" `
+                -Message "Yesterday is finalized, but its AI report is missing or fallback; retrying report only" `
+                -HistoricalEtlSkipped $true `
+                -HistoricalEtlDate $historicalCheck.Yesterday `
+                -HistoricalEtlReason $historicalCheck.Reason `
+                -AiReportRecoveryAttempted $true `
+                -AiReportDate $aiReportDate
+
+            try {
+                $aiReportRecoverySucceeded = Invoke-AiReportRecovery -DateIso $aiReportDate
+            }
+            catch {
+                Write-Warning "[AI-REPORT] Recovery command failed: $($_.Exception.Message)"
+                $aiReportRecoverySucceeded = $false
+            }
+
+            if ($aiReportRecoverySucceeded) {
+                if (-not $SkipValidation) {
+                    Write-LocalEtlStatus `
+                        -Status "running" `
+                        -Stage "validate_ai_report_recovery" `
+                        -Message "Validating recovered AI report before publish" `
+                        -HistoricalEtlSkipped $true `
+                        -HistoricalEtlDate $historicalCheck.Yesterday `
+                        -HistoricalEtlReason $historicalCheck.Reason `
+                        -AiReportRecoveryAttempted $true `
+                        -AiReportRecoverySucceeded $true `
+                        -AiReportDate $aiReportDate
+                    Invoke-Native -FilePath "py" -Arguments @(
+                        "-3.14",
+                        "scripts/validate_public_before_publish.py"
+                    )
+                }
+
+                Invoke-Native -FilePath "py" -Arguments @(
+                    "-3.14",
+                    "scripts/publish_data_branch.py"
+                )
+                $published = $true
+
+                if (-not $SkipDeploy) {
+                    Invoke-Native -FilePath "py" -Arguments @(
+                        "-3.14",
+                        "scripts/trigger_deploy_workflow.py",
+                        "--workflow",
+                        "deploy.yml"
+                    )
+                    $deployTriggered = $true
+                }
+            }
+        }
 
         $intradayTriggered = $false
         if (-not $SkipDeploy -and -not $SkipIntradayDispatch) {
             Invoke-IntradayDispatch `
+                -Published $published `
+                -DeployTriggered $deployTriggered `
                 -HistoricalEtlSkipped $true `
                 -HistoricalEtlDate $historicalCheck.Yesterday `
                 -HistoricalEtlReason $historicalCheck.Reason
             $intradayTriggered = $true
         }
         $completedMessage = if ($intradayTriggered) {
-            "Local ETL skipped because yesterday is already finalized; intraday dispatch queued current-day refresh"
+            if ($aiReportRecoverySucceeded) {
+                "Local ETL skipped because yesterday is finalized; recovered and published its AI report, then queued intraday refresh"
+            }
+            elseif ($aiReportRecoveryAttempted) {
+                "Local ETL skipped because yesterday is finalized; AI report recovery was attempted, then intraday refresh was queued"
+            }
+            else {
+                "Local ETL skipped because yesterday is already finalized; intraday dispatch queued current-day refresh"
+            }
         }
         else {
-            "Local ETL skipped because yesterday is already finalized; intraday dispatch was not requested"
+            if ($aiReportRecoverySucceeded) {
+                "Local ETL skipped because yesterday is finalized; recovered and published its AI report"
+            }
+            else {
+                "Local ETL skipped because yesterday is already finalized; intraday dispatch was not requested"
+            }
         }
 
         Write-LocalEtlStatus `
             -Status "ok" `
             -Stage "completed" `
             -Message $completedMessage `
+            -Published $published `
+            -DeployTriggered $deployTriggered `
             -IntradayTriggered $intradayTriggered `
             -HistoricalEtlSkipped $true `
             -HistoricalEtlDate $historicalCheck.Yesterday `
-            -HistoricalEtlReason $historicalCheck.Reason
+            -HistoricalEtlReason $historicalCheck.Reason `
+            -AiReportRecoveryAttempted $aiReportRecoveryAttempted `
+            -AiReportRecoverySucceeded $aiReportRecoverySucceeded `
+            -AiReportDate $aiReportDate
         return
     }
 

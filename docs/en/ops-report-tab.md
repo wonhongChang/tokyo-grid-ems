@@ -185,6 +185,7 @@ The UI does not scan the whole folder. The default index range is recent days, s
 - Only the latest finalized date is eligible for OpenAI by default
 - Default maximum: 2 OpenAI calls per ETL run: one English master call and one Korean/Japanese localization call
 - Existing report files are preserved
+- A transient OpenAI HTTP error is retried once. If the first local morning ETL still stores a fallback for yesterday, the later scheduled runs retry only the report and publish it after a successful OpenAI response.
 - OpenAI receives a compact fact packet, not full hourly raw rows
 - The fact packet includes computed fields such as `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, and `rollingPatternContext`
 - Fallback narratives, full hourly diagnostics, SHA fingerprints, and file paths are excluded from the prompt
