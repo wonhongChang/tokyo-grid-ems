@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-26 business-day anchor cap retuning](model-improvement-2026-06-26-business-day-anchor-cap-retuning.md)
 - [2026-06-22 daytime shape-chain guards](model-improvement-2026-06-22-daytime-shape-chain-guards.md)
 - [2026-06-21 non-business shape and evening carryover](model-improvement-2026-06-21-non-business-shape-and-evening-carryover.md)
 - [2026-06-20 non-business prior and plateau guards](model-improvement-2026-06-20-non-business-prior-and-plateau-guards.md)

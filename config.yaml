@@ -283,10 +283,10 @@ intraday_correction:
     min_reference_hour: 8      # require same-day morning evidence before capping
     max_reference_hour: 12
     max_lead_hours: 4
-    min_latest_overforecast_mw: 500
-    cap_buffer_mw: 250
-    shrinkage: 0.75
-    max_reduction_mw: 800
+    min_latest_overforecast_mw: 400
+    cap_buffer_mw: 0
+    shrinkage: 1.0
+    max_reduction_mw: 1000
     min_reduction_mw: 100
   afternoon_observed_anchor_cap:
     enabled: true
@@ -298,7 +298,7 @@ intraday_correction:
     lookback_observed_hours: 3 # avoid reacting to a one-slot lunch dip only
     min_latest_overforecast_mw: 500
     min_mean_overforecast_mw: 500
-    max_latest_slope_mw: 500 # skip cap when same-day actuals are already recovering strongly
+    max_latest_slope_mw: 900 # allow a moderate recovery when residuals still show clear overforecast
     cap_buffer_mw: 350
     support_fraction: 0.6    # lag/recent deltas explain part, not all, of afternoon rise
     shrinkage: 0.75

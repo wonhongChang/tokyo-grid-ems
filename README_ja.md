@@ -202,13 +202,12 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
-- [2026-06-13 非営業日のanalogおよびcarryoverガード](docs/ja/model-improvements/model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md)
-- [2026-06-12 朝の実績ランプfloorと予測バンドtail縮小](docs/ja/model-improvements/model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)
-- [2026-06-11 湿度/不快指数特徴量と局所shape spikeガード](docs/ja/model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)
-- [2026-06-09 朝の実績anchor cap](docs/ja/model-improvements/model-improvement-2026-06-09-morning-observed-anchor-cap.md)
-- [2026-06-08 営業日復帰shape veto](docs/ja/model-improvements/model-improvement-2026-06-08-business-return-shape-veto.md)
-- [2026-06-07 actual JSON キャッシュ永続化](docs/ja/model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)
-- [2026-06-05 朝の正の残差carryover減衰](docs/ja/model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)
+- [2026-06-26 営業日 anchor cap の再調整](docs/ja/model-improvements/model-improvement-2026-06-26-business-day-anchor-cap-retuning.md)
+- [2026-06-22 日中 shape 連鎖ガード](docs/ja/model-improvements/model-improvement-2026-06-22-daytime-shape-chain-guards.md)
+- [2026-06-21 非営業日の shape と夕方 carryover](docs/ja/model-improvements/model-improvement-2026-06-21-non-business-shape-and-evening-carryover.md)
+- [2026-06-20 非営業日の prior と plateau ガード](docs/ja/model-improvements/model-improvement-2026-06-20-non-business-prior-and-plateau-guards.md)
+- [2026-06-19 昼間の継続的な過少予測リフト](docs/ja/model-improvements/model-improvement-2026-06-19-daytime-sustained-underforecast-lift.md)
+- [2026-06-19 バンド再調整とガード条件強化](docs/ja/model-improvements/model-improvement-2026-06-19-band-rebalance-and-guard-tightening.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 
