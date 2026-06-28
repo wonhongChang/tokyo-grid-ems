@@ -212,7 +212,7 @@ intraday_correction:
     enabled: true
     business_day_only: false
     target_hours: [10, 11, 12, 13, 14]
-    non_business_target_hours: [14, 15]
+    non_business_target_hours: [12, 13, 14, 15]
     min_reference_hour: 8
     max_reference_hour: 14
     max_lead_hours: 3
@@ -229,15 +229,17 @@ intraday_correction:
     non_business_min_peak_residual_mw: 700
     min_temp_delta_24h_c: 3.0 # same-day heat/ramp context; avoids lifting cool neutral days
     min_cooling_delta_24h_c: 1.0
-    non_business_min_discomfort_index: 74.0
-    non_business_min_humidity_pct: 90.0
+    non_business_min_discomfort_index: 70.0
+    non_business_min_humidity_pct: 85.0
     min_latest_slope_mw: -800 # skip if demand is already collapsing
     floor_slope_fraction: 0.25
     max_floor_delta_mw: 900
     floor_slack_mw: 300
     floor_shrinkage: 0.5
     residual_pressure_shrinkage: 0.55
+    non_business_residual_pressure_shrinkage: 0.8
     residual_slack_mw: 200
+    non_business_residual_slack_mw: 0
     max_lift_mw: 900
     non_business_max_lift_mw: 800
     min_lift_mw: 100

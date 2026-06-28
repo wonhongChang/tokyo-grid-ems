@@ -1091,8 +1091,29 @@ class IntradayResidualCorrector:
             ),
             1.0,
         )
+        self._daytime_underforecast_non_business_residual_pressure_shrinkage = min(
+            max(
+                float(
+                    daytime_underforecast_config.get(
+                        "non_business_residual_pressure_shrinkage",
+                        self._daytime_underforecast_residual_pressure_shrinkage,
+                    )
+                ),
+                0.0,
+            ),
+            1.0,
+        )
         self._daytime_underforecast_residual_slack_mw = max(
             float(daytime_underforecast_config.get("residual_slack_mw", 200.0)),
+            0.0,
+        )
+        self._daytime_underforecast_non_business_residual_slack_mw = max(
+            float(
+                daytime_underforecast_config.get(
+                    "non_business_residual_slack_mw",
+                    self._daytime_underforecast_residual_slack_mw,
+                )
+            ),
             0.0,
         )
         self._daytime_underforecast_max_lift_mw = max(
@@ -3139,11 +3160,19 @@ class IntradayResidualCorrector:
             0.0,
             residual_pressure_mw
             - max(decayed_adjustment_mw, 0.0)
-            - self._daytime_underforecast_residual_slack_mw,
+            - (
+                self._daytime_underforecast_non_business_residual_slack_mw
+                if is_non_business_day
+                else self._daytime_underforecast_residual_slack_mw
+            ),
         )
         residual_lift_mw = (
             residual_shortfall_mw
-            * self._daytime_underforecast_residual_pressure_shrinkage
+            * (
+                self._daytime_underforecast_non_business_residual_pressure_shrinkage
+                if is_non_business_day
+                else self._daytime_underforecast_residual_pressure_shrinkage
+            )
         )
 
         lift_mw = min(

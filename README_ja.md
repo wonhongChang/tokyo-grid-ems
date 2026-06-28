@@ -202,12 +202,12 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-06-28 週末の湿度ベース日中リフト](docs/ja/model-improvements/model-improvement-2026-06-28-weekend-humid-daytime-lift.md)
 - [2026-06-26 営業日 anchor cap の再調整](docs/ja/model-improvements/model-improvement-2026-06-26-business-day-anchor-cap-retuning.md)
 - [2026-06-22 日中 shape 連鎖ガード](docs/ja/model-improvements/model-improvement-2026-06-22-daytime-shape-chain-guards.md)
 - [2026-06-21 非営業日の shape と夕方 carryover](docs/ja/model-improvements/model-improvement-2026-06-21-non-business-shape-and-evening-carryover.md)
 - [2026-06-20 非営業日の prior と plateau ガード](docs/ja/model-improvements/model-improvement-2026-06-20-non-business-prior-and-plateau-guards.md)
 - [2026-06-19 昼間の継続的な過少予測リフト](docs/ja/model-improvements/model-improvement-2026-06-19-daytime-sustained-underforecast-lift.md)
-- [2026-06-19 バンド再調整とガード条件強化](docs/ja/model-improvements/model-improvement-2026-06-19-band-rebalance-and-guard-tightening.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 

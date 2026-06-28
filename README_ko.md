@@ -225,12 +225,12 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-06-28 주말 습도 기반 낮 시간 리프트](docs/ko/model-improvements/model-improvement-2026-06-28-weekend-humid-daytime-lift.md)
 - [2026-06-26 영업일 anchor cap 재조정](docs/ko/model-improvements/model-improvement-2026-06-26-business-day-anchor-cap-retuning.md)
 - [2026-06-22 낮 시간 shape 연쇄 가드](docs/ko/model-improvements/model-improvement-2026-06-22-daytime-shape-chain-guards.md)
 - [2026-06-21 비영업일 shape와 저녁 carryover](docs/ko/model-improvements/model-improvement-2026-06-21-non-business-shape-and-evening-carryover.md)
 - [2026-06-20 비영업일 prior 및 plateau 가드](docs/ko/model-improvements/model-improvement-2026-06-20-non-business-prior-and-plateau-guards.md)
 - [2026-06-19 낮 시간 지속 과소예측 리프트](docs/ko/model-improvements/model-improvement-2026-06-19-daytime-sustained-underforecast-lift.md)
-- [2026-06-19 밴드 재정렬과 가드 조건 강화](docs/ko/model-improvements/model-improvement-2026-06-19-band-rebalance-and-guard-tightening.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 

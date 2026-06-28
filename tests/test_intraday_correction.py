@@ -3123,6 +3123,124 @@ def test_intraday_weekend_humid_daytime_underforecast_lifts_plateau_hours():
     assert result.forecasts[13].forecast_mw == pytest.approx(28_840.0)
 
 
+def test_intraday_daytime_sustained_underforecast_lifts_moderate_humid_non_business_day():
+    target = date(2026, 6, 28)  # Sunday, humid but not hot by cooling-delta
+    forecasts = _make_forecasts(target, 26_000.0)
+    for hour, value in {
+        9: 25_641.2,
+        10: 26_113.1,
+        11: 26_613.8,
+        12: 26_273.5,
+        13: 26_007.4,
+        14: 25_693.1,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 9, 26_840.0),
+        _actual_point(target, 10, 27_250.0),
+        _actual_point(target, 11, 27_630.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 11, "is_non_business_day": 1},
+        {
+            "hour": 12,
+            "is_non_business_day": 1,
+            "temp_delta_24h": -0.5,
+            "cooling_delta_24h": -0.7,
+            "apparent_cooling_delta_24h": -0.5,
+            "humidity_pct": 89.0,
+            "discomfort_index": 70.4,
+        },
+        {
+            "hour": 13,
+            "is_non_business_day": 1,
+            "temp_delta_24h": -1.2,
+            "cooling_delta_24h": -2.0,
+            "apparent_cooling_delta_24h": -1.0,
+            "humidity_pct": 87.0,
+            "discomfort_index": 70.3,
+        },
+        {
+            "hour": 14,
+            "is_non_business_day": 1,
+            "temp_delta_24h": -1.5,
+            "cooling_delta_24h": -2.5,
+            "apparent_cooling_delta_24h": -1.2,
+            "humidity_pct": 89.0,
+            "discomfort_index": 70.4,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.6,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "daytime_sustained_underforecast_lift": {
+                "enabled": True,
+                "business_day_only": False,
+                "target_hours": [10, 11, 12, 13, 14],
+                "non_business_target_hours": [12, 13, 14, 15],
+                "min_reference_hour": 8,
+                "max_reference_hour": 14,
+                "max_lead_hours": 3,
+                "lookback_observed_hours": 3,
+                "min_positive_residual_count": 2,
+                "non_business_min_positive_residual_count": 2,
+                "min_base_adjustment_mw": 600.0,
+                "non_business_min_base_adjustment_mw": 250.0,
+                "min_latest_residual_mw": 600.0,
+                "non_business_min_latest_residual_mw": 350.0,
+                "min_mean_residual_mw": 600.0,
+                "non_business_min_mean_residual_mw": 450.0,
+                "min_peak_residual_mw": 1_000.0,
+                "non_business_min_peak_residual_mw": 700.0,
+                "min_temp_delta_24h_c": 3.0,
+                "min_cooling_delta_24h_c": 1.0,
+                "non_business_min_discomfort_index": 70.0,
+                "non_business_min_humidity_pct": 85.0,
+                "min_latest_slope_mw": -800.0,
+                "floor_slope_fraction": 0.25,
+                "max_floor_delta_mw": 900.0,
+                "floor_slack_mw": 300.0,
+                "floor_shrinkage": 0.5,
+                "residual_pressure_shrinkage": 0.55,
+                "non_business_residual_pressure_shrinkage": 0.8,
+                "residual_slack_mw": 200.0,
+                "non_business_residual_slack_mw": 0.0,
+                "max_lift_mw": 900.0,
+                "non_business_max_lift_mw": 800.0,
+                "min_lift_mw": 100.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.daytime_sustained_underforecast_lift_applied is True
+    assert result.forecasts[12].forecast_mw == pytest.approx(27_301.4, abs=0.1)
+    assert result.forecasts[13].forecast_mw == pytest.approx(27_098.9, abs=0.1)
+    assert result.forecasts[14].forecast_mw == pytest.approx(26_989.3, abs=0.1)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_12 = next(item for item in residual_logs if item["hour"] == 12)
+    hour_14 = next(item for item in residual_logs if item["hour"] == 14)
+    assert hour_12["daytimeSustainedUnderforecastLiftMw"] == pytest.approx(357.5)
+    assert hour_14["daytimeSustainedUnderforecastHumidityPct"] == pytest.approx(89.0)
+    assert "daytime_sustained_underforecast_lift" in result.applied_regime_reason
+
+
 def test_intraday_daytime_sustained_underforecast_requires_heat_context():
     target = date(2026, 6, 19)
     forecasts = _make_forecasts(target, 30_000.0)
