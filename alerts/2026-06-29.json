@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 1,
-    "warning": 0,
+    "warning": 1,
     "info": 0
   },
   "events": [
@@ -26,6 +26,21 @@
       "reason": "Actual 35530 MW exceeded p99 upper 34695 MW by 835 MW (2.35%)",
       "tags": [
         "interval"
+      ]
+    },
+    {
+      "id": "2026-06-29T15:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-06-29T15:00:00+09:00",
+      "endAt": "2026-06-29T17:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 1290.4,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 3 consecutive hours",
+      "tags": [
+        "residual"
       ]
     }
   ]
