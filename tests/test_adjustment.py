@@ -1051,6 +1051,61 @@ def test_guard_caps_business_afternoon_analog_excess_when_shape_support_is_weak(
     assert result[12].forecast_mw == pytest.approx(37_039.7)
 
 
+def test_guard_caps_business_afternoon_analog_downshift_on_warm_business_day():
+    """Warm business afternoons should not inherit an unsupported analog downshift."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 6, 29)
+    raw = _make_raw_forecasts(target, 34_131.8)
+    adjusted = _make_raw_forecasts(target, 34_131.8)
+    adjusted[15] = HourlyForecast(
+        ts=raw[15].ts,
+        forecast_mw=32_484.8,
+        p95_lower_mw=31_484.8,
+        p95_upper_mw=33_484.8,
+        p99_lower_mw=30_984.8,
+        p99_upper_mw=33_984.8,
+    )
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[15, "is_non_business_day"] = 0
+    inf.loc[15, "lag_24h_hourly_delta"] = -210.0
+    inf.loc[15, "recent_same_business_type_delta_mean"] = -357.5
+    inf.loc[15, "recent_same_business_type_mean"] = 35_000.0
+    inf.loc[15, "cooling_delta_24h"] = 3.0
+    inf.loc[15, "temp_delta_24h"] = 2.0
+    inf.loc[15, "apparent_cooling_delta_24h"] = 2.5
+
+    result = guard.apply(raw, adjusted, inf)
+
+    assert result[15].forecast_mw == pytest.approx(33_831.8)
+    assert result[15].p95_lower_mw == pytest.approx(32_831.8)
+
+
+def test_guard_keeps_business_afternoon_downshift_when_shape_clearly_declines():
+    """A strong decline signal should still be allowed to keep an analog downshift."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 6, 29)
+    raw = _make_raw_forecasts(target, 34_000.0)
+    adjusted = _make_raw_forecasts(target, 34_000.0)
+    adjusted[15] = HourlyForecast(
+        ts=raw[15].ts,
+        forecast_mw=32_900.0,
+        p95_lower_mw=31_900.0,
+        p95_upper_mw=33_900.0,
+        p99_lower_mw=31_400.0,
+        p99_upper_mw=34_400.0,
+    )
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[15, "is_non_business_day"] = 0
+    inf.loc[15, "lag_24h_hourly_delta"] = -1_200.0
+    inf.loc[15, "recent_same_business_type_delta_mean"] = -950.0
+    inf.loc[15, "recent_same_business_type_mean"] = 34_500.0
+    inf.loc[15, "cooling_delta_24h"] = 3.0
+
+    result = guard.apply(raw, adjusted, inf)
+
+    assert result[15] is adjusted[15]
+
+
 def test_guard_does_not_lift_business_return_without_mismatch():
     """Business return guard stays isolated on ordinary business-day sequences."""
     guard = PostHolidayTimeBandGuard(_guard_config())

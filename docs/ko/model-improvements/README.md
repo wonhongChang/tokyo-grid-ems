@@ -8,6 +8,8 @@
 
 ## 2026-06
 
+- [2026-06-29 영업일 오후 shape와 늦은 저녁 carryover 보정](model-improvement-2026-06-29-business-day-afternoon-shape-and-late-carryover.md)
+
 - [2026-06-28 주말 습도 기반 낮 시간 리프트](model-improvement-2026-06-28-weekend-humid-daytime-lift.md)
 - [2026-06-26 영업일 anchor cap 재조정](model-improvement-2026-06-26-business-day-anchor-cap-retuning.md)
 - [2026-06-22 낮 시간 shape 연쇄 가드](model-improvement-2026-06-22-daytime-shape-chain-guards.md)

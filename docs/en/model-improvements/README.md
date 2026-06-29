@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-06
 
+- [2026-06-29 business-day afternoon shape and late carryover guards](model-improvement-2026-06-29-business-day-afternoon-shape-and-late-carryover.md)
 - [2026-06-28 weekend humid daytime lift](model-improvement-2026-06-28-weekend-humid-daytime-lift.md)
 - [2026-06-26 business-day anchor cap retuning](model-improvement-2026-06-26-business-day-anchor-cap-retuning.md)
 - [2026-06-22 daytime shape-chain guards](model-improvement-2026-06-22-daytime-shape-chain-guards.md)

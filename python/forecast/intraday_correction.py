@@ -1054,6 +1054,19 @@ class IntradayResidualCorrector:
             ),
             0.0,
         )
+        self._daytime_underforecast_latest_override_mw = max(
+            float(daytime_underforecast_config.get("latest_residual_override_mw", 0.0)),
+            0.0,
+        )
+        self._daytime_underforecast_override_min_base_mw = max(
+            float(
+                daytime_underforecast_config.get(
+                    "override_min_base_adjustment_mw",
+                    self._daytime_underforecast_min_base_adjustment_mw,
+                )
+            ),
+            0.0,
+        )
         self._daytime_underforecast_min_temp_delta_24h_c = float(
             daytime_underforecast_config.get("min_temp_delta_24h_c", 3.0)
         )
@@ -2993,7 +3006,7 @@ class IntradayResidualCorrector:
             if is_non_business_day
             else self._daytime_underforecast_max_lift_mw
         )
-        if base_adjustment_mw < min_base_adjustment_mw or max_lift_mw <= 0.0:
+        if max_lift_mw <= 0.0:
             return None
 
         recent_points = [
@@ -3033,6 +3046,21 @@ class IntradayResidualCorrector:
             or mean_residual_mw < min_mean_residual_mw
             or peak_residual_mw < min_peak_residual_mw
         ):
+            residual_gate_passed = False
+        else:
+            residual_gate_passed = True
+
+        latest_override_active = (
+            not is_non_business_day
+            and self._daytime_underforecast_latest_override_mw > 0.0
+            and latest_residual_mw >= self._daytime_underforecast_latest_override_mw
+            and peak_residual_mw >= self._daytime_underforecast_latest_override_mw
+            and base_adjustment_mw
+            >= self._daytime_underforecast_override_min_base_mw
+        )
+        if not (
+            base_adjustment_mw >= min_base_adjustment_mw and residual_gate_passed
+        ) and not latest_override_active:
             return None
 
         previous_hour = last_observed_hour - 1
@@ -3054,6 +3082,7 @@ class IntradayResidualCorrector:
             "latestSlopeMw": round(float(latest_slope_mw), 1),
             "isNonBusinessDay": is_non_business_day,
             "maxLiftMw": round(float(max_lift_mw), 1),
+            "latestResidualOverrideActive": latest_override_active,
         }
 
     def _daytime_sustained_underforecast_lift(

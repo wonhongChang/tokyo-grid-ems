@@ -148,11 +148,11 @@ intraday_correction:
   afternoon_positive_residual_carryover_damping:
     enabled: true
     business_day_only: true
-    target_hours: [13, 14, 15, 16, 17, 18, 19]
+    target_hours: [13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
     min_reference_hour: 11
-    max_reference_hour: 15
+    max_reference_hour: 19
     min_lead_hours: 1
-    max_lead_hours: 5
+    max_lead_hours: 6
     min_base_adjustment_mw: 250
     weak_support_delta_mw: 900 # damp positive carryover when afternoon/evening shape support is weak
     damping_factor: 0.4
@@ -211,7 +211,7 @@ intraday_correction:
   daytime_sustained_underforecast_lift:
     enabled: true
     business_day_only: false
-    target_hours: [10, 11, 12, 13, 14]
+    target_hours: [10, 11, 12, 13, 14, 15, 16]
     non_business_target_hours: [12, 13, 14, 15]
     min_reference_hour: 8
     max_reference_hour: 14
@@ -227,6 +227,8 @@ intraday_correction:
     non_business_min_mean_residual_mw: 450
     min_peak_residual_mw: 1000
     non_business_min_peak_residual_mw: 700
+    latest_residual_override_mw: 900 # allow one strong same-day miss to defend the next hot business afternoon
+    override_min_base_adjustment_mw: 0
     min_temp_delta_24h_c: 3.0 # same-day heat/ramp context; avoids lifting cool neutral days
     min_cooling_delta_24h_c: 1.0
     non_business_min_discomfort_index: 70.0
@@ -245,7 +247,7 @@ intraday_correction:
     min_lift_mw: 100
     post_midday_shape_gate:
       enabled: true
-      target_hours: [12, 13, 14]
+      target_hours: [12, 13]
       min_lag_delta_mw: 600
       min_recent_delta_mw: 600
   post_lunch_decline_continuity_guard:
@@ -281,7 +283,7 @@ intraday_correction:
   morning_observed_anchor_cap:
     enabled: true
     business_day_only: true
-    target_hours: [10, 11, 12, 13]
+    target_hours: [9, 10, 11, 12, 13]
     min_reference_hour: 8      # require same-day morning evidence before capping
     max_reference_hour: 12
     max_lead_hours: 4
@@ -456,6 +458,14 @@ adjustment:
       min_weather_delta_c: 0.5
       weather_allowance_mw_per_c: 120
       max_weather_allowance_mw: 300
+    business_afternoon_analog_downshift_guard:
+      enabled: true
+      target_hours: [13, 14, 15, 16]
+      min_negative_shift_mw: 600
+      max_allowed_downshift_mw: 300
+      min_weather_delta_c: 0.5
+      min_supporting_delta_mw: -700
+      max_raw_anchor_excess_mw: 900
     non_business_analog_downshift_guard:
       enabled: true
       target_hours: [7, 8, 9, 10, 11, 12, 13, 14, 15]

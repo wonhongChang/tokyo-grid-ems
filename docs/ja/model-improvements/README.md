@@ -8,6 +8,8 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-06
 
+- [2026-06-29 営業日の午後 shape と夜間 carryover 補正](model-improvement-2026-06-29-business-day-afternoon-shape-and-late-carryover.md)
+
 - [2026-06-28 週末の湿度ベース日中リフト](model-improvement-2026-06-28-weekend-humid-daytime-lift.md)
 - [2026-06-26 営業日 anchor cap の再調整](model-improvement-2026-06-26-business-day-anchor-cap-retuning.md)
 - [2026-06-22 日中 shape 連鎖ガード](model-improvement-2026-06-22-daytime-shape-chain-guards.md)
