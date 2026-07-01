@@ -6,6 +6,10 @@
 
 ---
 
+## 2026-07
+
+- [2026-07-01 고온다습 영업일 plateau와 늦은 저녁 tail 감쇠](model-improvement-2026-07-01-hot-business-plateau-and-late-tail-damping.md)
+
 ## 2026-06
 
 - [2026-06-29 영업일 오후 shape와 늦은 저녁 carryover 보정](model-improvement-2026-06-29-business-day-afternoon-shape-and-late-carryover.md)

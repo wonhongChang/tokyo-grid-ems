@@ -1146,6 +1146,18 @@ class IntradayResidualCorrector:
             float(daytime_underforecast_config.get("min_lift_mw", 100.0)),
             0.0,
         )
+        self._daytime_underforecast_business_min_discomfort_index = float(
+            daytime_underforecast_config.get(
+                "business_min_discomfort_index",
+                float("inf"),
+            )
+        )
+        self._daytime_underforecast_business_min_apparent_temp_c = float(
+            daytime_underforecast_config.get(
+                "business_min_apparent_temp_c",
+                float("inf"),
+            )
+        )
         self._daytime_underforecast_non_business_min_discomfort_index = float(
             daytime_underforecast_config.get(
                 "non_business_min_discomfort_index",
@@ -3124,12 +3136,22 @@ class IntradayResidualCorrector:
         )
         humidity_pct = self._finite_float(row.get("humidity_pct")) or 0.0
         discomfort_index = self._finite_float(row.get("discomfort_index")) or 0.0
+        apparent_temp_c = self._finite_float(row.get("apparent_temp_c")) or 0.0
         heat_signal_active = (
             temp_delta_24h >= self._daytime_underforecast_min_temp_delta_24h_c
             or cooling_delta_24h
             >= self._daytime_underforecast_min_cooling_delta_24h_c
             or apparent_cooling_delta_24h
             >= self._daytime_underforecast_min_cooling_delta_24h_c
+            or (
+                not is_non_business_day
+                and (
+                    discomfort_index
+                    >= self._daytime_underforecast_business_min_discomfort_index
+                    or apparent_temp_c
+                    >= self._daytime_underforecast_business_min_apparent_temp_c
+                )
+            )
             or (
                 is_non_business_day
                 and (
@@ -3228,6 +3250,7 @@ class IntradayResidualCorrector:
             "apparentCoolingDelta24hC": round(float(apparent_cooling_delta_24h), 1),
             "humidityPct": round(float(humidity_pct), 1),
             "discomfortIndex": round(float(discomfort_index), 1),
+            "apparentTempC": round(float(apparent_temp_c), 1),
         }
 
     def _morning_warm_lag_overreaction_context(
@@ -4552,6 +4575,7 @@ class IntradayResidualCorrector:
             daytime_underforecast_temp_delta_24h_c = None
             daytime_underforecast_cooling_delta_24h_c = None
             daytime_underforecast_apparent_cooling_delta_24h_c = None
+            daytime_underforecast_apparent_temp_c = None
             daytime_underforecast_humidity_pct = None
             daytime_underforecast_discomfort_index = None
             negative_floor_restore_mw = 0.0
@@ -4939,6 +4963,9 @@ class IntradayResidualCorrector:
                 )
                 daytime_underforecast_apparent_cooling_delta_24h_c = (
                     daytime_underforecast_lift["apparentCoolingDelta24hC"]
+                )
+                daytime_underforecast_apparent_temp_c = (
+                    daytime_underforecast_lift["apparentTempC"]
                 )
                 daytime_underforecast_humidity_pct = (
                     daytime_underforecast_lift["humidityPct"]
@@ -5337,6 +5364,11 @@ class IntradayResidualCorrector:
                 "daytimeSustainedUnderforecastApparentCoolingDelta24hC": (
                     round(float(daytime_underforecast_apparent_cooling_delta_24h_c), 1)
                     if daytime_underforecast_apparent_cooling_delta_24h_c is not None
+                    else None
+                ),
+                "daytimeSustainedUnderforecastApparentTempC": (
+                    round(float(daytime_underforecast_apparent_temp_c), 1)
+                    if daytime_underforecast_apparent_temp_c is not None
                     else None
                 ),
                 "daytimeSustainedUnderforecastHumidityPct": (

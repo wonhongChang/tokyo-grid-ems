@@ -1767,6 +1767,20 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
         "afternoonObservedAnchorCapMeanResidualMw": _round_number(
             item.get("afternoonObservedAnchorCapMeanResidualMw")
         ),
+        "daytimeSustainedUnderforecastLiftMw": _round_number(
+            item.get("daytimeSustainedUnderforecastLiftMw")
+        ),
+        "daytimeSustainedUnderforecastLatestResidualMw": _round_number(
+            item.get("daytimeSustainedUnderforecastLatestResidualMw")
+        ),
+        "daytimeSustainedUnderforecastDiscomfortIndex": _round_number(
+            item.get("daytimeSustainedUnderforecastDiscomfortIndex"),
+            digits=1,
+        ),
+        "daytimeSustainedUnderforecastApparentTempC": _round_number(
+            item.get("daytimeSustainedUnderforecastApparentTempC"),
+            digits=1,
+        ),
         "eveningDeclineContinuityMode": item.get("eveningDeclineContinuityMode"),
         "eveningDeclineContinuityReductionMw": _round_number(
             item.get("eveningDeclineContinuityReductionMw")
@@ -1823,6 +1837,10 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
             (_as_float(item.get("afternoonObservedAnchorCapReductionMw")) or 0.0)
             > 0.0
         )
+        daytime_underforecast_lift = (
+            (_as_float(item.get("daytimeSustainedUnderforecastLiftMw")) or 0.0)
+            > 0.0
+        )
         evening_guard = (
             (_as_float(item.get("eveningDeclineContinuityReductionMw")) or 0.0)
             > 0.0
@@ -1839,6 +1857,7 @@ def _selected_residual_carryover_items(items: list[dict], max_items: int = 8) ->
                 or morning_observed_ramp_floor
                 or morning_anchor_cap
                 or afternoon_anchor_cap
+                or daytime_underforecast_lift
                 or evening_guard
                 or large
             )

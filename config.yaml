@@ -148,9 +148,9 @@ intraday_correction:
   afternoon_positive_residual_carryover_damping:
     enabled: true
     business_day_only: true
-    target_hours: [13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+    target_hours: [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
     min_reference_hour: 11
-    max_reference_hour: 19
+    max_reference_hour: 20
     min_lead_hours: 1
     max_lead_hours: 6
     min_base_adjustment_mw: 250
@@ -211,10 +211,10 @@ intraday_correction:
   daytime_sustained_underforecast_lift:
     enabled: true
     business_day_only: false
-    target_hours: [10, 11, 12, 13, 14, 15, 16]
+    target_hours: [10, 11, 12, 13, 14, 15, 16, 17]
     non_business_target_hours: [12, 13, 14, 15]
     min_reference_hour: 8
-    max_reference_hour: 14
+    max_reference_hour: 15
     max_lead_hours: 3
     lookback_observed_hours: 3
     min_positive_residual_count: 2
@@ -231,6 +231,8 @@ intraday_correction:
     override_min_base_adjustment_mw: 0
     min_temp_delta_24h_c: 3.0 # same-day heat/ramp context; avoids lifting cool neutral days
     min_cooling_delta_24h_c: 1.0
+    business_min_discomfort_index: 76.5 # absolute hot/humid plateau context for business afternoons
+    business_min_apparent_temp_c: 30.0
     non_business_min_discomfort_index: 70.0
     non_business_min_humidity_pct: 85.0
     min_latest_slope_mw: -800 # skip if demand is already collapsing
