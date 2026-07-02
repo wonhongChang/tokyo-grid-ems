@@ -119,6 +119,11 @@ intraday_correction:
     max_drop_slope_allowance_mw: 400
     max_restore_mw: 700          # restore only part of the downward carryover
     min_restore_mw: 100
+    decline_support_damping:
+      enabled: true
+      latest_slope_max_mw: -500   # if actual demand is already falling hard...
+      max_support_delta_mw: -500  # ...and lag/recent also point down, do not fight the decline
+      restore_factor: 0.25
   positive_residual_slope_damping:
     enabled: true
     min_reference_hour: 12    # only after enough same-day shape evidence exists
@@ -208,6 +213,8 @@ intraday_correction:
     min_lift_mw: 100
     max_latest_overforecast_mw: 500 # do not lift future ramp when the latest observed bucket is already materially over-forecast
     max_floor_delta_over_support_mw: 0 # never lift above target-hour lag/recent shape support
+    min_support_delta_mw: 700 # skip plateau/dip targets whose lag/recent shape no longer supports ramp continuation
+    support_delta_fraction: 0.50 # use only part of target-hour lag/recent support when constructing the floor
   daytime_sustained_underforecast_lift:
     enabled: true
     business_day_only: false
@@ -509,3 +516,14 @@ adjustment:
     shrinkage: 0.75
     max_reduction_mw: 700
     min_reduction_mw: 100
+    morning_spike:
+      enabled: true
+      hours: [8, 9, 10, 11]
+      min_neighbor_excess_mw: 1000
+      min_forecast_delta_over_support_mw: 1000
+      min_next_drop_mw: 800
+      neighbor_buffer_mw: 700
+      max_weather_delta_c: 3.5
+      shrinkage: 0.75
+      max_reduction_mw: 1400
+      min_reduction_mw: 150

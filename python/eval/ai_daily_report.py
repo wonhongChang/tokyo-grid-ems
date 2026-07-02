@@ -1734,6 +1734,13 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
         "negativeResidualNearTermRestoreMw": _round_number(
             item.get("negativeResidualNearTermRestoreMw")
         ),
+        "negativeResidualNearTermSupportDeltaMw": _round_number(
+            item.get("negativeResidualNearTermSupportDeltaMw")
+        ),
+        "negativeResidualNearTermDeclineDampingFactor": _round_number(
+            item.get("negativeResidualNearTermDeclineDampingFactor"),
+            digits=3,
+        ),
         "morningWarmLagOverreactionReductionMw": _round_number(
             item.get("morningWarmLagOverreactionReductionMw")
         ),

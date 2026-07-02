@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-07
 
+- [2026-07-03 morning spike and evening floor damping](model-improvement-2026-07-03-morning-spike-and-evening-floor-damping.md)
 - [2026-07-01 hot business plateau and late-tail damping](model-improvement-2026-07-01-hot-business-plateau-and-late-tail-damping.md)
 
 ## 2026-06

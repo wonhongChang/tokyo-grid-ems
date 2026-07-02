@@ -1563,3 +1563,51 @@ def test_localized_shape_spike_guard_keeps_weather_supported_peak():
 
     assert result is forecasts
     assert result[15].forecast_mw == pytest.approx(31_759.3)
+
+
+def test_localized_shape_spike_guard_dampens_business_morning_pre_observation_spike():
+    target = date(2026, 7, 3)
+    forecasts = _make_raw_forecasts(target, 30_000.0)
+    for hour, value in {
+        8: 31_476.7,
+        9: 36_047.8,
+        10: 34_497.6,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=forecasts[hour].ts,
+            forecast_mw=value,
+            p95_lower_mw=value - 1_000.0,
+            p95_upper_mw=value + 1_000.0,
+            p99_lower_mw=value - 1_500.0,
+            p99_upper_mw=value + 1_500.0,
+        )
+    inference_features = _localized_spike_inf(
+        lag_delta=2_460.0,
+        recent_delta=2_982.5,
+        temp_delta=2.7,
+        cooling_delta=2.7,
+        same_day_slope=0.0,
+    )
+
+    result = LocalizedShapeSpikeGuard(_localized_spike_config(
+        morning_spike={
+            "enabled": True,
+            "hours": [8, 9, 10, 11],
+            "min_neighbor_excess_mw": 1_000.0,
+            "min_forecast_delta_over_support_mw": 1_000.0,
+            "min_next_drop_mw": 800.0,
+            "neighbor_buffer_mw": 700.0,
+            "max_weather_delta_c": 3.5,
+            "shrinkage": 0.75,
+            "max_reduction_mw": 1_400.0,
+            "min_reduction_mw": 150.0,
+        },
+    )).apply(
+        forecasts,
+        inference_features,
+    )
+
+    assert result[9].forecast_mw == pytest.approx(34_647.8)
+    assert result[9].p95_lower_mw == pytest.approx(33_647.8)
+    assert result[8].forecast_mw == pytest.approx(31_476.7)
+    assert result[10].forecast_mw == pytest.approx(34_497.6)

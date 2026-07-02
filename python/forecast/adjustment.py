@@ -1664,6 +1664,37 @@ class LocalizedShapeSpikeGuard:
         self._shrinkage = min(max(float(guard_config.get("shrinkage", 0.75)), 0.0), 1.0)
         self._max_reduction_mw = float(guard_config.get("max_reduction_mw", 700.0))
         self._min_reduction_mw = float(guard_config.get("min_reduction_mw", 100.0))
+        morning_config = guard_config.get("morning_spike", {})
+        self._morning_spike_enabled = bool(morning_config.get("enabled", False))
+        self._morning_spike_hours = {
+            int(hour)
+            for hour in morning_config.get("hours", [8, 9, 10, 11])
+        }
+        self._morning_spike_min_neighbor_excess_mw = float(
+            morning_config.get("min_neighbor_excess_mw", 1_000.0)
+        )
+        self._morning_spike_min_forecast_delta_over_support_mw = float(
+            morning_config.get("min_forecast_delta_over_support_mw", 1_000.0)
+        )
+        self._morning_spike_min_next_drop_mw = float(
+            morning_config.get("min_next_drop_mw", 800.0)
+        )
+        self._morning_spike_neighbor_buffer_mw = float(
+            morning_config.get("neighbor_buffer_mw", 700.0)
+        )
+        self._morning_spike_max_weather_delta_c = float(
+            morning_config.get("max_weather_delta_c", 3.5)
+        )
+        self._morning_spike_shrinkage = min(
+            max(float(morning_config.get("shrinkage", 0.75)), 0.0),
+            1.0,
+        )
+        self._morning_spike_max_reduction_mw = float(
+            morning_config.get("max_reduction_mw", 1_400.0)
+        )
+        self._morning_spike_min_reduction_mw = float(
+            morning_config.get("min_reduction_mw", 150.0)
+        )
 
     @staticmethod
     def _finite_float(value) -> float | None:
@@ -1712,6 +1743,85 @@ class LocalizedShapeSpikeGuard:
             return False
         return True
 
+    def _support_delta(self, row) -> float | None:
+        support_values = []
+        for column in [
+            "lag_24h_hourly_delta",
+            "recent_same_business_type_delta_mean",
+        ]:
+            value = self._finite_float(row.get(column))
+            if value is not None:
+                support_values.append(value)
+        if not support_values:
+            return None
+        return max(support_values)
+
+    def _weather_delta(self, row) -> float | None:
+        weather_values = []
+        for column in ["temp_delta_24h", "cooling_delta_24h"]:
+            value = self._finite_float(row.get(column))
+            if value is not None:
+                weather_values.append(value)
+        if not weather_values:
+            return None
+        return max(weather_values)
+
+    def _morning_spike_reduction(
+        self,
+        previous_forecast,
+        forecast,
+        next_forecast,
+        row,
+    ) -> float | None:
+        if not self._morning_spike_enabled:
+            return None
+
+        max_neighbor_mw = max(
+            previous_forecast.forecast_mw,
+            next_forecast.forecast_mw,
+        )
+        if (
+            forecast.forecast_mw - max_neighbor_mw
+            < self._morning_spike_min_neighbor_excess_mw
+        ):
+            return None
+
+        next_drop_mw = forecast.forecast_mw - next_forecast.forecast_mw
+        if next_drop_mw < self._morning_spike_min_next_drop_mw:
+            return None
+
+        forecast_delta_mw = forecast.forecast_mw - previous_forecast.forecast_mw
+        support_delta_mw = self._support_delta(row)
+        if support_delta_mw is None:
+            return None
+        if (
+            forecast_delta_mw - support_delta_mw
+            < self._morning_spike_min_forecast_delta_over_support_mw
+        ):
+            return None
+
+        weather_delta_c = self._weather_delta(row)
+        if (
+            weather_delta_c is not None
+            and weather_delta_c > self._morning_spike_max_weather_delta_c
+        ):
+            return None
+
+        neighbor_anchor_mw = (
+            previous_forecast.forecast_mw + next_forecast.forecast_mw
+        ) / 2.0
+        cap_mw = neighbor_anchor_mw + self._morning_spike_neighbor_buffer_mw
+        if forecast.forecast_mw <= cap_mw:
+            return None
+
+        reduction_mw = min(
+            (forecast.forecast_mw - cap_mw) * self._morning_spike_shrinkage,
+            self._morning_spike_max_reduction_mw,
+        )
+        if reduction_mw < self._morning_spike_min_reduction_mw:
+            return None
+        return float(reduction_mw)
+
     def apply(self, forecasts: list, inference_features: pd.DataFrame) -> list:
         if (
             not self._enabled
@@ -1736,14 +1846,30 @@ class LocalizedShapeSpikeGuard:
         for index in range(1, len(result) - 1):
             forecast = result[index]
             hour = pd.Timestamp(forecast.ts).hour
-            if hour not in self._hours:
-                continue
             row = features_by_hour.get(hour)
-            if row is None or not self._unsupported_by_context(row):
+            if row is None:
                 continue
 
             prev_forecast = result[index - 1]
             next_forecast = result[index + 1]
+            if hour in self._morning_spike_hours:
+                morning_reduction_mw = self._morning_spike_reduction(
+                    prev_forecast,
+                    forecast,
+                    next_forecast,
+                    row,
+                )
+                if morning_reduction_mw is not None:
+                    result[index] = self._shift_forecast(
+                        forecast,
+                        -morning_reduction_mw,
+                    )
+                    changed = True
+                    continue
+
+            if hour not in self._hours or not self._unsupported_by_context(row):
+                continue
+
             max_neighbor_mw = max(prev_forecast.forecast_mw, next_forecast.forecast_mw)
             if forecast.forecast_mw - max_neighbor_mw < self._min_neighbor_excess_mw:
                 continue
