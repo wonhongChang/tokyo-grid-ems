@@ -1161,6 +1161,68 @@ def test_intraday_damps_non_business_evening_positive_carryover_when_shape_is_we
     )
 
 
+def test_intraday_damps_non_business_17h_positive_carryover_when_shape_is_weak():
+    target = date(2026, 7, 5)  # Sunday
+    forecasts = _make_forecasts(target, 20_000.0)
+    actual_series = [
+        _actual_point(target, 13, 21_000.0),
+        _actual_point(target, 14, 21_000.0),
+        _actual_point(target, 15, 21_000.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": hour, "is_non_business_day": 1}
+        for hour in range(24)
+    ])
+    inference_features.loc[17, "lag_24h_hourly_delta"] = 150.0
+    inference_features.loc[17, "recent_same_business_type_delta_mean"] = 460.0
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.6,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 0.92,
+            "operational_calibration": {
+                "business_type_transition_prior": {"enabled": False},
+                "business_type_transition": {"enabled": False},
+            },
+            "positive_residual_slope_damping": {"enabled": False},
+            "morning_positive_residual_carryover_damping": {"enabled": False},
+            "non_business_evening_positive_residual_damping": {
+                "enabled": True,
+                "target_hours": [17, 18, 19, 20],
+                "min_reference_hour": 12,
+                "min_lead_hours": 2,
+                "max_lead_hours": 6,
+                "min_base_adjustment_mw": 500.0,
+                "weak_support_delta_mw": 600.0,
+                "damping_factor": 0.45,
+                "min_damped_mw": 120.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.base_adjustment_mw == pytest.approx(600.0, abs=0.1)
+    assert result.non_business_evening_positive_residual_damping_applied is True
+    assert result.forecasts[17].forecast_mw == pytest.approx(20_248.4, abs=0.1)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_17 = next(item for item in residual_logs if item["hour"] == 17)
+    assert (
+        hour_17["nonBusinessEveningPositiveResidualDampingFactor"]
+        == pytest.approx(0.45)
+    )
+    assert (
+        hour_17["nonBusinessEveningPositiveResidualDampedMw"]
+        == pytest.approx(303.6, abs=0.1)
+    )
+
+
 def test_intraday_damps_business_late_evening_positive_carryover_when_shape_is_weak():
     target = date(2026, 6, 29)  # Monday, late positive carryover after afternoon miss
     forecasts = _make_forecasts(target, 29_000.0)
@@ -3766,6 +3828,118 @@ def test_intraday_daytime_sustained_underforecast_lifts_moderate_humid_non_busin
     assert hour_12["daytimeSustainedUnderforecastLiftMw"] == pytest.approx(357.5)
     assert hour_14["daytimeSustainedUnderforecastHumidityPct"] == pytest.approx(89.0)
     assert "daytime_sustained_underforecast_lift" in result.applied_regime_reason
+
+
+def test_intraday_weekend_daytime_lift_uses_positive_tail_after_one_earlier_overforecast():
+    target = date(2026, 7, 5)  # Sunday
+    forecasts = _make_forecasts(target, 27_000.0)
+    for hour, value in {
+        9: 27_118.3,
+        10: 26_786.9,
+        11: 27_614.6,
+        12: 27_021.1,
+        13: 26_737.6,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 9, 26_390.0),
+        _actual_point(target, 10, 27_390.0),
+        _actual_point(target, 11, 28_240.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 11, "is_non_business_day": 1},
+        {
+            "hour": 12,
+            "is_non_business_day": 1,
+            "temp_delta_24h": -2.6,
+            "cooling_delta_24h": -2.6,
+            "apparent_cooling_delta_24h": -2.3,
+            "humidity_pct": 85.0,
+            "discomfort_index": 73.6,
+        },
+        {
+            "hour": 13,
+            "is_non_business_day": 1,
+            "temp_delta_24h": -2.8,
+            "cooling_delta_24h": -2.8,
+            "apparent_cooling_delta_24h": -2.4,
+            "humidity_pct": 85.0,
+            "discomfort_index": 73.5,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.6,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "daytime_sustained_underforecast_lift": {
+                "enabled": True,
+                "business_day_only": False,
+                "target_hours": [10, 11, 12, 13, 14],
+                "non_business_target_hours": [12, 13],
+                "min_reference_hour": 8,
+                "max_reference_hour": 14,
+                "max_lead_hours": 3,
+                "lookback_observed_hours": 3,
+                "min_positive_residual_count": 2,
+                "non_business_min_positive_residual_count": 2,
+                "min_base_adjustment_mw": 600.0,
+                "non_business_min_base_adjustment_mw": 250.0,
+                "non_business_positive_tail_override": {
+                    "enabled": True,
+                    "min_base_adjustment_mw": 0.0,
+                    "min_peak_residual_mw": 600.0,
+                },
+                "min_latest_residual_mw": 600.0,
+                "non_business_min_latest_residual_mw": 350.0,
+                "min_mean_residual_mw": 600.0,
+                "non_business_min_mean_residual_mw": 450.0,
+                "min_peak_residual_mw": 1_000.0,
+                "non_business_min_peak_residual_mw": 700.0,
+                "min_temp_delta_24h_c": 3.0,
+                "min_cooling_delta_24h_c": 1.0,
+                "non_business_min_discomfort_index": 70.0,
+                "non_business_min_humidity_pct": 85.0,
+                "min_latest_slope_mw": -800.0,
+                "floor_slope_fraction": 0.25,
+                "max_floor_delta_mw": 900.0,
+                "floor_slack_mw": 300.0,
+                "floor_shrinkage": 0.5,
+                "residual_pressure_shrinkage": 0.55,
+                "non_business_residual_pressure_shrinkage": 0.8,
+                "residual_slack_mw": 200.0,
+                "non_business_residual_slack_mw": 0.0,
+                "max_lift_mw": 900.0,
+                "non_business_max_lift_mw": 800.0,
+                "min_lift_mw": 100.0,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.daytime_sustained_underforecast_lift_applied is True
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_12 = next(item for item in residual_logs if item["hour"] == 12)
+    hour_13 = next(item for item in residual_logs if item["hour"] == 13)
+    assert hour_12["daytimeSustainedUnderforecastPositiveTailOverrideActive"] is True
+    assert hour_12["daytimeSustainedUnderforecastLiftMw"] > 0.0
+    assert hour_13["daytimeSustainedUnderforecastPositiveTailOverrideActive"] is True
+    assert result.forecasts[12].forecast_mw > 27_500.0
+    assert result.forecasts[13].forecast_mw > 27_300.0
 
 
 def test_intraday_daytime_sustained_underforecast_requires_heat_context():

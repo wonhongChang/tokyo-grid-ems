@@ -1784,6 +1784,9 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
             item.get("daytimeSustainedUnderforecastDiscomfortIndex"),
             digits=1,
         ),
+        "daytimeSustainedUnderforecastPositiveTailOverrideActive": bool(
+            item.get("daytimeSustainedUnderforecastPositiveTailOverrideActive")
+        ),
         "daytimeSustainedUnderforecastApparentTempC": _round_number(
             item.get("daytimeSustainedUnderforecastApparentTempC"),
             digits=1,

@@ -1098,6 +1098,26 @@ class IntradayResidualCorrector:
             ),
             0.0,
         )
+        non_business_tail_config = daytime_underforecast_config.get(
+            "non_business_positive_tail_override",
+            {},
+        )
+        self._daytime_underforecast_non_business_tail_override_enabled = bool(
+            non_business_tail_config.get("enabled", False)
+        )
+        self._daytime_underforecast_non_business_tail_min_base_mw = max(
+            float(non_business_tail_config.get("min_base_adjustment_mw", 0.0)),
+            0.0,
+        )
+        self._daytime_underforecast_non_business_tail_min_peak_residual_mw = max(
+            float(
+                non_business_tail_config.get(
+                    "min_peak_residual_mw",
+                    self._daytime_underforecast_non_business_min_peak_residual_mw,
+                )
+            ),
+            0.0,
+        )
         self._daytime_underforecast_min_temp_delta_24h_c = float(
             daytime_underforecast_config.get("min_temp_delta_24h_c", 3.0)
         )
@@ -3097,6 +3117,28 @@ class IntradayResidualCorrector:
             residual_gate_passed = False
         else:
             residual_gate_passed = True
+        positive_tail_override_active = False
+        if (
+            is_non_business_day
+            and self._daytime_underforecast_non_business_tail_override_enabled
+            and len(residual_values) >= min_positive_count
+        ):
+            tail_values = residual_values[-min_positive_count:]
+            tail_latest_residual_mw = tail_values[-1]
+            tail_mean_residual_mw = float(np.mean(tail_values))
+            tail_peak_residual_mw = max(tail_values)
+            if (
+                all(value > 0.0 for value in tail_values)
+                and tail_latest_residual_mw >= min_latest_residual_mw
+                and tail_mean_residual_mw >= min_mean_residual_mw
+                and tail_peak_residual_mw
+                >= self._daytime_underforecast_non_business_tail_min_peak_residual_mw
+            ):
+                residual_gate_passed = True
+                positive_tail_override_active = True
+                latest_residual_mw = tail_latest_residual_mw
+                mean_residual_mw = tail_mean_residual_mw
+                peak_residual_mw = tail_peak_residual_mw
 
         latest_override_active = (
             not is_non_business_day
@@ -3106,8 +3148,14 @@ class IntradayResidualCorrector:
             and base_adjustment_mw
             >= self._daytime_underforecast_override_min_base_mw
         )
+        base_adjustment_threshold_mw = (
+            self._daytime_underforecast_non_business_tail_min_base_mw
+            if positive_tail_override_active
+            else min_base_adjustment_mw
+        )
         if not (
-            base_adjustment_mw >= min_base_adjustment_mw and residual_gate_passed
+            base_adjustment_mw >= base_adjustment_threshold_mw
+            and residual_gate_passed
         ) and not latest_override_active:
             return None
 
@@ -3131,6 +3179,7 @@ class IntradayResidualCorrector:
             "isNonBusinessDay": is_non_business_day,
             "maxLiftMw": round(float(max_lift_mw), 1),
             "latestResidualOverrideActive": latest_override_active,
+            "positiveTailOverrideActive": positive_tail_override_active,
         }
 
     def _daytime_sustained_underforecast_lift(
@@ -3287,6 +3336,9 @@ class IntradayResidualCorrector:
             "humidityPct": round(float(humidity_pct), 1),
             "discomfortIndex": round(float(discomfort_index), 1),
             "apparentTempC": round(float(apparent_temp_c), 1),
+            "positiveTailOverrideActive": bool(
+                context.get("positiveTailOverrideActive", False)
+            ),
         }
 
     def _morning_warm_lag_overreaction_context(
@@ -4644,6 +4696,7 @@ class IntradayResidualCorrector:
             daytime_underforecast_apparent_temp_c = None
             daytime_underforecast_humidity_pct = None
             daytime_underforecast_discomfort_index = None
+            daytime_underforecast_positive_tail_override_active = False
             negative_floor_restore_mw = 0.0
             negative_floor_mw = None
             near_negative_floor_restore_mw = 0.0
@@ -5046,6 +5099,9 @@ class IntradayResidualCorrector:
                 )
                 daytime_underforecast_discomfort_index = (
                     daytime_underforecast_lift["discomfortIndex"]
+                )
+                daytime_underforecast_positive_tail_override_active = bool(
+                    daytime_underforecast_lift["positiveTailOverrideActive"]
                 )
                 daytime_underforecast_lift_applied = True
                 daytime_underforecast_lift_values.append(lift_mw)
@@ -5454,6 +5510,9 @@ class IntradayResidualCorrector:
                     round(float(daytime_underforecast_discomfort_index), 1)
                     if daytime_underforecast_discomfort_index is not None
                     else None
+                ),
+                "daytimeSustainedUnderforecastPositiveTailOverrideActive": (
+                    daytime_underforecast_positive_tail_override_active
                 ),
                 "postLunchDeclineContinuityCapMw": (
                     round(float(post_lunch_decline_cap_mw), 1)

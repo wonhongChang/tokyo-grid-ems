@@ -8,6 +8,7 @@
 
 ## 2026-07
 
+- [2026-07-06 주말 positive-tail lift와 17시 감쇠](model-improvement-2026-07-06-weekend-positive-tail-and-evening-damping.md)
 - [2026-07-03 오전 스파이크와 저녁 floor 감쇠](model-improvement-2026-07-03-morning-spike-and-evening-floor-damping.md)
 - [2026-07-01 고온다습 영업일 plateau와 늦은 저녁 tail 감쇠](model-improvement-2026-07-01-hot-business-plateau-and-late-tail-damping.md)
 

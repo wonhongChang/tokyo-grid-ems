@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-07
 
+- [2026-07-06 週末 positive-tail lift と17時減衰](model-improvement-2026-07-06-weekend-positive-tail-and-evening-damping.md)
 - [2026-07-03 朝のスパイクと夜間 floor 減衰](model-improvement-2026-07-03-morning-spike-and-evening-floor-damping.md)
 - [2026-07-01 高温多湿の営業日 plateau と夜間 tail 減衰](model-improvement-2026-07-01-hot-business-plateau-and-late-tail-damping.md)
 

@@ -164,9 +164,9 @@ intraday_correction:
     min_damped_mw: 100
   non_business_evening_positive_residual_damping:
     enabled: true
-    target_hours: [18, 19, 20]
+    target_hours: [17, 18, 19, 20]
     min_reference_hour: 12
-    min_lead_hours: 3
+    min_lead_hours: 2
     max_lead_hours: 6
     min_base_adjustment_mw: 350
     weak_support_delta_mw: 600 # damp only when weekend evening shape does not support a rebound
@@ -228,6 +228,10 @@ intraday_correction:
     non_business_min_positive_residual_count: 2
     min_base_adjustment_mw: 600 # only after the intraday residual clearly says the model is low
     non_business_min_base_adjustment_mw: 250
+    non_business_positive_tail_override:
+      enabled: true
+      min_base_adjustment_mw: 0 # allow two latest weekend misses to overcome one earlier over-forecast
+      min_peak_residual_mw: 600
     min_latest_residual_mw: 600
     non_business_min_latest_residual_mw: 350
     min_mean_residual_mw: 600
