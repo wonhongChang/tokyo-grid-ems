@@ -4300,6 +4300,77 @@ def test_intraday_near_term_floor_damps_restore_when_evening_shape_points_down()
     assert result.forecasts[20].forecast_mw == pytest.approx(31_155.8, abs=0.1)
 
 
+def test_intraday_near_term_floor_protects_first_future_hour_from_stale_negative_residual():
+    target = date(2026, 7, 7)
+    forecasts = _make_forecasts(target, 30_000.0)
+    for hour, value in {
+        13: 35_000.0,
+        14: 35_000.0,
+        15: 35_000.0,
+        16: 34_453.0,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 13, 34_000.0),
+        _actual_point(target, 14, 34_000.0),
+        _actual_point(target, 15, 34_190.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": 16,
+            "is_non_business_day": 0,
+            "recent_same_business_type_mean": 34_780.0,
+            "lag_24h_hourly_delta": -150.0,
+            "recent_same_business_type_delta_mean": -175.0,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "negative_residual_near_term_floor": {
+                "enabled": True,
+                "target_hours": [16],
+                "min_reference_hour": 10,
+                "max_lead_hours": 2,
+                "min_adjustment_mw": 500.0,
+                "actual_reference_slack_mw": 150.0,
+                "anchor_slack_mw": 1_200.0,
+                "drop_slope_allowance_fraction": 0.25,
+                "max_drop_slope_allowance_mw": 400.0,
+                "max_restore_mw": 700.0,
+                "min_restore_mw": 100.0,
+            },
+            "ramp_guard": {"enabled": False},
+            "evening_decline_continuity_guard": {"enabled": False},
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.base_adjustment_mw == pytest.approx(-936.7, abs=0.1)
+    assert result.negative_residual_near_term_floor_applied is True
+    assert result.forecasts[16].forecast_mw == pytest.approx(34_040.0, abs=0.1)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_16 = next(item for item in residual_logs if item["hour"] == 16)
+    assert hour_16["negativeResidualNearTermFloorMw"] == pytest.approx(34_040.0)
+    assert hour_16["negativeResidualNearTermRestoreMw"] == pytest.approx(523.7, abs=0.1)
+
+
 def test_intraday_correction_keeps_evening_rebound_when_shape_supports_it():
     target = date(2026, 5, 27)
     forecasts = _make_forecasts(target, 30_000.0)
@@ -4355,6 +4426,92 @@ def test_intraday_correction_keeps_evening_rebound_when_shape_supports_it():
     assert result.evening_decline_continuity_guard_applied is False
     assert result.evening_decline_continuity_max_reduction_mw == pytest.approx(0.0)
     assert result.forecasts[18].forecast_mw == pytest.approx(34_165.8)
+
+
+def test_intraday_evening_decline_uses_recent_anchor_for_strong_late_drop_overhang():
+    target = date(2026, 7, 7)
+    forecasts = _make_forecasts(target, 30_000.0)
+    for hour, value in {
+        17: 33_263.3,
+        18: 32_849.5,
+        19: 32_709.0,
+        20: 31_586.1,
+        21: 30_475.7,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 17, 33_590.0),
+        _actual_point(target, 18, 33_120.0),
+        _actual_point(target, 19, 32_510.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 19, "is_non_business_day": 0},
+        {
+            "hour": 21,
+            "is_non_business_day": 0,
+            "lag_24h_hourly_delta": -1_580.0,
+            "recent_same_business_type_delta_mean": -1_595.0,
+            "recent_same_business_type_mean": 29_612.5,
+            "temp_delta_1h": 0.0,
+            "cooling_delta_1h": 0.0,
+            "temp_c": 22.5,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "evening_decline_continuity_guard": {
+                "enabled": True,
+                "target_hours": [21],
+                "min_reference_hour": 15,
+                "max_lead_hours": 2,
+                "latest_slope_max_mw": -500.0,
+                "mean_slope_max_mw": -300.0,
+                "max_supporting_delta_mw": 200.0,
+                "min_forecast_rebound_mw": 800.0,
+                "max_rebound_mw": 600.0,
+                "actual_reference_slack_mw": 300.0,
+                "weather_allowance_mw_per_c": 120.0,
+                "max_weather_allowance_mw": 400.0,
+                "max_reduction_mw": 900.0,
+                "min_reduction_mw": 100.0,
+                "level_overhang_enabled": True,
+                "min_level_overhang_mw": 500.0,
+                "level_overhang_shrinkage": 0.75,
+                "strong_decline_level_anchor": {
+                    "enabled": True,
+                    "max_supporting_delta_mw": -800.0,
+                    "anchor_buffer_mw": 300.0,
+                    "min_overhang_mw": 250.0,
+                    "shrinkage": 0.75,
+                },
+            },
+            "ramp_guard": {"enabled": False},
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.evening_decline_continuity_guard_applied is True
+    assert result.forecasts[21].forecast_mw == pytest.approx(30_053.3, abs=0.1)
+    residual_logs = result.metadata()["residualCarryoverByHour"]
+    hour_21 = next(item for item in residual_logs if item["hour"] == 21)
+    assert hour_21["eveningDeclineContinuityMode"] == "strong_decline_level_anchor"
+    assert hour_21["eveningDeclineContinuityCapMw"] == pytest.approx(29_912.5)
+    assert hour_21["eveningDeclineContinuityReductionMw"] == pytest.approx(422.4, abs=0.1)
 
 
 def test_intraday_correction_dampens_non_business_day_lag_overheat_after_observed_evidence():

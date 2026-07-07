@@ -113,7 +113,7 @@ intraday_correction:
     min_reference_hour: 10
     max_lead_hours: 2
     min_adjustment_mw: 500       # only intervene when downward residual carryover is material
-    actual_reference_slack_mw: 500
+    actual_reference_slack_mw: 150
     anchor_slack_mw: 1200
     drop_slope_allowance_fraction: 0.25
     max_drop_slope_allowance_mw: 400
@@ -324,7 +324,7 @@ intraday_correction:
   evening_decline_continuity_guard:
     enabled: true
     business_day_only: false
-    target_hours: [16, 17, 18, 19, 20]
+    target_hours: [16, 17, 18, 19, 20, 21]
     min_reference_hour: 15
     max_lead_hours: 2           # protect only near-term evening buckets
     latest_slope_max_mw: -500   # require a clear same-day demand drop
@@ -341,6 +341,12 @@ intraday_correction:
     level_overhang_enabled: true
     min_level_overhang_mw: 500 # catch high-but-not-rebounding evening lines
     level_overhang_shrinkage: 0.75
+    strong_decline_level_anchor:
+      enabled: true
+      max_supporting_delta_mw: -800
+      anchor_buffer_mw: 300
+      min_overhang_mw: 250
+      shrinkage: 0.75
   midday_residual_deweight:
     enabled: false
     hours: [12]              # lunch bucket only; applies on business days
@@ -500,7 +506,7 @@ adjustment:
     hours: [12]
     min_negative_delta_mw: 500  # require recent same-business shape to show a real dip
     min_excess_mw: 300          # ignore small differences between forecast and shape context
-    shrinkage: 0.5              # partial correction; keeps LightGBM as the primary forecast
+    shrinkage: 0.75             # stronger weekday lunch dip damping when lag/recent shape agrees
     triggered_shrinkage: 0.75   # stronger only when same-day morning demand is already softening
     max_downward_adjustment_mw: 900
     triggered_max_downward_adjustment_mw: 1200

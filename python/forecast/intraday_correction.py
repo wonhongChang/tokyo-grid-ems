@@ -1528,6 +1528,28 @@ class IntradayResidualCorrector:
             ),
             1.0,
         )
+        strong_decline_anchor_config = evening_decline_config.get(
+            "strong_decline_level_anchor",
+            {},
+        )
+        self._evening_decline_strong_anchor_enabled = bool(
+            strong_decline_anchor_config.get("enabled", False)
+        )
+        self._evening_decline_strong_anchor_max_support_delta_mw = float(
+            strong_decline_anchor_config.get("max_supporting_delta_mw", -800.0)
+        )
+        self._evening_decline_strong_anchor_buffer_mw = max(
+            float(strong_decline_anchor_config.get("anchor_buffer_mw", 300.0)),
+            0.0,
+        )
+        self._evening_decline_strong_anchor_min_overhang_mw = max(
+            float(strong_decline_anchor_config.get("min_overhang_mw", 250.0)),
+            0.0,
+        )
+        self._evening_decline_strong_anchor_shrinkage = min(
+            max(float(strong_decline_anchor_config.get("shrinkage", 0.75)), 0.0),
+            1.0,
+        )
         midday_deweight_config = correction_config.get("midday_residual_deweight", {})
         self._midday_deweight_enabled = bool(
             midday_deweight_config.get("enabled", True)
@@ -4052,23 +4074,45 @@ class IntradayResidualCorrector:
             overhang_mw = final_before_guard_mw - cap_mw
             reduction_mw = min(overhang_mw, self._evening_decline_max_reduction_mw)
         elif self._evening_decline_level_overhang_enabled:
-            reference_candidates = [actual_reference_mw]
-            if recent_same_business_mean_mw is not None:
-                reference_candidates.append(recent_same_business_mean_mw)
-            reference_mw = max(reference_candidates)
-            cap_mw = (
-                reference_mw
-                + self._evening_decline_max_rebound_mw
-                + weather_allowance_mw
+            use_strong_decline_anchor = (
+                self._evening_decline_strong_anchor_enabled
+                and recent_same_business_mean_mw is not None
+                and lag_delta_mw
+                <= self._evening_decline_strong_anchor_max_support_delta_mw
+                and same_business_delta_mw
+                <= self._evening_decline_strong_anchor_max_support_delta_mw
             )
+            if use_strong_decline_anchor:
+                reference_mw = recent_same_business_mean_mw
+                cap_mw = (
+                    reference_mw
+                    + self._evening_decline_strong_anchor_buffer_mw
+                    + weather_allowance_mw
+                )
+                min_overhang_mw = self._evening_decline_strong_anchor_min_overhang_mw
+                shrinkage = self._evening_decline_strong_anchor_shrinkage
+                mode = "strong_decline_level_anchor"
+            else:
+                reference_candidates = [actual_reference_mw]
+                if recent_same_business_mean_mw is not None:
+                    reference_candidates.append(recent_same_business_mean_mw)
+                reference_mw = max(reference_candidates)
+                cap_mw = (
+                    reference_mw
+                    + self._evening_decline_max_rebound_mw
+                    + weather_allowance_mw
+                )
+                min_overhang_mw = self._evening_decline_min_level_overhang_mw
+                shrinkage = self._evening_decline_level_overhang_shrinkage
             overhang_mw = final_before_guard_mw - cap_mw
-            if overhang_mw < self._evening_decline_min_level_overhang_mw:
+            if overhang_mw < min_overhang_mw:
                 return None
             reduction_mw = min(
-                overhang_mw * self._evening_decline_level_overhang_shrinkage,
+                overhang_mw * shrinkage,
                 self._evening_decline_max_reduction_mw,
             )
-            mode = "level_overhang"
+            if not use_strong_decline_anchor:
+                mode = "level_overhang"
         else:
             return None
         if final_before_guard_mw <= cap_mw:
