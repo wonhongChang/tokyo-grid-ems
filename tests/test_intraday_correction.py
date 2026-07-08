@@ -2553,6 +2553,84 @@ def test_intraday_morning_observed_anchor_cap_can_protect_next_09_bucket():
     assert hour_9["morningObservedAnchorCapReductionMw"] == pytest.approx(1_000.0)
 
 
+def test_intraday_morning_observed_anchor_cap_vetoes_confirmed_explosive_ramp():
+    target = date(2026, 7, 8)
+    forecasts = _make_forecasts(target, 30_000.0)
+    for hour, value in {
+        8: 32_247.9,
+        9: 35_217.9,
+        10: 36_672.5,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 6, 24_480.0),
+        _actual_point(target, 7, 27_380.0),
+        _actual_point(target, 8, 31_810.0),
+    ]
+    inference_features = pd.DataFrame([
+        {"hour": 8, "is_non_business_day": 0},
+        {
+            "hour": 9,
+            "is_non_business_day": 0,
+            "lag_24h_hourly_delta": 2_980.0,
+            "recent_same_business_type_delta_mean": 2_965.0,
+        },
+        {
+            "hour": 10,
+            "is_non_business_day": 0,
+            "lag_24h_hourly_delta": 460.0,
+            "recent_same_business_type_delta_mean": 677.5,
+        },
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "morning_observed_anchor_cap": {
+                "enabled": True,
+                "business_day_only": True,
+                "target_hours": [9, 10],
+                "min_reference_hour": 8,
+                "max_reference_hour": 12,
+                "max_lead_hours": 4,
+                "min_latest_overforecast_mw": 400.0,
+                "cap_buffer_mw": 0.0,
+                "shrinkage": 1.0,
+                "max_reduction_mw": 1_000.0,
+                "min_reduction_mw": 100.0,
+                "ramp_veto": {
+                    "enabled": True,
+                    "min_latest_slope_mw": 3_000.0,
+                    "min_mean_slope_mw": 3_000.0,
+                    "min_cumulative_support_mw": 2_500.0,
+                    "max_latest_overforecast_mw": 650.0,
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.morning_observed_anchor_cap_applied is False
+    assert result.morning_observed_anchor_cap_max_reduction_mw == pytest.approx(0.0)
+    assert result.forecasts[9].forecast_mw == pytest.approx(35_217.9)
+    assert result.forecasts[10].forecast_mw == pytest.approx(36_672.5)
+
+
 def test_intraday_afternoon_observed_anchor_cap_damps_supported_plateau_overhang():
     target = date(2026, 6, 9)
     forecasts = _make_forecasts(target, 30_000.0)

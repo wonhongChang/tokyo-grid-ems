@@ -305,6 +305,12 @@ intraday_correction:
     shrinkage: 1.0
     max_reduction_mw: 1000
     min_reduction_mw: 100
+    ramp_veto:
+      enabled: true
+      min_latest_slope_mw: 3000 # avoid capping a confirmed explosive same-day ramp
+      min_mean_slope_mw: 3000
+      min_cumulative_support_mw: 2500
+      max_latest_overforecast_mw: 650 # allow only modest latest misses to be vetoed
   afternoon_observed_anchor_cap:
     enabled: true
     business_day_only: false

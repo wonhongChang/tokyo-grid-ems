@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-07
 
+- [2026-07-09 朝 anchor cap ramp veto](model-improvement-2026-07-09-morning-anchor-cap-ramp-veto.md)
 - [2026-07-08 営業日の昼・夕方 shape 制御補強](model-improvement-2026-07-08-business-day-midday-and-evening-shape.md)
 - [2026-07-06 週末 positive-tail lift と17時減衰](model-improvement-2026-07-06-weekend-positive-tail-and-evening-damping.md)
 - [2026-07-03 朝のスパイクと夜間 floor 減衰](model-improvement-2026-07-03-morning-spike-and-evening-floor-damping.md)

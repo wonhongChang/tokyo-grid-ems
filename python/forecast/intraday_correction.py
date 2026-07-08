@@ -1393,6 +1393,36 @@ class IntradayResidualCorrector:
             float(morning_anchor_config.get("min_reduction_mw", 100.0)),
             0.0,
         )
+        morning_anchor_ramp_veto_config = morning_anchor_config.get("ramp_veto", {})
+        self._morning_anchor_ramp_veto_enabled = bool(
+            morning_anchor_ramp_veto_config.get("enabled", False)
+        )
+        self._morning_anchor_ramp_veto_min_latest_slope_mw = max(
+            float(morning_anchor_ramp_veto_config.get("min_latest_slope_mw", 3000.0)),
+            0.0,
+        )
+        self._morning_anchor_ramp_veto_min_mean_slope_mw = max(
+            float(morning_anchor_ramp_veto_config.get("min_mean_slope_mw", 3000.0)),
+            0.0,
+        )
+        self._morning_anchor_ramp_veto_min_cumulative_support_mw = max(
+            float(
+                morning_anchor_ramp_veto_config.get(
+                    "min_cumulative_support_mw",
+                    2500.0,
+                )
+            ),
+            0.0,
+        )
+        self._morning_anchor_ramp_veto_max_latest_overforecast_mw = max(
+            float(
+                morning_anchor_ramp_veto_config.get(
+                    "max_latest_overforecast_mw",
+                    650.0,
+                )
+            ),
+            0.0,
+        )
         afternoon_anchor_config = correction_config.get(
             "afternoon_observed_anchor_cap",
             {},
@@ -3516,10 +3546,34 @@ class IntradayResidualCorrector:
                 if _is_nonworking_day(forecast_ts):
                     return None
 
+        recent_slopes: list[float] = []
+        if self._morning_anchor_ramp_veto_enabled:
+            required_hours = [
+                last_observed_hour - 2,
+                last_observed_hour - 1,
+                last_observed_hour,
+            ]
+            if all(hour in actual_mw_by_hour for hour in required_hours):
+                actual_values = [actual_mw_by_hour[hour] for hour in required_hours]
+                recent_slopes = [
+                    float(actual_values[index] - actual_values[index - 1])
+                    for index in range(1, len(actual_values))
+                ]
+
         return {
             "lastObservedHour": last_observed_hour,
             "lastActualMw": round(actual_mw_by_hour[last_observed_hour], 1),
             "latestResidualMw": round(latest_residual, 1),
+            "latestSlopeMw": (
+                round(float(recent_slopes[-1]), 1)
+                if recent_slopes
+                else None
+            ),
+            "meanSlopeMw": (
+                round(float(np.mean(recent_slopes)), 1)
+                if recent_slopes
+                else None
+            ),
         }
 
     def _morning_observed_anchor_cap_reduction(
@@ -3567,6 +3621,25 @@ class IntradayResidualCorrector:
             if not support_candidates:
                 return None
             cumulative_support_mw += max(support_candidates)
+
+        latest_slope_mw = self._finite_float(context.get("latestSlopeMw"))
+        mean_slope_mw = self._finite_float(context.get("meanSlopeMw"))
+        latest_residual_mw = self._finite_float(context.get("latestResidualMw"))
+        if (
+            self._morning_anchor_ramp_veto_enabled
+            and latest_slope_mw is not None
+            and mean_slope_mw is not None
+            and latest_residual_mw is not None
+            and latest_slope_mw
+            >= self._morning_anchor_ramp_veto_min_latest_slope_mw
+            and mean_slope_mw
+            >= self._morning_anchor_ramp_veto_min_mean_slope_mw
+            and cumulative_support_mw
+            >= self._morning_anchor_ramp_veto_min_cumulative_support_mw
+            and -latest_residual_mw
+            <= self._morning_anchor_ramp_veto_max_latest_overforecast_mw
+        ):
+            return None
 
         cap_mw = (
             float(context["lastActualMw"])
