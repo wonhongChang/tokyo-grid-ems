@@ -279,6 +279,7 @@ Raw LightGBM Forecast
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 비영업일 예측선이 안정적인 당일 plateau 아래로 밀렸을 때 되돌릴 수 있는 최대치입니다. 올리면 토요일 plateau 보호가 강해지지만 실제 하락을 늦게 반영할 수 있습니다. |
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 최신 실측 plateau보다 어느 정도 낮아져야 floor가 개입할지 정하는 버퍼입니다. 낮추면 더 빨리 개입하고, 높이면 명확한 undercut에서만 작동합니다. |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 저녁 하락 국면에서 국소 rebound뿐 아니라 높은 레벨로 버티는 overhang도 제한합니다. 더운 저녁의 실제 수요까지 누르는 경우에만 비활성화를 검토합니다. |
+| intraday | `ramp_guard.observed_drop_relaxation.decline_support` | enabled | 실측 수요가 이미 하락 중이고 대상 시간의 lag/recent delta가 모두 강한 하락을 지지할 때만 마지막 drop cap을 더 넓게 허용합니다. cap을 올리면 저녁 급락을 더 보존하고, 낮추면 직전 실측 레벨에 더 가깝게 유지합니다. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 영업일 복귀 anchor 리프트 전에 예측 램프가 최근 같은 영업 타입 램프보다 충분히 부족한지 확인합니다. 낮추면 더 자주 올리고, 높이면 이미 건강한 raw shape를 과하게 돕는 위험을 줄입니다. |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday 보정 전에 근거 없는 단일 오후 피크를 줄일 수 있는 최대치입니다. 올리면 artifact 제거가 강해지고, 내리면 raw/analog 피크 shape를 더 보존합니다. |
 | post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | 양쪽 이웃 시간보다 이 값 이상 높을 때만 guard를 평가합니다. 낮추면 작은 artifact도 잡지만 실제 국소 피크를 건드릴 수 있습니다. |

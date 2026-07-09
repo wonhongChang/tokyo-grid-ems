@@ -5086,6 +5086,157 @@ def test_intraday_ramp_guard_still_caps_extreme_observed_drop():
     assert result.forecasts[20].forecast_mw == pytest.approx(26_980.0)
 
 
+def test_intraday_ramp_guard_relaxes_drop_cap_when_target_shape_supports_decline():
+    target = date(2026, 7, 9)
+    forecasts = _make_forecasts(target, 37_350.0)
+    forecasts[20] = HourlyForecast(
+        ts=f"{target.isoformat()}T20:00:00+09:00",
+        forecast_mw=35_000.0,
+        p95_lower_mw=34_500.0,
+        p95_upper_mw=35_500.0,
+        p99_lower_mw=34_200.0,
+        p99_upper_mw=35_800.0,
+    )
+    forecasts[21] = HourlyForecast(
+        ts=f"{target.isoformat()}T21:00:00+09:00",
+        forecast_mw=31_900.0,
+        p95_lower_mw=31_400.0,
+        p95_upper_mw=32_400.0,
+        p99_lower_mw=31_100.0,
+        p99_upper_mw=32_700.0,
+    )
+    actual_series = [
+        _actual_point(target, 17, 39_520.0),
+        _actual_point(target, 18, 38_643.0),
+        _actual_point(target, 19, 37_350.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": hour,
+            "is_non_business_day": 0,
+            "lag_24h_hourly_delta": -200.0,
+            "recent_same_business_type_delta_mean": -200.0,
+        }
+        for hour in range(24)
+    ])
+    inference_features.loc[
+        inference_features["hour"] == 21,
+        ["lag_24h_hourly_delta", "recent_same_business_type_delta_mean"],
+    ] = [-1_940.0, -1_667.5]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "decay_per_hour": 1.0,
+            "shape_guard": {"enabled": False},
+            "ramp_guard": {
+                "enabled": True,
+                "min_reference_hour": 10,
+                "max_lead_hours": 3,
+                "max_increase_mw_by_lead_hour": [1800, 2400, 3000],
+                "max_decrease_mw_by_lead_hour": [1600, 2600, 3600],
+                "observed_drop_relaxation": {
+                    "enabled": True,
+                    "min_recent_drop_mw": 700,
+                    "lookback_hours": 2,
+                    "skip_shape_guard": True,
+                    "max_decrease_mw_by_lead_hour": [1600, 2800, 4200],
+                    "decline_support": {
+                        "enabled": True,
+                        "business_day_only": True,
+                        "min_lead_hours": 2,
+                        "max_support_delta_mw": -1000,
+                        "max_decrease_mw_by_lead_hour": [1600, 4000, 5600],
+                    },
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.observed_drop_relaxation_active is True
+    assert result.ramp_guard_applied is True
+    assert result.ramp_guard_decline_support_relaxation_applied is True
+    assert "ramp_guard_decline_support_relaxation" in result.applied_regime_reason
+    assert result.ramp_guard_decline_support_relaxation_max_extra_drop_mw == pytest.approx(1_200.0)
+    assert result.forecasts[20].forecast_mw == pytest.approx(35_750.0)
+    assert result.forecasts[21].forecast_mw == pytest.approx(33_350.0)
+    assert result.metadata()["rampGuardDeclineSupportRelaxationApplied"] is True
+
+
+def test_intraday_ramp_guard_keeps_drop_cap_without_decline_shape_support():
+    target = date(2026, 7, 9)
+    forecasts = _make_forecasts(target, 37_350.0)
+    forecasts[21] = HourlyForecast(
+        ts=f"{target.isoformat()}T21:00:00+09:00",
+        forecast_mw=31_900.0,
+        p95_lower_mw=31_400.0,
+        p95_upper_mw=32_400.0,
+        p99_lower_mw=31_100.0,
+        p99_upper_mw=32_700.0,
+    )
+    actual_series = [
+        _actual_point(target, 17, 39_520.0),
+        _actual_point(target, 18, 38_643.0),
+        _actual_point(target, 19, 37_350.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": hour,
+            "is_non_business_day": 0,
+            "lag_24h_hourly_delta": -300.0,
+            "recent_same_business_type_delta_mean": -300.0,
+        }
+        for hour in range(24)
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "decay_per_hour": 1.0,
+            "shape_guard": {"enabled": False},
+            "ramp_guard": {
+                "enabled": True,
+                "min_reference_hour": 10,
+                "max_lead_hours": 3,
+                "max_increase_mw_by_lead_hour": [1800, 2400, 3000],
+                "max_decrease_mw_by_lead_hour": [1600, 2600, 3600],
+                "observed_drop_relaxation": {
+                    "enabled": True,
+                    "min_recent_drop_mw": 700,
+                    "lookback_hours": 2,
+                    "skip_shape_guard": True,
+                    "max_decrease_mw_by_lead_hour": [1600, 2800, 4200],
+                    "decline_support": {
+                        "enabled": True,
+                        "business_day_only": True,
+                        "min_lead_hours": 2,
+                        "max_support_delta_mw": -1000,
+                        "max_decrease_mw_by_lead_hour": [1600, 4000, 5600],
+                    },
+                },
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.observed_drop_relaxation_active is True
+    assert result.ramp_guard_decline_support_relaxation_applied is False
+    assert result.forecasts[21].forecast_mw == pytest.approx(34_550.0)
+
+
 def test_intraday_correction_does_not_mark_applied_after_final_hour():
     target = date(2026, 5, 11)
     forecasts = _make_forecasts(target, 20_000.0)

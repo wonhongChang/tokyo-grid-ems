@@ -375,6 +375,12 @@ intraday_correction:
       lookback_hours: 2
       skip_shape_guard: true
       max_decrease_mw_by_lead_hour: [1600, 2800, 4200]
+      decline_support:
+        enabled: true
+        business_day_only: true
+        min_lead_hours: 2
+        max_support_delta_mw: -1000 # require lag/recent shape to support a steep evening decline
+        max_decrease_mw_by_lead_hour: [1600, 4000, 5600]
 
 forecast_snapshots:
   enabled: true

@@ -129,6 +129,13 @@ def load_config(config_path: Path) -> dict:
                     "lookback_hours": 2,
                     "skip_shape_guard": True,
                     "max_decrease_mw_by_lead_hour": [2000, 3600, 5000],
+                    "decline_support": {
+                        "enabled": True,
+                        "business_day_only": True,
+                        "min_lead_hours": 2,
+                        "max_support_delta_mw": -1000,
+                        "max_decrease_mw_by_lead_hour": [2000, 4800, 6500],
+                    },
                 },
             },
         },

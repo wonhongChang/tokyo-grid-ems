@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-07
 
+- [2026-07-10 evening drop ramp-cap relaxation](model-improvement-2026-07-10-evening-drop-ramp-cap-relaxation.md)
 - [2026-07-09 morning anchor cap ramp veto](model-improvement-2026-07-09-morning-anchor-cap-ramp-veto.md)
 - [2026-07-08 business-day midday and evening shape controls](model-improvement-2026-07-08-business-day-midday-and-evening-shape.md)
 - [2026-07-06 weekend positive-tail lift and 17:00 damping](model-improvement-2026-07-06-weekend-positive-tail-and-evening-damping.md)

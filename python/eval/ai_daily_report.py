@@ -69,6 +69,7 @@ FEATURE_CATALOG = [
     "intraday_correction.morning_observed_ramp_floor",
     "intraday_correction.non_business_evening_positive_residual_damping",
     "intraday_correction.non_business_evening_negative_residual_damping",
+    "intraday_correction.ramp_guard_decline_support_relaxation",
     "intraday_correction.daytime_sustained_underforecast_lift",
     "intraday_correction.negative_residual_recovery_damping",
     "intraday_correction.negative_residual_continuity_floor",
@@ -94,6 +95,7 @@ FEATURE_NAME_ALIASES = {
     "morning_observed_ramp_floor": "intraday_correction.morning_observed_ramp_floor",
     "non_business_evening_positive_residual_damping": "intraday_correction.non_business_evening_positive_residual_damping",
     "non_business_evening_negative_residual_damping": "intraday_correction.non_business_evening_negative_residual_damping",
+    "ramp_guard_decline_support_relaxation": "intraday_correction.ramp_guard_decline_support_relaxation",
     "daytime_sustained_underforecast_lift": "intraday_correction.daytime_sustained_underforecast_lift",
     "non_business_analog_downshift_guard": "adjustment.non_business_analog_downshift_guard",
     "non_business_morning_shape_floor_guard": "adjustment.non_business_morning_shape_floor_guard",
@@ -1798,6 +1800,12 @@ def _compact_residual_carryover_item(item: dict | None) -> dict | None:
         "eveningDeclineContinuityCapMw": _round_number(
             item.get("eveningDeclineContinuityCapMw")
         ),
+        "rampGuardDeclineSupportRelaxationApplied": item.get(
+            "rampGuardDeclineSupportRelaxationApplied"
+        ),
+        "rampGuardDeclineSupportRelaxationMaxExtraDropMw": _round_number(
+            item.get("rampGuardDeclineSupportRelaxationMaxExtraDropMw")
+        ),
         "finalAdjustmentMw": _round_number(item.get("finalAdjustmentMw")),
     }
     return {key: value for key, value in compact.items() if value is not None}
@@ -2851,6 +2859,8 @@ def _build_controller_diagnosis(
         flags.append("nonBusinessEveningNegativeResidualDampingApplied")
     if correction.get("eveningDeclineContinuityGuardApplied"):
         flags.append("eveningDeclineContinuityGuardApplied")
+    if correction.get("rampGuardDeclineSupportRelaxationApplied"):
+        flags.append("rampGuardDeclineSupportRelaxationApplied")
     if correction.get("morningRampContinuityGuardApplied"):
         flags.append("morningRampContinuityGuardApplied")
     if correction.get("negativeResidualContinuityFloorApplied"):
@@ -2935,6 +2945,12 @@ def _build_controller_diagnosis(
             "eveningDeclineContinuityGuardApplied": correction.get("eveningDeclineContinuityGuardApplied"),
             "eveningDeclineContinuityMaxReductionMw": _round_number(
                 correction.get("eveningDeclineContinuityMaxReductionMw")
+            ),
+            "rampGuardDeclineSupportRelaxationApplied": correction.get(
+                "rampGuardDeclineSupportRelaxationApplied"
+            ),
+            "rampGuardDeclineSupportRelaxationMaxExtraDropMw": _round_number(
+                correction.get("rampGuardDeclineSupportRelaxationMaxExtraDropMw")
             ),
         }),
         "flags": flags,
@@ -3367,6 +3383,12 @@ def _build_control_context(
             "applied": correction.get("eveningDeclineContinuityGuardApplied"),
             "maxReducedMw": _round_number(
                 correction.get("eveningDeclineContinuityMaxReductionMw")
+            ),
+        }),
+        "rampGuardDeclineSupportRelaxation": _drop_none_values({
+            "applied": correction.get("rampGuardDeclineSupportRelaxationApplied"),
+            "maxExtraDropMw": _round_number(
+                correction.get("rampGuardDeclineSupportRelaxationMaxExtraDropMw")
             ),
         }),
         "businessTypeTransition": _drop_none_values({

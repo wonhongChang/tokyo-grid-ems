@@ -202,12 +202,12 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
-- [2026-06-28 週末の湿度ベース日中リフト](docs/ja/model-improvements/model-improvement-2026-06-28-weekend-humid-daytime-lift.md)
-- [2026-06-26 営業日 anchor cap の再調整](docs/ja/model-improvements/model-improvement-2026-06-26-business-day-anchor-cap-retuning.md)
-- [2026-06-22 日中 shape 連鎖ガード](docs/ja/model-improvements/model-improvement-2026-06-22-daytime-shape-chain-guards.md)
-- [2026-06-21 非営業日の shape と夕方 carryover](docs/ja/model-improvements/model-improvement-2026-06-21-non-business-shape-and-evening-carryover.md)
-- [2026-06-20 非営業日の prior と plateau ガード](docs/ja/model-improvements/model-improvement-2026-06-20-non-business-prior-and-plateau-guards.md)
-- [2026-06-19 昼間の継続的な過少予測リフト](docs/ja/model-improvements/model-improvement-2026-06-19-daytime-sustained-underforecast-lift.md)
+- [2026-07-10 夕方下落局面の ramp cap 緩和](docs/ja/model-improvements/model-improvement-2026-07-10-evening-drop-ramp-cap-relaxation.md)
+- [2026-07-09 朝 anchor cap ramp veto](docs/ja/model-improvements/model-improvement-2026-07-09-morning-anchor-cap-ramp-veto.md)
+- [2026-07-08 営業日の昼・夕方 shape 制御補強](docs/ja/model-improvements/model-improvement-2026-07-08-business-day-midday-and-evening-shape.md)
+- [2026-07-06 週末 positive-tail lift と17時減衰](docs/ja/model-improvements/model-improvement-2026-07-06-weekend-positive-tail-and-evening-damping.md)
+- [2026-07-03 朝のスパイクと夜間 floor 減衰](docs/ja/model-improvements/model-improvement-2026-07-03-morning-spike-and-evening-floor-damping.md)
+- [2026-07-01 高温多湿の営業日 plateau と夜間 tail 減衰](docs/ja/model-improvements/model-improvement-2026-07-01-hot-business-plateau-and-late-tail-damping.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 

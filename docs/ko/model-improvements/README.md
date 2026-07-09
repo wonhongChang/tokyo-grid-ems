@@ -8,6 +8,7 @@
 
 ## 2026-07
 
+- [2026-07-10 저녁 하락 구간 ramp cap 완화](model-improvement-2026-07-10-evening-drop-ramp-cap-relaxation.md)
 - [2026-07-09 오전 anchor cap ramp veto](model-improvement-2026-07-09-morning-anchor-cap-ramp-veto.md)
 - [2026-07-08 영업일 점심/저녁 shape 제어 보강](model-improvement-2026-07-08-business-day-midday-and-evening-shape.md)
 - [2026-07-06 주말 positive-tail lift와 17시 감쇠](model-improvement-2026-07-06-weekend-positive-tail-and-evening-damping.md)

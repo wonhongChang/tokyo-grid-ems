@@ -69,6 +69,8 @@ class IntradayCorrectionResult:
     non_business_evening_negative_residual_damping_applied: bool = False
     non_business_evening_negative_residual_damping_factor: float = 1.0
     non_business_evening_negative_residual_damping_max_mw: float = 0.0
+    ramp_guard_decline_support_relaxation_applied: bool = False
+    ramp_guard_decline_support_relaxation_max_extra_drop_mw: float = 0.0
     early_observed_residual_carryover_applied: bool = False
     early_observed_residual_carryover_mw: float = 0.0
     early_observed_residual_count: int = 0
@@ -253,6 +255,13 @@ class IntradayCorrectionResult:
             ),
             "nonBusinessEveningNegativeResidualDampingMaxMw": round(
                 float(self.non_business_evening_negative_residual_damping_max_mw),
+                1,
+            ),
+            "rampGuardDeclineSupportRelaxationApplied": (
+                self.ramp_guard_decline_support_relaxation_applied
+            ),
+            "rampGuardDeclineSupportRelaxationMaxExtraDropMw": round(
+                float(self.ramp_guard_decline_support_relaxation_max_extra_drop_mw),
                 1,
             ),
             "residualCarryoverByHour": list(self.residual_adjustments_by_hour),
@@ -1635,6 +1644,27 @@ class IntradayResidualCorrector:
         self._observed_drop_decrease_caps = [
             float(value) for value in observed_drop_caps
         ] or [2000.0, 3600.0, 5000.0]
+        decline_support_config = observed_drop_config.get("decline_support", {})
+        self._observed_drop_decline_support_enabled = bool(
+            decline_support_config.get("enabled", False)
+        )
+        self._observed_drop_decline_support_business_day_only = bool(
+            decline_support_config.get("business_day_only", True)
+        )
+        self._observed_drop_decline_support_min_lead_hours = max(
+            int(decline_support_config.get("min_lead_hours", 2)),
+            1,
+        )
+        self._observed_drop_decline_support_max_delta_mw = float(
+            decline_support_config.get("max_support_delta_mw", -1_000.0)
+        )
+        decline_support_caps = decline_support_config.get(
+            "max_decrease_mw_by_lead_hour",
+            [2000, 4800, 6500],
+        )
+        self._observed_drop_decline_support_decrease_caps = [
+            float(value) for value in decline_support_caps
+        ] or [2000.0, 4800.0, 6500.0]
 
     def _ramp_guard_cap_for_lead(self, lead_hours: int) -> float:
         cap_index = min(max(lead_hours, 1), len(self._ramp_guard_increase_caps)) - 1
@@ -1644,12 +1674,56 @@ class IntradayResidualCorrector:
         self,
         lead_hours: int,
         observed_drop_relaxation_active: bool,
+        decline_support_relaxation_active: bool = False,
     ) -> float:
         caps = self._ramp_guard_decrease_caps
         if observed_drop_relaxation_active:
             caps = self._observed_drop_decrease_caps
+            if decline_support_relaxation_active:
+                support_index = (
+                    min(
+                        max(lead_hours, 1),
+                        len(self._observed_drop_decline_support_decrease_caps),
+                    )
+                    - 1
+                )
+                support_cap = self._observed_drop_decline_support_decrease_caps[
+                    support_index
+                ]
+                regular_index = min(max(lead_hours, 1), len(caps)) - 1
+                return max(float(caps[regular_index]), float(support_cap))
         cap_index = min(max(lead_hours, 1), len(caps)) - 1
         return caps[cap_index]
+
+    def _ramp_guard_decline_support_active(
+        self,
+        inference_features: pd.DataFrame | None,
+        forecast_hour: int,
+        lead_hours: int,
+    ) -> bool:
+        if (
+            not self._observed_drop_decline_support_enabled
+            or lead_hours < self._observed_drop_decline_support_min_lead_hours
+        ):
+            return False
+
+        row = self._feature_row_for_hour(inference_features, forecast_hour)
+        if row is None:
+            return False
+        if self._observed_drop_decline_support_business_day_only:
+            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
+            if is_non_business_day == 1.0:
+                return False
+
+        lag_delta_mw = self._finite_float(row.get("lag_24h_hourly_delta"))
+        same_business_delta_mw = self._finite_float(
+            row.get("recent_same_business_type_delta_mean")
+        )
+        if lag_delta_mw is None or same_business_delta_mw is None:
+            return False
+
+        support_delta_mw = max(lag_delta_mw, same_business_delta_mw)
+        return support_delta_mw <= self._observed_drop_decline_support_max_delta_mw
 
     def _is_observed_drop_relaxation_active(
         self,
@@ -4253,17 +4327,20 @@ class IntradayResidualCorrector:
         last_observed_hour: int | None,
         last_observed_mw: float | None,
         observed_drop_relaxation_active: bool,
-    ) -> tuple[list[HourlyForecast], bool]:
+        inference_features: pd.DataFrame | None = None,
+    ) -> tuple[list[HourlyForecast], bool, bool, float]:
         if (
             not self._ramp_guard_enabled
             or last_observed_hour is None
             or last_observed_mw is None
             or last_observed_hour < self._ramp_guard_min_reference_hour
         ):
-            return forecasts, False
+            return forecasts, False, False, 0.0
 
         guarded: list[HourlyForecast] = []
         changed = False
+        decline_support_relaxation_applied = False
+        decline_support_extra_drop_values: list[float] = []
         for forecast in forecasts:
             forecast_hour = pd.Timestamp(forecast.ts).hour
             lead_hours = forecast_hour - last_observed_hour
@@ -4272,20 +4349,56 @@ class IntradayResidualCorrector:
                 continue
 
             max_forecast_mw = last_observed_mw + self._ramp_guard_cap_for_lead(lead_hours)
-            min_forecast_mw = last_observed_mw - self._ramp_guard_drop_cap_for_lead(
+            regular_drop_cap_mw = self._ramp_guard_drop_cap_for_lead(
                 lead_hours,
                 observed_drop_relaxation_active,
+                False,
             )
+            decline_support_active = (
+                observed_drop_relaxation_active
+                and self._ramp_guard_decline_support_active(
+                    inference_features,
+                    forecast_hour,
+                    lead_hours,
+                )
+            )
+            drop_cap_mw = self._ramp_guard_drop_cap_for_lead(
+                lead_hours,
+                observed_drop_relaxation_active,
+                decline_support_active,
+            )
+            min_forecast_mw = last_observed_mw - drop_cap_mw
             if min_forecast_mw <= forecast.forecast_mw <= max_forecast_mw:
+                if (
+                    decline_support_active
+                    and forecast.forecast_mw < last_observed_mw - regular_drop_cap_mw
+                ):
+                    decline_support_relaxation_applied = True
+                    decline_support_extra_drop_values.append(
+                        drop_cap_mw - regular_drop_cap_mw
+                    )
                 guarded.append(forecast)
                 continue
 
             target_mw = min(max(forecast.forecast_mw, min_forecast_mw), max_forecast_mw)
 
+            if (
+                decline_support_active
+                and forecast.forecast_mw < last_observed_mw - regular_drop_cap_mw
+            ):
+                decline_support_relaxation_applied = True
+                decline_support_extra_drop_values.append(
+                    max(0.0, (last_observed_mw - regular_drop_cap_mw) - target_mw)
+                )
             guarded.append(self._shift_forecast(forecast, target_mw - forecast.forecast_mw))
             changed = True
 
-        return guarded, changed
+        return (
+            guarded,
+            changed,
+            decline_support_relaxation_applied,
+            round(max(decline_support_extra_drop_values or [0.0]), 1),
+        )
 
     def apply(
         self,
@@ -4444,12 +4557,20 @@ class IntradayResidualCorrector:
                 last_observed_hour,
                 observed_drop_relaxation_active,
             )
-            ramp_guarded_forecasts, ramp_guard_applied = self._apply_ramp_guard(
+            (
+                ramp_guarded_forecasts,
+                ramp_guard_applied,
+                ramp_decline_support_applied,
+                ramp_decline_support_max_extra_drop_mw,
+            ) = self._apply_ramp_guard(
                 shape_guarded_forecasts,
                 last_observed_hour,
                 last_observed_mw,
                 observed_drop_relaxation_active,
+                inference_features,
             )
+            if ramp_decline_support_applied:
+                applied_reasons.append("ramp_guard_decline_support_relaxation")
             return IntradayCorrectionResult(
                 ramp_guarded_forecasts,
                 bool(
@@ -4488,6 +4609,12 @@ class IntradayResidualCorrector:
                 pre_observation_prior_stack_cap_applied=prior_stack_cap_applied,
                 pre_observation_prior_stack_cap_max_restore_mw=(
                     prior_stack_cap_restore_mw
+                ),
+                ramp_guard_decline_support_relaxation_applied=(
+                    ramp_decline_support_applied
+                ),
+                ramp_guard_decline_support_relaxation_max_extra_drop_mw=(
+                    ramp_decline_support_max_extra_drop_mw
                 ),
             )
 
@@ -5848,12 +5975,20 @@ class IntradayResidualCorrector:
             observed_drop_relaxation_active,
         )
 
-        adjusted_forecasts, ramp_guard_applied = self._apply_ramp_guard(
+        (
+            adjusted_forecasts,
+            ramp_guard_applied,
+            ramp_decline_support_applied,
+            ramp_decline_support_max_extra_drop_mw,
+        ) = self._apply_ramp_guard(
             adjusted_forecasts,
             last_observed_hour,
             last_observed_mw,
             observed_drop_relaxation_active,
+            inference_features,
         )
+        if ramp_decline_support_applied:
+            applied_reasons.append("ramp_guard_decline_support_relaxation")
 
         return IntradayCorrectionResult(
             adjusted_forecasts,
@@ -5937,6 +6072,12 @@ class IntradayResidualCorrector:
             daytime_sustained_underforecast_max_lift_mw=round(
                 max(daytime_underforecast_lift_values or [0.0]),
                 1,
+            ),
+            ramp_guard_decline_support_relaxation_applied=(
+                ramp_decline_support_applied
+            ),
+            ramp_guard_decline_support_relaxation_max_extra_drop_mw=(
+                ramp_decline_support_max_extra_drop_mw
             ),
             post_lunch_decline_continuity_guard_applied=(
                 post_lunch_decline_guard_applied
