@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-07-11T00:41:00+09:00",
+  "date": "2026-07-10",
+  "availability": "ok",
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "family": "lgbm_quantile_q50"
+  },
+  "summary": {
+    "comparableHours": 21,
+    "modelMaeMw": 389.3,
+    "tepcoMaeMw": 457.1,
+    "modelWapePct": 1.1,
+    "tepcoWapePct": 1.3,
+    "modelRmseMw": 480.8,
+    "tepcoRmseMw": 563.6,
+    "modelMaxErrorMw": 1311.5,
+    "tepcoMaxErrorMw": 990.0,
+    "modelMaxErrorHour": 11,
+    "tepcoMaxErrorHour": 12,
+    "maeGapMw": -67.8,
+    "wapeGapPct": -0.2,
+    "verdict": "close",
+    "modelWins": 11,
+    "tepcoWins": 10,
+    "ties": 0,
+    "modelAdvantageHours": 11,
+    "tepcoAdvantageHours": 10,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.524
+  },
+  "peak": {
+    "actual": {
+      "hour": 14,
+      "actualMw": 43960.0
+    },
+    "model": {
+      "hour": 11,
+      "forecastMw": 44411.5,
+      "errorAtActualPeakMw": 201.5,
+      "timeErrorHours": -3
+    },
+    "tepco": {
+      "hour": 13,
+      "forecastMw": 44820.0,
+      "errorAtActualPeakMw": 820.0,
+      "timeErrorHours": -1
+    }
+  },
+  "timeBands": [
+    {
+      "code": "overnight",
+      "label": "00-05",
+      "hours": 6,
+      "modelMaeMw": 427.0,
+      "tepcoMaeMw": 135.0,
+      "modelBiasMw": -427.0,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "morning_ramp",
+      "label": "06-10",
+      "hours": 5,
+      "modelMaeMw": 433.9,
+      "tepcoMaeMw": 500.0,
+      "modelBiasMw": -55.3,
+      "verdict": "model_better"
+    },
+    {
+      "code": "daytime",
+      "label": "11-15",
+      "hours": 5,
+      "modelMaeMw": 411.7,
+      "tepcoMaeMw": 842.0,
+      "modelBiasMw": 411.7,
+      "verdict": "model_better"
+    },
+    {
+      "code": "late_afternoon",
+      "label": "16-18",
+      "hours": 3,
+      "modelMaeMw": 185.0,
+      "tepcoMaeMw": 336.7,
+      "modelBiasMw": 185.0,
+      "verdict": "model_better"
+    },
+    {
+      "code": "evening",
+      "label": "19-23",
+      "hours": 2,
+      "modelMaeMw": 415.0,
+      "tepcoMaeMw": 535.0,
+      "modelBiasMw": 415.0,
+      "verdict": "model_better"
+    }
+  ],
+  "shape": {
+    "transitionHours": 20,
+    "modelDeltaMaeMw": 322.6,
+    "tepcoDeltaMaeMw": 264.0,
+    "maxActualRiseMw": 5330.0,
+    "maxActualDropMw": -2030.0,
+    "maxModelRiseMw": 5601.5,
+    "maxModelDropMw": -2084.9,
+    "largestDeltaMiss": {
+      "fromHour": 11,
+      "toHour": 12,
+      "actualDeltaMw": -300.0,
+      "modelDeltaMw": -1591.5,
+      "tepcoDeltaMw": -230.0,
+      "modelDeltaErrorMw": -1291.5,
+      "tepcoDeltaErrorMw": 70.0,
+      "modelAbsDeltaErrorMw": 1291.5,
+      "tepcoAbsDeltaErrorMw": 70.0
+    },
+    "largeShapeBreaks": []
+  },
+  "topMisses": [
+    {
+      "hour": 11,
+      "actualMw": 43100.0,
+      "modelForecastMw": 44411.5,
+      "tepcoForecastMw": 44020.0,
+      "modelErrorMw": 1311.5,
+      "tepcoErrorMw": 920.0,
+      "modelAbsErrorMw": 1311.5,
+      "tepcoAbsErrorMw": 920.0
+    },
+    {
+      "hour": 0,
+      "actualMw": 27070.0,
+      "modelForecastMw": 26357.6,
+      "tepcoForecastMw": 27110.0,
+      "modelErrorMw": -712.4,
+      "tepcoErrorMw": 40.0,
+      "modelAbsErrorMw": 712.4,
+      "tepcoAbsErrorMw": 40.0
+    },
+    {
+      "hour": 2,
+      "actualMw": 24720.0,
+      "modelForecastMw": 24050.9,
+      "tepcoForecastMw": 24810.0,
+      "modelErrorMw": -669.1,
+      "tepcoErrorMw": 90.0,
+      "modelAbsErrorMw": 669.1,
+      "tepcoAbsErrorMw": 90.0
+    }
+  ],
+  "insights": [
+    {
+      "code": "large_single_hour_miss",
+      "severity": "warning",
+      "title": "One or more hours had a large model error.",
+      "evidence": {
+        "hour": 11,
+        "modelAbsErrorMw": 1311.5
+      }
+    },
+    {
+      "code": "peak_timing_miss",
+      "severity": "warning",
+      "title": "The model peak occurred at a different hour than the actual peak.",
+      "evidence": {
+        "timeErrorHours": -3
+      }
+    }
+  ]
+}
