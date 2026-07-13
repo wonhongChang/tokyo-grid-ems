@@ -206,7 +206,10 @@ intraday_correction:
     min_recent_slope_mw: 1200  # require observed same-day ramp evidence
     min_mean_slope_mw: 1200
     floor_slope_fraction: 0.85
-    non_business_floor_slope_fraction: 0.35 # weekend ramps are real but less commuter-like
+    non_business_min_latest_slope_mw: 2000 # allow late-start weekend ramps once the latest observed jump is clear
+    non_business_min_mean_slope_mw: 1200
+    non_business_floor_basis: latest
+    non_business_floor_slope_fraction: 1.0 # still capped by support and non_business_max_lift_mw
     max_floor_delta_mw: 2200
     max_lift_mw: 1200
     non_business_max_lift_mw: 700

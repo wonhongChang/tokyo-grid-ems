@@ -941,6 +941,26 @@ class IntradayResidualCorrector:
             ),
             0.0,
         )
+        self._morning_observed_ramp_non_business_min_latest_slope_mw = float(
+            morning_observed_ramp_config.get(
+                "non_business_min_latest_slope_mw",
+                self._morning_observed_ramp_min_slope_mw,
+            )
+        )
+        self._morning_observed_ramp_non_business_min_mean_slope_mw = float(
+            morning_observed_ramp_config.get(
+                "non_business_min_mean_slope_mw",
+                self._morning_observed_ramp_min_mean_slope_mw,
+            )
+        )
+        non_business_floor_basis = str(
+            morning_observed_ramp_config.get("non_business_floor_basis", "mean")
+        ).strip().lower()
+        self._morning_observed_ramp_non_business_floor_basis = (
+            non_business_floor_basis
+            if non_business_floor_basis in {"mean", "latest"}
+            else "mean"
+        )
         self._morning_observed_ramp_max_floor_delta_mw = max(
             float(morning_observed_ramp_config.get("max_floor_delta_mw", 2_200.0)),
             0.0,
@@ -3049,18 +3069,34 @@ class IntradayResidualCorrector:
             actual_values[1] - actual_values[0],
             actual_values[2] - actual_values[1],
         ]
-        if min(recent_slopes) < self._morning_observed_ramp_min_slope_mw:
-            return None
+        latest_slope = float(recent_slopes[1])
         mean_slope = float(np.mean(recent_slopes))
-        if mean_slope < self._morning_observed_ramp_min_mean_slope_mw:
-            return None
+        if is_non_business_day:
+            if (
+                latest_slope
+                < self._morning_observed_ramp_non_business_min_latest_slope_mw
+            ):
+                return None
+            if (
+                mean_slope
+                < self._morning_observed_ramp_non_business_min_mean_slope_mw
+            ):
+                return None
+            floor_basis = self._morning_observed_ramp_non_business_floor_basis
+            slope_basis_mw = latest_slope if floor_basis == "latest" else mean_slope
+            floor_slope_fraction = (
+                self._morning_observed_ramp_non_business_floor_slope_fraction
+            )
+        else:
+            if min(recent_slopes) < self._morning_observed_ramp_min_slope_mw:
+                return None
+            if mean_slope < self._morning_observed_ramp_min_mean_slope_mw:
+                return None
+            floor_basis = "mean"
+            slope_basis_mw = mean_slope
+            floor_slope_fraction = self._morning_observed_ramp_floor_slope_fraction
 
-        floor_slope_fraction = (
-            self._morning_observed_ramp_non_business_floor_slope_fraction
-            if is_non_business_day
-            else self._morning_observed_ramp_floor_slope_fraction
-        )
-        floor_delta_mw = mean_slope * floor_slope_fraction
+        floor_delta_mw = slope_basis_mw * floor_slope_fraction
         if self._morning_observed_ramp_max_floor_delta_mw > 0.0:
             floor_delta_mw = min(
                 floor_delta_mw,
@@ -3075,6 +3111,7 @@ class IntradayResidualCorrector:
             "previousSlopeMw": round(recent_slopes[0], 1),
             "latestSlopeMw": round(recent_slopes[1], 1),
             "meanSlopeMw": round(mean_slope, 1),
+            "floorBasis": floor_basis,
             "floorDeltaMw": round(float(floor_delta_mw), 1),
             "isNonBusinessDay": is_non_business_day,
             "maxLiftMw": round(
@@ -3152,6 +3189,7 @@ class IntradayResidualCorrector:
             "previousSlopeMw": context["previousSlopeMw"],
             "latestSlopeMw": context["latestSlopeMw"],
             "meanSlopeMw": context["meanSlopeMw"],
+            "floorBasis": context.get("floorBasis"),
             "floorDeltaMw": round(float(floor_delta_mw), 1),
             "supportDeltaMw": (
                 round(float(support_delta_mw), 1)
@@ -4924,6 +4962,7 @@ class IntradayResidualCorrector:
             morning_observed_ramp_support_delta_mw = None
             morning_observed_ramp_latest_slope_mw = None
             morning_observed_ramp_mean_slope_mw = None
+            morning_observed_ramp_floor_basis = None
             daytime_underforecast_lift_mw = 0.0
             daytime_underforecast_floor_mw = None
             daytime_underforecast_floor_delta_mw = None
@@ -5283,6 +5322,9 @@ class IntradayResidualCorrector:
                 )
                 morning_observed_ramp_mean_slope_mw = (
                     morning_observed_ramp_floor["meanSlopeMw"]
+                )
+                morning_observed_ramp_floor_basis = (
+                    morning_observed_ramp_floor.get("floorBasis")
                 )
                 morning_observed_ramp_floor_applied = True
                 morning_observed_ramp_floor_lift_values.append(lift_mw)
@@ -5676,6 +5718,7 @@ class IntradayResidualCorrector:
                     if morning_observed_ramp_mean_slope_mw is not None
                     else None
                 ),
+                "morningObservedRampFloorBasis": morning_observed_ramp_floor_basis,
                 "daytimeSustainedUnderforecastLiftMw": round(
                     daytime_underforecast_lift_mw,
                     1,

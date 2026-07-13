@@ -3694,6 +3694,164 @@ def test_intraday_weekend_morning_ramp_floor_lifts_observed_non_business_ramp():
     assert result.forecasts[11].forecast_mw == pytest.approx(29_100.0)
 
 
+def test_intraday_weekend_morning_ramp_floor_uses_latest_slope_when_ramp_starts_late():
+    target = date(2026, 7, 11)
+    forecasts = _make_forecasts(target, 24_000.0)
+    for hour, value in {
+        7: 27_495.7,
+        8: 29_198.6,
+        9: 30_995.8,
+        10: 33_573.1,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 5, 24_380.0),
+        _actual_point(target, 6, 24_810.0),
+        _actual_point(target, 7, 27_240.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": hour,
+            "is_non_business_day": 1,
+            "lag_24h_hourly_delta": delta,
+            "recent_same_business_type_delta_mean": recent_delta,
+        }
+        for hour, delta, recent_delta in [
+            (8, 5_390.0, 1_898.8),
+            (9, 4_430.0, 1_925.0),
+            (10, 1_900.0, 1_061.0),
+        ]
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "morning_observed_ramp_floor": {
+                "enabled": True,
+                "business_day_only": False,
+                "target_hours": [8, 9, 10, 11],
+                "min_reference_hour": 7,
+                "max_reference_hour": 10,
+                "max_lead_hours": 2,
+                "min_recent_slope_mw": 1_200.0,
+                "min_mean_slope_mw": 1_200.0,
+                "floor_slope_fraction": 0.85,
+                "non_business_min_latest_slope_mw": 2_000.0,
+                "non_business_min_mean_slope_mw": 1_200.0,
+                "non_business_floor_basis": "latest",
+                "non_business_floor_slope_fraction": 1.0,
+                "max_floor_delta_mw": 2_200.0,
+                "max_lift_mw": 1_200.0,
+                "non_business_max_lift_mw": 700.0,
+                "min_lift_mw": 100.0,
+                "max_latest_overforecast_mw": 500.0,
+                "max_floor_delta_over_support_mw": 0.0,
+                "min_support_delta_mw": 700.0,
+                "support_delta_fraction": 0.5,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.morning_observed_ramp_floor_applied is True
+    assert result.forecasts[8].forecast_mw == pytest.approx(29_440.0)
+    assert result.forecasts[9].forecast_mw == pytest.approx(31_640.0)
+    assert result.forecasts[10].forecast_mw == pytest.approx(33_573.1)
+    ramp_items = [
+        item
+        for item in result.residual_adjustments_by_hour
+        if item.get("morningObservedRampFloorLiftMw", 0.0) > 0.0
+    ]
+    assert [item["hour"] for item in ramp_items] == [8, 9]
+    assert all(item["morningObservedRampFloorBasis"] == "latest" for item in ramp_items)
+
+
+def test_intraday_weekend_morning_ramp_floor_waits_for_strong_latest_slope():
+    target = date(2026, 7, 12)
+    forecasts = _make_forecasts(target, 24_000.0)
+    for hour, value in {
+        7: 26_000.0,
+        8: 27_000.0,
+        9: 29_000.0,
+    }.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    actual_series = [
+        _actual_point(target, 5, 24_120.0),
+        _actual_point(target, 6, 24_610.0),
+        _actual_point(target, 7, 25_830.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": hour,
+            "is_non_business_day": 1,
+            "lag_24h_hourly_delta": delta,
+            "recent_same_business_type_delta_mean": recent_delta,
+        }
+        for hour, delta, recent_delta in [
+            (8, 3_000.0, 2_000.0),
+            (9, 3_500.0, 2_100.0),
+        ]
+    ])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "morning_observed_ramp_floor": {
+                "enabled": True,
+                "business_day_only": False,
+                "target_hours": [8, 9, 10, 11],
+                "min_reference_hour": 7,
+                "max_reference_hour": 10,
+                "max_lead_hours": 2,
+                "min_recent_slope_mw": 1_200.0,
+                "min_mean_slope_mw": 1_200.0,
+                "non_business_min_latest_slope_mw": 2_000.0,
+                "non_business_min_mean_slope_mw": 1_200.0,
+                "non_business_floor_basis": "latest",
+                "non_business_floor_slope_fraction": 1.0,
+                "max_floor_delta_mw": 2_200.0,
+                "non_business_max_lift_mw": 700.0,
+                "min_lift_mw": 100.0,
+                "max_latest_overforecast_mw": 500.0,
+                "max_floor_delta_over_support_mw": 0.0,
+                "min_support_delta_mw": 700.0,
+                "support_delta_fraction": 0.5,
+            },
+        }
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.morning_observed_ramp_floor_applied is False
+    assert result.forecasts[8].forecast_mw == pytest.approx(27_000.0)
+    assert result.forecasts[9].forecast_mw == pytest.approx(29_000.0)
+
+
 def test_intraday_weekend_humid_daytime_underforecast_lifts_plateau_hours():
     target = date(2026, 6, 20)
     forecasts = _make_forecasts(target, 20_000.0)

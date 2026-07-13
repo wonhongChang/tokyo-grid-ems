@@ -256,6 +256,7 @@ Raw LightGBM Forecast
 | intraday | `decay_per_hour` | 0.92 | 高いほどresidualが遠い時間まで残り、低いほど近距離中心になります。shape汚染時は引き下げを検討します。 |
 | intraday | `max_abs_adjustment_mw` | 1200 | 当日residual補正のhard capです。上げると大きなmissに追従しやすい一方、overshootリスクが増えます。 |
 | intraday | `morning_observed_ramp_floor.max_lift_mw` | 1200 | 当日実績のramp証拠が強い場合だけ、08-11時の近距離営業日朝予測を支えます。上げると急なramp過小予測に強くなりますが、一時的な実績急騰を過度に追う可能性があります。 |
+| intraday | `morning_observed_ramp_floor.non_business_floor_basis` | latest | 非営業日の遅いrampでは、最新slopeが2,000 MW以上かつ平均slopeが1,200 MW以上のとき、2区間平均ではなく最新実績slopeをfloor基準にします。週末朝を無条件に上げないよう `non_business_max_lift_mw` は保守的に維持します。 |
 | intraday | `morning_observed_anchor_cap.max_reduction_mw` | 1000 | 当日実績がすでにモデルの過大予測を示し、lag/recent shape が公開予測レベルを説明できない場合に、近い 09-13 時の予測だけを制限します。 |
 | intraday | `morning_observed_anchor_cap.ramp_veto` | enabled | 直近の当日rampが非常に強く、2区間平均rampも強く、shape supportが十分で、直近over-forecastが小さい場合にcapをスキップします。実際の朝ramp-upを守りつつ、深刻な過大予測防御は維持します。 |
 | intraday | `afternoon_observed_anchor_cap.max_reduction_mw` | 1200 | 午後の当日実績が継続的な過大予測を示す場合に、近い 14-16 時の plateau overhang だけを制限します。上げると unsupported daytime plateau に速く反応しますが、実際の午後需要上昇を抑えるリスクがあります。 |
