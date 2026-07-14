@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-07
 
+- [2026-07-14 warm-day lag24 weather allowance](model-improvement-2026-07-14-warm-day-lag24-weather-allowance.md)
 - [2026-07-13 non-business late morning ramp floor](model-improvement-2026-07-13-non-business-late-morning-ramp-floor.md)
 - [2026-07-10 evening drop ramp-cap relaxation](model-improvement-2026-07-10-evening-drop-ramp-cap-relaxation.md)
 - [2026-07-09 morning anchor cap ramp veto](model-improvement-2026-07-09-morning-anchor-cap-ramp-veto.md)

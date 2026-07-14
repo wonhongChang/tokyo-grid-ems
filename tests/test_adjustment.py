@@ -886,6 +886,32 @@ def test_guard_caps_warm_day_forecast_too_far_above_lag24():
     assert result[9].forecast_mw == pytest.approx(38_200.0)
 
 
+def test_guard_relaxes_lag24_cap_when_current_day_is_much_hotter_than_yesterday():
+    """Large 24h cooling deltas should not force a warm business-day ramp below shape."""
+    config = _guard_config(warm_day=True)
+    daytime_config = config["adjustment"]["post_holiday_timeband_guard"]["daytime"]
+    daytime_config["lag24_warm_day_cap_enabled"] = True
+    daytime_config["lag24_warm_day_max_increase_mw"] = 2_500.0
+    daytime_config["lag24_warm_day_weather_allowance_mw_per_c"] = 1_200.0
+    daytime_config["lag24_warm_day_max_weather_allowance_mw"] = 5_000.0
+    guard = PostHolidayTimeBandGuard(config)
+    target = date(2026, 7, 14)
+    raw = _make_raw_forecasts(target, 46_549.0)
+    adj = _make_raw_forecasts(target, 46_549.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[inf["hour"].between(10, 18), "temp_c"] = 31.0
+    inf.loc[inf["hour"].between(10, 18), "temp_anomaly_doy"] = 4.0
+    inf.loc[inf["hour"].between(10, 18), "lag_24h"] = 40_340.0
+    inf.loc[inf["hour"].between(10, 18), "temp_delta_24h"] = 3.8
+    inf.loc[inf["hour"].between(10, 18), "cooling_delta_24h"] = 3.8
+
+    result = guard.apply(raw, adj, inf)
+
+    assert 40_340.0 + 2_500.0 == pytest.approx(42_840.0)
+    assert result[10].forecast_mw == pytest.approx(46_549.0)
+    assert result[10].p95_upper_mw == pytest.approx(47_549.0)
+
+
 def test_guard_skips_lag24_cap_when_previous_day_business_type_differs():
     """Do not cap a Monday business-day recovery against Sunday's low lag_24h."""
     config = _guard_config(warm_day=True)

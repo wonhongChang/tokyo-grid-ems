@@ -298,6 +298,24 @@ class PostHolidayTimeBandGuard:
         self._lag24_warm_day_max_increase_mw = float(
             daytime_config.get("lag24_warm_day_max_increase_mw", 2500.0)
         )
+        self._lag24_warm_day_weather_allowance_mw_per_c = max(
+            float(
+                daytime_config.get(
+                    "lag24_warm_day_weather_allowance_mw_per_c",
+                    0.0,
+                )
+            ),
+            0.0,
+        )
+        self._lag24_warm_day_max_weather_allowance_mw = max(
+            float(
+                daytime_config.get(
+                    "lag24_warm_day_max_weather_allowance_mw",
+                    0.0,
+                )
+            ),
+            0.0,
+        )
         warm_day_decline_config = daytime_config.get("warm_day_decline_damping", {})
         self._warm_day_decline_enabled = bool(
             warm_day_decline_config.get("enabled", True)
@@ -624,7 +642,21 @@ class PostHolidayTimeBandGuard:
         lag_24h = float(row["lag_24h"]) if pd.notna(row.get("lag_24h")) else np.nan
         if np.isnan(lag_24h):
             return forecast
-        max_forecast_mw = lag_24h + self._lag24_warm_day_max_increase_mw
+        weather_delta_c = max(
+            0.0,
+            self._finite_float(row.get("temp_delta_24h")) or 0.0,
+            self._finite_float(row.get("cooling_delta_24h")) or 0.0,
+            self._finite_float(row.get("apparent_cooling_delta_24h")) or 0.0,
+        )
+        weather_allowance_mw = min(
+            weather_delta_c * self._lag24_warm_day_weather_allowance_mw_per_c,
+            self._lag24_warm_day_max_weather_allowance_mw,
+        )
+        max_forecast_mw = (
+            lag_24h
+            + self._lag24_warm_day_max_increase_mw
+            + weather_allowance_mw
+        )
         if forecast.forecast_mw <= max_forecast_mw:
             return forecast
         return self._shift_forecast(forecast, max_forecast_mw - forecast.forecast_mw)
