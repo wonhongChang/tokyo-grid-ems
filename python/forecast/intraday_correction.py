@@ -1422,6 +1422,53 @@ class IntradayResidualCorrector:
             float(morning_anchor_config.get("min_reduction_mw", 100.0)),
             0.0,
         )
+        morning_anchor_support_config = morning_anchor_config.get(
+            "support_overhang",
+            {},
+        )
+        self._morning_anchor_support_overhang_enabled = bool(
+            morning_anchor_support_config.get("enabled", False)
+        )
+        self._morning_anchor_support_min_projected_overhang_mw = max(
+            float(
+                morning_anchor_support_config.get(
+                    "min_projected_overhang_mw",
+                    1_200.0,
+                )
+            ),
+            0.0,
+        )
+        self._morning_anchor_support_max_latest_underforecast_mw = max(
+            float(
+                morning_anchor_support_config.get(
+                    "max_latest_underforecast_mw",
+                    300.0,
+                )
+            ),
+            0.0,
+        )
+        self._morning_anchor_support_min_temp_delta_24h_c = float(
+            morning_anchor_support_config.get("min_temp_delta_24h_c", 3.0)
+        )
+        self._morning_anchor_support_min_cooling_delta_24h_c = float(
+            morning_anchor_support_config.get("min_cooling_delta_24h_c", 2.0)
+        )
+        self._morning_anchor_support_cap_buffer_mw = max(
+            float(morning_anchor_support_config.get("cap_buffer_mw", 1_200.0)),
+            0.0,
+        )
+        self._morning_anchor_support_shrinkage = min(
+            max(float(morning_anchor_support_config.get("shrinkage", 0.5)), 0.0),
+            1.0,
+        )
+        self._morning_anchor_support_max_reduction_mw = max(
+            float(morning_anchor_support_config.get("max_reduction_mw", 1_000.0)),
+            0.0,
+        )
+        self._morning_anchor_support_min_reduction_mw = max(
+            float(morning_anchor_support_config.get("min_reduction_mw", 150.0)),
+            0.0,
+        )
         morning_anchor_ramp_veto_config = morning_anchor_config.get("ramp_veto", {})
         self._morning_anchor_ramp_veto_enabled = bool(
             morning_anchor_ramp_veto_config.get("enabled", False)
@@ -1512,6 +1559,57 @@ class IntradayResidualCorrector:
         )
         self._afternoon_anchor_min_reduction_mw = max(
             float(afternoon_anchor_config.get("min_reduction_mw", 100.0)),
+            0.0,
+        )
+        afternoon_anchor_severe_config = afternoon_anchor_config.get(
+            "severe_overforecast",
+            {},
+        )
+        self._afternoon_anchor_severe_enabled = bool(
+            afternoon_anchor_severe_config.get("enabled", False)
+        )
+        self._afternoon_anchor_severe_min_latest_overforecast_mw = max(
+            float(
+                afternoon_anchor_severe_config.get(
+                    "min_latest_overforecast_mw",
+                    1_200.0,
+                )
+            ),
+            0.0,
+        )
+        self._afternoon_anchor_severe_min_mean_overforecast_mw = max(
+            float(
+                afternoon_anchor_severe_config.get(
+                    "min_mean_overforecast_mw",
+                    700.0,
+                )
+            ),
+            0.0,
+        )
+        self._afternoon_anchor_severe_max_latest_slope_mw = float(
+            afternoon_anchor_severe_config.get("max_latest_slope_mw", 1_500.0)
+        )
+        self._afternoon_anchor_severe_cap_buffer_mw = max(
+            float(afternoon_anchor_severe_config.get("cap_buffer_mw", 0.0)),
+            0.0,
+        )
+        self._afternoon_anchor_severe_support_fraction = min(
+            max(
+                float(afternoon_anchor_severe_config.get("support_fraction", 0.35)),
+                0.0,
+            ),
+            1.0,
+        )
+        self._afternoon_anchor_severe_shrinkage = min(
+            max(float(afternoon_anchor_severe_config.get("shrinkage", 1.0)), 0.0),
+            1.0,
+        )
+        self._afternoon_anchor_severe_max_reduction_mw = max(
+            float(afternoon_anchor_severe_config.get("max_reduction_mw", 1_500.0)),
+            0.0,
+        )
+        self._afternoon_anchor_severe_min_reduction_mw = max(
+            float(afternoon_anchor_severe_config.get("min_reduction_mw", 150.0)),
             0.0,
         )
         evening_decline_config = correction_config.get(
@@ -3645,7 +3743,16 @@ class IntradayResidualCorrector:
             latest_residual is None
             or latest_residual > -self._morning_anchor_min_overforecast_mw
         ):
-            return None
+            if (
+                not self._morning_anchor_support_overhang_enabled
+                or latest_residual is None
+                or latest_residual
+                > self._morning_anchor_support_max_latest_underforecast_mw
+            ):
+                return None
+            mode = "support_overhang"
+        else:
+            mode = "residual_overhang"
 
         if self._morning_anchor_business_day_only:
             row = self._feature_row_for_hour(inference_features, last_observed_hour)
@@ -3686,6 +3793,7 @@ class IntradayResidualCorrector:
                 if recent_slopes
                 else None
             ),
+            "mode": mode,
         }
 
     def _morning_observed_anchor_cap_reduction(
@@ -3714,6 +3822,20 @@ class IntradayResidualCorrector:
             if is_non_business_day == 1.0:
                 return None
 
+        mode = context.get("mode", "residual_overhang")
+        if mode == "support_overhang":
+            temp_delta_24h = self._finite_float(row.get("temp_delta_24h")) or 0.0
+            cooling_delta_24h = (
+                self._finite_float(row.get("cooling_delta_24h")) or 0.0
+            )
+            if (
+                temp_delta_24h
+                < self._morning_anchor_support_min_temp_delta_24h_c
+                and cooling_delta_24h
+                < self._morning_anchor_support_min_cooling_delta_24h_c
+            ):
+                return None
+
         last_observed_hour = int(context["lastObservedHour"])
         cumulative_support_mw = 0.0
         for hour in range(last_observed_hour + 1, forecast_hour + 1):
@@ -3738,7 +3860,8 @@ class IntradayResidualCorrector:
         mean_slope_mw = self._finite_float(context.get("meanSlopeMw"))
         latest_residual_mw = self._finite_float(context.get("latestResidualMw"))
         if (
-            self._morning_anchor_ramp_veto_enabled
+            mode != "support_overhang"
+            and self._morning_anchor_ramp_veto_enabled
             and latest_slope_mw is not None
             and mean_slope_mw is not None
             and latest_residual_mw is not None
@@ -3753,21 +3876,36 @@ class IntradayResidualCorrector:
         ):
             return None
 
+        cap_buffer_mw = self._morning_anchor_cap_buffer_mw
+        shrinkage = self._morning_anchor_shrinkage
+        max_reduction_mw = self._morning_anchor_max_reduction_mw
+        min_reduction_mw = self._morning_anchor_min_reduction_mw
+        if mode == "support_overhang":
+            cap_buffer_mw = self._morning_anchor_support_cap_buffer_mw
+            shrinkage = self._morning_anchor_support_shrinkage
+            max_reduction_mw = self._morning_anchor_support_max_reduction_mw
+            min_reduction_mw = self._morning_anchor_support_min_reduction_mw
+
         cap_mw = (
             float(context["lastActualMw"])
             + cumulative_support_mw
-            + self._morning_anchor_cap_buffer_mw
+            + cap_buffer_mw
         )
         overhang_mw = final_before_guard_mw - cap_mw
         if overhang_mw <= 0.0:
             return None
+        if (
+            mode == "support_overhang"
+            and overhang_mw < self._morning_anchor_support_min_projected_overhang_mw
+        ):
+            return None
 
         reduction_mw = min(
-            overhang_mw * self._morning_anchor_shrinkage,
-            self._morning_anchor_max_reduction_mw,
+            overhang_mw * shrinkage,
+            max_reduction_mw,
         )
         reduction_mw = round(float(reduction_mw), 1)
-        if reduction_mw < self._morning_anchor_min_reduction_mw:
+        if reduction_mw < min_reduction_mw:
             return None
 
         return {
@@ -3775,6 +3913,7 @@ class IntradayResidualCorrector:
             "reductionMw": reduction_mw,
             "cumulativeSupportMw": round(float(cumulative_support_mw), 1),
             "latestResidualMw": context["latestResidualMw"],
+            "mode": mode,
         }
 
     def _afternoon_observed_anchor_cap_context(
@@ -3805,11 +3944,19 @@ class IntradayResidualCorrector:
 
         latest_residual = float(recent_points[-1].residual_mw)
         mean_residual = float(np.mean([point.residual_mw for point in recent_points]))
+        severe_overforecast_active = (
+            self._afternoon_anchor_severe_enabled
+            and latest_residual
+            <= -self._afternoon_anchor_severe_min_latest_overforecast_mw
+            and mean_residual
+            <= -self._afternoon_anchor_severe_min_mean_overforecast_mw
+        )
         if (
             latest_residual > -self._afternoon_anchor_min_latest_overforecast_mw
             or mean_residual > -self._afternoon_anchor_min_mean_overforecast_mw
         ):
-            return None
+            if not severe_overforecast_active:
+                return None
 
         if self._afternoon_anchor_business_day_only:
             row = self._feature_row_for_hour(inference_features, last_observed_hour)
@@ -3830,7 +3977,12 @@ class IntradayResidualCorrector:
                 - actual_mw_by_hour[previous_observed_hour]
             )
             if latest_slope_mw > self._afternoon_anchor_max_latest_slope_mw:
-                return None
+                if (
+                    not severe_overforecast_active
+                    or latest_slope_mw
+                    > self._afternoon_anchor_severe_max_latest_slope_mw
+                ):
+                    return None
 
         return {
             "lastObservedHour": last_observed_hour,
@@ -3841,6 +3993,11 @@ class IntradayResidualCorrector:
                 round(float(latest_slope_mw), 1)
                 if latest_slope_mw is not None
                 else None
+            ),
+            "mode": (
+                "severe_overforecast"
+                if severe_overforecast_active
+                else "residual_overhang"
             ),
         }
 
@@ -3871,6 +4028,19 @@ class IntradayResidualCorrector:
                 return None
 
         last_observed_hour = int(context["lastObservedHour"])
+        mode = context.get("mode", "residual_overhang")
+        support_fraction = self._afternoon_anchor_support_fraction
+        cap_buffer_mw = self._afternoon_anchor_cap_buffer_mw
+        shrinkage = self._afternoon_anchor_shrinkage
+        max_reduction_mw = self._afternoon_anchor_max_reduction_mw
+        min_reduction_mw = self._afternoon_anchor_min_reduction_mw
+        if mode == "severe_overforecast":
+            support_fraction = self._afternoon_anchor_severe_support_fraction
+            cap_buffer_mw = self._afternoon_anchor_severe_cap_buffer_mw
+            shrinkage = self._afternoon_anchor_severe_shrinkage
+            max_reduction_mw = self._afternoon_anchor_severe_max_reduction_mw
+            min_reduction_mw = self._afternoon_anchor_severe_min_reduction_mw
+
         cumulative_support_mw = 0.0
         for hour in range(last_observed_hour + 1, forecast_hour + 1):
             support_row = self._feature_row_for_hour(inference_features, hour)
@@ -3890,24 +4060,24 @@ class IntradayResidualCorrector:
                 return None
             cumulative_support_mw += (
                 max(0.0, max(support_candidates))
-                * self._afternoon_anchor_support_fraction
+                * support_fraction
             )
 
         cap_mw = (
             float(context["lastActualMw"])
             + cumulative_support_mw
-            + self._afternoon_anchor_cap_buffer_mw
+            + cap_buffer_mw
         )
         overhang_mw = final_before_guard_mw - cap_mw
         if overhang_mw <= 0.0:
             return None
 
         reduction_mw = min(
-            overhang_mw * self._afternoon_anchor_shrinkage,
-            self._afternoon_anchor_max_reduction_mw,
+            overhang_mw * shrinkage,
+            max_reduction_mw,
         )
         reduction_mw = round(float(reduction_mw), 1)
-        if reduction_mw < self._afternoon_anchor_min_reduction_mw:
+        if reduction_mw < min_reduction_mw:
             return None
 
         return {
@@ -3917,6 +4087,7 @@ class IntradayResidualCorrector:
             "latestResidualMw": context["latestResidualMw"],
             "meanResidualMw": context["meanResidualMw"],
             "latestSlopeMw": context.get("latestSlopeMw"),
+            "mode": mode,
         }
 
     def _negative_residual_continuity_floor_context(
@@ -4997,12 +5168,14 @@ class IntradayResidualCorrector:
             morning_anchor_reduction_mw = 0.0
             morning_anchor_cumulative_support_mw = None
             morning_anchor_latest_residual_mw = None
+            morning_anchor_mode = None
             afternoon_anchor_cap_mw = None
             afternoon_anchor_reduction_mw = 0.0
             afternoon_anchor_cumulative_support_mw = None
             afternoon_anchor_latest_residual_mw = None
             afternoon_anchor_mean_residual_mw = None
             afternoon_anchor_latest_slope_mw = None
+            afternoon_anchor_mode = None
             pre_evening_decline_adjustment_mw = decayed_adjustment_mw
             evening_decline_cap_mw = None
             evening_decline_reduction_mw = 0.0
@@ -5484,6 +5657,7 @@ class IntradayResidualCorrector:
                 morning_anchor_latest_residual_mw = (
                     morning_anchor_cap["latestResidualMw"]
                 )
+                morning_anchor_mode = morning_anchor_cap.get("mode")
                 morning_anchor_cap_applied = True
                 morning_anchor_cap_reduced_values.append(
                     morning_anchor_reduction_mw
@@ -5519,6 +5693,7 @@ class IntradayResidualCorrector:
                 afternoon_anchor_latest_slope_mw = (
                     afternoon_anchor_cap["latestSlopeMw"]
                 )
+                afternoon_anchor_mode = afternoon_anchor_cap.get("mode")
                 afternoon_anchor_cap_applied = True
                 afternoon_anchor_cap_reduced_values.append(
                     afternoon_anchor_reduction_mw
@@ -5910,6 +6085,7 @@ class IntradayResidualCorrector:
                     if morning_anchor_latest_residual_mw is not None
                     else None
                 ),
+                "morningObservedAnchorCapMode": morning_anchor_mode,
                 "afternoonObservedAnchorCapMw": (
                     round(float(afternoon_anchor_cap_mw), 1)
                     if afternoon_anchor_cap_mw is not None
@@ -5939,6 +6115,7 @@ class IntradayResidualCorrector:
                     if afternoon_anchor_latest_slope_mw is not None
                     else None
                 ),
+                "afternoonObservedAnchorCapMode": afternoon_anchor_mode,
                 "preEveningDeclineContinuityAdjustmentMw": round(
                     pre_evening_decline_adjustment_mw,
                     1,

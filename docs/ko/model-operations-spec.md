@@ -273,8 +273,10 @@ Raw LightGBM Forecast
 | intraday | `morning_observed_ramp_floor.max_lift_mw` | 1200 | 당일 실측 ramp 증거가 강할 때만 08~11시 근거리 영업일 오전 예측을 지지합니다. 올리면 갑작스러운 ramp 과소예측에는 강해지지만, 일시적 실측 급등을 과도하게 따라갈 수 있습니다. |
 | intraday | `morning_observed_ramp_floor.non_business_floor_basis` | latest | 비영업일 늦은 ramp에서는 최신 slope가 2,000 MW 이상이고 평균 slope가 1,200 MW 이상일 때, 두 구간 평균 대신 최신 실측 slope를 floor 기준으로 씁니다. 주말 오전을 무조건 올리지 않도록 `non_business_max_lift_mw`는 보수적으로 유지합니다. |
 | intraday | `morning_observed_anchor_cap.max_reduction_mw` | 1000 | 당일 실측이 이미 모델 과대예측을 보여주고 lag/recent shape가 공개 예측 레벨을 설명하지 못할 때, 가까운 09~13시 예측만 제한합니다. |
+| intraday | `morning_observed_anchor_cap.support_overhang` | enabled | 최신 관측 residual이 중립이어도 더운 날 09~10시 예측 점프가 관측 ramp support를 크게 초과하면 좁게 cap을 허용합니다. 실제 폭발적 오전 ramp를 누르지 않도록 overhang 임계치는 높게 유지합니다. |
 | intraday | `morning_observed_anchor_cap.ramp_veto` | enabled | 최신 당일 ramp가 폭발적으로 강하고, 최근 2구간 평균 ramp도 강하며, shape support가 충분하고 최신 over-forecast가 작을 때 cap을 건너뜁니다. 실제 오전 ramp-up을 보호하되 심각한 과대예측 방어는 유지합니다. |
 | intraday | `afternoon_observed_anchor_cap.max_reduction_mw` | 1200 | 당일 오후 실측이 지속적인 과대예측을 보여줄 때, 가까운 14~16시 plateau overhang만 제한합니다. 올리면 미지원 낮 시간대 plateau에 더 빨리 반응하지만 실제 오후 수요 상승을 누를 수 있습니다. |
+| intraday | `afternoon_observed_anchor_cap.severe_overforecast` | enabled | 최신 residual과 평균 residual이 모두 크게 음수일 때만 오후 회복 slope veto를 완화합니다. 점심 이후 반등이 있더라도 hot plateau를 cap할 수 있지만, residual 강도와 보수적 slope 상한으로 제한됩니다. |
 | intraday | `morning_warm_lag_overreaction_guard.max_reduction_mw` | 800 | 따뜻해진 오전의 lag/기상 상승 신호가 당일 실측으로 확인되지 않을 때 q50 추가 하방 제동을 제한합니다. 올리면 과대예측 반응은 빨라지지만 실제 냉방 ramp를 누를 수 있습니다. |
 | intraday | `morning_positive_residual_carryover_damping.damping_factor` | 0.4 | 오전 초반 과소예측에서 생긴 양수 residual이 target slot의 lag/recent 램프 근거 없이 10~13시로 과전파될 때 일부만 통과시킵니다. 낮추면 과전파를 더 빨리 줄이고, 높이면 실제 램프 모멘텀을 더 보존합니다. |
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 비영업일 예측선이 안정적인 당일 plateau 아래로 밀렸을 때 되돌릴 수 있는 최대치입니다. 올리면 토요일 plateau 보호가 강해지지만 실제 하락을 늦게 반영할 수 있습니다. |

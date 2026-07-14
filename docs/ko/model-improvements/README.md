@@ -8,6 +8,7 @@
 
 ## 2026-07
 
+- [2026-07-15 intraday anchor cap 정교화](model-improvement-2026-07-15-intraday-anchor-cap-refinement.md)
 - [2026-07-14 warm-day lag24 cap 기상 허용폭 보강](model-improvement-2026-07-14-warm-day-lag24-weather-allowance.md)
 - [2026-07-13 비영업일 늦은 오전 ramp floor 보강](model-improvement-2026-07-13-non-business-late-morning-ramp-floor.md)
 - [2026-07-10 저녁 하락 구간 ramp cap 완화](model-improvement-2026-07-10-evening-drop-ramp-cap-relaxation.md)
