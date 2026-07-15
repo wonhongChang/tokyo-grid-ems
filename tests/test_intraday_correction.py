@@ -5495,6 +5495,110 @@ def test_intraday_ramp_guard_relaxes_drop_cap_when_target_shape_supports_decline
     assert result.metadata()["rampGuardDeclineSupportRelaxationApplied"] is True
 
 
+def test_intraday_ramp_guard_allows_supported_evening_decline_after_moderate_drop():
+    target = date(2026, 7, 15)
+    forecasts = _make_forecasts(target, 50_000.0)
+    forecasts[16] = HourlyForecast(
+        ts=f"{target.isoformat()}T16:00:00+09:00",
+        forecast_mw=50_060.0,
+        p95_lower_mw=49_560.0,
+        p95_upper_mw=50_560.0,
+        p99_lower_mw=49_260.0,
+        p99_upper_mw=50_860.0,
+    )
+    forecasts[17] = HourlyForecast(
+        ts=f"{target.isoformat()}T17:00:00+09:00",
+        forecast_mw=47_167.5,
+        p95_lower_mw=46_667.5,
+        p95_upper_mw=47_667.5,
+        p99_lower_mw=46_367.5,
+        p99_upper_mw=47_967.5,
+    )
+    forecasts[18] = HourlyForecast(
+        ts=f"{target.isoformat()}T18:00:00+09:00",
+        forecast_mw=45_687.2,
+        p95_lower_mw=45_187.2,
+        p95_upper_mw=46_187.2,
+        p99_lower_mw=44_887.2,
+        p99_upper_mw=46_487.2,
+    )
+    actual_series = [
+        _actual_point(target, 14, 50_440.0),
+        _actual_point(target, 15, 50_200.0),
+        _actual_point(target, 16, 49_680.0),
+    ]
+    inference_features = pd.DataFrame([
+        {
+            "hour": hour,
+            "is_non_business_day": 0,
+            "lag_24h_hourly_delta": -200.0,
+            "recent_same_business_type_delta_mean": -200.0,
+        }
+        for hour in range(24)
+    ])
+    inference_features.loc[
+        inference_features["hour"] == 17,
+        ["lag_24h_hourly_delta", "recent_same_business_type_delta_mean"],
+    ] = [-1_780.0, -1_341.2]
+    inference_features.loc[
+        inference_features["hour"] == 18,
+        ["lag_24h_hourly_delta", "recent_same_business_type_delta_mean"],
+    ] = [-1_550.0, -976.2]
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 0.0,
+            "decay_per_hour": 1.0,
+            "shape_guard": {
+                "enabled": True,
+                "min_reference_hour": 12,
+                "hours": [15, 16, 17, 18, 19],
+                "max_drop_mw": 1_000.0,
+            },
+            "ramp_guard": {
+                "enabled": True,
+                "min_reference_hour": 10,
+                "max_lead_hours": 3,
+                "max_increase_mw_by_lead_hour": [1_800.0, 2_400.0, 3_000.0],
+                "max_decrease_mw_by_lead_hour": [1_600.0, 2_600.0, 3_600.0],
+                "observed_drop_relaxation": {
+                    "enabled": True,
+                    "min_recent_drop_mw": 500.0,
+                    "lookback_hours": 2,
+                    "skip_shape_guard": True,
+                    "max_decrease_mw_by_lead_hour": [1_600.0, 2_800.0, 4_200.0],
+                    "decline_support": {
+                        "enabled": True,
+                        "business_day_only": True,
+                        "min_lead_hours": 1,
+                        "max_support_delta_mw": -900.0,
+                        "max_decrease_mw_by_lead_hour": [
+                            2_600.0,
+                            4_800.0,
+                            6_500.0,
+                        ],
+                    },
+                },
+            },
+        },
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    assert result.observed_drop_relaxation_active is True
+    assert result.shape_guard_applied is False
+    assert result.ramp_guard_applied is False
+    assert result.ramp_guard_decline_support_relaxation_applied is True
+    assert result.forecasts[17].forecast_mw == pytest.approx(47_167.5)
+    assert result.forecasts[18].forecast_mw == pytest.approx(45_687.2)
+    assert result.metadata()["rampGuardDeclineSupportRelaxationApplied"] is True
+
+
 def test_intraday_ramp_guard_keeps_drop_cap_without_decline_shape_support():
     target = date(2026, 7, 9)
     forecasts = _make_forecasts(target, 37_350.0)

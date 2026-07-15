@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-07
 
+- [2026-07-16 evening ramp drop-cap retuning](model-improvement-2026-07-16-evening-ramp-drop-cap-retuning.md)
 - [2026-07-15 intraday anchor cap refinement](model-improvement-2026-07-15-intraday-anchor-cap-refinement.md)
 - [2026-07-14 warm-day lag24 weather allowance](model-improvement-2026-07-14-warm-day-lag24-weather-allowance.md)
 - [2026-07-13 non-business late morning ramp floor](model-improvement-2026-07-13-non-business-late-morning-ramp-floor.md)

@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-07
 
+- [2026-07-16 夕方 ramp drop cap の再調整](model-improvement-2026-07-16-evening-ramp-drop-cap-retuning.md)
 - [2026-07-15 intraday anchor cap の精緻化](model-improvement-2026-07-15-intraday-anchor-cap-refinement.md)
 - [2026-07-14 warm-day lag24 cap の気象許容幅補強](model-improvement-2026-07-14-warm-day-lag24-weather-allowance.md)
 - [2026-07-13 非営業日の遅い朝 ramp floor 補強](model-improvement-2026-07-13-non-business-late-morning-ramp-floor.md)

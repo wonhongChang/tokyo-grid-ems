@@ -394,16 +394,16 @@ intraday_correction:
     max_decrease_mw_by_lead_hour: [1600, 2600, 3600]
     observed_drop_relaxation:
       enabled: true
-      min_recent_drop_mw: 700 # relax when actual demand is already falling quickly
+      min_recent_drop_mw: 500 # relax once actual demand starts a material evening decline
       lookback_hours: 2
       skip_shape_guard: true
       max_decrease_mw_by_lead_hour: [1600, 2800, 4200]
       decline_support:
         enabled: true
         business_day_only: true
-        min_lead_hours: 2
-        max_support_delta_mw: -1000 # require lag/recent shape to support a steep evening decline
-        max_decrease_mw_by_lead_hour: [1600, 4000, 5600]
+        min_lead_hours: 1
+        max_support_delta_mw: -900 # require lag/recent shape to support a steep evening decline
+        max_decrease_mw_by_lead_hour: [2600, 4800, 6500]
 
 forecast_snapshots:
   enabled: true

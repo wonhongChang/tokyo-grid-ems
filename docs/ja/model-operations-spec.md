@@ -267,7 +267,7 @@ Raw LightGBM Forecast
 | intraday | `negative_residual_continuity_floor.max_restore_mw` | 900 | 非営業日の予測線が安定した当日plateauより下へ押された場合に戻せる最大値です。上げると土曜plateau保護は強くなりますが、実際の下落反映が遅れる場合があります。 |
 | intraday | `negative_residual_continuity_floor.floor_slack_mw` | 500 | 最新実績plateauよりどれだけ下がったらfloorを作動させるかのbufferです。下げると早めに介入し、上げると明確なundercut時だけ作動します。 |
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 夕方下落局面で局所的なreboundだけでなく、高水準に残るoverhangも制限します。暑い夕方の実需要まで抑える場合だけ無効化を検討します。 |
-| intraday | `ramp_guard.observed_drop_relaxation.decline_support` | enabled | 実績需要がすでに下落し、対象時間のlag/recent deltaがどちらも強い下落を支持する場合だけ、最終drop capを広げます。capを上げると夕方の急落をより保持し、下げると直近実績レベルに近く保ちます。 |
+| intraday | `ramp_guard.observed_drop_relaxation` | `min_recent_drop_mw=500`, decline support `[2600, 4800, 6500]` | 実績需要が意味のある下落を始め、対象時間の lag/recent delta がともに下落を支持する場合だけ、最終の近距離 drop cap を緩和します。cap を上げると夕方の急落をより保持し、下げると直近実績レベルに近く保ちます。 |
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | 当日が前日より明確に暑い場合、warm-day lag24 cap に追加余裕を与えます。上げると急な昇温日の偽の谷を減らし、下げると前日需要 anchor をより厳格に適用します。 |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 営業日復帰anchorのリフト前に、予測ランプが最近の同営業タイプランプより十分に不足しているかを確認します。下げるとリフト頻度が増え、上げると健全なraw shapeを過剰に支援するリスクを抑えます。 |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday補正前に、根拠の弱い単独午後ピークを減らせる最大値です。上げるとartifact除去が強くなり、下げるとraw/analogピークshapeをより保持します。 |
