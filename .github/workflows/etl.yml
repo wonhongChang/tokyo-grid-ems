@@ -160,9 +160,28 @@ jobs:
           rsync -a --delete --exclude='.git' web/public/ /tmp/data-wt/
           cd /tmp/data-wt
           git add -A
-          git diff --staged --quiet && echo "No changes" || \
-            git commit -m "chore: ETL $(TZ=Asia/Tokyo date +%Y-%m-%dT%H:%M JST)"
-          git push origin HEAD:data
+          committed=false
+          git diff --staged --quiet && echo "No changes" || {
+            git commit -m "chore: ETL $(TZ=Asia/Tokyo date '+%Y-%m-%dT%H:%M JST')"
+            committed=true
+          }
+          if ! git diff --staged --quiet; then
+            echo "[ERROR] staged changes remained after commit"
+            exit 1
+          fi
+          if [ "$committed" = true ]; then
+            for attempt in 1 2 3; do
+              if git push origin HEAD:data; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "[ERROR] data branch push failed after $attempt attempts"
+                exit 1
+              fi
+              echo "[WARN] data branch push failed; retrying in $((attempt * 5))s"
+              sleep $((attempt * 5))
+            done
+          fi
           cd -
           git worktree remove /tmp/data-wt --force
 

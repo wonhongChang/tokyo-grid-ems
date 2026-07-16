@@ -25,6 +25,29 @@ def _run(args: list[str], cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[
     return subprocess.run(args, cwd=cwd, text=True, check=True)
 
 
+def _push_with_retry(cwd: Path, attempts: int = 3) -> None:
+    last_error: subprocess.CalledProcessError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            _run(["git", "push", "origin", f"HEAD:{DATA_BRANCH}"], cwd=cwd)
+            return
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            if attempt >= attempts:
+                break
+            wait_seconds = attempt * 5
+            print(
+                f"[WARN] data branch push failed on attempt {attempt}/{attempts}; "
+                f"retrying in {wait_seconds}s",
+                file=sys.stderr,
+            )
+            import time
+
+            time.sleep(wait_seconds)
+    assert last_error is not None
+    raise last_error
+
+
 def _has_remote_data_branch() -> bool:
     result = subprocess.run(
         ["git", "ls-remote", "--exit-code", "--heads", "origin", DATA_BRANCH],
@@ -103,7 +126,7 @@ def publish(
                 return
 
             _run(["git", "commit", "-m", message], cwd=worktree)
-            _run(["git", "push", "origin", f"HEAD:{DATA_BRANCH}"], cwd=worktree)
+            _push_with_retry(worktree)
             print(f"[DATA] Published web/public to origin/{DATA_BRANCH}")
         finally:
             _run(["git", "worktree", "remove", str(worktree), "--force"])
