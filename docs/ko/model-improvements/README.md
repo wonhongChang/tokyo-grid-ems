@@ -8,6 +8,7 @@
 
 ## 2026-07
 
+- [2026-07-16 오전 ramp slope 과반응 가드](model-improvement-2026-07-16-morning-ramp-slope-overreaction.md)
 - [2026-07-16 저녁 ramp drop cap 재조정](model-improvement-2026-07-16-evening-ramp-drop-cap-retuning.md)
 - [2026-07-15 intraday anchor cap 정교화](model-improvement-2026-07-15-intraday-anchor-cap-refinement.md)
 - [2026-07-14 warm-day lag24 cap 기상 허용폭 보강](model-improvement-2026-07-14-warm-day-lag24-weather-allowance.md)

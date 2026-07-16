@@ -1727,6 +1727,23 @@ class LocalizedShapeSpikeGuard:
         self._morning_spike_min_reduction_mw = float(
             morning_config.get("min_reduction_mw", 150.0)
         )
+        slope_config = morning_config.get("slope_overreaction", {})
+        self._morning_slope_enabled = bool(slope_config.get("enabled", False))
+        self._morning_slope_min_forecast_delta_over_support_mw = float(
+            slope_config.get("min_forecast_delta_over_support_mw", 900.0)
+        )
+        self._morning_slope_min_weather_delta_c = float(
+            slope_config.get("min_weather_delta_c", 1.5)
+        )
+        self._morning_slope_min_discomfort_delta = float(
+            slope_config.get("min_discomfort_delta", 2.0)
+        )
+        self._morning_slope_max_weather_delta_c = float(
+            slope_config.get("max_weather_delta_c", 6.0)
+        )
+        self._morning_slope_min_forecast_delta_mw = float(
+            slope_config.get("min_forecast_delta_mw", 4_000.0)
+        )
 
     @staticmethod
     def _finite_float(value) -> float | None:
@@ -1798,6 +1815,39 @@ class LocalizedShapeSpikeGuard:
             return None
         return max(weather_values)
 
+    def _discomfort_delta(self, row) -> float | None:
+        return self._finite_float(row.get("discomfort_delta_24h"))
+
+    def _morning_warm_slope_overreaction_active(
+        self,
+        forecast_delta_mw: float,
+        support_delta_mw: float | None,
+        row,
+    ) -> bool:
+        if not self._morning_slope_enabled or support_delta_mw is None:
+            return False
+        if forecast_delta_mw < self._morning_slope_min_forecast_delta_mw:
+            return False
+        if (
+            forecast_delta_mw - support_delta_mw
+            < self._morning_slope_min_forecast_delta_over_support_mw
+        ):
+            return False
+
+        weather_delta_c = self._weather_delta(row)
+        discomfort_delta = self._discomfort_delta(row)
+        weather_signal = (
+            weather_delta_c is not None
+            and self._morning_slope_min_weather_delta_c
+            <= weather_delta_c
+            <= self._morning_slope_max_weather_delta_c
+        )
+        discomfort_signal = (
+            discomfort_delta is not None
+            and discomfort_delta >= self._morning_slope_min_discomfort_delta
+        )
+        return weather_signal or discomfort_signal
+
     def _morning_spike_reduction(
         self,
         previous_forecast,
@@ -1808,35 +1858,37 @@ class LocalizedShapeSpikeGuard:
         if not self._morning_spike_enabled:
             return None
 
-        max_neighbor_mw = max(
-            previous_forecast.forecast_mw,
-            next_forecast.forecast_mw,
-        )
-        if (
-            forecast.forecast_mw - max_neighbor_mw
-            < self._morning_spike_min_neighbor_excess_mw
-        ):
-            return None
-
-        next_drop_mw = forecast.forecast_mw - next_forecast.forecast_mw
-        if next_drop_mw < self._morning_spike_min_next_drop_mw:
-            return None
-
         forecast_delta_mw = forecast.forecast_mw - previous_forecast.forecast_mw
         support_delta_mw = self._support_delta(row)
         if support_delta_mw is None:
             return None
-        if (
-            forecast_delta_mw - support_delta_mw
-            < self._morning_spike_min_forecast_delta_over_support_mw
-        ):
-            return None
 
-        weather_delta_c = self._weather_delta(row)
-        if (
-            weather_delta_c is not None
-            and weather_delta_c > self._morning_spike_max_weather_delta_c
-        ):
+        max_neighbor_mw = max(
+            previous_forecast.forecast_mw,
+            next_forecast.forecast_mw,
+        )
+        local_peak_active = (
+            forecast.forecast_mw - max_neighbor_mw
+            >= self._morning_spike_min_neighbor_excess_mw
+            and forecast.forecast_mw - next_forecast.forecast_mw
+            >= self._morning_spike_min_next_drop_mw
+            and forecast_delta_mw - support_delta_mw
+            >= self._morning_spike_min_forecast_delta_over_support_mw
+        )
+        if local_peak_active:
+            weather_delta_c = self._weather_delta(row)
+            if (
+                weather_delta_c is not None
+                and weather_delta_c > self._morning_spike_max_weather_delta_c
+            ):
+                return None
+
+        slope_overreaction_active = self._morning_warm_slope_overreaction_active(
+            forecast_delta_mw,
+            support_delta_mw,
+            row,
+        )
+        if not local_peak_active and not slope_overreaction_active:
             return None
 
         neighbor_anchor_mw = (

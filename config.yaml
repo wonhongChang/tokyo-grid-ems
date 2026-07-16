@@ -565,6 +565,24 @@ adjustment:
     min_reduction_mw: 100
     morning_spike:
       enabled: true
+      hours: [8, 9, 10]
+      min_neighbor_excess_mw: 1000
+      min_forecast_delta_over_support_mw: 1000
+      min_next_drop_mw: 800
+      neighbor_buffer_mw: 400
+      max_weather_delta_c: 3.5
+      shrinkage: 0.75
+      max_reduction_mw: 1400
+      min_reduction_mw: 100
+      slope_overreaction:
+        enabled: true
+        min_forecast_delta_mw: 4000
+        min_forecast_delta_over_support_mw: 900
+        min_weather_delta_c: 1.5
+        min_discomfort_delta: 2.0
+        max_weather_delta_c: 6.0
+    morning_spike:
+      enabled: true
       hours: [8, 9, 10, 11]
       min_neighbor_excess_mw: 1000
       min_forecast_delta_over_support_mw: 1000
