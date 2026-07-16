@@ -138,9 +138,39 @@ def parse_hourly(text: str, now: datetime | None = None) -> tuple[str | None, li
     return date_iso, series
 
 
+def _merge_existing_observed_series(series: list[dict], existing_series: list[dict]) -> list[dict]:
+    existing_by_ts = {point.get("ts"): point for point in existing_series if point.get("ts")}
+    merged: list[dict] = []
+    for point in series:
+        existing = existing_by_ts.get(point.get("ts"))
+        if (
+            point.get("actualMw") is None
+            and existing
+            and existing.get("actualMw") is not None
+            and existing.get("actualSource")
+        ):
+            preserved = dict(point)
+            for key in ("actualMw", "actualSource", "usagePct", "supplyMw"):
+                preserved[key] = existing.get(key)
+            merged.append(preserved)
+        else:
+            merged.append(point)
+    return merged
+
+
 def write_actual_json(date_iso: str, series: list[dict], out_dir: Path) -> None:
     path = out_dir / "actual" / f"{date_iso}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if existing.get("date") == date_iso:
+                series = _merge_existing_observed_series(
+                    series,
+                    existing.get("series", []),
+                )
+        except Exception as e:
+            print(f"[TODAY] Failed to merge existing actual JSON: {e}", file=sys.stderr)
     data = {
         "date": date_iso,
         "timezone": "Asia/Tokyo",
