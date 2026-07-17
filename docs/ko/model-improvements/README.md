@@ -8,6 +8,7 @@
 
 ## 2026-07
 
+- [2026-07-18 하락 shape 유사일 상방 보정 제한](model-improvement-2026-07-18-declining-analog-uplift-cap.md)
 - [2026-07-16 오전 ramp slope 과반응 가드](model-improvement-2026-07-16-morning-ramp-slope-overreaction.md)
 - [2026-07-16 저녁 ramp drop cap 재조정](model-improvement-2026-07-16-evening-ramp-drop-cap-retuning.md)
 - [2026-07-15 intraday anchor cap 정교화](model-improvement-2026-07-15-intraday-anchor-cap-refinement.md)

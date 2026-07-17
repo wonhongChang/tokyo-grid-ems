@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-07
 
+- [2026-07-18 下落shapeでの類似日上方補正cap](model-improvement-2026-07-18-declining-analog-uplift-cap.md)
 - [2026-07-16 朝 ramp slope 過反応ガード](model-improvement-2026-07-16-morning-ramp-slope-overreaction.md)
 - [2026-07-16 夕方 ramp drop cap の再調整](model-improvement-2026-07-16-evening-ramp-drop-cap-retuning.md)
 - [2026-07-15 intraday anchor cap の精緻化](model-improvement-2026-07-15-intraday-anchor-cap-refinement.md)

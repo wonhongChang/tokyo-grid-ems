@@ -437,6 +437,15 @@ def _guard_config(
                     "shrinkage": 0.6,
                     "max_clipping_mw": 900.0,
                 },
+                "business_declining_analog_uplift_cap": {
+                    "enabled": True,
+                    "target_hours": [13, 14, 15, 16, 17, 18, 19, 20],
+                    "min_positive_shift_mw": 300.0,
+                    "max_allowed_shift_mw": 100.0,
+                    "max_supporting_delta_mw": 200.0,
+                    "max_weather_delta_c": 0.0,
+                    "require_same_business_type": True,
+                },
             }
         }
     }
@@ -1075,6 +1084,72 @@ def test_guard_caps_business_afternoon_analog_excess_when_shape_support_is_weak(
     # allowed shift = 300 + min(2.0 * 120, 300) = 540 MW
     assert result[13].forecast_mw == pytest.approx(36_463.9)
     assert result[12].forecast_mw == pytest.approx(37_039.7)
+
+
+def test_guard_caps_declining_business_analog_uplift():
+    """A positive analog shift must not fight a supported business-day decline."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 7, 17)
+    raw = _make_raw_forecasts(target, 42_524.9)
+    adjusted = _make_raw_forecasts(target, 42_524.9)
+    adjusted[19] = HourlyForecast(
+        ts=raw[19].ts,
+        forecast_mw=43_616.4,
+        p95_lower_mw=42_616.4,
+        p95_upper_mw=44_616.4,
+        p99_lower_mw=42_116.4,
+        p99_upper_mw=45_116.4,
+    )
+    inf = _make_post_holiday_inf(consec=0, dsh=8, temp_anomaly_daytime=0.5)
+    inf.loc[19, "lag_24h_business_type_mismatch"] = 0
+    inf.loc[19, "lag_24h_hourly_delta"] = -1_590.0
+    inf.loc[19, "recent_same_business_type_delta_mean"] = -1_233.8
+    inf.loc[19, "temp_delta_24h"] = -2.1
+    inf.loc[19, "cooling_delta_24h"] = -2.1
+    inf.loc[19, "apparent_cooling_delta_24h"] = -1.8
+
+    result = guard.apply(raw, adjusted, inf)
+
+    assert result[19].forecast_mw == pytest.approx(42_624.9)
+    assert result[19].p95_lower_mw == pytest.approx(41_624.9)
+
+
+@pytest.mark.parametrize(
+    ("is_non_business_day", "mismatch", "lag_delta", "recent_delta", "weather_delta"),
+    [
+        (1, 0, -1_500.0, -1_200.0, -2.0),
+        (0, 1, -1_500.0, -1_200.0, -2.0),
+        (0, 0, 500.0, -1_200.0, -2.0),
+        (0, 0, -1_500.0, -1_200.0, 1.0),
+    ],
+)
+def test_guard_keeps_analog_uplift_outside_declining_business_regime(
+    is_non_business_day,
+    mismatch,
+    lag_delta,
+    recent_delta,
+    weather_delta,
+):
+    """Weekend, transition, rising-shape, and warmer regimes keep the analog signal."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    raw = _make_raw_forecasts(date(2026, 7, 17), 42_000.0)
+    adjusted = _make_raw_forecasts(date(2026, 7, 17), 42_800.0)
+    inf = _make_post_holiday_inf(
+        consec=0,
+        dsh=8,
+        temp_anomaly_daytime=0.5,
+        is_non_business_day=is_non_business_day,
+    )
+    inf.loc[19, "lag_24h_business_type_mismatch"] = mismatch
+    inf.loc[19, "lag_24h_hourly_delta"] = lag_delta
+    inf.loc[19, "recent_same_business_type_delta_mean"] = recent_delta
+    inf.loc[19, "temp_delta_24h"] = weather_delta
+    inf.loc[19, "cooling_delta_24h"] = weather_delta
+    inf.loc[19, "apparent_cooling_delta_24h"] = weather_delta
+
+    result = guard.apply(raw, adjusted, inf)
+
+    assert result[19].forecast_mw == pytest.approx(42_800.0)
 
 
 def test_guard_caps_business_afternoon_analog_downshift_on_warm_business_day():

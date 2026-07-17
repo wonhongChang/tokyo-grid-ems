@@ -226,6 +226,7 @@ The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_
 | Analogous day | `AnalogousDayAdjuster` | shifts raw forecast using residuals from similar historical days |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | blocks analogous-day shifts in the wrong direction |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | protects Monday/business-return morning ramps from non-business lag drag only when the forecast shape is also short |
+| Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | limits positive analog shifts on ordinary business afternoons when lag/recent shape and weather all fail to support an uplift |
 | Midday transition guard | `MiddayTransitionGuard` | restores business-day 12:00 lunch dip shape |
 | Localized shape spike guard | `LocalizedShapeSpikeGuard` | dampens unsupported one-hour afternoon peaks before intraday residuals are applied |
 | Intraday residual correction | `IntradayResidualCorrector` | applies same-day actual residuals to future hours |
@@ -272,6 +273,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | intraday | `ramp_guard.observed_drop_relaxation` | `min_recent_drop_mw=500`, decline support `[2600, 4800, 6500]` | Relaxes the final near-term drop cap once actual demand has started a material decline and the target hour's lag/recent deltas both support that decline. Raising the caps preserves sharper evening drops; lowering them keeps the line closer to the latest observed level. |
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | Adds extra headroom to the warm-day lag24 cap when the current day is materially hotter than yesterday. Raising it prevents false valleys on rapid warming days; lowering it restores a stricter yesterday-anchor cap. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | Requires the forecast ramp to be materially weaker than the recent same-business ramp before lifting a Monday/business-return anchor shortfall. Lower values lift more often; higher values avoid over-helping an already healthy raw shape. |
+| post-processing | `business_declining_analog_uplift_cap.max_allowed_shift_mw` | 100 | Maximum positive analog shift when both demand-shape references are flat/down and the day is not warmer than yesterday. Raising it trusts analogous-day residuals more; lowering it stays closer to raw LGBM. |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | Caps how much a single unsupported afternoon peak can be reduced before intraday correction. Raising it removes artifacts more aggressively; lowering it preserves more raw/analog peak shape. |
 | post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | Minimum one-hour excess over both neighboring hours before the guard evaluates. Lower values catch smaller artifacts but may touch legitimate local peaks. |
 | forecast snapshots | `retention_days` | 21 | Public lead-time forecast history for operational review. |

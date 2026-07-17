@@ -225,12 +225,12 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-07-18 하락 shape 유사일 상방 보정 제한](docs/ko/model-improvements/model-improvement-2026-07-18-declining-analog-uplift-cap.md)
+- [2026-07-16 오전 ramp slope 과반응 가드](docs/ko/model-improvements/model-improvement-2026-07-16-morning-ramp-slope-overreaction.md)
 - [2026-07-16 저녁 ramp drop cap 재조정](docs/ko/model-improvements/model-improvement-2026-07-16-evening-ramp-drop-cap-retuning.md)
 - [2026-07-15 intraday anchor cap 정교화](docs/ko/model-improvements/model-improvement-2026-07-15-intraday-anchor-cap-refinement.md)
 - [2026-07-14 warm-day lag24 cap 기상 허용폭 보강](docs/ko/model-improvements/model-improvement-2026-07-14-warm-day-lag24-weather-allowance.md)
 - [2026-07-13 비영업일 늦은 오전 ramp floor 보강](docs/ko/model-improvements/model-improvement-2026-07-13-non-business-late-morning-ramp-floor.md)
-- [2026-07-10 저녁 하락 구간 ramp cap 완화](docs/ko/model-improvements/model-improvement-2026-07-10-evening-drop-ramp-cap-relaxation.md)
-- [2026-07-09 오전 anchor cap ramp veto](docs/ko/model-improvements/model-improvement-2026-07-09-morning-anchor-cap-ramp-veto.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 

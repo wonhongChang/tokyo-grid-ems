@@ -224,6 +224,7 @@ Raw LightGBM Forecast
 | Analogous day | `AnalogousDayAdjuster` | 類似過去日のresidualでraw forecastを補正 |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 類似日補正の誤方向shiftを制限 |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | 予測shapeも不足している場合のみ、非営業日lagが営業日朝を下げすぎる問題を緩和 |
+| Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | 通常営業日の午後にlag/recent shapeと気象が上方を支持しない場合、正の類似日shiftを制限 |
 | Midday transition guard | `MiddayTransitionGuard` | 営業日12時のlunch dip形状を復元 |
 | Localized shape spike guard | `LocalizedShapeSpikeGuard` | intraday residual適用前に、根拠の弱い1時間だけの午後ピークを減衰 |
 | Intraday residual correction | `IntradayResidualCorrector` | 当日実績residualを未来時間へ反映 |
@@ -270,6 +271,7 @@ Raw LightGBM Forecast
 | intraday | `ramp_guard.observed_drop_relaxation` | `min_recent_drop_mw=500`, decline support `[2600, 4800, 6500]` | 実績需要が意味のある下落を始め、対象時間の lag/recent delta がともに下落を支持する場合だけ、最終の近距離 drop cap を緩和します。cap を上げると夕方の急落をより保持し、下げると直近実績レベルに近く保ちます。 |
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | 当日が前日より明確に暑い場合、warm-day lag24 cap に追加余裕を与えます。上げると急な昇温日の偽の谷を減らし、下げると前日需要 anchor をより厳格に適用します。 |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 営業日復帰anchorのリフト前に、予測ランプが最近の同営業タイプランプより十分に不足しているかを確認します。下げるとリフト頻度が増え、上げると健全なraw shapeを過剰に支援するリスクを抑えます。 |
+| post-processing | `business_declining_analog_uplift_cap.max_allowed_shift_mw` | 100 | 2つの需要shape基準が横ばい/下落し、当日が前日より暖かくない場合に許容する正の類似日shift上限です。上げると類似日residualをより信頼し、下げるとraw LGBMに近く保ちます。 |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday補正前に、根拠の弱い単独午後ピークを減らせる最大値です。上げるとartifact除去が強くなり、下げるとraw/analogピークshapeをより保持します。 |
 | post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | 両隣の時間よりこの値以上高い場合だけguardを評価します。下げると小さなartifactも拾いますが、正当な局所ピークに触れる可能性があります。 |
 | forecast snapshots | `retention_days` | 21 | 公開lead-time forecast履歴の保持期間です。 |

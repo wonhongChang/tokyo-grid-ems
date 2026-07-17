@@ -234,6 +234,7 @@ Raw LightGBM Forecast
 | Analogous day | `AnalogousDayAdjuster` | 유사 과거일 residual로 raw forecast 보정 |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 유사일 보정이 잘못된 방향으로 밀리는 것을 제한 |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | 예측 shape도 부족할 때만 휴일/주말 lag가 영업일 오전을 과도하게 낮추는 문제 완화 |
+| Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | 일반 영업일 오후에 lag/recent shape와 기상이 모두 상방을 지지하지 않을 때 유사일 양수 shift를 제한 |
 | Midday transition guard | `MiddayTransitionGuard` | 영업일 12시 lunch dip이 지나치게 평활화되는 문제 완화 |
 | Localized shape spike guard | `LocalizedShapeSpikeGuard` | intraday residual 적용 전에 근거 없는 한 시간짜리 오후 피크를 감쇠 |
 | Intraday residual correction | `IntradayResidualCorrector` | 당일 실측 residual을 남은 시간에 보수적으로 반영 |
@@ -285,6 +286,7 @@ Raw LightGBM Forecast
 | intraday | `ramp_guard.observed_drop_relaxation` | `min_recent_drop_mw=500`, decline support `[2600, 4800, 6500]` | 실측 수요가 의미 있게 하락을 시작했고 대상 시간의 lag/recent delta가 모두 하락을 지지할 때만 마지막 근거리 drop cap을 완화합니다. cap을 올리면 저녁 급락을 더 보존하고, 낮추면 직전 실측 레벨에 더 가깝게 유지합니다. |
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | 오늘이 전날보다 뚜렷하게 더울 때 warm-day lag24 cap에 추가 여유를 줍니다. 올리면 급격한 기온 상승일의 가짜 골짜기를 줄이고, 낮추면 어제 수요 anchor를 더 엄격하게 적용합니다. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 영업일 복귀 anchor 리프트 전에 예측 램프가 최근 같은 영업 타입 램프보다 충분히 부족한지 확인합니다. 낮추면 더 자주 올리고, 높이면 이미 건강한 raw shape를 과하게 돕는 위험을 줄입니다. |
+| post-processing | `business_declining_analog_uplift_cap.max_allowed_shift_mw` | 100 | 두 수요 shape 기준이 정체/하락하고 당일이 전날보다 더 덥지 않을 때 허용할 최대 유사일 양수 shift입니다. 올리면 유사일 residual을 더 신뢰하고, 내리면 raw LGBM에 더 가깝게 유지합니다. |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday 보정 전에 근거 없는 단일 오후 피크를 줄일 수 있는 최대치입니다. 올리면 artifact 제거가 강해지고, 내리면 raw/analog 피크 shape를 더 보존합니다. |
 | post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | 양쪽 이웃 시간보다 이 값 이상 높을 때만 guard를 평가합니다. 낮추면 작은 artifact도 잡지만 실제 국소 피크를 건드릴 수 있습니다. |
 | forecast snapshots | `retention_days` | 21 | 예측선 변화를 사후 분석할 수 있는 공개 snapshot 보관 기간입니다. |

@@ -507,6 +507,39 @@ class PostHolidayTimeBandGuard:
             ),
             0.0,
         )
+        declining_uplift_config = guard_config.get(
+            "business_declining_analog_uplift_cap",
+            {},
+        )
+        self._business_declining_uplift_enabled = bool(
+            declining_uplift_config.get("enabled", True)
+        )
+        self._business_declining_uplift_hours: set[int] = set()
+        for hour in declining_uplift_config.get(
+            "target_hours",
+            [13, 14, 15, 16, 17, 18, 19, 20],
+        ):
+            try:
+                self._business_declining_uplift_hours.add(int(hour))
+            except (TypeError, ValueError):
+                continue
+        self._business_declining_uplift_min_shift_mw = max(
+            float(declining_uplift_config.get("min_positive_shift_mw", 300.0)),
+            0.0,
+        )
+        self._business_declining_uplift_max_allowed_shift_mw = max(
+            float(declining_uplift_config.get("max_allowed_shift_mw", 100.0)),
+            0.0,
+        )
+        self._business_declining_uplift_max_support_delta_mw = float(
+            declining_uplift_config.get("max_supporting_delta_mw", 200.0)
+        )
+        self._business_declining_uplift_max_weather_delta_c = float(
+            declining_uplift_config.get("max_weather_delta_c", 0.0)
+        )
+        self._business_declining_uplift_require_same_business_type = bool(
+            declining_uplift_config.get("require_same_business_type", True)
+        )
         afternoon_downshift_config = guard_config.get(
             "business_afternoon_analog_downshift_guard",
             {},
@@ -1046,6 +1079,149 @@ class PostHolidayTimeBandGuard:
 
         return result if changed else adjusted_forecasts
 
+    def _business_declining_analog_uplift_may_apply(
+        self,
+        inference_features: pd.DataFrame,
+    ) -> bool:
+        if not (
+            self._business_declining_uplift_enabled
+            and self._business_declining_uplift_hours
+            and inference_features is not None
+            and not inference_features.empty
+            and "hour" in inference_features.columns
+        ):
+            return False
+
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is None or int(hour) not in self._business_declining_uplift_hours:
+                continue
+            if self._finite_float(row.get("is_non_business_day")) != 0.0:
+                continue
+            if self._business_declining_uplift_require_same_business_type:
+                mismatch = self._finite_float(
+                    row.get("lag_24h_business_type_mismatch")
+                )
+                if mismatch is None or mismatch != 0.0:
+                    continue
+            support_values = [
+                value
+                for value in (
+                    self._finite_float(row.get("lag_24h_hourly_delta")),
+                    self._finite_float(
+                        row.get("recent_same_business_type_delta_mean")
+                    ),
+                )
+                if value is not None
+            ]
+            if (
+                len(support_values) < 2
+                or max(support_values)
+                > self._business_declining_uplift_max_support_delta_mw
+            ):
+                continue
+            weather_delta_c = self._business_declining_weather_delta_c(row)
+            if (
+                weather_delta_c is not None
+                and weather_delta_c
+                <= self._business_declining_uplift_max_weather_delta_c
+            ):
+                return True
+        return False
+
+    def _business_declining_weather_delta_c(self, row) -> float | None:
+        values = [
+            value
+            for value in (
+                self._finite_float(row.get("temp_delta_24h")),
+                self._finite_float(row.get("cooling_delta_24h")),
+                self._finite_float(row.get("apparent_cooling_delta_24h")),
+            )
+            if value is not None
+        ]
+        return max(values) if values else None
+
+    def _apply_business_declining_analog_uplift_cap(
+        self,
+        raw_forecasts: list,
+        adjusted_forecasts: list,
+        inference_features: pd.DataFrame,
+    ) -> list:
+        if not self._business_declining_analog_uplift_may_apply(inference_features):
+            return adjusted_forecasts
+
+        rows_by_hour = {}
+        for _, row in inference_features.iterrows():
+            hour = self._finite_float(row.get("hour"))
+            if hour is not None:
+                rows_by_hour[int(hour)] = row
+
+        result = []
+        changed = False
+        for raw_forecast, adjusted_forecast in zip(raw_forecasts, adjusted_forecasts):
+            hour = pd.Timestamp(raw_forecast.ts).hour
+            row = rows_by_hour.get(hour)
+            if row is None or hour not in self._business_declining_uplift_hours:
+                result.append(adjusted_forecast)
+                continue
+
+            if self._finite_float(row.get("is_non_business_day")) != 0.0:
+                result.append(adjusted_forecast)
+                continue
+            if self._business_declining_uplift_require_same_business_type:
+                mismatch = self._finite_float(
+                    row.get("lag_24h_business_type_mismatch")
+                )
+                if mismatch is None or mismatch != 0.0:
+                    result.append(adjusted_forecast)
+                    continue
+
+            shift_mw = adjusted_forecast.forecast_mw - raw_forecast.forecast_mw
+            if shift_mw < self._business_declining_uplift_min_shift_mw:
+                result.append(adjusted_forecast)
+                continue
+
+            support_values = [
+                value
+                for value in (
+                    self._finite_float(row.get("lag_24h_hourly_delta")),
+                    self._finite_float(
+                        row.get("recent_same_business_type_delta_mean")
+                    ),
+                )
+                if value is not None
+            ]
+            if (
+                len(support_values) < 2
+                or max(support_values)
+                > self._business_declining_uplift_max_support_delta_mw
+            ):
+                result.append(adjusted_forecast)
+                continue
+
+            weather_delta_c = self._business_declining_weather_delta_c(row)
+            if (
+                weather_delta_c is None
+                or weather_delta_c
+                > self._business_declining_uplift_max_weather_delta_c
+            ):
+                result.append(adjusted_forecast)
+                continue
+
+            if shift_mw <= self._business_declining_uplift_max_allowed_shift_mw:
+                result.append(adjusted_forecast)
+                continue
+
+            result.append(
+                self._shift_forecast(
+                    raw_forecast,
+                    self._business_declining_uplift_max_allowed_shift_mw,
+                )
+            )
+            changed = True
+
+        return result if changed else adjusted_forecasts
+
     def _business_afternoon_downshift_may_apply(
         self,
         inference_features: pd.DataFrame,
@@ -1382,6 +1558,9 @@ class PostHolidayTimeBandGuard:
         business_afternoon_analog_active = self._business_afternoon_analog_may_apply(
             inference_features
         )
+        business_declining_uplift_active = (
+            self._business_declining_analog_uplift_may_apply(inference_features)
+        )
         business_afternoon_downshift_active = (
             self._business_afternoon_downshift_may_apply(inference_features)
         )
@@ -1394,6 +1573,7 @@ class PostHolidayTimeBandGuard:
             or non_business_analog_active
             or non_business_morning_shape_active
             or business_afternoon_analog_active
+            or business_declining_uplift_active
             or business_afternoon_downshift_active
         ):
             return adjusted_forecasts
@@ -1508,6 +1688,11 @@ class PostHolidayTimeBandGuard:
         result = self._apply_business_return_anchor_shortfall(result, inference_features)
         result = self._apply_business_return_anchor_excess_cap(result, inference_features)
         result = self._apply_business_afternoon_analog_excess_cap(
+            raw_forecasts,
+            result,
+            inference_features,
+        )
+        result = self._apply_business_declining_analog_uplift_cap(
             raw_forecasts,
             result,
             inference_features,
@@ -1744,6 +1929,37 @@ class LocalizedShapeSpikeGuard:
         self._morning_slope_min_forecast_delta_mw = float(
             slope_config.get("min_forecast_delta_mw", 4_000.0)
         )
+        self._morning_slope_hours = {
+            int(hour)
+            for hour in slope_config.get("hours", [8, 9, 10])
+        }
+        self._morning_slope_neighbor_buffer_mw = float(
+            slope_config.get(
+                "neighbor_buffer_mw",
+                self._morning_spike_neighbor_buffer_mw,
+            )
+        )
+        self._morning_slope_shrinkage = min(
+            max(
+                float(
+                    slope_config.get("shrinkage", self._morning_spike_shrinkage)
+                ),
+                0.0,
+            ),
+            1.0,
+        )
+        self._morning_slope_max_reduction_mw = float(
+            slope_config.get(
+                "max_reduction_mw",
+                self._morning_spike_max_reduction_mw,
+            )
+        )
+        self._morning_slope_min_reduction_mw = float(
+            slope_config.get(
+                "min_reduction_mw",
+                self._morning_spike_min_reduction_mw,
+            )
+        )
 
     @staticmethod
     def _finite_float(value) -> float | None:
@@ -1820,11 +2036,16 @@ class LocalizedShapeSpikeGuard:
 
     def _morning_warm_slope_overreaction_active(
         self,
+        hour: int,
         forecast_delta_mw: float,
         support_delta_mw: float | None,
         row,
     ) -> bool:
-        if not self._morning_slope_enabled or support_delta_mw is None:
+        if (
+            not self._morning_slope_enabled
+            or hour not in self._morning_slope_hours
+            or support_delta_mw is None
+        ):
             return False
         if forecast_delta_mw < self._morning_slope_min_forecast_delta_mw:
             return False
@@ -1850,6 +2071,7 @@ class LocalizedShapeSpikeGuard:
 
     def _morning_spike_reduction(
         self,
+        hour: int,
         previous_forecast,
         forecast,
         next_forecast,
@@ -1884,6 +2106,7 @@ class LocalizedShapeSpikeGuard:
                 return None
 
         slope_overreaction_active = self._morning_warm_slope_overreaction_active(
+            hour,
             forecast_delta_mw,
             support_delta_mw,
             row,
@@ -1894,15 +2117,25 @@ class LocalizedShapeSpikeGuard:
         neighbor_anchor_mw = (
             previous_forecast.forecast_mw + next_forecast.forecast_mw
         ) / 2.0
-        cap_mw = neighbor_anchor_mw + self._morning_spike_neighbor_buffer_mw
+        if slope_overreaction_active:
+            neighbor_buffer_mw = self._morning_slope_neighbor_buffer_mw
+            shrinkage = self._morning_slope_shrinkage
+            max_reduction_mw = self._morning_slope_max_reduction_mw
+            min_reduction_mw = self._morning_slope_min_reduction_mw
+        else:
+            neighbor_buffer_mw = self._morning_spike_neighbor_buffer_mw
+            shrinkage = self._morning_spike_shrinkage
+            max_reduction_mw = self._morning_spike_max_reduction_mw
+            min_reduction_mw = self._morning_spike_min_reduction_mw
+        cap_mw = neighbor_anchor_mw + neighbor_buffer_mw
         if forecast.forecast_mw <= cap_mw:
             return None
 
         reduction_mw = min(
-            (forecast.forecast_mw - cap_mw) * self._morning_spike_shrinkage,
-            self._morning_spike_max_reduction_mw,
+            (forecast.forecast_mw - cap_mw) * shrinkage,
+            max_reduction_mw,
         )
-        if reduction_mw < self._morning_spike_min_reduction_mw:
+        if reduction_mw < min_reduction_mw:
             return None
         return float(reduction_mw)
 
@@ -1938,6 +2171,7 @@ class LocalizedShapeSpikeGuard:
             next_forecast = result[index + 1]
             if hour in self._morning_spike_hours:
                 morning_reduction_mw = self._morning_spike_reduction(
+                    hour,
                     prev_forecast,
                     forecast,
                     next_forecast,

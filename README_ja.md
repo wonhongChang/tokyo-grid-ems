@@ -202,12 +202,12 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-07-18 下落shapeでの類似日上方補正cap](docs/ja/model-improvements/model-improvement-2026-07-18-declining-analog-uplift-cap.md)
+- [2026-07-16 朝 ramp slope 過反応ガード](docs/ja/model-improvements/model-improvement-2026-07-16-morning-ramp-slope-overreaction.md)
 - [2026-07-16 夕方 ramp drop cap の再調整](docs/ja/model-improvements/model-improvement-2026-07-16-evening-ramp-drop-cap-retuning.md)
 - [2026-07-15 intraday anchor cap の精緻化](docs/ja/model-improvements/model-improvement-2026-07-15-intraday-anchor-cap-refinement.md)
 - [2026-07-14 warm-day lag24 cap の気象許容幅補強](docs/ja/model-improvements/model-improvement-2026-07-14-warm-day-lag24-weather-allowance.md)
 - [2026-07-13 非営業日の遅い朝 ramp floor 補強](docs/ja/model-improvements/model-improvement-2026-07-13-non-business-late-morning-ramp-floor.md)
-- [2026-07-10 夕方下落局面の ramp cap 緩和](docs/ja/model-improvements/model-improvement-2026-07-10-evening-drop-ramp-cap-relaxation.md)
-- [2026-07-09 朝 anchor cap ramp veto](docs/ja/model-improvements/model-improvement-2026-07-09-morning-anchor-cap-ramp-veto.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 
