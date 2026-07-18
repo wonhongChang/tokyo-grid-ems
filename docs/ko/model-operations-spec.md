@@ -25,21 +25,22 @@
 | 구현 | `python/forecast/lgbm_model.py` |
 | 피처 생성 | `python/forecast/feature_builder.py` |
 | 후처리 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| interval version | `q025_q50_q975_p95_v10_humidity_discomfort` |
+| interval version | `q025_q50_q975_p95_v11_lag24_residual_ensemble` |
 | 최소 학습량 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
 모델은 시간별 전력 수요를 예측하고, 오늘/내일 예측선, p95/p99 예측 밴드, 이상탐지 expected demand를 생성합니다.
 
-LightGBM은 세 개의 quantile regressor를 학습합니다.
+LightGBM은 절대수요 quantile regressor 3개와 lag-24 잔차 중앙값 regressor 1개를 학습합니다.
 
 | 모델 | alpha | 역할 |
 |---|---:|---|
 | `q025` | 0.025 | p95 하단 추정 |
 | `q50` | 0.50 | 중심 예측선 |
 | `q975` | 0.975 | p95 상단 추정 |
+| `q50_lag24_residual` | 0.50 | `actual_mw - lag_24h` 중앙값 추정 |
 
-대시보드는 `q50`을 중심 예측선으로 사용합니다. `q025/q975`는 p95 밴드가 되고, p99 스타일 외곽 밴드는 q025/q975 half-width를 한 번 더 확장해 계산합니다. 한쪽 quantile이 q50에 붙는 경우에는 반대쪽의 큰 폭을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다.
+영업일 서빙 q50은 절대수요 q50과 `lag_24h + 잔차 q50`의 설정 가능한 결합이며 운영 가중치는 0.5입니다. 비영업일은 이 결합을 우회합니다. 대시보드는 최종 q50을 중심 예측선으로 사용합니다. `q025/q975`는 p95 밴드가 되고, p99 스타일 외곽 밴드는 원래 q025/q975 half-width를 결합 중심선 주위에서 한 번 더 확장해 계산합니다. 한쪽 quantile이 절대수요 q50에 붙는 경우에는 반대쪽의 큰 폭을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다.
 
 ---
 
@@ -262,6 +263,7 @@ Raw LightGBM Forecast
 
 | 영역 | 설정 (Config Key) | 현재 값 | 운영 가이드 및 튜닝 팁 |
 |---|---|---:|---|
+| forecast | `lag24_residual_ensemble.weight` | 0.5 | 올리면 전일 대비 잔차 모델을 더 신뢰하고, 내리면 절대수요 모델 성향을 더 유지합니다. 버전 인지 rolling replay와 frozen-origin holdout을 함께 통과할 때만 조정합니다. |
 | weather | `cooling_base_temp_c` | 22.0 | 낮추면 냉방 민감도가 빨리 켜지고, 올리면 여름 초입 과대반응을 줄입니다. 계절 전체 backtest로 조정해야 합니다. |
 | weather | `heating_base_temp_c` | 18.0 | 올리면 난방 수요 신호가 강해지고, 내리면 겨울철 과민 반응을 줄입니다. |
 | weather bias | `min_abs_bias_c` | 1.5 | 낮추면 예보 bias correction이 자주 켜지고, 높이면 작은 예보 오차를 무시합니다. 너무 낮으면 날씨 noise를 추종합니다. |

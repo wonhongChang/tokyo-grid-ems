@@ -25,21 +25,22 @@
 | 実装 | `python/forecast/lgbm_model.py` |
 | 特徴量生成 | `python/forecast/feature_builder.py` |
 | 後処理 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| interval version | `q025_q50_q975_p95_v10_humidity_discomfort` |
+| interval version | `q025_q50_q975_p95_v11_lag24_residual_ensemble` |
 | 最小学習量 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
 モデルは時間別の電力需要を予測し、今日/明日の予測線、p95/p99予測バンド、異常検知用のexpected demandを生成します。
 
-LightGBMは3つのquantile regressorを学習します。
+LightGBMは絶対需要quantile regressor 3つとlag-24残差中央値regressor 1つを学習します。
 
 | モデル | alpha | 役割 |
 |---|---:|---|
 | `q025` | 0.025 | p95下側推定 |
 | `q50` | 0.50 | 中心予測線 |
 | `q975` | 0.975 | p95上側推定 |
+| `q50_lag24_residual` | 0.50 | `actual_mw - lag_24h`の中央値推定 |
 
-ダッシュボードでは`q50`を中心予測線として使用します。`q025/q975`はp95バンドになり、p99風の外側バンドはq025/q975のhalf-widthをさらに拡張して計算します。
+営業日の配信q50は、絶対需要q50と`lag_24h + 残差q50`の設定可能な合成であり、運用weightは0.5です。非営業日はこの合成を迂回します。ダッシュボードでは最終q50を中心予測線として使用します。`q025/q975`はp95バンドになり、p99風の外側バンドは元のq025/q975 half-widthを合成中心線の周囲でさらに拡張して計算します。
 
 ---
 
@@ -247,6 +248,7 @@ Raw LightGBM Forecast
 
 | 領域 | Config Key | 現在値 | 運用ガイド |
 |---|---|---:|---|
+| forecast | `lag24_residual_ensemble.weight` | 0.5 | 上げるほど前日差残差モデルを重視し、下げるほど絶対需要モデルの性質を維持します。version-aware rolling replayとfrozen-origin holdoutを両方通過した場合のみ調整します。 |
 | weather | `cooling_base_temp_c` | 22.0 | 下げると冷房感度が早く立ち上がり、上げると初夏の過反応を抑えます。暖候期全体で検証します。 |
 | weather | `heating_base_temp_c` | 18.0 | 上げると暖房信号が強くなり、下げると冬の過敏反応を抑えます。 |
 | weather bias | `min_abs_bias_c` | 1.5 | 下げると予報bias補正が頻繁に作動します。低すぎると気象noiseを追います。 |

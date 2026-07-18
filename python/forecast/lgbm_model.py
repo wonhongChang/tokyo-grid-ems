@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import pandas as pd
 
 from python.forecast.baseline import HourlyForecast
@@ -32,7 +33,7 @@ _LGBM_PARAMS = {
 
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
-    INTERVAL_VERSION = "q025_q50_q975_p95_v10_humidity_discomfort"
+    INTERVAL_VERSION = "q025_q50_q975_p95_v11_lag24_residual_ensemble"
 
     def __init__(
         self,
@@ -49,6 +50,7 @@ class LGBMForecaster:
         self.model_q025: "LGBMRegressor | None" = None
         self.model_q50: "LGBMRegressor | None" = None
         self.model_q975: "LGBMRegressor | None" = None
+        self.model_q50_lag24_residual: "LGBMRegressor | None" = None
 
     def _make_model(self, alpha: float) -> "LGBMRegressor":
         return LGBMRegressor(
@@ -70,8 +72,16 @@ class LGBMForecaster:
             getattr(self, "config", {}) or {},
         )
 
+    def _lag24_residual_ensemble_config(self) -> tuple[bool, bool, float]:
+        forecast_config = (getattr(self, "config", {}) or {}).get("forecast", {})
+        ensemble_config = forecast_config.get("lag24_residual_ensemble", {})
+        enabled = bool(ensemble_config.get("enabled", False))
+        business_day_only = bool(ensemble_config.get("business_day_only", True))
+        weight = min(1.0, max(0.0, float(ensemble_config.get("weight", 0.5))))
+        return enabled, business_day_only, weight
+
     def fit(self, cache: pd.DataFrame) -> None:
-        """Train q025/q50/q975 quantile models on hourly cache. Needs >= 90 days."""
+        """Train interval, absolute-q50, and lag24-residual models."""
         X, y = build_training_features(cache, self.config)
         if len(X) < self.MIN_TRAIN_ROWS:
             raise ValueError(
@@ -86,15 +96,22 @@ class LGBMForecaster:
             m = self._make_model(alpha)
             m.fit(X, y)
             setattr(self, attr, m)
+        residual_model = self._make_model(0.50)
+        residual_model.fit(X, y - X["lag_24h"])
+        self.model_q50_lag24_residual = residual_model
         self.interval_version = self.INTERVAL_VERSION
 
     def is_compatible(self) -> bool:
         """Return True when a loaded pickle has the current interval model layout."""
-        return (
+        compatible = (
             getattr(self, "interval_version", None) == self.INTERVAL_VERSION
             and getattr(self, "model_q025", None) is not None
             and getattr(self, "model_q50", None) is not None
             and getattr(self, "model_q975", None) is not None
+        )
+        enabled, _, _ = self._lag24_residual_ensemble_config()
+        return compatible and (
+            not enabled or getattr(self, "model_q50_lag24_residual", None) is not None
         )
 
     def predict(self, target_date: date, cache: pd.DataFrame) -> list[HourlyForecast]:
@@ -103,8 +120,20 @@ class LGBMForecaster:
             raise RuntimeError("Call fit() before predict(), or retrain an older LightGBM model.")
         X = build_inference_features(cache, target_date, getattr(self, "config", {}))
         q025 = self.model_q025.predict(X)
-        q50 = self.model_q50.predict(X)
+        q50_base = self.model_q50.predict(X)
         q975 = self.model_q975.predict(X)
+
+        q50 = np.asarray(q50_base, dtype=float).copy()
+        enabled, business_day_only, weight = self._lag24_residual_ensemble_config()
+        if enabled:
+            residual_q50 = self.model_q50_lag24_residual.predict(X)
+            lag24_q50 = X["lag_24h"].to_numpy(dtype=float) + residual_q50
+            blended_q50 = (1.0 - weight) * q50 + weight * lag24_q50
+            if business_day_only:
+                business_mask = X["is_non_business_day"].to_numpy(dtype=float) == 0.0
+                q50 = np.where(business_mask, blended_q50, q50)
+            else:
+                q50 = blended_q50
 
         result: list[HourlyForecast] = []
         for hour in range(24):
@@ -112,12 +141,13 @@ class LGBMForecaster:
                 year=target_date.year, month=target_date.month, day=target_date.day,
                 hour=hour, tzinfo=JST,
             )
+            base_mid = round(float(q50_base[hour]), 1)
             mid = round(float(q50[hour]), 1)
-            lo = round(min(float(q025[hour]), float(q975[hour]), mid), 1)
-            hi = round(max(float(q025[hour]), float(q975[hour]), mid), 1)
+            lo = round(min(float(q025[hour]), float(q975[hour]), base_mid), 1)
+            hi = round(max(float(q025[hour]), float(q975[hour]), base_mid), 1)
             # p99 = 2x half-width beyond the q025/q975 interval as a conservative outer band.
-            half_lo = max(0.0, mid - lo)
-            half_hi = max(0.0, hi - mid)
+            half_lo = max(0.0, base_mid - lo)
+            half_hi = max(0.0, hi - base_mid)
             half_lo, half_hi = self._calibrate_interval_half_widths(half_lo, half_hi)
             lo = round(mid - half_lo, 1)
             hi = round(mid + half_hi, 1)

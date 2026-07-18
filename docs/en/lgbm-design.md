@@ -23,15 +23,18 @@ The statistical baseline (`baseline_dow_hour_mean`) remains as a fallback when L
 
 ## Model
 
-`python/forecast/lgbm_model.py` trains three LightGBM quantile regressors.
+`python/forecast/lgbm_model.py` trains three absolute-demand quantile regressors and one lag-24 residual median regressor.
 
 | Model | Purpose |
 |---|---|
 | q025 | lower p95 interval estimate |
 | q50 | point forecast |
 | q975 | upper p95 interval estimate |
+| q50 lag24 residual | median of `actual_mw - lag_24h` |
 
-The dashboard uses q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread. When one side of the quantile interval collapses near q50, the pipeline keeps only a minimum width on that side instead of mirroring the opposite side's larger uncertainty. When an independent quantile model produces a rare one-sided tail explosion after a weather-regime shift, interval sanity calibration caps the maximum p95 half-width and the upper/lower asymmetry ratio without changing q50.
+On business days, the point forecast is a 50:50 blend of the absolute-demand q50 and `lag_24h + predicted residual`. This lets one model learn the demand level while the other learns how today should depart from yesterday. Non-business days keep the absolute-demand q50 path because their shape controls are tuned separately. q025/q975 interval half-widths are preserved and recentered around the blended q50, so the ensemble cannot collapse or inflate the forecast band by itself.
+
+The dashboard uses the resulting q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread. When one side of the quantile interval collapses near q50, the pipeline keeps only a minimum width on that side instead of mirroring the opposite side's larger uncertainty. When an independent quantile model produces a rare one-sided tail explosion after a weather-regime shift, interval sanity calibration caps the maximum p95 half-width and the upper/lower asymmetry ratio without changing q50.
 
 Minimum training data:
 

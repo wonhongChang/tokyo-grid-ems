@@ -25,21 +25,22 @@ Operational rules:
 | Implementation | `python/forecast/lgbm_model.py` |
 | Feature builder | `python/forecast/feature_builder.py` |
 | Post-processing | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| Interval version | `q025_q50_q975_p95_v10_humidity_discomfort` |
+| Interval version | `q025_q50_q975_p95_v11_lag24_residual_ensemble` |
 | Minimum training rows | `90 * 24 = 2160` hourly rows |
 | Fallback | `baseline_dow_hour_mean` |
 
 The model forecasts hourly Tokyo-area electricity demand and produces today's forecast, tomorrow's forecast, p95/p99 forecast bands, and expected demand values for anomaly detection.
 
-Three quantile regressors are trained:
+Three absolute-demand quantile regressors and one lag-24 residual median regressor are trained:
 
 | Model | alpha | Role |
 |---|---:|---|
 | `q025` | 0.025 | lower p95 estimate |
 | `q50` | 0.50 | point forecast |
 | `q975` | 0.975 | upper p95 estimate |
+| `q50_lag24_residual` | 0.50 | median of `actual_mw - lag_24h` |
 
-The dashboard uses `q50` as the main forecast line. `q025/q975` form the p95 band, while a wider p99-style band is derived by extending the q025/q975 half-width. If one side collapses near q50, the system keeps only the configured minimum width on that side instead of mirroring the wider side.
+For business days, the served q50 is a configurable blend of absolute q50 and `lag_24h + residual q50`; the production weight is 0.5. Non-business days bypass this blend. The dashboard uses the resulting q50 as the main forecast line. `q025/q975` form the p95 band, while a wider p99-style band is derived by extending the original q025/q975 half-width around the blended center. If one side collapses near the absolute q50, the system keeps only the configured minimum width on that side instead of mirroring the wider side.
 
 ---
 
@@ -249,6 +250,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 
 | Area | Config Key | Current value | Operational guide |
 |---|---|---:|---|
+| forecast | `lag24_residual_ensemble.weight` | 0.5 | Higher values trust the day-over-day residual model more; lower values retain more absolute-level behavior. Retune only with version-aware rolling and frozen-origin holdouts. |
 | weather | `cooling_base_temp_c` | 22.0 | Lower values activate cooling sensitivity earlier; higher values reduce early-summer overreaction. Validate across the full warm season. |
 | weather | `heating_base_temp_c` | 18.0 | Higher values strengthen heating signals; lower values reduce winter over-sensitivity. |
 | weather bias | `min_abs_bias_c` | 1.5 | Lower values apply forecast-bias correction more often; too low may chase weather noise. |

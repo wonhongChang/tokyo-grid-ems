@@ -74,6 +74,7 @@ def test_fit_succeeds_at_minimum_threshold():
     assert f.model_q50 is not None
     assert f.model_q025 is not None
     assert f.model_q975 is not None
+    assert f.model_q50_lag24_residual is not None
     assert f.is_compatible()
 
 
@@ -322,6 +323,81 @@ def test_old_feature_version_is_incompatible():
     f.model_q975 = object()
 
     assert not f.is_compatible()
+
+
+def test_enabled_lag24_residual_ensemble_requires_residual_model():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "lag24_residual_ensemble": {"enabled": True},
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = object()
+    f.model_q50 = object()
+    f.model_q975 = object()
+    f.model_q50_lag24_residual = None
+
+    assert not f.is_compatible()
+
+
+@pytest.mark.parametrize(
+    ("is_non_business_day", "business_day_only", "weight", "expected_mid"),
+    [
+        (0, True, 0.5, 30_500.0),
+        (1, True, 0.5, 32_000.0),
+        (1, False, 0.5, 30_500.0),
+        (0, True, 2.0, 29_000.0),
+        (0, True, -1.0, 32_000.0),
+    ],
+)
+def test_predict_blends_lag24_residual_q50_and_recenters_interval(
+    monkeypatch,
+    is_non_business_day,
+    business_day_only,
+    weight,
+    expected_mid,
+):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+            "lag_24h": np.full(24, 30_000.0),
+            "is_non_business_day": np.full(24, is_non_business_day),
+        }),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "lag24_residual_ensemble": {
+                "enabled": True,
+                "business_day_only": business_day_only,
+                "weight": weight,
+            }
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(31_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(33_000.0)
+    f.model_q50_lag24_residual = FakeModel(-1_000.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    for point in result:
+        assert point.forecast_mw == expected_mid
+        assert point.p95_lower_mw == expected_mid - 1_000.0
+        assert point.p95_upper_mw == expected_mid + 1_000.0
 
 
 # ---------------------------------------------------------------------------

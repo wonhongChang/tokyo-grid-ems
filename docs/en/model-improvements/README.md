@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-07
 
+- [2026-07-18 weekday lag-24 residual ensemble](model-improvement-2026-07-18-weekday-lag24-residual-ensemble.md)
 - [2026-07-18 declining-shape analog uplift cap](model-improvement-2026-07-18-declining-analog-uplift-cap.md)
 - [2026-07-16 morning ramp slope overreaction guard](model-improvement-2026-07-16-morning-ramp-slope-overreaction.md)
 - [2026-07-16 evening ramp drop-cap retuning](model-improvement-2026-07-16-evening-ramp-drop-cap-retuning.md)
