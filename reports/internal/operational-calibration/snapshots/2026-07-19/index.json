@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-07-19T18:03:17+09:00",
+  "generatedAt": "2026-07-19T19:49:28+09:00",
   "date": "2026-07-19",
   "snapshots": [
     {
@@ -683,6 +683,51 @@
       "residualCarryoverHours": 7,
       "changedForecastHours": 24,
       "maxAbsCalibrationDeltaMw": 1200.0
+    },
+    {
+      "date": "2026-07-19",
+      "generatedAt": "2026-07-19T19:49:28+09:00",
+      "path": "reports/internal/operational-calibration/snapshots/2026-07-19/2026-07-19T19-49-28-09-00.json",
+      "model": "lgbm_quantile_q50",
+      "applied": true,
+      "observedHours": 19,
+      "fallbackActualHours": 0,
+      "lastObservedHour": 18,
+      "baseAdjustmentMw": 1028.8,
+      "appliedDayBiasMw": 0.0,
+      "appliedRegimeReason": [
+        "intraday_observed_residual",
+        "positive_residual_slope_damping_triggered",
+        "non_business_evening_positive_residual_damping",
+        "evening_decline_continuity_guard"
+      ],
+      "sourceConfidence": {
+        "level": "observed",
+        "actualHours": 19,
+        "usableObservedHours": 19,
+        "fallbackIgnoredHours": 0,
+        "missingHours": 5
+      },
+      "businessTypeTransitionPriorApplied": false,
+      "businessTypeTransitionApplied": false,
+      "positiveResidualMitigationApplied": false,
+      "positiveResidualSlopeDampingApplied": true,
+      "positiveResidualSlopeDampingFactor": 0.4,
+      "positiveResidualSlopeDampingMaxMw": 617.3,
+      "morningRampContinuityGuardApplied": false,
+      "morningRampContinuityMaxRestoreMw": 0.0,
+      "morningObservedRampFloorApplied": false,
+      "morningObservedRampFloorMaxLiftMw": 0.0,
+      "morningObservedAnchorCapApplied": false,
+      "morningObservedAnchorCapMaxReductionMw": 0.0,
+      "afternoonObservedAnchorCapApplied": false,
+      "afternoonObservedAnchorCapMaxReductionMw": 0.0,
+      "eveningDeclineContinuityGuardApplied": true,
+      "eveningDeclineContinuityMaxReductionMw": 900.0,
+      "negResidualRecoveryDampingApplied": false,
+      "residualCarryoverHours": 5,
+      "changedForecastHours": 24,
+      "maxAbsCalibrationDeltaMw": 870.7
     }
   ]
 }
