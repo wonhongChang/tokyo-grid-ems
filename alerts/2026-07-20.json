@@ -4,7 +4,7 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 3,
+    "warning": 4,
     "info": 0
   },
   "events": [
@@ -46,6 +46,21 @@
       "endAt": "2026-07-20T02:00:00+09:00",
       "metric": "residual_mw",
       "residualAvgMw": 685.2,
+      "method": "ewma",
+      "thresholdMw": 800.0,
+      "reason": "EWMA residual above ±800 MW for 3 consecutive hours",
+      "tags": [
+        "residual"
+      ]
+    },
+    {
+      "id": "2026-07-20T10:00:00+09:00_drift",
+      "type": "drift",
+      "severity": "warning",
+      "startAt": "2026-07-20T10:00:00+09:00",
+      "endAt": "2026-07-20T12:00:00+09:00",
+      "metric": "residual_mw",
+      "residualAvgMw": 1864.4,
       "method": "ewma",
       "thresholdMw": 800.0,
       "reason": "EWMA residual above ±800 MW for 3 consecutive hours",
