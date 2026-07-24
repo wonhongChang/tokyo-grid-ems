@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-07-24T21:51:15+09:00",
+  "generatedAt": "2026-07-25T00:20:48+09:00",
   "availability": "ok",
   "visibility": {
     "intendedUse": "internal_model_diagnostics",
@@ -10,45 +10,47 @@
     "storedWithOperationalOutputs": true
   },
   "latest": {
-    "date": "2026-07-23",
+    "date": "2026-07-24",
     "model": {
       "name": "lgbm_quantile_q50_intraday_residual",
       "family": "lgbm_quantile_q50"
     },
     "operationSummary": {
-      "comparableHours": 24,
-      "modelMaeMw": 492.5,
-      "tepcoMaeMw": 221.2,
-      "modelWapePct": 1.12,
-      "tepcoWapePct": 0.5,
-      "modelRmseMw": 623.8,
-      "tepcoRmseMw": 314.3,
-      "modelMaxErrorMw": 1450.0,
-      "tepcoMaxErrorMw": 880.0,
-      "modelMaxErrorHour": 23,
-      "tepcoMaxErrorHour": 7,
-      "maeGapMw": 271.3,
-      "wapeGapPct": 0.62,
+      "comparableHours": 21,
+      "modelMaeMw": 792.1,
+      "tepcoMaeMw": 615.2,
+      "modelWapePct": 1.93,
+      "tepcoWapePct": 1.5,
+      "modelRmseMw": 964.7,
+      "tepcoRmseMw": 750.2,
+      "modelMaxErrorMw": 1989.0,
+      "tepcoMaxErrorMw": 1400.0,
+      "modelMaxErrorHour": 4,
+      "tepcoMaxErrorHour": 13,
+      "maeGapMw": 176.9,
+      "wapeGapPct": 0.43,
       "verdict": "tepco_better",
-      "modelWins": 9,
-      "tepcoWins": 15,
+      "modelWins": 11,
+      "tepcoWins": 10,
       "ties": 0,
-      "modelAdvantageHours": 9,
-      "tepcoAdvantageHours": 15,
+      "modelAdvantageHours": 11,
+      "tepcoAdvantageHours": 10,
       "equalHours": 0,
-      "modelAdvantageRate": 0.375
+      "modelAdvantageRate": 0.524
     },
     "morningTransition": {
       "rows": 6,
-      "modelMaeMw": 461.5,
-      "modelBiasMw": -205.7,
+      "modelMaeMw": 668.1,
+      "modelBiasMw": 212.3,
       "maxErrorHour": 8,
-      "maxAbsErrorMw": 875.1,
-      "morningLagDeltaExcessMeanMw": 659.8,
-      "coolingDelta24hMeanC": 2.1,
-      "publishedVsRecalculatedGapMaxAbsMw": 354.4,
+      "maxAbsErrorMw": 1619.4,
+      "morningLagDeltaExcessMeanMw": 551.9,
+      "coolingDelta24hMeanC": -3.4,
+      "publishedVsRecalculatedGapMaxAbsMw": 669.2,
       "causeTagCounts": {
-        "humidity-ramp": 3
+        "lag-overheat/cooler-day": 2,
+        "humidity-ramp": 1,
+        "freeze": 1
       }
     },
     "nonBusinessMiddayShape": {
@@ -77,23 +79,12 @@
       11
     ],
     "causeTagCounts": {
-      "humidity-ramp": 28,
+      "humidity-ramp": 27,
       "business-return": 11,
-      "freeze": 13,
-      "lag-overheat/cooler-day": 1
+      "freeze": 14,
+      "lag-overheat/cooler-day": 3
     },
     "reports": [
-      {
-        "date": "2026-07-10",
-        "rows": 6,
-        "modelMaeMw": 638.5,
-        "modelBiasMw": 34.2,
-        "maxErrorHour": 11,
-        "maxAbsErrorMw": 1301.5,
-        "causeTagCounts": {
-          "humidity-ramp": 2
-        }
-      },
       {
         "date": "2026-07-11",
         "rows": 6,
@@ -249,6 +240,19 @@
         "causeTagCounts": {
           "humidity-ramp": 3
         }
+      },
+      {
+        "date": "2026-07-24",
+        "rows": 6,
+        "modelMaeMw": 668.1,
+        "modelBiasMw": 212.3,
+        "maxErrorHour": 8,
+        "maxAbsErrorMw": 1619.4,
+        "causeTagCounts": {
+          "lag-overheat/cooler-day": 2,
+          "humidity-ramp": 1,
+          "freeze": 1
+        }
       }
     ]
   },
@@ -266,18 +270,6 @@
       "freeze": 11
     },
     "reports": [
-      {
-        "date": "2026-07-10",
-        "rows": 0,
-        "modelMaeMw": null,
-        "modelBiasMw": null,
-        "maxErrorHour": null,
-        "maxAbsErrorMw": null,
-        "maxShapeDeltaErrorHour": null,
-        "maxAbsShapeDeltaErrorMw": null,
-        "actualRiseModelDropHours": [],
-        "causeTagCounts": {}
-      },
       {
         "date": "2026-07-11",
         "rows": 5,
@@ -446,54 +438,9 @@
         "maxAbsShapeDeltaErrorMw": null,
         "actualRiseModelDropHours": [],
         "causeTagCounts": {}
-      }
-    ]
-  },
-  "reports": [
-    {
-      "date": "2026-07-10",
-      "model": {
-        "name": "lgbm_quantile_q50_intraday_residual",
-        "family": "lgbm_quantile_q50"
       },
-      "availability": "ok",
-      "operationSummary": {
-        "comparableHours": 24,
-        "modelMaeMw": 383.8,
-        "tepcoMaeMw": 375.0,
-        "modelWapePct": 1.1,
-        "tepcoWapePct": 1.08,
-        "modelRmseMw": 478.7,
-        "tepcoRmseMw": 497.3,
-        "modelMaxErrorMw": 1301.5,
-        "tepcoMaxErrorMw": 990.0,
-        "modelMaxErrorHour": 11,
-        "tepcoMaxErrorHour": 12,
-        "maeGapMw": 8.8,
-        "wapeGapPct": 0.02,
-        "verdict": "close",
-        "modelWins": 9,
-        "tepcoWins": 15,
-        "ties": 0,
-        "modelAdvantageHours": 9,
-        "tepcoAdvantageHours": 15,
-        "equalHours": 0,
-        "modelAdvantageRate": 0.375
-      },
-      "morningTransition": {
-        "rows": 6,
-        "modelMaeMw": 638.5,
-        "modelBiasMw": 34.2,
-        "maxErrorHour": 11,
-        "maxAbsErrorMw": 1301.5,
-        "morningLagDeltaExcessMeanMw": 699.6,
-        "coolingDelta24hMeanC": 0.9,
-        "publishedVsRecalculatedGapMaxAbsMw": 349.9,
-        "causeTagCounts": {
-          "humidity-ramp": 2
-        }
-      },
-      "nonBusinessMiddayShape": {
+      {
+        "date": "2026-07-24",
         "rows": 0,
         "modelMaeMw": null,
         "modelBiasMw": null,
@@ -501,14 +448,12 @@
         "maxAbsErrorMw": null,
         "maxShapeDeltaErrorHour": null,
         "maxAbsShapeDeltaErrorMw": null,
-        "shapeDeltaBiasMw": null,
-        "coolingDelta24hMeanC": null,
         "actualRiseModelDropHours": [],
-        "publishedVsRecalculatedGapMaxAbsMw": null,
         "causeTagCounts": {}
-      },
-      "featureBuildError": null
-    },
+      }
+    ]
+  },
+  "reports": [
     {
       "date": "2026-07-11",
       "model": {
@@ -1284,6 +1229,67 @@
         "publishedVsRecalculatedGapMaxAbsMw": 354.4,
         "causeTagCounts": {
           "humidity-ramp": 3
+        }
+      },
+      "nonBusinessMiddayShape": {
+        "rows": 0,
+        "modelMaeMw": null,
+        "modelBiasMw": null,
+        "maxErrorHour": null,
+        "maxAbsErrorMw": null,
+        "maxShapeDeltaErrorHour": null,
+        "maxAbsShapeDeltaErrorMw": null,
+        "shapeDeltaBiasMw": null,
+        "coolingDelta24hMeanC": null,
+        "actualRiseModelDropHours": [],
+        "publishedVsRecalculatedGapMaxAbsMw": null,
+        "causeTagCounts": {}
+      },
+      "featureBuildError": null
+    },
+    {
+      "date": "2026-07-24",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "family": "lgbm_quantile_q50"
+      },
+      "availability": "ok",
+      "operationSummary": {
+        "comparableHours": 21,
+        "modelMaeMw": 792.1,
+        "tepcoMaeMw": 615.2,
+        "modelWapePct": 1.93,
+        "tepcoWapePct": 1.5,
+        "modelRmseMw": 964.7,
+        "tepcoRmseMw": 750.2,
+        "modelMaxErrorMw": 1989.0,
+        "tepcoMaxErrorMw": 1400.0,
+        "modelMaxErrorHour": 4,
+        "tepcoMaxErrorHour": 13,
+        "maeGapMw": 176.9,
+        "wapeGapPct": 0.43,
+        "verdict": "tepco_better",
+        "modelWins": 11,
+        "tepcoWins": 10,
+        "ties": 0,
+        "modelAdvantageHours": 11,
+        "tepcoAdvantageHours": 10,
+        "equalHours": 0,
+        "modelAdvantageRate": 0.524
+      },
+      "morningTransition": {
+        "rows": 6,
+        "modelMaeMw": 668.1,
+        "modelBiasMw": 212.3,
+        "maxErrorHour": 8,
+        "maxAbsErrorMw": 1619.4,
+        "morningLagDeltaExcessMeanMw": 551.9,
+        "coolingDelta24hMeanC": -3.4,
+        "publishedVsRecalculatedGapMaxAbsMw": 669.2,
+        "causeTagCounts": {
+          "lag-overheat/cooler-day": 2,
+          "humidity-ramp": 1,
+          "freeze": 1
         }
       },
       "nonBusinessMiddayShape": {
