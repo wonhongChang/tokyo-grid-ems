@@ -3,9 +3,45 @@
   "timezone": "Asia/Tokyo",
   "availability": "ok",
   "summary": {
-    "critical": 0,
-    "warning": 0,
+    "critical": 1,
+    "warning": 1,
     "info": 0
   },
-  "events": []
+  "events": [
+    {
+      "id": "2026-07-25T09:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-07-25T09:00:00+09:00",
+      "endAt": "2026-07-25T10:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 93.0,
+      "thresholdPct": 92.0,
+      "supplyMw": 44550.0,
+      "reason": "Usage 93.0% exceeded warning threshold 92.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2026-07-25T09:00:00+09:00_spike",
+      "type": "spike",
+      "severity": "critical",
+      "startAt": "2026-07-25T09:00:00+09:00",
+      "endAt": "2026-07-25T10:00:00+09:00",
+      "metric": "actual_mw",
+      "actualMw": 41470.0,
+      "expectedMw": 38690.4,
+      "interval": {
+        "p95Lower": 36998.1,
+        "p95Upper": 39748.1,
+        "p99Lower": 35305.8,
+        "p99Upper": 40805.8
+      },
+      "reason": "Actual 41470 MW exceeded p99 upper 40806 MW by 664 MW (1.60%)",
+      "tags": [
+        "interval"
+      ]
+    }
+  ]
 }
