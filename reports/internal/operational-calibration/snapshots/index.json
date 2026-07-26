@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-07-26T19:54:28+09:00",
+  "generatedAt": "2026-07-26T21:43:17+09:00",
   "retentionDays": 14,
   "maxPerDay": 24,
   "dates": [
@@ -642,28 +642,28 @@
     {
       "date": "2026-07-26",
       "path": "reports/internal/operational-calibration/snapshots/2026-07-26/index.json",
-      "snapshotCount": 17,
+      "snapshotCount": 18,
       "latest": {
         "date": "2026-07-26",
-        "generatedAt": "2026-07-26T19:54:28+09:00",
-        "path": "reports/internal/operational-calibration/snapshots/2026-07-26/2026-07-26T19-54-28-09-00.json",
+        "generatedAt": "2026-07-26T21:43:17+09:00",
+        "path": "reports/internal/operational-calibration/snapshots/2026-07-26/2026-07-26T21-43-17-09-00.json",
         "model": "lgbm_quantile_q50",
         "applied": true,
-        "observedHours": 19,
+        "observedHours": 21,
         "fallbackActualHours": 0,
-        "lastObservedHour": 18,
-        "baseAdjustmentMw": -594.8,
+        "lastObservedHour": 20,
+        "baseAdjustmentMw": -383.8,
         "appliedDayBiasMw": 0.0,
         "appliedRegimeReason": [
           "intraday_observed_residual",
-          "negative_residual_near_term_floor"
+          "evening_decline_continuity_guard"
         ],
         "sourceConfidence": {
           "level": "observed",
-          "actualHours": 19,
-          "usableObservedHours": 19,
+          "actualHours": 21,
+          "usableObservedHours": 21,
           "fallbackIgnoredHours": 0,
-          "missingHours": 5
+          "missingHours": 3
         },
         "businessTypeTransitionPriorApplied": false,
         "businessTypeTransitionApplied": false,
@@ -679,12 +679,12 @@
         "morningObservedAnchorCapMaxReductionMw": 0.0,
         "afternoonObservedAnchorCapApplied": false,
         "afternoonObservedAnchorCapMaxReductionMw": 0.0,
-        "eveningDeclineContinuityGuardApplied": false,
-        "eveningDeclineContinuityMaxReductionMw": 0.0,
+        "eveningDeclineContinuityGuardApplied": true,
+        "eveningDeclineContinuityMaxReductionMw": 665.9,
         "negResidualRecoveryDampingApplied": false,
-        "residualCarryoverHours": 5,
+        "residualCarryoverHours": 3,
         "changedForecastHours": 24,
-        "maxAbsCalibrationDeltaMw": 594.8
+        "maxAbsCalibrationDeltaMw": 746.7
       }
     }
   ]
