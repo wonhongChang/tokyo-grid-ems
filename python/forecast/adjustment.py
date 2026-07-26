@@ -30,8 +30,11 @@ class AnalogousDayAdjuster:
 
     def __init__(self, config: dict) -> None:
         adjustment_config = config.get("adjustment", {})
-        self._enabled = bool(adjustment_config.get("enabled", True))
         analog_config = adjustment_config.get("analogous_day", {})
+        self._enabled = bool(
+            adjustment_config.get("enabled", True)
+            and analog_config.get("enabled", True)
+        )
         self._month_window               = int(analog_config.get("month_window", 1))
         self._temp_anomaly_tol           = float(analog_config.get("temp_anomaly_tol", 4.0))
         self._consec_holiday_tol         = int(analog_config.get("consec_holiday_tol", 2))
@@ -45,6 +48,16 @@ class AnalogousDayAdjuster:
         self._daytime_temp_hours         = set(analog_config.get(
             "daytime_temp_hours", [10, 11, 12, 13, 14, 15, 16, 17]
         ))
+
+    @staticmethod
+    def _observed_actual_rows(cache: pd.DataFrame) -> pd.DataFrame:
+        mask = cache["actual_mw"].notna()
+        if "actual_source" in cache.columns:
+            mask &= (
+                cache["actual_source"].fillna("observed")
+                != "tepco_forecast_fallback"
+            )
+        return cache.loc[mask]
 
     # ------------------------------------------------------------------
     # Candidate search
@@ -61,7 +74,7 @@ class AnalogousDayAdjuster:
         """Return up to max_candidates analogous past dates, most-recent first."""
         from python.forecast.feature_builder import _consec_holiday_len
 
-        actual_rows = cache[cache["actual_mw"].notna()]
+        actual_rows = self._observed_actual_rows(cache)
         past_dates = sorted(
             candidate_date
             for candidate_date in actual_rows["ts"].dt.date.unique()
@@ -181,7 +194,7 @@ class AnalogousDayAdjuster:
 
         # Compute per-hour residuals (actual − q50 prediction) for each candidate
         hour_residuals: dict[int, list[float]] = {h: [] for h in range(24)}
-        actual_rows = cache[cache["actual_mw"].notna()]
+        actual_rows = self._observed_actual_rows(cache)
 
         for candidate_date in candidates:
             try:

@@ -18,7 +18,9 @@ from python.etl.run_batch import (
     _extend_cache_with_forecast_weather,
     _freeze_observed_forecast_hours,
     _inject_today_actuals,
+    _load_or_promote_lgbm,
     _load_existing_forecast,
+    _model_retrain_due,
     _reserve_risk_severity_from_alerts_payload,
     _write_forecast_snapshot,
     _write_operational_calibration_snapshot,
@@ -204,6 +206,42 @@ def test_extend_cache_keeps_historical_actual_weather(monkeypatch):
     assert result["apparent_temp_c"].iloc[0] == pytest.approx(25.5)
     assert result["humidity_pct"].iloc[0] == pytest.approx(60.0)
     assert result["discomfort_index"].iloc[0] == pytest.approx(72.0)
+
+
+def test_extend_cache_refreshes_actual_weather_from_amedas(monkeypatch):
+    ts = pd.Timestamp("2026-07-26T12:00:00+09:00")
+    cache = pd.DataFrame([{
+        "ts": ts,
+        "actual_mw": 34_000.0,
+        "actual_source": "observed",
+        "forecast_mw": 33_800.0,
+        "usage_pct": 80.0,
+        "supply_mw": 42_000.0,
+        "temp_c": 30.5,
+        "apparent_temp_c": 33.0,
+        "humidity_pct": 55.0,
+        "discomfort_index": 79.0,
+        "weather_source": "JMA_FORECAST",
+    }])
+    weather = pd.DataFrame({
+        "ts": [ts],
+        "temp_c": [31.2],
+        "apparent_temp_c": [34.8],
+        "humidity_pct": [61.0],
+        "discomfort_index": [81.2],
+        "weather_source": ["AMEDAS_ACTUAL"],
+    })
+    monkeypatch.setattr(
+        "python.etl.fetch_weather.fetch_forecast_temps",
+        lambda days=3: weather,
+    )
+
+    result = _extend_cache_with_forecast_weather(cache, days=3)
+
+    assert result["temp_c"].iloc[0] == pytest.approx(31.2)
+    assert result["apparent_temp_c"].iloc[0] == pytest.approx(34.8)
+    assert result["humidity_pct"].iloc[0] == pytest.approx(61.0)
+    assert result["weather_source"].iloc[0] == "AMEDAS_ACTUAL"
 
 
 def test_weather_forecast_bias_correction_raises_near_term_morning_forecast(monkeypatch):
@@ -527,6 +565,248 @@ def test_inject_today_actuals_fills_missing_yesterday_hours_from_tepco_forecast(
 
 
 # ── build_alerts_json ────────────────────────────────────────────────────────
+
+def test_inject_today_actuals_marks_tepco_fallback_source(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "series": [{
+            "ts": "2024-01-02T23:00:00+09:00",
+            "actualMw": None,
+            "actualSource": None,
+            "tepcoForecastMw": 21_000.0,
+        }],
+    }), encoding="utf-8")
+    cache = pd.DataFrame(columns=[
+        "ts",
+        "actual_mw",
+        "actual_source",
+        "forecast_mw",
+        "usage_pct",
+        "supply_mw",
+    ])
+
+    result = _inject_today_actuals(tmp_path, date(2024, 1, 3), cache)
+    row = result.iloc[0]
+
+    assert row["actual_mw"] == pytest.approx(21_000.0)
+    assert row["actual_source"] == "tepco_forecast_fallback"
+
+
+def test_inject_today_actuals_excludes_today_fallback_from_observed_cache(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    (actual_dir / "2024-01-03.json").write_text(json.dumps({
+        "date": "2024-01-03",
+        "series": [{
+            "ts": "2024-01-03T12:00:00+09:00",
+            "actualMw": None,
+            "actualSource": None,
+            "tepcoForecastMw": 31_500.0,
+            "supplyMw": 40_000.0,
+        }],
+    }), encoding="utf-8")
+    cache = pd.DataFrame([{
+        "ts": pd.Timestamp("2024-01-03T12:00:00+09:00"),
+        "actual_mw": float("nan"),
+        "actual_source": None,
+        "forecast_mw": 31_500.0,
+        "usage_pct": float("nan"),
+        "supply_mw": 40_000.0,
+    }])
+
+    result = _inject_today_actuals(
+        tmp_path,
+        date(2024, 1, 3),
+        cache,
+        fallback_through=date(2024, 1, 2),
+    )
+    row = result.iloc[0]
+
+    assert pd.isna(row["actual_mw"])
+    assert pd.isna(row["actual_source"])
+    assert row["forecast_mw"] == pytest.approx(31_500.0)
+
+
+def test_inject_today_actuals_never_replaces_observed_with_fallback(tmp_path):
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    (actual_dir / "2024-01-02.json").write_text(json.dumps({
+        "date": "2024-01-02",
+        "series": [{
+            "ts": "2024-01-02T23:00:00+09:00",
+            "actualMw": 21_000.0,
+            "actualSource": "tepco_forecast_fallback",
+            "tepcoForecastMw": 21_000.0,
+        }],
+    }), encoding="utf-8")
+    cache = pd.DataFrame([{
+        "ts": pd.Timestamp("2024-01-02T23:00:00+09:00"),
+        "actual_mw": 20_650.0,
+        "actual_source": "observed",
+        "forecast_mw": 20_900.0,
+        "usage_pct": 80.0,
+        "supply_mw": 26_000.0,
+    }])
+
+    result = _inject_today_actuals(tmp_path, date(2024, 1, 3), cache)
+    row = result.iloc[0]
+
+    assert row["actual_mw"] == pytest.approx(20_650.0)
+    assert row["actual_source"] == "observed"
+    assert row["forecast_mw"] == pytest.approx(21_000.0)
+
+
+def test_model_retrain_due_uses_weekly_schedule(monkeypatch):
+    config = {
+        "model_promotion": {
+            "enabled": True,
+            "retrain_weekday": 0,
+        },
+    }
+    champion = object()
+
+    assert _model_retrain_due(date(2026, 7, 27), config, champion) == (
+        True,
+        "scheduled_weekly_retrain",
+    )
+    assert _model_retrain_due(date(2026, 7, 28), config, champion) == (
+        False,
+        "not_scheduled",
+    )
+
+    monkeypatch.setenv("TOKYO_GRID_EMS_FORCE_MODEL_TRAIN", "true")
+    assert _model_retrain_due(date(2026, 7, 28), config, champion) == (
+        True,
+        "manual_force",
+    )
+
+
+def test_model_promotion_rejects_challenger_and_keeps_champion(
+    tmp_path,
+    monkeypatch,
+):
+    champion = object()
+
+    class FakeChallenger:
+        interval_version = "test"
+
+        def __init__(self, config):
+            self.config = config
+
+        def fit(self, cache):
+            self.cache = cache
+
+        def save(self, path):
+            raise AssertionError("Rejected challenger must not be saved")
+
+    monkeypatch.setattr(
+        "python.etl.run_batch._try_load_lgbm",
+        lambda out_dir: champion,
+    )
+    monkeypatch.setattr(
+        "python.eval.model_validation.build_temporal_validation_report",
+        lambda *args, **kwargs: {
+            "gate": {"passed": False, "failures": ["test_failure"]},
+            "validationPeriod": {"start": "2026-07-01", "end": "2026-07-28"},
+        },
+    )
+    monkeypatch.setattr(
+        "python.eval.model_validation.prediction_drift_report",
+        lambda *args, **kwargs: {
+            "hours": 48,
+            "meanAbsDeltaMw": 10.0,
+            "maxAbsDeltaMw": 20.0,
+        },
+    )
+    monkeypatch.setattr(
+        "python.forecast.lgbm_model.LGBMForecaster",
+        FakeChallenger,
+    )
+    config = {
+        "model_promotion": {
+            "enabled": True,
+            "retrain_weekday": 0,
+            "bootstrap_when_champion_missing": False,
+        },
+    }
+    cache = pd.DataFrame({
+        "ts": [pd.Timestamp("2026-07-26T00:00:00+09:00")],
+        "actual_mw": [30_000.0],
+        "actual_source": ["observed"],
+    })
+
+    result = _load_or_promote_lgbm(
+        cache,
+        tmp_path,
+        config,
+        date(2026, 7, 27),
+    )
+    report = json.loads(
+        (tmp_path / "metrics" / "model_promotion.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert result is champion
+    assert report["status"] == "rejected"
+    assert report["reason"] == "promotion_gate_failed"
+
+
+def test_model_promotion_does_not_bypass_failed_gate_without_champion(
+    tmp_path,
+    monkeypatch,
+):
+    class FakeChallenger:
+        interval_version = "test"
+
+        def __init__(self, config):
+            self.config = config
+
+        def fit(self, cache):
+            self.cache = cache
+
+        def save(self, path):
+            raise AssertionError("Failed bootstrap must not be saved")
+
+    monkeypatch.setattr(
+        "python.etl.run_batch._try_load_lgbm",
+        lambda out_dir: None,
+    )
+    monkeypatch.setattr(
+        "python.eval.model_validation.build_temporal_validation_report",
+        lambda *args, **kwargs: {
+            "gate": {"passed": False, "failures": ["test_failure"]},
+            "validationPeriod": {"start": "2026-07-01", "end": "2026-07-28"},
+        },
+    )
+    monkeypatch.setattr(
+        "python.forecast.lgbm_model.LGBMForecaster",
+        FakeChallenger,
+    )
+    config = {
+        "model_promotion": {
+            "enabled": True,
+            "retrain_weekday": 0,
+            "bootstrap_when_champion_missing": False,
+        },
+    }
+    cache = pd.DataFrame({
+        "ts": [pd.Timestamp("2026-07-26T00:00:00+09:00")],
+        "actual_mw": [30_000.0],
+        "actual_source": ["observed"],
+    })
+
+    result = _load_or_promote_lgbm(
+        cache,
+        tmp_path,
+        config,
+        date(2026, 7, 27),
+    )
+
+    assert result is None
+
 
 def test_injected_actuals_can_be_persisted_to_hourly_cache(tmp_path):
     actual_dir = tmp_path / "actual"

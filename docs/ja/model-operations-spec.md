@@ -222,7 +222,7 @@ Raw LightGBM Forecast
 
 | レイヤー | 実装 | 目的 |
 |---|---|---|
-| Analogous day | `AnalogousDayAdjuster` | 類似過去日のresidualでraw forecastを補正 |
+| Analogous day | `AnalogousDayAdjuster` | 直近replayの悪化により現在は迂回（`analogous_day.enabled: false`）。shadow確認用のstage計測は維持 |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 類似日補正の誤方向shiftを制限 |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | 予測shapeも不足している場合のみ、非営業日lagが営業日朝を下げすぎる問題を緩和 |
 | Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | 通常営業日の午後にlag/recent shapeと気象が上方を支持しない場合、正の類似日shiftを制限 |
@@ -249,6 +249,10 @@ Raw LightGBM Forecast
 | 領域 | Config Key | 現在値 | 運用ガイド |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | 上げるほど前日差残差モデルを重視し、下げるほど絶対需要モデルの性質を維持します。version-aware rolling replayとfrozen-origin holdoutを両方通過した場合のみ調整します。 |
+| promotion | `retrain_weekday` | 0（月曜） | Challenger評価日です。それ以外の日は現在のChampionを継続利用します。 |
+| promotion | `validation_window_days` | 28 | 評価ごとに直近の確定28日を使います。28日ごとに一度だけ再学習する意味ではありません。 |
+| promotion | 絶対品質上限 | MAE 1000、WAPE 3.0%、shape 750、最大誤差6500 MW | 弱いbaselineを上回っても運用品質が低いモデルを拒否します。segment上限はMAE 1500、shape 1100 MWです。 |
+| promotion | 予測drift上限 | 平均900、時間最大2500 MW | 全データ学習Challengerが今日・明日の曲線をChampionから過度に変える場合は昇格を拒否します。 |
 | weather | `cooling_base_temp_c` | 22.0 | 下げると冷房感度が早く立ち上がり、上げると初夏の過反応を抑えます。暖候期全体で検証します。 |
 | weather | `heating_base_temp_c` | 18.0 | 上げると暖房信号が強くなり、下げると冬の過敏反応を抑えます。 |
 | weather bias | `min_abs_bias_c` | 1.5 | 下げると予報bias補正が頻繁に作動します。低すぎると気象noiseを追います。 |
@@ -272,6 +276,7 @@ Raw LightGBM Forecast
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 夕方下落局面で局所的なreboundだけでなく、高水準に残るoverhangも制限します。暑い夕方の実需要まで抑える場合だけ無効化を検討します。 |
 | intraday | `ramp_guard.observed_drop_relaxation` | `min_recent_drop_mw=500`, decline support `[2600, 4800, 6500]` | 実績需要が意味のある下落を始め、対象時間の lag/recent delta がともに下落を支持する場合だけ、最終の近距離 drop cap を緩和します。cap を上げると夕方の急落をより保持し、下げると直近実績レベルに近く保ちます。 |
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | 当日が前日より明確に暑い場合、warm-day lag24 cap に追加余裕を与えます。上げると急な昇温日の偽の谷を減らし、下げると前日需要 anchor をより厳格に適用します。 |
+| post-processing | `analogous_day.enabled` | false | 直近stage replayでMAEとshapeが悪化したため無効化しています。営業区分・時間帯別shadow結果が一貫して改善した後に再有効化します。 |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 営業日復帰anchorのリフト前に、予測ランプが最近の同営業タイプランプより十分に不足しているかを確認します。下げるとリフト頻度が増え、上げると健全なraw shapeを過剰に支援するリスクを抑えます。 |
 | post-processing | `business_declining_analog_uplift_cap.max_allowed_shift_mw` | 100 | 2つの需要shape基準が横ばい/下落し、当日が前日より暖かくない場合に許容する正の類似日shift上限です。上げると類似日residualをより信頼し、下げるとraw LGBMに近く保ちます。 |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday補正前に、根拠の弱い単独午後ピークを減らせる最大値です。上げるとartifact除去が強くなり、下げるとraw/analogピークshapeをより保持します。 |
@@ -280,6 +285,14 @@ Raw LightGBM Forecast
 | calibration snapshots | `retention_days` | 14 | 内部calibration履歴です。短すぎると障害分析が難しくなります。 |
 | reserve risk | warning | 92% | TEPCO基準のwarning thresholdです。下げると警告が増え、上げると早期警戒性が弱まります。 |
 | reserve risk | critical | 97% | TEPCO基準のcritical thresholdです。warningと視覚的に明確に分けます。 |
+
+### 昇格とreplayの解釈
+
+- モデル昇格評価は標準で毎週実行しますが、毎回直近の確定28日rolling windowを使用します。
+- 時系列検証はtarget日の需要を隠し、最終気象文脈を利用して、運用後処理を除くモデル契約を評価します。
+- `metrics/operational_replay.json`は実際に配信した予測を評価し、TEPCOは外部参考指標としてのみ表示します。
+- Stage replayは日付別の最新calibration snapshotを利用するため、全Intraday公開履歴の完全な再現ではありません。
+- TEPCO forecast fallbackはlag連続性には使えますが、学習targetと検証actualから除外します。
 
 ### 指標
 

@@ -586,10 +586,11 @@ def fetch_forecast_temps(days: int = 3) -> pd.DataFrame:
 
 
 def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
-    """Add / fill weather columns in cache using Open-Meteo archive API.
+    """Fill historical weather and refresh recent rows with JMA observations.
 
-    Only fetches date ranges where actual_mw exists but weather values are missing.
-    Returns updated cache (original is not modified).
+    Missing historical values follow ``fetch_past_temps`` fallback rules. Recent
+    demand rows are revisited so an earlier forecast can be replaced by an
+    official AMeDAS observation. Returns a copy.
     """
     cache = cache.copy()
     if "temp_c" not in cache.columns:
@@ -607,10 +608,21 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
         (cache["temp_c"].isna() | cache["apparent_temp_c"].isna())
         & cache["actual_mw"].notna()
     )
-    if not missing_mask.any():
+    today = pd.Timestamp.now(tz=JST).date()
+    recent_start = today - timedelta(days=2)
+    recent_actual_mask = (
+        cache["actual_mw"].notna()
+        & (cache["ts"].dt.date >= recent_start)
+        & ~cache["weather_source"].astype("string").str.contains(
+            _SOURCE_AMEDAS_ACTUAL,
+            na=False,
+        )
+    )
+    fetch_mask = missing_mask | recent_actual_mask
+    if not fetch_mask.any():
         return cache
 
-    missing_dates = sorted(set(cache.loc[missing_mask, "ts"].dt.date))
+    missing_dates = sorted(set(cache.loc[fetch_mask, "ts"].dt.date))
     start, end = missing_dates[0], missing_dates[-1]
     print(f"[WEATHER] Fetching archive temps: {start} to {end} ({len(missing_dates)} dates)")
 
@@ -634,11 +646,27 @@ def enrich_cache_with_weather(cache: pd.DataFrame) -> pd.DataFrame:
             else {}
         )
         fill_mask = cache["actual_mw"].notna()
-        temp_fill_mask = cache["temp_c"].isna() & fill_mask
-        apparent_fill_mask = cache["apparent_temp_c"].isna() & fill_mask
-        humidity_fill_mask = cache["humidity_pct"].isna() & fill_mask
-        discomfort_fill_mask = cache["discomfort_index"].isna() & fill_mask
-        source_fill_mask = cache["weather_source"].isna() & fill_mask
+        fetched_source = cache["ts"].map(ts_to_source)
+        official_refresh_mask = (
+            fill_mask
+            & fetched_source.astype("string").str.contains(
+                _SOURCE_AMEDAS_ACTUAL,
+                na=False,
+            )
+        )
+        temp_fill_mask = fill_mask & (cache["temp_c"].isna() | official_refresh_mask)
+        apparent_fill_mask = fill_mask & (
+            cache["apparent_temp_c"].isna() | official_refresh_mask
+        )
+        humidity_fill_mask = fill_mask & (
+            cache["humidity_pct"].isna() | official_refresh_mask
+        )
+        discomfort_fill_mask = fill_mask & (
+            cache["discomfort_index"].isna() | official_refresh_mask
+        )
+        source_fill_mask = fill_mask & (
+            cache["weather_source"].isna() | official_refresh_mask
+        )
         cache.loc[temp_fill_mask, "temp_c"] = cache.loc[temp_fill_mask, "ts"].map(ts_to_temp)
         cache.loc[apparent_fill_mask, "apparent_temp_c"] = (
             cache.loc[apparent_fill_mask, "ts"].map(ts_to_apparent_temp)

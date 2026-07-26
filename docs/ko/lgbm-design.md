@@ -146,8 +146,8 @@ residual = actualMw - modelForecastMw
 
 1. ETL이 TEPCO 월별 ZIP에서 확정 이력 데이터를 읽습니다.
 2. JMA AMeDAS 실측 기상, JMA 공식 예보 기온, 습도 fallback 필드를 붙입니다.
-3. LightGBM을 학습하고 `web/public/.lgbm_model.pkl`로 저장합니다.
-4. status/intraday workflow가 모델을 다시 로드합니다.
+3. 전체 ETL은 현재 Champion을 유지합니다. 설정된 주간 평가일에는 Challenger를 학습하고 최근 28일 시간 순서 검증, 구간별·절대 품질, 예측 drift gate를 모두 통과한 경우에만 승격합니다.
+4. 승격된 모델만 `web/public/.lgbm_model.pkl`로 저장하며 status/intraday workflow는 이 Champion을 다시 로드합니다.
 5. 월별 ZIP이 아직 갱신되지 않은 구간은 최근 actual JSON으로 cache를 보강하고 저장해 다음 실행의 lag 연속성을 유지합니다.
 6. 오늘 예측을 만들고 intraday residual correction을 적용합니다.
 7. 같은 cache로 내일 예측도 만듭니다.
@@ -157,9 +157,12 @@ residual = actualMw - modelForecastMw
 
 ## 평가
 
-두 가지 리포트를 생성합니다.
+세 가지 리포트를 생성합니다.
 
 - `metrics/model_backtest.json`: train/test 분리를 지킨 LightGBM vs baseline 오프라인 백테스트
 - `metrics/forecast_accuracy.json`: 운영 중 TEPCO 공식 예측과 자체 모델의 오차 비교. MAE, WAPE, RMSE, 우세 시간 수, 최대 오차 리스크를 포함합니다.
+- `metrics/operational_replay.json`: 실제 서빙 예측, stage shadow, 밴드 포함률, TEPCO 참고 성능의 rolling 진단
+
+모델 승격 결정과 rolling 검증 근거는 `metrics/model_promotion.json`에 저장합니다.
 
 TEPCO 예측은 내부 정보가 반영될 수 있는 강한 기준선입니다. 이 프로젝트의 목적은 TEPCO를 항상 이긴다고 주장하는 것이 아니라, 공개 데이터만으로 만든 모델을 투명하게 비교하고 운영하는 것입니다.

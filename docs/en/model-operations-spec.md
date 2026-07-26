@@ -224,7 +224,7 @@ The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_
 
 | Layer | Implementation | Purpose |
 |---|---|---|
-| Analogous day | `AnalogousDayAdjuster` | shifts raw forecast using residuals from similar historical days |
+| Analogous day | `AnalogousDayAdjuster` | currently bypassed (`analogous_day.enabled: false`) after recent replay degradation; stage remains observable for shadow review |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | blocks analogous-day shifts in the wrong direction |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | protects Monday/business-return morning ramps from non-business lag drag only when the forecast shape is also short |
 | Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | limits positive analog shifts on ordinary business afternoons when lag/recent shape and weather all fail to support an uplift |
@@ -251,6 +251,10 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | Area | Config Key | Current value | Operational guide |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | Higher values trust the day-over-day residual model more; lower values retain more absolute-level behavior. Retune only with version-aware rolling and frozen-origin holdouts. |
+| promotion | `retrain_weekday` | 0 (Monday) | Controls when a challenger is evaluated. The current champion continues serving on other days. |
+| promotion | `validation_window_days` | 28 | Uses the latest 28 complete days at every evaluation. This is a rolling evidence window, not a 28-day retraining interval. |
+| promotion | absolute quality limits | MAE 1000, WAPE 3.0%, shape 750, max error 6500 MW | Rejects a challenger even when it beats a weak baseline but remains operationally poor. Segment limits are MAE 1500 and shape 1100 MW. |
+| promotion | prediction drift limits | mean 900, hourly max 2500 MW | Rejects a full-data challenger whose today/tomorrow curve moves too far from the champion. |
 | weather | `cooling_base_temp_c` | 22.0 | Lower values activate cooling sensitivity earlier; higher values reduce early-summer overreaction. Validate across the full warm season. |
 | weather | `heating_base_temp_c` | 18.0 | Higher values strengthen heating signals; lower values reduce winter over-sensitivity. |
 | weather bias | `min_abs_bias_c` | 1.5 | Lower values apply forecast-bias correction more often; too low may chase weather noise. |
@@ -274,6 +278,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | Extends the evening guard from local rebound spikes to high-but-flat overhangs after observed demand is falling. Disable only if it suppresses genuine hot-evening demand. |
 | intraday | `ramp_guard.observed_drop_relaxation` | `min_recent_drop_mw=500`, decline support `[2600, 4800, 6500]` | Relaxes the final near-term drop cap once actual demand has started a material decline and the target hour's lag/recent deltas both support that decline. Raising the caps preserves sharper evening drops; lowering them keeps the line closer to the latest observed level. |
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | Adds extra headroom to the warm-day lag24 cap when the current day is materially hotter than yesterday. Raising it prevents false valleys on rapid warming days; lowering it restores a stricter yesterday-anchor cap. |
+| post-processing | `analogous_day.enabled` | false | Recent stage replay degraded MAE and shape. Re-enable only after business/non-business and time-band shadow results improve consistently. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | Requires the forecast ramp to be materially weaker than the recent same-business ramp before lifting a Monday/business-return anchor shortfall. Lower values lift more often; higher values avoid over-helping an already healthy raw shape. |
 | post-processing | `business_declining_analog_uplift_cap.max_allowed_shift_mw` | 100 | Maximum positive analog shift when both demand-shape references are flat/down and the day is not warmer than yesterday. Raising it trusts analogous-day residuals more; lowering it stays closer to raw LGBM. |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | Caps how much a single unsupported afternoon peak can be reduced before intraday correction. Raising it removes artifacts more aggressively; lowering it preserves more raw/analog peak shape. |
@@ -282,6 +287,14 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | calibration snapshots | `retention_days` | 14 | Internal calibration history. Too short makes incident analysis harder. |
 | reserve risk | warning | 92% | TEPCO reserve warning threshold. Lower values create more warnings; higher values reduce early warning behavior. |
 | reserve risk | critical | 97% | TEPCO reserve critical threshold. Keep visually distinct from warning status. |
+
+### Promotion and replay semantics
+
+- Model promotion runs on a weekly schedule by default, but each run evaluates the latest rolling 28 complete days.
+- Temporal validation uses target-day weather with target demand removed. It evaluates the model contract without operational post-processing.
+- `metrics/operational_replay.json` evaluates forecasts that were actually served and reports TEPCO only as an external reference.
+- Stage replay uses the latest available calibration snapshot per date. It is diagnostic shadow evidence, not an exact reconstruction of every intraday publication.
+- TEPCO forecast fallback can support lag continuity, but it is excluded from training targets and all validation actuals.
 
 ### Metrics
 

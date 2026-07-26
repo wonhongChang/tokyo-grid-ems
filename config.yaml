@@ -6,6 +6,22 @@ forecast:
     business_day_only: true # preserve the separately tuned non-business-day model path
     weight: 0.5              # blend absolute demand and (demand - lag_24h) q50 estimates
 
+model_promotion:
+  enabled: true
+  retrain_weekday: 0         # Monday; ETL still runs daily with the current champion
+  validation_window_days: 28 # rolling temporal holdout, not a 28-day replacement cycle
+  min_mae_improvement_vs_baseline_pct: 20.0
+  max_segment_mae_regression_pct: 10.0
+  max_validation_mae_mw: 1000
+  max_validation_wape_pct: 3.0
+  max_validation_shape_delta_mae_mw: 750
+  max_validation_max_error_mw: 6500
+  max_segment_mae_mw: 1500
+  max_segment_shape_delta_mae_mw: 1100
+  max_mean_prediction_drift_mw: 900
+  max_hour_prediction_drift_mw: 2500
+  bootstrap_when_champion_missing: false # failed validation falls back to baseline, never bypasses the gate
+
 weather_features:
   cooling_base_temp_c: 22.0  # configurable balance point for cooling-degree features
   heating_base_temp_c: 18.0  # configurable balance point for heating-degree features
@@ -436,6 +452,7 @@ anomaly:
 adjustment:
   enabled: true
   analogous_day:
+    enabled: false            # recent operational replay degraded MAE; retain as shadow-only
     month_window: 1          # ±months for candidate search
     temp_anomaly_tol: 4.0    # max |candidate_anomaly - target_anomaly| in °C
     daytime_temp_hours: [10, 11, 12, 13, 14, 15, 16, 17]

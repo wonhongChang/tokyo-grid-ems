@@ -144,8 +144,8 @@ See [Business Return Anchor Shortfall Guard](model-improvements/model-improvemen
 
 1. ETL loads confirmed historical TEPCO data from monthly ZIP files.
 2. Weather enrichment fills JMA AMeDAS observed weather, JMA official forecast temperatures, and humidity fallback fields.
-3. LightGBM is trained and saved to `web/public/.lgbm_model.pkl`.
-4. The status/intraday workflow reloads the model.
+3. Full ETL keeps the current Champion. On the configured weekly evaluation day, it trains a Challenger and promotes it only after rolling 28-day temporal, segment, absolute-quality, and prediction-drift gates pass.
+4. The promoted model is saved to `web/public/.lgbm_model.pkl`; status/intraday workflows only reload this Champion.
 5. Recent actual JSON files are injected into the cache and persisted to fill gaps before the monthly ZIP is updated.
 6. Today's forecast is generated and adjusted with intraday residual correction.
 7. Tomorrow's forecast is generated using the same enriched cache.
@@ -155,9 +155,12 @@ See [Business Return Anchor Shortfall Guard](model-improvements/model-improvemen
 
 ## Evaluation
 
-Two reports are generated:
+Three reports are generated:
 
 - `metrics/model_backtest.json`: offline LightGBM vs baseline backtest with train/test separation.
 - `metrics/forecast_accuracy.json`: operational comparison against TEPCO's published forecast, including MAE, WAPE, RMSE, dominance hours, and max-error risk.
+- `metrics/operational_replay.json`: rolling served-forecast, stage-shadow, interval-coverage, and TEPCO-reference diagnostics.
+
+Model promotion decisions and their rolling validation evidence are stored in `metrics/model_promotion.json`.
 
 The operational comparison is a scorecard, not a claim that the project always beats TEPCO. TEPCO may use internal information unavailable to this project.

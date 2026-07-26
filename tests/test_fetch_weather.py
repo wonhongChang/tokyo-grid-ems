@@ -492,6 +492,38 @@ def test_enrich_no_op_when_already_filled():
     assert list(result["apparent_temp_c"]) == [4.0, 5.0, 6.0, 7.0]
 
 
+def test_enrich_refreshes_recent_forecast_weather_with_amedas():
+    ts = pd.Timestamp.now(tz=JST).normalize() + pd.Timedelta(hours=12)
+    cache = pd.DataFrame({
+        "ts": [ts],
+        "actual_mw": [32_000.0],
+        "temp_c": [30.0],
+        "apparent_temp_c": [32.0],
+        "humidity_pct": [55.0],
+        "discomfort_index": [78.0],
+        "weather_source": ["JMA_FORECAST"],
+    })
+    observed = pd.DataFrame({
+        "ts": [ts],
+        "temp_c": [31.1],
+        "apparent_temp_c": [34.2],
+        "humidity_pct": [62.0],
+        "discomfort_index": [81.0],
+        "weather_source": ["AMEDAS_ACTUAL"],
+    })
+
+    with patch(
+        "python.etl.fetch_weather.fetch_past_temps",
+        return_value=observed,
+    ):
+        result = enrich_cache_with_weather(cache)
+
+    assert result["temp_c"].iloc[0] == pytest.approx(31.1)
+    assert result["apparent_temp_c"].iloc[0] == pytest.approx(34.2)
+    assert result["humidity_pct"].iloc[0] == pytest.approx(62.0)
+    assert result["weather_source"].iloc[0] == "AMEDAS_ACTUAL"
+
+
 def test_enrich_does_not_backfill_legacy_humidity_only_gaps():
     cache = _make_cache_no_temp(4)
     cache["temp_c"] = [5.0, 6.0, 7.0, 8.0]

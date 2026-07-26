@@ -392,6 +392,11 @@ def build_training_features(
     cooling_base_temp_c, heating_base_temp_c = _weather_feature_config(config)
     df = _ensure_tz(cache)
     df = df[df["actual_mw"].notna()].sort_values("ts").reset_index(drop=True)
+    if "actual_source" in df.columns:
+        df = df[
+            df["actual_source"].fillna("observed")
+            != "tepco_forecast_fallback"
+        ].reset_index(drop=True)
 
     df["hour"]       = df["ts"].dt.hour
     df["dayofweek"]  = df["ts"].dt.dayofweek
@@ -636,9 +641,16 @@ def build_inference_features(
     """
     cooling_base_temp_c, heating_base_temp_c = _weather_feature_config(config)
     cache = _ensure_tz(cache)
-    actual_rows = cache[cache["actual_mw"].notna()].copy()
+    lag_rows = cache[cache["actual_mw"].notna()].copy()
+    if "actual_source" in lag_rows.columns:
+        actual_rows = lag_rows[
+            lag_rows["actual_source"].fillna("observed")
+            != "tepco_forecast_fallback"
+        ].copy()
+    else:
+        actual_rows = lag_rows.copy()
 
-    actual_mw_by_ts: dict = dict(zip(actual_rows["ts"], actual_rows["actual_mw"]))
+    actual_mw_by_ts: dict = dict(zip(lag_rows["ts"], lag_rows["actual_mw"]))
     actual_rows["_hour"] = actual_rows["ts"].dt.hour
     actual_rows["_dow"]  = actual_rows["ts"].dt.dayofweek
     actual_rows["_is_non_business_day"] = actual_rows["ts"].dt.date.map(

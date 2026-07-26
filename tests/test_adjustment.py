@@ -25,6 +25,7 @@ JST = ZoneInfo("Asia/Tokyo")
 
 def _config(
     enabled: bool = True,
+    analog_enabled: bool = True,
     min_candidates: int = 1,
     max_candidates: int = 5,
     shift_shrinkage: float = 0.7,
@@ -36,6 +37,7 @@ def _config(
         "adjustment": {
             "enabled": enabled,
             "analogous_day": {
+                "enabled": analog_enabled,
                 "month_window": 1,
                 "temp_anomaly_tol": 4.0,
                 "daytime_temp_hours": [10, 11, 12, 13, 14, 15, 16, 17],
@@ -145,6 +147,38 @@ def test_disabled_returns_raw():
     result = adj.adjust(_MockForecaster(), raw, _make_cache(), date(2024, 9, 3),
                         _make_inference_features(date(2024, 9, 3)))
     assert result is raw
+
+
+def test_analog_block_can_be_disabled_without_disabling_other_adjustments():
+    adj = AnalogousDayAdjuster(_config(analog_enabled=False))
+    raw = _make_raw_forecasts(date(2024, 9, 3))
+
+    result = adj.adjust(
+        _MockForecaster(),
+        raw,
+        _make_cache(),
+        date(2024, 9, 3),
+        _make_inference_features(date(2024, 9, 3)),
+    )
+
+    assert result is raw
+
+
+def test_fallback_actuals_are_not_analog_candidates():
+    target = date(2024, 9, 3)
+    cache = _make_cache(n_days=5, base="2024-09-01")
+    cache["actual_source"] = "tepco_forecast_fallback"
+    adj = AnalogousDayAdjuster(_config())
+
+    candidates = adj._find_candidates(
+        cache,
+        target,
+        target_consecutive_holiday_len=0,
+        target_temp_anomaly_7d=float("nan"),
+        target_is_business_day=True,
+    )
+
+    assert candidates == []
 
 
 def test_no_forecaster_returns_raw():

@@ -146,8 +146,8 @@ residual = actualMw - modelForecastMw
 
 1. ETLがTEPCO月次ZIPから確定済み履歴データを読み込みます。
 2. JMA AMeDAS観測気象、JMA公式予報気温、湿度fallbackフィールドを付与します。
-3. LightGBMを学習し `web/public/.lgbm_model.pkl` に保存します。
-4. status/intraday workflowがモデルを再ロードします。
+3. Full ETLは現在のChampionを維持します。設定した週次評価日にはChallengerを学習し、直近28日の時系列検証、segment・絶対品質、予測drift gateをすべて通過した場合のみ昇格します。
+4. 昇格済みモデルだけを`web/public/.lgbm_model.pkl`へ保存し、status/intraday workflowはこのChampionを再ロードします。
 5. 月次ZIPがまだ更新されていない期間は、直近のactual JSONでcacheを補完して保存し、次回実行のlag連続性を維持します。
 6. 今日の予測を生成し、intraday residual correctionを適用します。
 7. 同じcacheから明日の予測も生成します。
@@ -157,9 +157,12 @@ residual = actualMw - modelForecastMw
 
 ## 評価
 
-2種類のレポートを生成します。
+3種類のレポートを生成します。
 
 - `metrics/model_backtest.json`: train/test分離を守ったLightGBM vs baselineのオフラインバックテスト
 - `metrics/forecast_accuracy.json`: 運用中のTEPCO公式予測と自社モデルの誤差比較。MAE、WAPE、RMSE、優位時間数、最大誤差リスクを含みます。
+- `metrics/operational_replay.json`: 実配信予測、stage shadow、band coverage、TEPCO参考性能のrolling診断
+
+モデル昇格判断とrolling検証根拠は`metrics/model_promotion.json`に保存します。
 
 TEPCO予測は内部情報を反映している可能性がある強い基準線です。このプロジェクトの目的はTEPCOに常に勝つことではなく、公開データだけで構築したモデルを透明に比較し、運用することです。

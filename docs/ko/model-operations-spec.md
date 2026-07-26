@@ -232,7 +232,7 @@ Raw LightGBM Forecast
 
 | 레이어 | 구현 | 목적 |
 |---|---|---|
-| Analogous day | `AnalogousDayAdjuster` | 유사 과거일 residual로 raw forecast 보정 |
+| Analogous day | `AnalogousDayAdjuster` | 최근 replay 악화로 현재 우회(`analogous_day.enabled: false`)하며, shadow 검토를 위해 stage 측정은 유지 |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 유사일 보정이 잘못된 방향으로 밀리는 것을 제한 |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | 예측 shape도 부족할 때만 휴일/주말 lag가 영업일 오전을 과도하게 낮추는 문제 완화 |
 | Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | 일반 영업일 오후에 lag/recent shape와 기상이 모두 상방을 지지하지 않을 때 유사일 양수 shift를 제한 |
@@ -264,6 +264,10 @@ Raw LightGBM Forecast
 | 영역 | 설정 (Config Key) | 현재 값 | 운영 가이드 및 튜닝 팁 |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | 올리면 전일 대비 잔차 모델을 더 신뢰하고, 내리면 절대수요 모델 성향을 더 유지합니다. 버전 인지 rolling replay와 frozen-origin holdout을 함께 통과할 때만 조정합니다. |
+| promotion | `retrain_weekday` | 0 (월요일) | Challenger 평가 요일입니다. 다른 날짜에는 현재 Champion을 그대로 사용합니다. |
+| promotion | `validation_window_days` | 28 | 평가할 때마다 최근 확정 28일을 사용합니다. 28일마다 한 번 재학습한다는 뜻이 아닙니다. |
+| promotion | 절대 품질 상한 | MAE 1000, WAPE 3.0%, shape 750, 최대 오차 6500 MW | 약한 baseline만 이겼지만 운영 품질이 나쁜 모델을 거부합니다. 구간별 상한은 MAE 1500, shape 1100 MW입니다. |
+| promotion | 예측 drift 상한 | 평균 900, 시간 최대 2500 MW | 전체 데이터로 학습한 Challenger가 오늘/내일 곡선을 Champion보다 과도하게 바꾸면 승격을 거부합니다. |
 | weather | `cooling_base_temp_c` | 22.0 | 낮추면 냉방 민감도가 빨리 켜지고, 올리면 여름 초입 과대반응을 줄입니다. 계절 전체 backtest로 조정해야 합니다. |
 | weather | `heating_base_temp_c` | 18.0 | 올리면 난방 수요 신호가 강해지고, 내리면 겨울철 과민 반응을 줄입니다. |
 | weather bias | `min_abs_bias_c` | 1.5 | 낮추면 예보 bias correction이 자주 켜지고, 높이면 작은 예보 오차를 무시합니다. 너무 낮으면 날씨 noise를 추종합니다. |
@@ -287,6 +291,7 @@ Raw LightGBM Forecast
 | intraday | `evening_decline_continuity_guard.level_overhang_enabled` | true | 저녁 하락 국면에서 국소 rebound뿐 아니라 높은 레벨로 버티는 overhang도 제한합니다. 더운 저녁의 실제 수요까지 누르는 경우에만 비활성화를 검토합니다. |
 | intraday | `ramp_guard.observed_drop_relaxation` | `min_recent_drop_mw=500`, decline support `[2600, 4800, 6500]` | 실측 수요가 의미 있게 하락을 시작했고 대상 시간의 lag/recent delta가 모두 하락을 지지할 때만 마지막 근거리 drop cap을 완화합니다. cap을 올리면 저녁 급락을 더 보존하고, 낮추면 직전 실측 레벨에 더 가깝게 유지합니다. |
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | 오늘이 전날보다 뚜렷하게 더울 때 warm-day lag24 cap에 추가 여유를 줍니다. 올리면 급격한 기온 상승일의 가짜 골짜기를 줄이고, 낮추면 어제 수요 anchor를 더 엄격하게 적용합니다. |
+| post-processing | `analogous_day.enabled` | false | 최근 stage replay에서 MAE와 shape가 악화되어 비활성화했습니다. 영업 구분과 시간대별 shadow 결과가 일관되게 좋아진 뒤 다시 켭니다. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 영업일 복귀 anchor 리프트 전에 예측 램프가 최근 같은 영업 타입 램프보다 충분히 부족한지 확인합니다. 낮추면 더 자주 올리고, 높이면 이미 건강한 raw shape를 과하게 돕는 위험을 줄입니다. |
 | post-processing | `business_declining_analog_uplift_cap.max_allowed_shift_mw` | 100 | 두 수요 shape 기준이 정체/하락하고 당일이 전날보다 더 덥지 않을 때 허용할 최대 유사일 양수 shift입니다. 올리면 유사일 residual을 더 신뢰하고, 내리면 raw LGBM에 더 가깝게 유지합니다. |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday 보정 전에 근거 없는 단일 오후 피크를 줄일 수 있는 최대치입니다. 올리면 artifact 제거가 강해지고, 내리면 raw/analog 피크 shape를 더 보존합니다. |
@@ -295,6 +300,14 @@ Raw LightGBM Forecast
 | calibration snapshots | `retention_days` | 14 | 보정 레이어 원인 분석용 내부 snapshot 보관 기간입니다. 너무 짧으면 장애 원인 추적이 어려워집니다. |
 | reserve risk | warning | 92% | TEPCO 기준 경고 구간입니다. 낮추면 경고가 많아지고, 높이면 사전 경보성이 약해집니다. |
 | reserve risk | critical | 97% | TEPCO 기준 위험 구간입니다. 운영 UI에서는 warning과 명확히 구분해 표시합니다. |
+
+### 승격과 리플레이 해석
+
+- 모델 승격 평가는 기본적으로 매주 실행하지만, 매번 최근 확정 28일 rolling window를 사용합니다.
+- 시간 순서 검증은 target 날짜의 수요를 숨기고 최종 기상 문맥을 사용하며, 운영 후처리를 제외한 모델 계약을 평가합니다.
+- `metrics/operational_replay.json`은 실제 서빙된 예측을 평가하고 TEPCO는 외부 참고 지표로만 표시합니다.
+- Stage replay는 날짜별 최신 calibration snapshot을 사용하므로 모든 Intraday 게시 이력을 완전히 복원한 결과가 아닙니다.
+- TEPCO forecast fallback은 lag 연속성에는 사용할 수 있지만 학습 target과 검증 actual에서는 제외합니다.
 
 ### 평가 지표
 

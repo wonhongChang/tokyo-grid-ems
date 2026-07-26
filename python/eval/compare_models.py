@@ -78,6 +78,7 @@ def _evaluate_lgbm(
     test_dates: list[date],
     n_estimators: int = 500,
     learning_rate: float = 0.05,
+    config: dict | None = None,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     try:
         from python.forecast.lgbm_model import LGBMForecaster
@@ -87,7 +88,11 @@ def _evaluate_lgbm(
 
     train_cache = cache[cache["ts"] < pd.Timestamp(train_cutoff, tz=JST)]
     try:
-        forecaster = LGBMForecaster(n_estimators=n_estimators, learning_rate=learning_rate)
+        forecaster = LGBMForecaster(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            config=config,
+        )
         forecaster.fit(train_cache)
     except ValueError as e:
         print(f"[WARN] LightGBM training failed: {e}", file=sys.stderr)
@@ -97,7 +102,19 @@ def _evaluate_lgbm(
     for d in test_dates:
         cutoff = pd.Timestamp(d, tz=JST)
         try:
-            fc_list = forecaster.predict(d, cache[cache["ts"] < cutoff])
+            target_end = cutoff + pd.Timedelta(days=1)
+            inference_cache = cache[
+                (cache["ts"] < cutoff)
+                | ((cache["ts"] >= cutoff) & (cache["ts"] < target_end))
+            ].copy()
+            target_mask = (
+                (inference_cache["ts"] >= cutoff)
+                & (inference_cache["ts"] < target_end)
+            )
+            inference_cache.loc[target_mask, "actual_mw"] = np.nan
+            if "actual_source" in inference_cache.columns:
+                inference_cache.loc[target_mask, "actual_source"] = None
+            fc_list = forecaster.predict(d, inference_cache)
             fc_by_hour = {pd.Timestamp(f.ts).hour: f.forecast_mw for f in fc_list}
         except Exception as e:
             print(f"[WARN] LightGBM predict failed for {d}: {e}", file=sys.stderr)
@@ -116,6 +133,7 @@ def build_model_backtest_report(
     test_start: str = _DEFAULT_TEST_START,
     n_estimators: int = 500,
     learning_rate: float = 0.05,
+    config: dict | None = None,
 ) -> dict:
     """Build a frozen-origin hourly-demand backtest report.
 
@@ -146,6 +164,7 @@ def build_model_backtest_report(
         test_dates,
         n_estimators=n_estimators,
         learning_rate=learning_rate,
+        config=config,
     )
     lgbm_metrics = _metrics(*lgbm_result) if lgbm_result is not None else None
 
@@ -172,6 +191,8 @@ def build_model_backtest_report(
             "target": "hourly_actual_mw",
             "testStart": test_start_date.isoformat(),
             "minTrainDays": _MIN_TRAIN_DAYS,
+            "weatherContext": "final_observed_weather",
+            "scope": "model_only_without_operational_postprocessing",
         },
         "trainPeriod": {
             "start": str(min(cache["ts"].dt.date)),

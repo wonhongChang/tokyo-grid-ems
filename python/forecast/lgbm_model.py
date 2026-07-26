@@ -28,6 +28,7 @@ _LGBM_PARAMS = {
     "min_child_samples": 20,
     "subsample": 0.8,
     "colsample_bytree": 0.8,
+    "random_state": 42,
     "verbose": -1,
 }
 

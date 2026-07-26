@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -53,6 +54,8 @@ from python.anomaly.detector import (
 JST = ZoneInfo("Asia/Tokyo")
 
 _LGBM_MODEL_NAME = ".lgbm_model.pkl"
+_LGBM_MODEL_METADATA_NAME = ".lgbm_model_meta.json"
+_MODEL_PROMOTION_REPORT = "metrics/model_promotion.json"
 _LGBM_MIN_ROWS   = 90 * 24
 _TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
 _FORECAST_SNAPSHOT_PATH_NAME = "forecast_snapshots"
@@ -227,6 +230,7 @@ def save_state(out_dir: Path, state: dict) -> None:
 
 _CACHE_COLS = [
     "ts", "actual_mw", "forecast_mw", "usage_pct", "supply_mw",
+    "actual_source",
     "temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index",
     "weather_source",
 ]
@@ -234,7 +238,7 @@ _CACHE_PATH_NAME = ".hourly_cache.parquet"
 
 
 def _cache_default_value(col: str):
-    return None if col == "weather_source" else float("nan")
+    return None if col in {"actual_source", "weather_source"} else float("nan")
 
 
 def load_hourly_cache(out_dir: Path) -> pd.DataFrame:
@@ -243,6 +247,10 @@ def load_hourly_cache(out_dir: Path) -> pd.DataFrame:
         df = pd.read_parquet(p)
         if "ts" in df.columns and df["ts"].dt.tz is None:
             df["ts"] = df["ts"].dt.tz_localize("Asia/Tokyo")
+        if "actual_source" not in df.columns:
+            df["actual_source"] = None
+            if "actual_mw" in df.columns:
+                df.loc[df["actual_mw"].notna(), "actual_source"] = "observed_legacy"
         for col in ["temp_c", "apparent_temp_c", "humidity_pct", "discomfort_index", "weather_source"]:
             if col not in df.columns:
                 df[col] = _cache_default_value(col)
@@ -257,7 +265,17 @@ def save_hourly_cache(out_dir: Path, cache: pd.DataFrame) -> None:
     save_cols = [c for c in _CACHE_COLS if c in cache.columns]
     to_save = cache[save_cols].copy()
     if "actual_mw" in to_save.columns:
-        to_save["_actual_rank"] = to_save["actual_mw"].notna().astype(int)
+        source_rank = {
+            _TEPCO_FORECAST_FALLBACK_SOURCE: 1,
+            "observed_legacy": 2,
+            "observed": 3,
+        }
+        to_save["_actual_rank"] = (
+            to_save.get("actual_source", pd.Series(index=to_save.index, dtype="object"))
+            .map(source_rank)
+            .fillna(to_save["actual_mw"].notna().astype(int) * 2)
+            .astype(int)
+        )
         to_save = (
             to_save.sort_values(["ts", "_actual_rank"], ascending=[True, False])
                    .drop_duplicates(subset=["ts"], keep="first")
@@ -269,8 +287,13 @@ def save_hourly_cache(out_dir: Path, cache: pd.DataFrame) -> None:
 
 
 def _extract_cache_rows(hourly: pd.DataFrame) -> pd.DataFrame:
-    cols = [c for c in _CACHE_COLS if c in hourly.columns]
-    return hourly[cols].copy()
+    result = hourly.copy()
+    if "actual_source" not in result.columns:
+        result["actual_source"] = None
+    if "actual_mw" in result.columns:
+        result.loc[result["actual_mw"].notna(), "actual_source"] = "observed"
+    cols = [c for c in _CACHE_COLS if c in result.columns]
+    return result[cols].copy()
 
 # ---------------------------------------------------------------------------
 # CSV discovery
@@ -566,25 +589,35 @@ def _freeze_observed_forecast_hours(
     return result, model_name
 
 
-def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd.DataFrame:
+def _inject_today_actuals(
+    out_dir: Path,
+    today: date,
+    cache: pd.DataFrame,
+    fallback_through: date | None = None,
+) -> pd.DataFrame:
     """Inject actual_mw from actual/ JSONs for dates missing from cache.
 
     Covers today (lag_24h for tomorrow) and any recent days not yet in the
     hourly cache (e.g. yesterday when TEPCO CSV hasn't been published yet).
-    Missing published actuals temporarily use TEPCO forecasts as lag inputs until
-    the monthly CSV provides final observed values.
+    Missing published actuals use TEPCO forecasts only through ``fallback_through``.
+    Callers therefore keep today's observed-demand context separate from the
+    provisional lag-input cache used to forecast tomorrow.
     """
+    if fallback_through is None:
+        fallback_through = today
+
     if cache.empty or "ts" not in cache.columns:
         normalized_cache = cache.copy()
-        cached_actuals = pd.Series(dtype="float64")
     else:
         normalized_cache = cache.copy()
         normalized_cache["ts"] = pd.to_datetime(normalized_cache["ts"], utc=True).dt.tz_convert("Asia/Tokyo")
-        cached_actuals = (
-            normalized_cache.set_index("ts")["actual_mw"]
-            if "actual_mw" in normalized_cache.columns
-            else pd.Series(dtype="float64")
-        )
+    for col in _CACHE_COLS:
+        if col not in normalized_cache.columns:
+            normalized_cache[col] = _cache_default_value(col)
+    existing_by_ts = (
+        normalized_cache.drop_duplicates(subset=["ts"], keep="last")
+        .set_index("ts")
+    )
 
     updates: dict = {}
     actual_dir = out_dir / "actual"
@@ -599,18 +632,52 @@ def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd
                 ts = pd.Timestamp(pt["ts"]).tz_convert("Asia/Tokyo")
                 actual_mw = pt.get("actualMw")
                 is_fallback = pt.get("actualSource") == _TEPCO_FORECAST_FALLBACK_SOURCE
-                if actual_mw is None:
+                if actual_mw is None or is_fallback:
+                    existing_actual = (
+                        existing_by_ts.at[ts, "actual_mw"]
+                        if ts in existing_by_ts.index
+                        else float("nan")
+                    )
+                    existing_source = (
+                        existing_by_ts.at[ts, "actual_source"]
+                        if ts in existing_by_ts.index
+                        else None
+                    )
+                    existing_is_observed = (
+                        pd.notna(existing_actual)
+                        and existing_source != _TEPCO_FORECAST_FALLBACK_SOURCE
+                    )
+                    if existing_is_observed:
+                        updates[ts] = {
+                            "actual_mw": existing_actual,
+                            "actual_source": (
+                                existing_source
+                                if pd.notna(existing_source)
+                                else "observed_legacy"
+                            ),
+                            "forecast_mw": pt.get("tepcoForecastMw"),
+                            "usage_pct": pt.get("usagePct"),
+                            "supply_mw": pt.get("supplyMw"),
+                        }
+                        continue
+                    if d > fallback_through:
+                        updates[ts] = {
+                            "actual_mw": float("nan"),
+                            "actual_source": None,
+                            "forecast_mw": pt.get("tepcoForecastMw"),
+                            "usage_pct": pt.get("usagePct"),
+                            "supply_mw": pt.get("supplyMw"),
+                        }
+                        continue
                     actual_mw = pt.get("tepcoForecastMw")
                     is_fallback = True
                     if actual_mw is None:
                         continue
-                existing_actual = cached_actuals.loc[ts] if ts in cached_actuals.index else float("nan")
-                if isinstance(existing_actual, pd.Series):
-                    existing_actual = existing_actual.dropna().iloc[0] if existing_actual.notna().any() else float("nan")
-                if is_fallback and pd.notna(existing_actual):
-                    continue
                 updates[ts] = {
                     "actual_mw":   actual_mw,
+                    "actual_source": (
+                        _TEPCO_FORECAST_FALLBACK_SOURCE if is_fallback else "observed"
+                    ),
                     "forecast_mw": pt.get("tepcoForecastMw"),
                     "usage_pct":   pt.get("usagePct"),
                     "supply_mw":   pt.get("supplyMw"),
@@ -621,29 +688,15 @@ def _inject_today_actuals(out_dir: Path, today: date, cache: pd.DataFrame) -> pd
     if not updates:
         return cache
 
-    upd_df = pd.DataFrame(
-        [{"ts": ts, **vals} for ts, vals in updates.items()]
-    ).set_index("ts")
-
-    result = normalized_cache.set_index("ts")
-    update_cols = [c for c in ("actual_mw", "forecast_mw", "usage_pct", "supply_mw")
-                   if c in upd_df.columns and c in result.columns]
-    result.update(upd_df[update_cols])
-    result = result.reset_index()
-
-    # Add rows for timestamps not yet in cache at all
-    new_ts = set(upd_df.index) - set(result["ts"])
-    if new_ts:
-        new_rows = []
-        for ts in new_ts:
-            row: dict = {"ts": ts, "temp_c": float("nan")}
-            for c in ("actual_mw", "forecast_mw", "usage_pct", "supply_mw"):
-                value = upd_df.loc[ts, c] if c in upd_df.columns else None
-                row[c] = float(value) if value is not None and pd.notna(value) else float("nan")
-            new_rows.append({c: row.get(c, _cache_default_value(c)) for c in _CACHE_COLS})
-        result = pd.concat(
-            [result, pd.DataFrame(new_rows)], ignore_index=True
-        ).sort_values("ts").reset_index(drop=True)
+    result = normalized_cache.drop_duplicates(subset=["ts"], keep="last").set_index("ts")
+    for ts, values in updates.items():
+        if ts not in result.index:
+            result.loc[ts, _CACHE_COLS[1:]] = [
+                _cache_default_value(col) for col in _CACHE_COLS[1:]
+            ]
+        for col, value in values.items():
+            result.at[ts, col] = value
+    result = result.reset_index()[_CACHE_COLS].sort_values("ts").reset_index(drop=True)
 
     injected_dates = sorted({ts.date() for ts in updates})
     print(f"[STATUS] Injected actuals for {[d.isoformat() for d in injected_dates]} ({len(updates)} rows)")
@@ -904,6 +957,191 @@ def _try_train_lgbm(cache: pd.DataFrame, out_dir: Path, config: dict | None = No
         return None
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _model_retrain_due(
+    target_date: date,
+    config: dict,
+    champion,
+) -> tuple[bool, str]:
+    promotion_config = config.get("model_promotion", {})
+    if not promotion_config.get("enabled", True):
+        return True, "promotion_gate_disabled"
+    if champion is None:
+        return True, "champion_missing"
+    if _env_flag("TOKYO_GRID_EMS_FORCE_MODEL_TRAIN"):
+        return True, "manual_force"
+    retrain_weekday = int(promotion_config.get("retrain_weekday", 0))
+    if target_date.weekday() == retrain_weekday:
+        return True, "scheduled_weekly_retrain"
+    return False, "not_scheduled"
+
+
+def _write_model_promotion_report(out_dir: Path, report: dict) -> None:
+    path = out_dir / _MODEL_PROMOTION_REPORT
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(path, report)
+
+
+def _load_or_promote_lgbm(
+    cache: pd.DataFrame,
+    out_dir: Path,
+    config: dict,
+    target_date: date,
+):
+    """Keep the champion unless a scheduled challenger passes all gates."""
+    champion = _try_load_lgbm(out_dir)
+    due, reason = _model_retrain_due(target_date, config, champion)
+    trigger_reason = reason
+    model_path = out_dir / _LGBM_MODEL_NAME
+    promotion_config = config.get("model_promotion", {})
+
+    if not due:
+        from python.eval.model_validation import artifact_sha256
+
+        _write_model_promotion_report(out_dir, {
+            "schemaVersion": "1.0.0",
+            "timezone": "Asia/Tokyo",
+            "generatedAt": ts_now(),
+            "status": "champion_retained",
+            "reason": reason,
+            "champion": {
+                "artifact": _LGBM_MODEL_NAME,
+                "sha256": artifact_sha256(model_path),
+            },
+            "nextScheduledWeekday": int(
+                promotion_config.get("retrain_weekday", 0)
+            ),
+        })
+        print("[LGBM] Champion retained; weekly retraining is not due")
+        return champion
+
+    try:
+        from python.eval.model_validation import (
+            artifact_sha256,
+            build_temporal_validation_report,
+            config_fingerprint,
+            prediction_drift_report,
+        )
+        from python.forecast.lgbm_model import LGBMForecaster
+
+        validation = build_temporal_validation_report(
+            cache,
+            config,
+            window_days=int(
+                promotion_config.get("validation_window_days", 28)
+            ),
+            generated_at=ts_now(),
+        )
+        challenger = LGBMForecaster(config=config)
+        challenger.fit(cache)
+
+        today_cache = cache.copy()
+        drift = None
+        drift_failures: list[str] = []
+        if champion is not None:
+            drift = prediction_drift_report(
+                champion,
+                challenger,
+                today_cache,
+                [target_date, target_date + timedelta(days=1)],
+            )
+            max_mean_drift = float(
+                promotion_config.get("max_mean_prediction_drift_mw", 900)
+            )
+            max_hour_drift = float(
+                promotion_config.get("max_hour_prediction_drift_mw", 2500)
+            )
+            if (
+                drift.get("meanAbsDeltaMw") is not None
+                and drift["meanAbsDeltaMw"] > max_mean_drift
+            ):
+                drift_failures.append("mean_prediction_drift_exceeded")
+            if (
+                drift.get("maxAbsDeltaMw") is not None
+                and drift["maxAbsDeltaMw"] > max_hour_drift
+            ):
+                drift_failures.append("hour_prediction_drift_exceeded")
+
+        validation_passed = bool(validation.get("gate", {}).get("passed"))
+        promoted = validation_passed and not drift_failures
+        bootstrap_override = champion is None and bool(
+            promotion_config.get("bootstrap_when_champion_missing", False)
+        )
+        if bootstrap_override and not promoted:
+            promoted = True
+            reason = "bootstrap_without_compatible_champion"
+        elif promoted:
+            reason = "all_promotion_gates_passed"
+        else:
+            reason = "promotion_gate_failed"
+
+        if promoted:
+            challenger.save(model_path)
+            champion = challenger
+            metadata = {
+                "schemaVersion": "1.0.0",
+                "promotedAt": ts_now(),
+                "trainingCutoff": str(
+                    cache.loc[_observed_cache_mask(cache), "ts"].dt.date.max()
+                ),
+                "intervalVersion": challenger.interval_version,
+                "configFingerprint": config_fingerprint(config),
+                "artifactSha256": artifact_sha256(model_path),
+                "validationPeriod": validation.get("validationPeriod"),
+            }
+            write_json(out_dir / _LGBM_MODEL_METADATA_NAME, metadata)
+            print(f"[LGBM] Challenger promoted -> {_LGBM_MODEL_NAME}")
+        else:
+            print(
+                f"[LGBM] Challenger rejected; champion retained "
+                f"({', '.join(validation.get('gate', {}).get('failures', []) + drift_failures)})"
+            )
+
+        _write_model_promotion_report(out_dir, {
+            "schemaVersion": "1.0.0",
+            "timezone": "Asia/Tokyo",
+            "generatedAt": ts_now(),
+            "status": "promoted" if promoted else "rejected",
+            "reason": reason,
+            "trigger": trigger_reason,
+            "validation": validation,
+            "predictionDrift": drift,
+            "driftFailures": drift_failures,
+            "champion": {
+                "artifact": _LGBM_MODEL_NAME,
+                "sha256": artifact_sha256(model_path),
+            },
+        })
+        return champion
+    except Exception as exc:
+        print(f"[WARN] Model promotion gate failed: {exc}", file=sys.stderr)
+        _write_model_promotion_report(out_dir, {
+            "schemaVersion": "1.0.0",
+            "timezone": "Asia/Tokyo",
+            "generatedAt": ts_now(),
+            "status": "gate_error",
+            "reason": str(exc),
+        })
+        if champion is not None:
+            return champion
+        if not promotion_config.get("enabled", True):
+            return _try_train_lgbm(cache, out_dir, config)
+        return None
+
+
+def _observed_cache_mask(cache: pd.DataFrame) -> pd.Series:
+    mask = cache["actual_mw"].notna()
+    if "actual_source" in cache.columns:
+        mask &= (
+            cache["actual_source"].fillna("observed")
+            != _TEPCO_FORECAST_FALLBACK_SOURCE
+        )
+    return mask
+
+
 def _try_train_lgbm_as_of(
     cache: pd.DataFrame,
     cutoff_date: date,
@@ -933,7 +1171,8 @@ def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> p
     build_inference_features looks up temp_c for the target_date from cache,
     so these virtual rows make forecast temperatures available to the model. Existing
     virtual rows are refreshed because intraday weather forecasts can change materially.
-    Rows with actual_mw are treated as historical observations and are not overwritten.
+    Rows with actual demand retain their weather unless the incoming source is
+    an official AMeDAS observation.
     """
     try:
         from python.etl.fetch_weather import fetch_forecast_temps
@@ -963,10 +1202,19 @@ def _extend_cache_with_forecast_weather(cache: pd.DataFrame, days: int = 3) -> p
         on="ts",
         how="left",
     )
+    forecast_source_col = forecast_col_map.get("weather_source")
+    observed_weather_mask = (
+        result[forecast_source_col].astype("string").str.contains(
+            "AMEDAS_ACTUAL",
+            na=False,
+        )
+        if forecast_source_col in result.columns
+        else pd.Series(False, index=result.index)
+    )
     for col, forecast_col in forecast_col_map.items():
         can_refresh = (
-            result["actual_mw"].isna()
-            & result[forecast_col].notna()
+            result[forecast_col].notna()
+            & (result["actual_mw"].isna() | observed_weather_mask)
         )
         result.loc[can_refresh, col] = result.loc[can_refresh, forecast_col]
     result = result.drop(columns=list(forecast_col_map.values()))
@@ -2166,10 +2414,18 @@ def _write_forecast_accuracy_report(out_dir: Path) -> None:
         print(f"[WARN] Forecast accuracy report failed: {e}", file=sys.stderr)
 
 
-def _write_model_backtest_report(out_dir: Path, cache: pd.DataFrame) -> None:
+def _write_model_backtest_report(
+    out_dir: Path,
+    cache: pd.DataFrame,
+    config: dict,
+) -> None:
     try:
         from python.eval.compare_models import build_model_backtest_report
-        report = build_model_backtest_report(cache, generated_at=ts_now())
+        report = build_model_backtest_report(
+            cache,
+            generated_at=ts_now(),
+            config=config,
+        )
         write_json(out_dir / "metrics" / "model_backtest.json", report)
         test = report.get("testPeriod", {})
         print(
@@ -2178,6 +2434,33 @@ def _write_model_backtest_report(out_dir: Path, cache: pd.DataFrame) -> None:
         )
     except Exception as e:
         print(f"[WARN] Model backtest report failed: {e}", file=sys.stderr)
+
+
+def _write_operational_replay_report(
+    out_dir: Path,
+    config: dict,
+) -> None:
+    try:
+        from python.eval.operational_replay import build_operational_replay_report
+
+        window_days = int(
+            config.get("model_promotion", {}).get(
+                "validation_window_days",
+                28,
+            )
+        )
+        report = build_operational_replay_report(
+            out_dir,
+            window_days=window_days,
+            generated_at=ts_now(),
+        )
+        write_json(out_dir / "metrics" / "operational_replay.json", report)
+        print(
+            "[EVAL] Operational replay "
+            f"{report['period']['days']} days -> operational_replay.json"
+        )
+    except Exception as e:
+        print(f"[WARN] Operational replay report failed: {e}", file=sys.stderr)
 
 
 def _write_daily_operation_reports(out_dir: Path) -> None:
@@ -2439,11 +2722,19 @@ def _run_status_only(
     # If yesterday's CSV hasn't been processed yet, derive latest from actual/{yesterday}.json
     ok_set, summaries = _apply_actual_json_latest_fallback(out_dir, today, ok_set, summaries)
 
-    # Fill any missing temp_c in recent cache rows, then extend with forecast weather.
+    # Keep observed demand separate from provisional lag fallbacks. The today
+    # pipeline may use finalized prior-day fallbacks, while tomorrow receives a
+    # separate cache that can use today's TEPCO forecasts as provisional lag input.
     # Keep the raw forecast-weather cache for display/persistence; use the bias-corrected
     # copy only as model input so operational UI temperatures remain source temperatures.
     hourly_cache = enrich_cache_with_weather(hourly_cache)
-    forecast_weather_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
+    observed_cache = _inject_today_actuals(
+        out_dir,
+        today,
+        hourly_cache,
+        fallback_through=today - timedelta(days=1),
+    )
+    forecast_weather_cache = _extend_cache_with_forecast_weather(observed_cache, days=3)
     extended_cache = _apply_weather_forecast_bias_correction(forecast_weather_cache, config)
 
     forecaster = _try_load_lgbm(out_dir)
@@ -2452,13 +2743,20 @@ def _run_status_only(
     midday_guard = _make_midday_guard(config)
     localized_shape_guard = _make_localized_shape_spike_guard(config)
 
-    # Inject recent missing actuals (yesterday + today) for both forecasts
-    extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
-    display_with_actuals = _inject_today_actuals(out_dir, today, forecast_weather_cache)
-    # Persist the display cache after actual JSON injection so the next run's
-    # lag features see the same observed/fallback actuals shown on the UI.
-    save_hourly_cache(out_dir, display_with_actuals)
-    if forecaster is None:
+    extended_with_actuals = extended_cache
+    tomorrow_with_lag_fallbacks = _inject_today_actuals(
+        out_dir,
+        today,
+        extended_cache,
+        fallback_through=today,
+    )
+    # Persist observed demand only. Today's provisional TEPCO lag values remain
+    # ephemeral and cannot leak into same-day slope or residual context.
+    save_hourly_cache(out_dir, forecast_weather_cache)
+    if forecaster is None and not config.get("model_promotion", {}).get(
+        "enabled",
+        True,
+    ):
         forecaster = _try_train_lgbm(extended_with_actuals, out_dir, config)
 
     # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
@@ -2482,7 +2780,7 @@ def _run_status_only(
 
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
     tomorrow_build = _build_forecast_pipeline(
-        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
+        forecaster, tomorrow_with_lag_fallbacks, tomorrow, n_weeks, min_samples,
         config, adjuster, guard, midday_guard, localized_shape_guard
     )
     tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
@@ -2535,7 +2833,7 @@ def _run_status_only(
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
         today_severity=today_severity,
         extended_cache=extended_with_actuals,
-        display_cache=display_with_actuals,
+        display_cache=forecast_weather_cache,
     ))
     _write_forecast_accuracy_report(out_dir)
     _write_daily_operation_reports(out_dir)
@@ -2681,8 +2979,14 @@ def main() -> None:
     })
     save_hourly_cache(out_dir, hourly_cache)
 
-    # Train and save LightGBM on the weather-enriched cache
-    forecaster = _try_train_lgbm(hourly_cache, out_dir, config)
+    # Train a weekly challenger and promote it only after temporal validation.
+    today = datetime.now(tz=JST).date()
+    forecaster = _load_or_promote_lgbm(
+        hourly_cache,
+        out_dir,
+        config,
+        today,
+    )
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
     midday_guard = _make_midday_guard(config)
@@ -2709,20 +3013,30 @@ def main() -> None:
     # Extend cache with forecast weather for today/tomorrow inference. Persist the
     # unadjusted forecast-weather cache after actual JSON injection; the
     # bias-corrected copy is model input only.
-    forecast_weather_cache = _extend_cache_with_forecast_weather(hourly_cache, days=3)
-    extended_cache = _apply_weather_forecast_bias_correction(forecast_weather_cache, config)
-
-    # Today / tomorrow forecasts
     today    = datetime.now(tz=JST).date()
     tomorrow = today + timedelta(days=1)
     _finalize_previous_actual_json_fallbacks(out_dir, today)
     status_ok_set, status_summaries = _apply_actual_json_latest_fallback(
         out_dir, today, ok_set, summaries
     )
+    observed_cache = _inject_today_actuals(
+        out_dir,
+        today,
+        hourly_cache,
+        fallback_through=today - timedelta(days=1),
+    )
+    forecast_weather_cache = _extend_cache_with_forecast_weather(observed_cache, days=3)
+    extended_cache = _apply_weather_forecast_bias_correction(forecast_weather_cache, config)
 
-    extended_with_actuals = _inject_today_actuals(out_dir, today, extended_cache)
-    display_with_actuals = _inject_today_actuals(out_dir, today, forecast_weather_cache)
-    save_hourly_cache(out_dir, display_with_actuals)
+    # Today / tomorrow forecasts
+    extended_with_actuals = extended_cache
+    tomorrow_with_lag_fallbacks = _inject_today_actuals(
+        out_dir,
+        today,
+        extended_cache,
+        fallback_through=today,
+    )
+    save_hourly_cache(out_dir, forecast_weather_cache)
     today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,
         config, adjuster, guard, midday_guard, localized_shape_guard
@@ -2742,7 +3056,7 @@ def main() -> None:
         preserve_observed_hours=True,
     )
     tomorrow_build = _build_forecast_pipeline(
-        forecaster, extended_with_actuals, tomorrow, n_weeks, min_samples,
+        forecaster, tomorrow_with_lag_fallbacks, tomorrow, n_weeks, min_samples,
         config, adjuster, guard, midday_guard, localized_shape_guard
     )
     tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
@@ -2788,10 +3102,11 @@ def main() -> None:
         today, today_fc, tomorrow, tomorrow_fc, hourly_cache, config,
         today_severity=_reserve_risk_severity_from_alerts_payload(today_alerts_summary),
         extended_cache=extended_with_actuals,
-        display_cache=display_with_actuals,
+        display_cache=forecast_weather_cache,
     ))
     _write_forecast_accuracy_report(out_dir)
-    _write_model_backtest_report(out_dir, hourly_cache)
+    _write_model_backtest_report(out_dir, hourly_cache, config)
+    _write_operational_replay_report(out_dir, config)
     _write_daily_operation_reports(out_dir)
     if internal_diagnostics_out is not None:
         _write_internal_daily_diagnostics(out_dir, hourly_cache, config, internal_diagnostics_out)

@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-07
 
+- [2026-07-26 モデル昇格管理とデータソース整合性](model-improvement-2026-07-26-model-governance-and-source-integrity.md)
 - [2026-07-18 平日lag-24残差アンサンブル](model-improvement-2026-07-18-weekday-lag24-residual-ensemble.md)
 - [2026-07-18 下落shapeでの類似日上方補正cap](model-improvement-2026-07-18-declining-analog-uplift-cap.md)
 - [2026-07-16 朝 ramp slope 過反応ガード](model-improvement-2026-07-16-morning-ramp-slope-overreaction.md)
