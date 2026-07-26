@@ -185,9 +185,10 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 ## ドキュメント
 
-- [学生向けプロジェクト概要](docs/ja/project-walkthrough.md)
+- [初めて読む人のためのプロジェクトガイド](docs/ja/project-walkthrough.md)
 - [LightGBMモデル設計](docs/ja/lgbm-design.md)
 - [モデル運用仕様](docs/ja/model-operations-spec.md)
+- [運用 Runbook](docs/ja/operations-runbook.md)
 - [気温データ連携設計](docs/ja/weather-integration.md)
 - [データ保持とアーカイブ戦略](docs/ja/data-retention-strategy.md)
 - [モデル評価リポート](docs/ja/model-evaluation.md)

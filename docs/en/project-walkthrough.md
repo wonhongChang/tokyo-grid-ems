@@ -1,8 +1,8 @@
-# Project Walkthrough for Students
+# Project Walkthrough for First-Time Readers
 
 Languages: [한국어](../ko/project-walkthrough.md) · [日本語](../ja/project-walkthrough.md)
 
-This document explains Tokyo Grid EMS for someone learning programming and data engineering.
+This guide explains the overall structure and data flow for anyone exploring Tokyo Grid EMS for the first time. It starts at a level accessible to readers who are still getting comfortable with Python and data pipelines.
 
 ---
 
