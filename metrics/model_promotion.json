@@ -1,0 +1,224 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-07-27T07:31:38+09:00",
+  "status": "promoted",
+  "reason": "all_promotion_gates_passed",
+  "trigger": "scheduled_weekly_retrain",
+  "validation": {
+    "schemaVersion": "1.0.0",
+    "timezone": "Asia/Tokyo",
+    "generatedAt": "2026-07-27T07:30:18+09:00",
+    "methodology": {
+      "type": "rolling_temporal_holdout",
+      "weatherContext": "final_observed_weather",
+      "demandLeakage": "target_day_actuals_removed",
+      "windowDays": 28,
+      "note": "This validates the model contract before promotion. Operational serving behavior is evaluated separately."
+    },
+    "trainPeriod": {
+      "start": "2023-01-01",
+      "end": "2026-06-28",
+      "rows": 30600
+    },
+    "validationPeriod": {
+      "start": "2026-06-29",
+      "end": "2026-07-26",
+      "days": 28
+    },
+    "candidate": {
+      "overall": {
+        "hours": 696,
+        "maeMw": 853.2,
+        "wapePct": 2.486,
+        "rmseMw": 1154.8,
+        "maxErrorMw": 4389.5,
+        "shapeDeltaMaeMw": 589.7
+      },
+      "regimes": {
+        "business": {
+          "hours": 456,
+          "maeMw": 831.4,
+          "wapePct": 2.339,
+          "rmseMw": 1127.3,
+          "maxErrorMw": 3950.7,
+          "shapeDeltaMaeMw": 637.6
+        },
+        "nonBusiness": {
+          "hours": 240,
+          "maeMw": 894.7,
+          "wapePct": 2.797,
+          "rmseMw": 1205.3,
+          "maxErrorMw": 4389.5,
+          "shapeDeltaMaeMw": 488.5
+        }
+      },
+      "timeBands": {
+        "overnight": {
+          "hours": 174,
+          "maeMw": 482.7,
+          "wapePct": 1.849,
+          "rmseMw": 647.5,
+          "maxErrorMw": 1947.9,
+          "shapeDeltaMaeMw": 262.9
+        },
+        "morning": {
+          "hours": 145,
+          "maeMw": 897.4,
+          "wapePct": 2.615,
+          "rmseMw": 1208.5,
+          "maxErrorMw": 3950.7,
+          "shapeDeltaMaeMw": 725.8
+        },
+        "daytime": {
+          "hours": 145,
+          "maeMw": 1227.9,
+          "wapePct": 2.99,
+          "rmseMw": 1532.6,
+          "maxErrorMw": 4389.5,
+          "shapeDeltaMaeMw": 705.9
+        },
+        "late_afternoon": {
+          "hours": 87,
+          "maeMw": 1036.1,
+          "wapePct": 2.61,
+          "rmseMw": 1296.0,
+          "maxErrorMw": 3652.6,
+          "shapeDeltaMaeMw": 844.2
+        },
+        "evening": {
+          "hours": 145,
+          "maeMw": 769.2,
+          "wapePct": 2.251,
+          "rmseMw": 1039.7,
+          "maxErrorMw": 3384.8,
+          "shapeDeltaMaeMw": 423.6
+        }
+      }
+    },
+    "baseline": {
+      "overall": {
+        "hours": 696,
+        "maeMw": 3427.0,
+        "wapePct": 9.987,
+        "rmseMw": 4418.1,
+        "maxErrorMw": 13162.8,
+        "shapeDeltaMaeMw": 405.3
+      },
+      "regimes": {
+        "business": {
+          "hours": 456,
+          "maeMw": 3957.3,
+          "wapePct": 11.135,
+          "rmseMw": 4980.4,
+          "maxErrorMw": 13162.8,
+          "shapeDeltaMaeMw": 423.5
+        },
+        "nonBusiness": {
+          "hours": 240,
+          "maeMw": 2419.5,
+          "wapePct": 7.564,
+          "rmseMw": 3078.7,
+          "maxErrorMw": 10019.7,
+          "shapeDeltaMaeMw": 366.8
+        }
+      },
+      "timeBands": {
+        "overnight": {
+          "hours": 174,
+          "maeMw": 1852.9,
+          "wapePct": 7.098,
+          "rmseMw": 2374.2,
+          "maxErrorMw": 6905.8,
+          "shapeDeltaMaeMw": 188.8
+        },
+        "morning": {
+          "hours": 145,
+          "maeMw": 3694.9,
+          "wapePct": 10.768,
+          "rmseMw": 4561.0,
+          "maxErrorMw": 12929.2,
+          "shapeDeltaMaeMw": 764.7
+        },
+        "daytime": {
+          "hours": 145,
+          "maeMw": 4999.5,
+          "wapePct": 12.173,
+          "rmseMw": 5970.8,
+          "maxErrorMw": 13162.8,
+          "shapeDeltaMaeMw": 388.8
+        },
+        "late_afternoon": {
+          "hours": 87,
+          "maeMw": 4221.9,
+          "wapePct": 10.635,
+          "rmseMw": 5181.0,
+          "maxErrorMw": 12662.4,
+          "shapeDeltaMaeMw": 515.1
+        },
+        "evening": {
+          "hours": 145,
+          "maeMw": 2998.6,
+          "wapePct": 8.773,
+          "rmseMw": 3790.7,
+          "maxErrorMw": 10848.8,
+          "shapeDeltaMaeMw": 288.2
+        }
+      }
+    },
+    "improvementPct": {
+      "maeVsBaseline": 75.1
+    },
+    "gate": {
+      "passed": true,
+      "failures": [],
+      "thresholds": {
+        "minMaeImprovementVsBaselinePct": 20.0,
+        "maxSegmentMaeRegressionPct": 10.0,
+        "maxValidationMaeMw": 1000,
+        "maxValidationWapePct": 3.0,
+        "maxValidationShapeDeltaMaeMw": 750,
+        "maxValidationMaxErrorMw": 6500,
+        "maxSegmentMaeMw": 1500,
+        "maxSegmentShapeDeltaMaeMw": 1100
+      }
+    }
+  },
+  "predictionDrift": {
+    "hours": 48,
+    "meanAbsDeltaMw": NaN,
+    "maxAbsDeltaMw": NaN,
+    "largestChanges": [
+      {
+        "date": "2026-07-27",
+        "hour": 13,
+        "deltaMw": -2867.8
+      },
+      {
+        "date": "2026-07-27",
+        "hour": 16,
+        "deltaMw": -2616.0
+      },
+      {
+        "date": "2026-07-27",
+        "hour": 12,
+        "deltaMw": 2517.7
+      },
+      {
+        "date": "2026-07-27",
+        "hour": 2,
+        "deltaMw": -2372.6
+      },
+      {
+        "date": "2026-07-27",
+        "hour": 3,
+        "deltaMw": -2337.0
+      }
+    ]
+  },
+  "driftFailures": [],
+  "champion": {
+    "artifact": ".lgbm_model.pkl",
+    "sha256": "1e76868df9dccceffbc009e304a631f68398c27d5e0e6fdae94d386f2d5547c4"
+  }
+}

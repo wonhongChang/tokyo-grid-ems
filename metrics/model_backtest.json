@@ -1,12 +1,14 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-07-26T07:31:24+09:00",
+  "generatedAt": "2026-07-27T07:32:14+09:00",
   "methodology": {
     "type": "frozen_origin_backtest",
     "target": "hourly_actual_mw",
     "testStart": "2026-01-01",
-    "minTrainDays": 90
+    "minTrainDays": 90,
+    "weatherContext": "final_observed_weather",
+    "scope": "model_only_without_operational_postprocessing"
   },
   "trainPeriod": {
     "start": "2023-01-01",
@@ -15,23 +17,23 @@
   },
   "testPeriod": {
     "start": "2026-01-01",
-    "end": "2026-07-26",
-    "days": 207
+    "end": "2026-07-27",
+    "days": 208
   },
   "baseline": {
-    "rmse": 3305.65,
-    "mae": 2632.83,
-    "mape": 8.34,
-    "n": 4992
+    "rmse": 3281.24,
+    "mae": 2611.51,
+    "mape": 8.29,
+    "n": 4998
   },
   "lightgbm": {
-    "rmse": 2349.74,
-    "mae": 1560.73,
-    "mape": 4.63,
-    "n": 4992
+    "rmse": 1052.48,
+    "mae": 768.32,
+    "mape": 2.42,
+    "n": 4998
   },
   "improvementPct": {
-    "rmse": 28.9,
-    "mae": 40.7
+    "rmse": 67.9,
+    "mae": 70.6
   }
 }
