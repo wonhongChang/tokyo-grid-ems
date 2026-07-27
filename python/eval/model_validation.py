@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -45,8 +45,18 @@ def _observed_mask(cache: pd.DataFrame) -> pd.Series:
     return mask
 
 
+def _deduplicated_observed(cache: pd.DataFrame) -> pd.DataFrame:
+    """Return one observed row per timestamp for validation."""
+    observed = cache.loc[_observed_mask(cache)].copy()
+    return (
+        observed.sort_values("ts")
+        .drop_duplicates(subset=["ts"], keep="last")
+        .reset_index(drop=True)
+    )
+
+
 def _complete_dates(cache: pd.DataFrame) -> list[date]:
-    observed = cache.loc[_observed_mask(cache), ["ts", "actual_mw"]].copy()
+    observed = _deduplicated_observed(cache)[["ts", "actual_mw"]]
     counts = observed.groupby(observed["ts"].dt.date)["actual_mw"].count()
     return sorted(day for day, count in counts.items() if int(count) >= 24)
 
@@ -65,6 +75,8 @@ def _metric_rows(rows: Iterable[dict]) -> dict:
 
     actual = np.asarray([row["actual"] for row in values], dtype=float)
     predicted = np.asarray([row["predicted"] for row in values], dtype=float)
+    if not np.isfinite(actual).all() or not np.isfinite(predicted).all():
+        raise ValueError("Validation metrics require finite actual and predicted values.")
     errors = predicted - actual
     denominator = float(np.abs(actual).sum())
 
@@ -137,7 +149,7 @@ def _forecast_rows(
     n_weeks = int(forecast_cfg.get("n_weeks", 12))
     min_samples = int(forecast_cfg.get("min_samples_per_slot", 4))
 
-    observed = cache.loc[_observed_mask(cache)].copy()
+    observed = _deduplicated_observed(cache)
     for target in validation_dates:
         inference_cache = _target_weather_cache(cache, target)
         candidate = forecaster.predict(target, inference_cache)
@@ -189,10 +201,25 @@ def _segment_passes(
             baseline_metrics = baseline[section].get(name, {})
             candidate_mae = candidate_metrics.get("maeMw")
             baseline_mae = baseline_metrics.get("maeMw")
-            if (
+            candidate_hours = int(candidate_metrics.get("hours", 0))
+            baseline_hours = int(baseline_metrics.get("hours", 0))
+            if candidate_hours >= 24 and (
                 candidate_mae is None
+                or not np.isfinite(float(candidate_mae))
+            ):
+                failures.append(f"{section}.{name}.candidate_mae_invalid")
+                continue
+            if baseline_hours >= 24 and (
+                baseline_mae is None
+                or not np.isfinite(float(baseline_mae))
+            ):
+                failures.append(f"{section}.{name}.baseline_mae_invalid")
+                continue
+            if (
+                candidate_hours < 24
+                or baseline_hours < 24
+                or candidate_mae is None
                 or baseline_mae in (None, 0)
-                or int(candidate_metrics.get("hours", 0)) < 24
             ):
                 continue
             if candidate_mae > baseline_mae * max_regression_ratio:
@@ -226,7 +253,11 @@ def _absolute_gate_failures(candidate: dict, promotion_config: dict) -> list[str
     for metric, (config_key, failure_name) in limits.items():
         value = overall.get(metric)
         limit = promotion_config.get(config_key)
-        if value is not None and limit is not None and value > float(limit):
+        if limit is None:
+            continue
+        if value is None or not np.isfinite(float(value)):
+            failures.append(f"overall.{metric}_invalid")
+        elif value > float(limit):
             failures.append(failure_name)
 
     max_segment_mae = promotion_config.get("max_segment_mae_mw")
@@ -236,21 +267,19 @@ def _absolute_gate_failures(candidate: dict, promotion_config: dict) -> list[str
             if int(metrics.get("hours", 0)) < 24:
                 continue
             mae = metrics.get("maeMw")
-            if (
-                mae is not None
-                and max_segment_mae is not None
-                and mae > float(max_segment_mae)
-            ):
-                failures.append(f"{section}.{name}.mae_above_absolute_limit")
+            if max_segment_mae is not None:
+                if mae is None or not np.isfinite(float(mae)):
+                    failures.append(f"{section}.{name}.mae_invalid")
+                elif mae > float(max_segment_mae):
+                    failures.append(f"{section}.{name}.mae_above_absolute_limit")
             shape = metrics.get("shapeDeltaMaeMw")
-            if (
-                shape is not None
-                and max_segment_shape is not None
-                and shape > float(max_segment_shape)
-            ):
-                failures.append(
-                    f"{section}.{name}.shape_error_above_absolute_limit"
-                )
+            if max_segment_shape is not None:
+                if shape is None or not np.isfinite(float(shape)):
+                    failures.append(f"{section}.{name}.shape_error_invalid")
+                elif shape > float(max_segment_shape):
+                    failures.append(
+                        f"{section}.{name}.shape_error_above_absolute_limit"
+                    )
     return failures
 
 
@@ -265,6 +294,11 @@ def build_temporal_validation_report(
     normalized = cache.copy()
     normalized["ts"] = pd.to_datetime(normalized["ts"], utc=True).dt.tz_convert(
         "Asia/Tokyo"
+    )
+    normalized = (
+        normalized.sort_values("ts")
+        .drop_duplicates(subset=["ts"], keep="last")
+        .reset_index(drop=True)
     )
     complete_dates = _complete_dates(normalized)
     validation_dates = complete_dates[-max(1, int(window_days)):]
@@ -285,6 +319,7 @@ def build_temporal_validation_report(
     )
     candidate_metrics = _metric_bundle(candidate_rows)
     baseline_metrics = _metric_bundle(baseline_rows)
+    expected_hours = len(validation_dates) * 24
 
     promotion_cfg = config.get("model_promotion", {})
     min_improvement_pct = float(
@@ -306,6 +341,10 @@ def build_temporal_validation_report(
         1.0 + max_segment_regression_pct / 100.0,
     )
     failures = list(segment_failures)
+    if int(candidate_metrics["overall"]["hours"]) != expected_hours:
+        failures.append("candidate.incomplete_validation_coverage")
+    if int(baseline_metrics["overall"]["hours"]) != expected_hours:
+        failures.append("baseline.incomplete_validation_coverage")
     if improvement_pct is None or improvement_pct < min_improvement_pct:
         failures.append("overall.mae_improvement_below_threshold")
     failures.extend(_absolute_gate_failures(candidate_metrics, promotion_cfg))
@@ -320,6 +359,7 @@ def build_temporal_validation_report(
             "weatherContext": "final_observed_weather",
             "demandLeakage": "target_day_actuals_removed",
             "windowDays": int(window_days),
+            "expectedHours": expected_hours,
             "note": (
                 "This validates the model contract before promotion. "
                 "Operational serving behavior is evaluated separately."
@@ -374,30 +414,67 @@ def prediction_drift_report(
     challenger: LGBMForecaster,
     cache: pd.DataFrame,
     target_dates: Iterable[date],
+    *,
+    cache_by_date: Mapping[date, pd.DataFrame] | None = None,
 ) -> dict:
     deltas: list[dict] = []
-    for target in target_dates:
-        champion_points = champion.predict(target, cache)
-        challenger_points = challenger.predict(target, cache)
+    invalid: list[dict] = []
+    targets = list(target_dates)
+    for target in targets:
+        target_cache = (
+            cache_by_date.get(target, cache)
+            if cache_by_date is not None
+            else cache
+        )
+        champion_points = champion.predict(target, target_cache)
+        challenger_points = challenger.predict(target, target_cache)
         champion_by_hour = {
             pd.Timestamp(point.ts).hour: float(point.forecast_mw)
             for point in champion_points
         }
-        for point in challenger_points:
-            hour = pd.Timestamp(point.ts).hour
-            if hour not in champion_by_hour:
+        challenger_by_hour = {
+            pd.Timestamp(point.ts).hour: float(point.forecast_mw)
+            for point in challenger_points
+        }
+        for hour in range(24):
+            champion_value = champion_by_hour.get(hour)
+            challenger_value = challenger_by_hour.get(hour)
+            if (
+                champion_value is None
+                or challenger_value is None
+                or not np.isfinite(champion_value)
+                or not np.isfinite(challenger_value)
+            ):
+                invalid.append({
+                    "date": target.isoformat(),
+                    "hour": hour,
+                    "reason": "missing_or_nonfinite_prediction",
+                })
                 continue
-            delta = float(point.forecast_mw) - champion_by_hour[hour]
+            delta = challenger_value - champion_value
+            if not np.isfinite(delta):
+                invalid.append({
+                    "date": target.isoformat(),
+                    "hour": hour,
+                    "reason": "nonfinite_delta",
+                })
+                continue
             deltas.append({
                 "date": target.isoformat(),
                 "hour": hour,
                 "deltaMw": round(delta, 1),
             })
     absolute = np.asarray([abs(row["deltaMw"]) for row in deltas], dtype=float)
+    expected_hours = len(targets) * 24
+    valid = not invalid and len(deltas) == expected_hours
     return {
+        "valid": valid,
+        "expectedHours": expected_hours,
         "hours": len(deltas),
         "meanAbsDeltaMw": round(float(absolute.mean()), 1) if len(absolute) else None,
         "maxAbsDeltaMw": round(float(absolute.max()), 1) if len(absolute) else None,
+        "invalidPredictionCount": len(invalid),
+        "invalidPredictions": invalid[:10],
         "largestChanges": sorted(
             deltas,
             key=lambda row: abs(row["deltaMw"]),

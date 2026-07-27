@@ -17,11 +17,17 @@ FALLBACK_SOURCE = "tepco_forecast_fallback"
 
 
 def _load_json(path: Path) -> dict:
+    def reject_nonfinite(value: str):
+        raise ValueError(f"non-finite numeric token {value}")
+
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_constant=reject_nonfinite,
+        )
     except FileNotFoundError as exc:
         raise RuntimeError(f"missing {path}") from exc
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, ValueError) as exc:
         raise RuntimeError(f"invalid JSON {path}: {exc}") from exc
 
 
@@ -86,6 +92,21 @@ def validate(public_dir: Path = PUBLIC_DIR, min_yesterday_hours: int = 24) -> di
     _require_forecast(public_dir, today_iso, "today")
     _require_forecast(public_dir, tomorrow_iso, "tomorrow")
 
+    promotion_path = public_dir / "metrics" / "model_promotion.json"
+    promotion_status = None
+    if promotion_path.exists():
+        promotion = _load_json(promotion_path)
+        promotion_status = promotion.get("status")
+        if promotion_status not in {
+            "promoted",
+            "rejected",
+            "champion_retained",
+            "gate_error",
+        }:
+            raise RuntimeError(
+                f"invalid model promotion status: {promotion_status!r}"
+            )
+
     report_path = public_dir / "reports" / "ai" / "daily" / f"{yesterday_iso}.json"
     ai_provider = None
     if report_path.exists():
@@ -99,6 +120,7 @@ def validate(public_dir: Path = PUBLIC_DIR, min_yesterday_hours: int = 24) -> di
         "yesterdayObservedHours": len(observed),
         "todayForecast": today_iso,
         "tomorrowForecast": tomorrow_iso,
+        "modelPromotionStatus": promotion_status,
         "aiReportProvider": ai_provider,
     }
 

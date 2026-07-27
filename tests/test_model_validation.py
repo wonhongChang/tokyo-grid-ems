@@ -32,6 +32,21 @@ def test_complete_dates_excludes_forecast_fallback_actuals():
     assert _complete_dates(cache) == [date(2026, 7, 1)]
 
 
+def test_complete_dates_counts_duplicate_timestamps_once():
+    timestamps = list(pd.date_range(
+        "2026-07-01T00:00:00+09:00",
+        periods=24,
+        freq="h",
+    ))
+    cache = pd.DataFrame({
+        "ts": timestamps + [timestamps[0]],
+        "actual_mw": [30_000.0] * 25,
+        "actual_source": ["observed"] * 25,
+    })
+
+    assert _complete_dates(cache) == [date(2026, 7, 1)]
+
+
 def test_metric_rows_reports_level_and_shape_errors():
     rows = [
         {
@@ -53,6 +68,16 @@ def test_metric_rows_reports_level_and_shape_errors():
     assert metrics["maeMw"] == pytest.approx(7.5)
     assert metrics["rmseMw"] == pytest.approx(7.9)
     assert metrics["shapeDeltaMaeMw"] == pytest.approx(5.0)
+
+
+def test_metric_rows_rejects_nonfinite_values():
+    with pytest.raises(ValueError, match="finite"):
+        _metric_rows([{
+            "date": date(2026, 7, 1),
+            "hour": 0,
+            "actual": 100.0,
+            "predicted": float("nan"),
+        }])
 
 
 def test_segment_gate_rejects_large_time_band_regression():
@@ -117,6 +142,28 @@ def test_absolute_gate_rejects_bad_overall_and_segment_metrics():
     assert "timeBands.morning.shape_error_above_absolute_limit" in failures
 
 
+def test_absolute_gate_rejects_nonfinite_metrics():
+    candidate = {
+        "overall": {
+            "maeMw": float("nan"),
+            "wapePct": 2.0,
+            "shapeDeltaMaeMw": 500.0,
+            "maxErrorMw": 2_000.0,
+        },
+        "regimes": {},
+        "timeBands": {},
+    }
+
+    failures = _absolute_gate_failures(candidate, {
+        "max_validation_mae_mw": 1_000,
+        "max_validation_wape_pct": 3.0,
+        "max_validation_shape_delta_mae_mw": 750,
+        "max_validation_max_error_mw": 6_500,
+    })
+
+    assert "overall.maeMw_invalid" in failures
+
+
 class _FakeForecaster:
     def __init__(self, offset: float):
         self.offset = offset
@@ -146,6 +193,35 @@ def test_prediction_drift_report_quantifies_challenger_change():
     )
 
     assert report["hours"] == 24
+    assert report["expectedHours"] == 24
+    assert report["valid"] is True
     assert report["meanAbsDeltaMw"] == pytest.approx(250.0)
     assert report["maxAbsDeltaMw"] == pytest.approx(250.0)
     assert len(report["largestChanges"]) == 5
+
+
+def test_prediction_drift_report_marks_nonfinite_prediction_invalid():
+    class NonFiniteForecaster(_FakeForecaster):
+        def predict(self, target: date, cache: pd.DataFrame):
+            points = super().predict(target, cache)
+            points[3] = HourlyForecast(
+                ts=points[3].ts,
+                forecast_mw=float("nan"),
+                p95_lower_mw=29_000.0,
+                p95_upper_mw=31_000.0,
+                p99_lower_mw=28_000.0,
+                p99_upper_mw=32_000.0,
+            )
+            return points
+
+    report = prediction_drift_report(
+        _FakeForecaster(0.0),
+        NonFiniteForecaster(250.0),
+        pd.DataFrame(),
+        [date(2026, 7, 27)],
+    )
+
+    assert report["valid"] is False
+    assert report["hours"] == 23
+    assert report["invalidPredictionCount"] == 1
+    assert report["invalidPredictions"][0]["hour"] == 3

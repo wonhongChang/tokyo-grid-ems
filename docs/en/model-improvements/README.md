@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-07
 
+- [2026-07-27 fail-closed model promotion gate](model-improvement-2026-07-27-promotion-gate-fail-closed.md)
 - [2026-07-26 model governance and source integrity](model-improvement-2026-07-26-model-governance-and-source-integrity.md)
 - [2026-07-18 weekday lag-24 residual ensemble](model-improvement-2026-07-18-weekday-lag24-residual-ensemble.md)
 - [2026-07-18 declining-shape analog uplift cap](model-improvement-2026-07-18-declining-analog-uplift-cap.md)

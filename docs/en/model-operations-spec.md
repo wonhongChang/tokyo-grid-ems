@@ -291,6 +291,9 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 ### Promotion and replay semantics
 
 - Model promotion runs on a weekly schedule by default, but each run evaluates the latest rolling 28 complete days.
+- Challenger training excludes partial target-day observations and uses only rows before `target_date`.
+- Validation requires duplicate-free coverage of exactly `window_days × 24` hours.
+- Today/tomorrow drift requires 48 finite values on production-equivalent weather and lag inputs; missing, `NaN`, or infinite values reject promotion.
 - Temporal validation uses target-day weather with target demand removed. It evaluates the model contract without operational post-processing.
 - `metrics/operational_replay.json` evaluates forecasts that were actually served and reports TEPCO only as an external reference.
 - Stage replay uses the latest available calibration snapshot per date. It is diagnostic shadow evidence, not an exact reconstruction of every intraday publication.

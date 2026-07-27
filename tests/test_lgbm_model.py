@@ -400,6 +400,49 @@ def test_predict_blends_lag24_residual_q50_and_recenters_interval(
         assert point.p95_upper_mw == expected_mid + 1_000.0
 
 
+def test_predict_uses_base_q50_when_lag24_is_missing(monkeypatch):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    lag24 = np.full(24, 30_000.0)
+    lag24[5] = np.nan
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+            "lag_24h": lag24,
+            "is_non_business_day": np.zeros(24),
+        }),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "lag24_residual_ensemble": {
+                "enabled": True,
+                "business_day_only": True,
+                "weight": 0.5,
+            }
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(31_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(33_000.0)
+    f.model_q50_lag24_residual = FakeModel(-1_000.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    assert result[4].forecast_mw == 30_500.0
+    assert result[5].forecast_mw == 32_000.0
+
+
 # ---------------------------------------------------------------------------
 # save / load roundtrip
 # ---------------------------------------------------------------------------

@@ -715,6 +715,7 @@ def test_model_promotion_rejects_challenger_and_keeps_champion(
     monkeypatch.setattr(
         "python.eval.model_validation.prediction_drift_report",
         lambda *args, **kwargs: {
+            "valid": True,
             "hours": 48,
             "meanAbsDeltaMw": 10.0,
             "maxAbsDeltaMw": 20.0,
@@ -752,6 +753,85 @@ def test_model_promotion_rejects_challenger_and_keeps_champion(
     assert result is champion
     assert report["status"] == "rejected"
     assert report["reason"] == "promotion_gate_failed"
+
+
+def test_model_promotion_rejects_invalid_drift_and_excludes_target_day_training(
+    tmp_path,
+    monkeypatch,
+):
+    champion = object()
+    fitted_dates = []
+
+    class FakeChallenger:
+        interval_version = "test"
+
+        def __init__(self, config):
+            self.config = config
+
+        def fit(self, cache):
+            fitted_dates.extend(cache["ts"].dt.date.tolist())
+
+        def save(self, path):
+            raise AssertionError("Invalid drift must prevent artifact save")
+
+    monkeypatch.setattr(
+        "python.etl.run_batch._try_load_lgbm",
+        lambda out_dir: champion,
+    )
+    monkeypatch.setattr(
+        "python.eval.model_validation.build_temporal_validation_report",
+        lambda *args, **kwargs: {
+            "gate": {"passed": True, "failures": []},
+            "validationPeriod": {"start": "2026-07-01", "end": "2026-07-26"},
+        },
+    )
+    monkeypatch.setattr(
+        "python.eval.model_validation.prediction_drift_report",
+        lambda *args, **kwargs: {
+            "valid": False,
+            "expectedHours": 48,
+            "hours": 24,
+            "meanAbsDeltaMw": 500.0,
+            "maxAbsDeltaMw": 1_000.0,
+            "invalidPredictionCount": 24,
+            "invalidPredictions": [],
+        },
+    )
+    monkeypatch.setattr(
+        "python.forecast.lgbm_model.LGBMForecaster",
+        FakeChallenger,
+    )
+    config = {
+        "model_promotion": {
+            "enabled": True,
+            "retrain_weekday": 0,
+        },
+    }
+    cache = pd.DataFrame({
+        "ts": [
+            pd.Timestamp("2026-07-26T23:00:00+09:00"),
+            pd.Timestamp("2026-07-27T00:00:00+09:00"),
+        ],
+        "actual_mw": [30_000.0, 31_000.0],
+        "actual_source": ["observed", "observed"],
+    })
+
+    result = _load_or_promote_lgbm(
+        cache,
+        tmp_path,
+        config,
+        date(2026, 7, 27),
+    )
+    report = json.loads(
+        (tmp_path / "metrics" / "model_promotion.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert result is champion
+    assert fitted_dates == [date(2026, 7, 26)]
+    assert report["status"] == "rejected"
+    assert "prediction_drift_invalid" in report["driftFailures"]
 
 
 def test_model_promotion_does_not_bypass_failed_gate_without_champion(

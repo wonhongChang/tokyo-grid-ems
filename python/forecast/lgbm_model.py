@@ -127,14 +127,44 @@ class LGBMForecaster:
         q50 = np.asarray(q50_base, dtype=float).copy()
         enabled, business_day_only, weight = self._lag24_residual_ensemble_config()
         if enabled:
-            residual_q50 = self.model_q50_lag24_residual.predict(X)
-            lag24_q50 = X["lag_24h"].to_numpy(dtype=float) + residual_q50
+            residual_q50 = np.asarray(
+                self.model_q50_lag24_residual.predict(X),
+                dtype=float,
+            )
+            lag24 = X["lag_24h"].to_numpy(dtype=float)
+            lag24_q50 = lag24 + residual_q50
             blended_q50 = (1.0 - weight) * q50 + weight * lag24_q50
+            blend_available = (
+                np.isfinite(lag24)
+                & np.isfinite(residual_q50)
+                & np.isfinite(blended_q50)
+            )
             if business_day_only:
                 business_mask = X["is_non_business_day"].to_numpy(dtype=float) == 0.0
-                q50 = np.where(business_mask, blended_q50, q50)
+                q50 = np.where(
+                    business_mask & blend_available,
+                    blended_q50,
+                    q50,
+                )
             else:
-                q50 = blended_q50
+                q50 = np.where(blend_available, blended_q50, q50)
+
+        forecast_arrays = {
+            "q025": np.asarray(q025, dtype=float),
+            "q50_base": np.asarray(q50_base, dtype=float),
+            "q50": np.asarray(q50, dtype=float),
+            "q975": np.asarray(q975, dtype=float),
+        }
+        invalid = [
+            name
+            for name, values in forecast_arrays.items()
+            if len(values) != 24 or not np.isfinite(values).all()
+        ]
+        if invalid:
+            raise RuntimeError(
+                "LightGBM produced incomplete or non-finite forecasts: "
+                + ", ".join(invalid)
+            )
 
         result: list[HourlyForecast] = []
         for hour in range(24):

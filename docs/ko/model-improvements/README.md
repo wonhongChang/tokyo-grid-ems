@@ -8,6 +8,7 @@
 
 ## 2026-07
 
+- [2026-07-27 모델 승격 게이트 Fail-Closed 보강](model-improvement-2026-07-27-promotion-gate-fail-closed.md)
 - [2026-07-26 모델 승격 관리와 데이터 출처 무결성](model-improvement-2026-07-26-model-governance-and-source-integrity.md)
 - [2026-07-18 평일 lag-24 잔차 앙상블](model-improvement-2026-07-18-weekday-lag24-residual-ensemble.md)
 - [2026-07-18 하락 shape 유사일 상방 보정 제한](model-improvement-2026-07-18-declining-analog-uplift-cap.md)

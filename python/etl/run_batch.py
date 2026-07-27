@@ -334,7 +334,18 @@ def extract_day_summary(d: date, parsed) -> dict:
 
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    encoded = json.dumps(
+        data,
+        ensure_ascii=False,
+        indent=2,
+        allow_nan=False,
+    )
+    temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temp_path.write_text(encoded, encoding="utf-8")
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def ts_now() -> str:
@@ -990,6 +1001,8 @@ def _load_or_promote_lgbm(
     out_dir: Path,
     config: dict,
     target_date: date,
+    *,
+    drift_cache_by_date: dict[date, pd.DataFrame] | None = None,
 ):
     """Keep the champion unless a scheduled challenger passes all gates."""
     champion = _try_load_lgbm(out_dir)
@@ -1035,8 +1048,10 @@ def _load_or_promote_lgbm(
             ),
             generated_at=ts_now(),
         )
+        training_cutoff = pd.Timestamp(target_date, tz=JST)
+        training_cache = cache[cache["ts"] < training_cutoff].copy()
         challenger = LGBMForecaster(config=config)
-        challenger.fit(cache)
+        challenger.fit(training_cache)
 
         today_cache = cache.copy()
         drift = None
@@ -1047,7 +1062,10 @@ def _load_or_promote_lgbm(
                 challenger,
                 today_cache,
                 [target_date, target_date + timedelta(days=1)],
+                cache_by_date=drift_cache_by_date,
             )
+            if not drift.get("valid", False):
+                drift_failures.append("prediction_drift_invalid")
             max_mean_drift = float(
                 promotion_config.get("max_mean_prediction_drift_mw", 900)
             )
@@ -1055,12 +1073,14 @@ def _load_or_promote_lgbm(
                 promotion_config.get("max_hour_prediction_drift_mw", 2500)
             )
             if (
-                drift.get("meanAbsDeltaMw") is not None
+                drift.get("valid", False)
+                and drift.get("meanAbsDeltaMw") is not None
                 and drift["meanAbsDeltaMw"] > max_mean_drift
             ):
                 drift_failures.append("mean_prediction_drift_exceeded")
             if (
-                drift.get("maxAbsDeltaMw") is not None
+                drift.get("valid", False)
+                and drift.get("maxAbsDeltaMw") is not None
                 and drift["maxAbsDeltaMw"] > max_hour_drift
             ):
                 drift_failures.append("hour_prediction_drift_exceeded")
@@ -1078,29 +1098,35 @@ def _load_or_promote_lgbm(
         else:
             reason = "promotion_gate_failed"
 
+        staged_model_path = out_dir / f"{_LGBM_MODEL_NAME}.candidate"
+        staged_metadata_path = out_dir / f"{_LGBM_MODEL_METADATA_NAME}.candidate"
+        staged_report_path = (
+            out_dir / "metrics" / ".model_promotion.candidate.json"
+        )
+        staged_model_hash = None
+        metadata = None
         if promoted:
-            challenger.save(model_path)
-            champion = challenger
+            challenger.save(staged_model_path)
+            staged_challenger = LGBMForecaster.load(staged_model_path)
+            if not staged_challenger.is_compatible():
+                raise RuntimeError("Staged challenger artifact is incompatible.")
+            staged_model_hash = artifact_sha256(staged_model_path)
             metadata = {
                 "schemaVersion": "1.0.0",
                 "promotedAt": ts_now(),
                 "trainingCutoff": str(
-                    cache.loc[_observed_cache_mask(cache), "ts"].dt.date.max()
+                    training_cache.loc[
+                        _observed_cache_mask(training_cache),
+                        "ts",
+                    ].dt.date.max()
                 ),
                 "intervalVersion": challenger.interval_version,
                 "configFingerprint": config_fingerprint(config),
-                "artifactSha256": artifact_sha256(model_path),
+                "artifactSha256": staged_model_hash,
                 "validationPeriod": validation.get("validationPeriod"),
             }
-            write_json(out_dir / _LGBM_MODEL_METADATA_NAME, metadata)
-            print(f"[LGBM] Challenger promoted -> {_LGBM_MODEL_NAME}")
-        else:
-            print(
-                f"[LGBM] Challenger rejected; champion retained "
-                f"({', '.join(validation.get('gate', {}).get('failures', []) + drift_failures)})"
-            )
 
-        _write_model_promotion_report(out_dir, {
+        promotion_report = {
             "schemaVersion": "1.0.0",
             "timezone": "Asia/Tokyo",
             "generatedAt": ts_now(),
@@ -1112,11 +1138,41 @@ def _load_or_promote_lgbm(
             "driftFailures": drift_failures,
             "champion": {
                 "artifact": _LGBM_MODEL_NAME,
-                "sha256": artifact_sha256(model_path),
+                "sha256": (
+                    staged_model_hash
+                    if promoted
+                    else artifact_sha256(model_path)
+                ),
             },
-        })
+        }
+        if promoted:
+            write_json(staged_metadata_path, metadata)
+            write_json(staged_report_path, promotion_report)
+            os.replace(staged_model_path, model_path)
+            os.replace(
+                staged_metadata_path,
+                out_dir / _LGBM_MODEL_METADATA_NAME,
+            )
+            os.replace(
+                staged_report_path,
+                out_dir / _MODEL_PROMOTION_REPORT,
+            )
+            champion = challenger
+            print(f"[LGBM] Challenger promoted -> {_LGBM_MODEL_NAME}")
+        else:
+            _write_model_promotion_report(out_dir, promotion_report)
+            print(
+                f"[LGBM] Challenger rejected; champion retained "
+                f"({', '.join(validation.get('gate', {}).get('failures', []) + drift_failures)})"
+            )
         return champion
     except Exception as exc:
+        for staged_path in (
+            out_dir / f"{_LGBM_MODEL_NAME}.candidate",
+            out_dir / f"{_LGBM_MODEL_METADATA_NAME}.candidate",
+            out_dir / "metrics" / ".model_promotion.candidate.json",
+        ):
+            staged_path.unlink(missing_ok=True)
         print(f"[WARN] Model promotion gate failed: {exc}", file=sys.stderr)
         _write_model_promotion_report(out_dir, {
             "schemaVersion": "1.0.0",
@@ -2979,13 +3035,47 @@ def main() -> None:
     })
     save_hourly_cache(out_dir, hourly_cache)
 
-    # Train a weekly challenger and promote it only after temporal validation.
+    # Reload the persisted cache so model training and validation use the same
+    # deduplicated timestamp set that later runs consume.
+    hourly_cache = load_hourly_cache(out_dir)
+
+    # Build production-equivalent inference caches before promotion. Drift must
+    # be measured on the same weather and provisional lag inputs used to serve
+    # today's and tomorrow's forecasts.
     today = datetime.now(tz=JST).date()
+    tomorrow = today + timedelta(days=1)
+    _finalize_previous_actual_json_fallbacks(out_dir, today)
+    observed_cache = _inject_today_actuals(
+        out_dir,
+        today,
+        hourly_cache,
+        fallback_through=today - timedelta(days=1),
+    )
+    forecast_weather_cache = _extend_cache_with_forecast_weather(
+        observed_cache,
+        days=3,
+    )
+    extended_cache = _apply_weather_forecast_bias_correction(
+        forecast_weather_cache,
+        config,
+    )
+    tomorrow_with_lag_fallbacks = _inject_today_actuals(
+        out_dir,
+        today,
+        extended_cache,
+        fallback_through=today,
+    )
+
+    # Train a weekly challenger and promote it only after temporal validation.
     forecaster = _load_or_promote_lgbm(
         hourly_cache,
         out_dir,
         config,
         today,
+        drift_cache_by_date={
+            today: extended_cache,
+            tomorrow: tomorrow_with_lag_fallbacks,
+        },
     )
     adjuster   = _make_adjuster(config)
     guard      = _make_guard(config)
@@ -3013,29 +3103,12 @@ def main() -> None:
     # Extend cache with forecast weather for today/tomorrow inference. Persist the
     # unadjusted forecast-weather cache after actual JSON injection; the
     # bias-corrected copy is model input only.
-    today    = datetime.now(tz=JST).date()
-    tomorrow = today + timedelta(days=1)
-    _finalize_previous_actual_json_fallbacks(out_dir, today)
     status_ok_set, status_summaries = _apply_actual_json_latest_fallback(
         out_dir, today, ok_set, summaries
     )
-    observed_cache = _inject_today_actuals(
-        out_dir,
-        today,
-        hourly_cache,
-        fallback_through=today - timedelta(days=1),
-    )
-    forecast_weather_cache = _extend_cache_with_forecast_weather(observed_cache, days=3)
-    extended_cache = _apply_weather_forecast_bias_correction(forecast_weather_cache, config)
 
     # Today / tomorrow forecasts
     extended_with_actuals = extended_cache
-    tomorrow_with_lag_fallbacks = _inject_today_actuals(
-        out_dir,
-        today,
-        extended_cache,
-        fallback_through=today,
-    )
     save_hourly_cache(out_dir, forecast_weather_cache)
     today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,

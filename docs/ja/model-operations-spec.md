@@ -289,6 +289,9 @@ Raw LightGBM Forecast
 ### 昇格とreplayの解釈
 
 - モデル昇格評価は標準で毎週実行しますが、毎回直近の確定28日rolling windowを使用します。
+- Challenger学習は評価当日の部分実績を除外し、`target_date`より前のデータだけを使用します。
+- 検証はtimestamp重複を除いた正確な`window_days × 24`時間のcoverageを要求します。
+- 今日・明日のdriftは実配信相当のweather/lag入力で48個の有限値を要求し、欠落・`NaN`・無限値は昇格を拒否します。
 - 時系列検証はtarget日の需要を隠し、最終気象文脈を利用して、運用後処理を除くモデル契約を評価します。
 - `metrics/operational_replay.json`は実際に配信した予測を評価し、TEPCOは外部参考指標としてのみ表示します。
 - Stage replayは日付別の最新calibration snapshotを利用するため、全Intraday公開履歴の完全な再現ではありません。

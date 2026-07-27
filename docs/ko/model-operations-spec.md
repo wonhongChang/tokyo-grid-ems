@@ -304,6 +304,9 @@ Raw LightGBM Forecast
 ### 승격과 리플레이 해석
 
 - 모델 승격 평가는 기본적으로 매주 실행하지만, 매번 최근 확정 28일 rolling window를 사용합니다.
+- Challenger 학습은 평가 당일의 부분 실측을 제외하고 `target_date` 이전 데이터만 사용합니다.
+- 검증은 timestamp 중복을 제거한 `window_days × 24`시간의 완전한 coverage를 요구합니다.
+- 오늘·내일 drift는 실제 서빙과 같은 weather/lag 입력에서 48개 유한값을 요구하며, 누락·`NaN`·무한값은 즉시 승격을 거부합니다.
 - 시간 순서 검증은 target 날짜의 수요를 숨기고 최종 기상 문맥을 사용하며, 운영 후처리를 제외한 모델 계약을 평가합니다.
 - `metrics/operational_replay.json`은 실제 서빙된 예측을 평가하고 TEPCO는 외부 참고 지표로만 표시합니다.
 - Stage replay는 날짜별 최신 calibration snapshot을 사용하므로 모든 Intraday 게시 이력을 완전히 복원한 결과가 아닙니다.
