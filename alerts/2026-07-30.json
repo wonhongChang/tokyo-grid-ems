@@ -4,21 +4,51 @@
   "availability": "ok",
   "summary": {
     "critical": 0,
-    "warning": 1,
+    "warning": 3,
     "info": 0
   },
   "events": [
+    {
+      "id": "2026-07-30T16:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-07-30T16:00:00+09:00",
+      "endAt": "2026-07-30T17:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 93.0,
+      "thresholdPct": 92.0,
+      "supplyMw": 54490.0,
+      "reason": "Usage 93.0% exceeded warning threshold 92.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
+    {
+      "id": "2026-07-30T17:00:00+09:00_reserve_risk",
+      "type": "reserve_risk",
+      "severity": "warning",
+      "startAt": "2026-07-30T17:00:00+09:00",
+      "endAt": "2026-07-30T18:00:00+09:00",
+      "metric": "usage_pct",
+      "usagePct": 94.0,
+      "thresholdPct": 92.0,
+      "supplyMw": 51720.0,
+      "reason": "Usage 94.0% exceeded warning threshold 92.0%",
+      "tags": [
+        "kpi"
+      ]
+    },
     {
       "id": "2026-07-30T12:00:00+09:00_drift",
       "type": "drift",
       "severity": "warning",
       "startAt": "2026-07-30T12:00:00+09:00",
-      "endAt": "2026-07-30T15:00:00+09:00",
+      "endAt": "2026-07-30T17:00:00+09:00",
       "metric": "residual_mw",
-      "residualAvgMw": 1863.1,
+      "residualAvgMw": 1525.4,
       "method": "ewma",
       "thresholdMw": 800.0,
-      "reason": "EWMA residual above ±800 MW for 4 consecutive hours",
+      "reason": "EWMA residual above ±800 MW for 6 consecutive hours",
       "tags": [
         "residual"
       ]
