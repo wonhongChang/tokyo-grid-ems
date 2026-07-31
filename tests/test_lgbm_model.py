@@ -78,6 +78,53 @@ def test_fit_succeeds_at_minimum_threshold():
     assert f.is_compatible()
 
 
+def test_fit_keeps_source_sensitive_features_out_of_non_business_q50_only():
+    excluded_feature = "humidity_delta_24h"
+    config = {
+        "forecast": {
+            "q50_regime_model": {
+                "enabled": True,
+                "min_non_business_training_rows": 336,
+                "weight": 0.5,
+                "excluded_features": [excluded_feature],
+            }
+        }
+    }
+    f = LGBMForecaster(
+        n_estimators=10,
+        learning_rate=0.1,
+        config=config,
+    )
+
+    f.fit(_make_cache(105))
+
+    assert excluded_feature in f.model_q50.feature_name_
+    assert excluded_feature in f.model_q50_lag24_residual.feature_name_
+    assert excluded_feature not in f.model_q50_non_business.feature_name_
+    assert (
+        f.q50_non_business_feature_columns
+        == f.model_q50_non_business.feature_name_
+    )
+    assert f.is_compatible()
+
+
+def test_fit_rejects_unknown_non_business_feature_exclusion():
+    f = LGBMForecaster(
+        n_estimators=10,
+        config={
+            "forecast": {
+                "q50_regime_model": {
+                    "enabled": True,
+                    "excluded_features": ["not_a_real_feature"],
+                }
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="unknown non-business q50 exclusions"):
+        f.fit(_make_cache(105))
+
+
 # ---------------------------------------------------------------------------
 # predict — structure
 # ---------------------------------------------------------------------------
@@ -341,6 +388,44 @@ def test_enabled_lag24_residual_ensemble_requires_residual_model():
     assert not f.is_compatible()
 
 
+def test_enabled_q50_regime_requires_feature_contract_and_non_business_model():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "q50_regime_model": {
+                "enabled": True,
+                "weight": 1.0,
+            },
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = object()
+    f.model_q50 = object()
+    f.model_q975 = object()
+    f.q50_non_business_feature_columns = ["hour"]
+    f.model_q50_non_business = None
+
+    assert not f.is_compatible()
+
+    f.model_q50_non_business = object()
+    assert f.is_compatible()
+
+
+def test_legacy_v11_model_remains_compatible_without_regime_artifacts():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "q50_regime_model": {"enabled": True},
+        }
+    }
+    f.interval_version = "q025_q50_q975_p95_v11_lag24_residual_ensemble"
+    f.model_q025 = object()
+    f.model_q50 = object()
+    f.model_q975 = object()
+
+    assert f.is_compatible()
+
+
 @pytest.mark.parametrize(
     ("is_non_business_day", "business_day_only", "weight", "expected_mid"),
     [
@@ -441,6 +526,90 @@ def test_predict_uses_base_q50_when_lag24_is_missing(monkeypatch):
 
     assert result[4].forecast_mw == 30_500.0
     assert result[5].forecast_mw == 32_000.0
+
+
+def test_predict_blends_dedicated_q50_only_for_non_business_rows(monkeypatch):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    non_business = np.zeros(24)
+    non_business[12:] = 1
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+            "is_non_business_day": non_business,
+        }),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "q50_regime_model": {"enabled": True},
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.q50_non_business_feature_columns = ["hour", "is_non_business_day"]
+    f.model_q025 = FakeModel(29_000.0)
+    f.model_q50 = FakeModel(31_000.0)
+    f.model_q975 = FakeModel(34_000.0)
+    f.model_q50_non_business = FakeModel(32_000.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    assert result[11].forecast_mw == 31_000.0
+    assert result[12].forecast_mw == 31_500.0
+
+
+def test_predict_skips_lag24_blend_across_business_type_transition(monkeypatch):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    mismatch = np.zeros(24)
+    mismatch[12:] = 1
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+            "lag_24h": np.full(24, 30_000.0),
+            "is_non_business_day": np.zeros(24),
+            "lag_24h_business_type_mismatch": mismatch,
+        }),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "lag24_residual_ensemble": {
+                "enabled": True,
+                "business_day_only": True,
+                "same_business_type_only": True,
+                "weight": 0.5,
+            }
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(29_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(34_000.0)
+    f.model_q50_lag24_residual = FakeModel(-1_000.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    assert result[11].forecast_mw == 30_500.0
+    assert result[12].forecast_mw == 32_000.0
 
 
 # ---------------------------------------------------------------------------

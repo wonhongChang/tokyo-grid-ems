@@ -23,7 +23,7 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 
 ## モデル構造
 
-`python/forecast/lgbm_model.py` は絶対需要quantileモデル3つとlag-24残差中央値モデル1つを学習します。
+`python/forecast/lgbm_model.py` は絶対需要quantileモデル3つ、lag-24残差中央値モデル1つ、非営業日専用q50モデル1つを学習します。
 
 | モデル | 役割 |
 |---|---|
@@ -31,8 +31,9 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | q50 | 中心予測値 |
 | q975 | p95上側区間推定 |
 | q50 lag24 residual | `actual_mw - lag_24h`の中央値推定 |
+| q50 non-business | 土日祝日の中心線を補助する推定 |
 
-営業日の中心予測は、絶対需要q50と`lag_24h + 予測残差`を50:50で合成します。一方は需要の絶対水準を、もう一方は今日が昨日からどの程度変化すべきかを学習します。別途調整された非営業日のshape経路は従来の絶対需要q50を維持します。q025/q975のhalf-widthは維持したまま合成q50の周囲へ移動するため、アンサンブル自体が予測バンドを急に狭めたり広げたりしません。
+営業日の中心予測は、絶対需要q50と`lag_24h + 予測残差`を50:50で合成します。非営業日は統合q50と非営業日専用q50を50:50で合成します。専用モデルは湿度・不快指数の24時間変化量と二つの朝interactionを除外し、気象source遷移への感度を抑えます。q025/q975のhalf-widthは維持したまま最終q50の周囲へ移動するため、アンサンブル自体が予測バンドを急に狭めたり広げたりしません。
 
 ダッシュボードでは最終q50を予測線として使用します。q025/q975はp95予測バンドとして表示し、p99風の広い区間はq025/q975の幅から拡張します。片側のquantile区間がq50近くに潰れた場合、反対側の大きな不確実性をそのまま反映せず、その方向には最小幅のみを維持します。独立したquantileモデルが気象regime変化後に片側tailだけを稀に過度に広げる場合は、interval sanity calibrationがp95最大half-widthと上下非対称比率を制限し、q50予測線は変更しません。
 
@@ -61,7 +62,7 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | 営業/気象交互作用 | business-morning x 気温/湿度/不快指数変化、business-daytime x 不快指数、late-afternoon x 気温・冷房変化 | 朝のramp-up、高湿度の日中負荷、午後の冷房減衰、同じ気温でも上昇局面と下降局面で異なる需要を表す |
 | ラグ文脈 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h営業/非営業mismatch, 直近同営業タイプ平均, lag-to-anchor gap | ラグ値が休日需要に影響されたか、または営業/非営業境界をまたいだかを伝える |
 
-現在の明示的なLightGBM学習特徴量数は63個です。
+統合q50、lag-24残差、interval modelは63特徴量を使用し、非営業日専用q50はそのうち59個を使用します。
 
 冷房/暖房degreeの基準温度は `config.yaml` で設定します。
 
@@ -139,6 +140,8 @@ residual = actualMw - modelForecastMw
 12:00の時間遷移改善は [2026-05-20 昼時間帯の遷移ガード](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) と [2026-05-27 昼休み遷移ガード再有効化](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) に整理しています。
 
 最新の運用補正およびデータ連続性レイヤーは [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)、[2026-05-25 正の残差スロープ減衰](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)、[2026-05-27 朝ランプ継続ガード](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)、[2026-05-27 夕方下落継続ガード](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)、[2026-05-30 負の残差連続性 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)、[2026-06-03 予測区間の上側 tail 安定化](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)、[2026-06-04 朝の warm-lag 過反応ガード](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)、[2026-06-05 朝の正の残差 carryover 減衰](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)、[2026-06-07 actual JSON キャッシュ永続化](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)、[2026-06-11 湿度/不快指数特徴量と局所shape spikeガード](model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)、[2026-06-12 朝の実績ランプ floor と予測バンド tail 縮小](model-improvements/model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)、[2026-06-13 非営業日のanalogおよびcarryoverガード](model-improvements/model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md) に整理しています。
+
+非営業日専用q50構造と昇格検証は [2026-07-31 非営業日レジームq50アンサンブル](model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md) に整理しています。
 
 ---
 

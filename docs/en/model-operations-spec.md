@@ -25,13 +25,14 @@ Operational rules:
 | Implementation | `python/forecast/lgbm_model.py` |
 | Feature builder | `python/forecast/feature_builder.py` |
 | Post-processing | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| Interval version | `q025_q50_q975_p95_v11_lag24_residual_ensemble` |
+| Challenger interval contract | `q025_q50_q975_p95_v12_regime_q50` |
+| Current Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (retained until the drift gate passes) |
 | Minimum training rows | `90 * 24 = 2160` hourly rows |
 | Fallback | `baseline_dow_hour_mean` |
 
 The model forecasts hourly Tokyo-area electricity demand and produces today's forecast, tomorrow's forecast, p95/p99 forecast bands, and expected demand values for anomaly detection.
 
-Three absolute-demand quantile regressors and one lag-24 residual median regressor are trained:
+Three absolute-demand quantile regressors, one lag-24 residual median regressor, and one dedicated non-business median regressor are trained:
 
 | Model | alpha | Role |
 |---|---:|---|
@@ -39,8 +40,9 @@ Three absolute-demand quantile regressors and one lag-24 residual median regress
 | `q50` | 0.50 | point forecast |
 | `q975` | 0.975 | upper p95 estimate |
 | `q50_lag24_residual` | 0.50 | median of `actual_mw - lag_24h` |
+| `q50_non_business` | 0.50 | auxiliary center estimate for weekends and holidays |
 
-For business days, the served q50 is a configurable blend of absolute q50 and `lag_24h + residual q50`; the production weight is 0.5. Non-business days bypass this blend. The dashboard uses the resulting q50 as the main forecast line. `q025/q975` form the p95 band, while a wider p99-style band is derived by extending the original q025/q975 half-width around the blended center. If one side collapses near the absolute q50, the system keeps only the configured minimum width on that side instead of mirroring the wider side.
+Business-day q50 blends absolute q50 and `lag_24h + residual q50` 50:50. Non-business days bypass the lag-24 residual blend and instead combine unified q50 with the dedicated non-business q50 50:50. The dashboard uses the resulting q50 as the main forecast line. `q025/q975` form the p95 band, while a wider p99-style band is derived by extending the original q025/q975 half-width around the blended center. If one side collapses near the absolute q50, the system keeps only the configured minimum width on that side instead of mirroring the wider side.
 
 ---
 
@@ -90,7 +92,7 @@ Operational tuning should start with data quality, lag regime, and calibration b
 
 ## 4. Feature Catalog
 
-The current LightGBM training feature set contains 63 explicit features. The implementation does not explicitly pass `categorical_feature` to LightGBM; most features are supplied as a numeric matrix. "Logical type" describes how humans should reason about the feature, while "model input type" describes how it is encoded for the model.
+The unified q50, lag-24 residual, and q025/q975 models use 63 explicit features. The dedicated non-business q50 uses 59 after removing four source-sensitive deltas. The implementation does not explicitly pass `categorical_feature` to LightGBM; most features are supplied as a numeric matrix. "Logical type" describes how humans should reason about the feature, while "model input type" describes how it is encoded for the model.
 
 ### Calendar
 
@@ -174,10 +176,10 @@ The current LightGBM training feature set contains 63 explicit features. The imp
 | 56 | `lag_24h_gap_x_business_hour` | interaction | Float/Numeric | derived | gap focused on business hours | daytime lag gap signal |
 | 57 | `humidity_pct` | continuous weather | Float/Numeric | JMA/AMeDAS or fallback | relative humidity | direct humid-load signal |
 | 58 | `discomfort_index` | continuous derived | Float/Numeric | temp + humidity | humidity-aware discomfort index | warm-humid demand signal |
-| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | humidity change vs yesterday | morning/daytime comfort shift |
-| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | discomfort change vs yesterday | perceived-load regime shift |
-| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | business morning x humidity change | sticky morning ramp context |
-| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | business morning x discomfort change | humid business-morning HVAC load |
+| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | humidity change vs yesterday | unified models only; excluded from dedicated non-business q50 |
+| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | discomfort change vs yesterday | unified models only; excluded from dedicated non-business q50 |
+| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | business morning x humidity change | unified models only; excluded from dedicated non-business q50 |
+| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | business morning x discomfort change | unified models only; excluded from dedicated non-business q50 |
 | 63 | `business_daytime_x_discomfort_index` | interaction | Float/Numeric | derived | business daytime x discomfort level | humid daytime level context |
 
 ---
@@ -251,6 +253,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | Area | Config Key | Current value | Operational guide |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | Higher values trust the day-over-day residual model more; lower values retain more absolute-level behavior. Retune only with version-aware rolling and frozen-origin holdouts. |
+| forecast | `q50_regime_model.weight` | 0.5 | Controls the dedicated non-business q50 contribution. Higher values strengthen weekend specialization; lower values preserve more unified-q50 shape. Validate both non-business MAE and shape. |
 | promotion | `retrain_weekday` | 0 (Monday) | Controls when a challenger is evaluated. The current champion continues serving on other days. |
 | promotion | `validation_window_days` | 28 | Uses the latest 28 complete days at every evaluation. This is a rolling evidence window, not a 28-day retraining interval. |
 | promotion | absolute quality limits | MAE 1000, WAPE 3.0%, shape 750, max error 6500 MW | Rejects a challenger even when it beats a weak baseline but remains operationally poor. Segment limits are MAE 1500 and shape 1100 MW. |

@@ -226,6 +226,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-07-31 비영업일 레짐 q50 앙상블](docs/ko/model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md)
 - [2026-07-27 모델 승격 게이트 Fail-Closed 보강](docs/ko/model-improvements/model-improvement-2026-07-27-promotion-gate-fail-closed.md)
 - [2026-07-26 모델 승격 관리와 데이터 출처 무결성](docs/ko/model-improvements/model-improvement-2026-07-26-model-governance-and-source-integrity.md)
 - [2026-07-18 평일 lag-24 잔차 앙상블](docs/ko/model-improvements/model-improvement-2026-07-18-weekday-lag24-residual-ensemble.md)

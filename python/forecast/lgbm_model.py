@@ -32,9 +32,13 @@ _LGBM_PARAMS = {
     "verbose": -1,
 }
 
+
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
-    INTERVAL_VERSION = "q025_q50_q975_p95_v11_lag24_residual_ensemble"
+    INTERVAL_VERSION = "q025_q50_q975_p95_v12_regime_q50"
+    LEGACY_INTERVAL_VERSIONS = {
+        "q025_q50_q975_p95_v11_lag24_residual_ensemble",
+    }
 
     def __init__(
         self,
@@ -52,6 +56,8 @@ class LGBMForecaster:
         self.model_q50: "LGBMRegressor | None" = None
         self.model_q975: "LGBMRegressor | None" = None
         self.model_q50_lag24_residual: "LGBMRegressor | None" = None
+        self.model_q50_non_business: "LGBMRegressor | None" = None
+        self.q50_non_business_feature_columns: list[str] | None = None
 
     def _make_model(self, alpha: float) -> "LGBMRegressor":
         return LGBMRegressor(
@@ -73,47 +79,147 @@ class LGBMForecaster:
             getattr(self, "config", {}) or {},
         )
 
-    def _lag24_residual_ensemble_config(self) -> tuple[bool, bool, float]:
+    def _lag24_residual_ensemble_config(
+        self,
+    ) -> tuple[bool, bool, bool, float]:
         forecast_config = (getattr(self, "config", {}) or {}).get("forecast", {})
         ensemble_config = forecast_config.get("lag24_residual_ensemble", {})
         enabled = bool(ensemble_config.get("enabled", False))
         business_day_only = bool(ensemble_config.get("business_day_only", True))
+        same_business_type_only = bool(
+            ensemble_config.get("same_business_type_only", False)
+        )
         weight = min(1.0, max(0.0, float(ensemble_config.get("weight", 0.5))))
-        return enabled, business_day_only, weight
+        return enabled, business_day_only, same_business_type_only, weight
+
+    def _q50_regime_config(
+        self,
+    ) -> tuple[bool, tuple[str, ...], int, float]:
+        forecast_config = (getattr(self, "config", {}) or {}).get("forecast", {})
+        regime_config = forecast_config.get("q50_regime_model", {})
+        enabled = bool(regime_config.get("enabled", False))
+        excluded_features = tuple(
+            str(feature)
+            for feature in regime_config.get("excluded_features", [])
+        )
+        min_non_business_rows = max(
+            int(regime_config.get("min_non_business_training_rows", 14 * 24)),
+            1,
+        )
+        weight = min(1.0, max(0.0, float(regime_config.get("weight", 0.5))))
+        return enabled, excluded_features, min_non_business_rows, weight
+
+    def _non_business_q50_inputs(
+        self,
+        features: pd.DataFrame,
+    ) -> pd.DataFrame:
+        columns = getattr(self, "q50_non_business_feature_columns", None)
+        if not columns:
+            raise RuntimeError(
+                "LightGBM non-business q50 feature contract is missing."
+            )
+        missing = [column for column in columns if column not in features.columns]
+        if missing:
+            raise RuntimeError(
+                "LightGBM non-business q50 feature contract is incomplete: "
+                + ", ".join(missing)
+            )
+        return features[columns]
 
     def fit(self, cache: pd.DataFrame) -> None:
-        """Train interval, absolute-q50, and lag24-residual models."""
+        """Train interval, q50, residual, and non-business regime models."""
         X, y = build_training_features(cache, self.config)
         if len(X) < self.MIN_TRAIN_ROWS:
             raise ValueError(
                 f"LGBMForecaster.fit: need >= {self.MIN_TRAIN_ROWS} rows (90 days), "
                 f"got {len(X)} after feature build."
             )
+
+        regime_enabled, excluded_features, min_non_business_rows, _ = (
+            self._q50_regime_config()
+        )
         for alpha, attr in [
             (0.025, "model_q025"),
-            (0.50, "model_q50"),
             (0.975, "model_q975"),
         ]:
             m = self._make_model(alpha)
             m.fit(X, y)
             setattr(self, attr, m)
+
+        q50_model = self._make_model(0.50)
+        q50_model.fit(X, y)
+        self.model_q50 = q50_model
+
         residual_model = self._make_model(0.50)
         residual_model.fit(X, y - X["lag_24h"])
         self.model_q50_lag24_residual = residual_model
+
+        self.model_q50_non_business = None
+        self.q50_non_business_feature_columns = None
+        if regime_enabled:
+            excluded = set(excluded_features)
+            unknown_exclusions = sorted(excluded.difference(X.columns))
+            if unknown_exclusions:
+                raise ValueError(
+                    "LGBMForecaster.fit: unknown non-business q50 exclusions: "
+                    + ", ".join(unknown_exclusions)
+                )
+            self.q50_non_business_feature_columns = [
+                column for column in X.columns if column not in excluded
+            ]
+            if not self.q50_non_business_feature_columns:
+                raise ValueError(
+                    "LGBMForecaster.fit: non-business q50 feature set is empty."
+                )
+            non_business_mask = X["is_non_business_day"] == 1
+            non_business_rows = int(non_business_mask.sum())
+            if non_business_rows < min_non_business_rows:
+                raise ValueError(
+                    "LGBMForecaster.fit: need >= "
+                    f"{min_non_business_rows} non-business rows, "
+                    f"got {non_business_rows}."
+                )
+            non_business_model = self._make_model(0.50)
+            non_business_model.fit(
+                X.loc[
+                    non_business_mask,
+                    self.q50_non_business_feature_columns,
+                ],
+                y.loc[non_business_mask],
+            )
+            self.model_q50_non_business = non_business_model
+
         self.interval_version = self.INTERVAL_VERSION
 
     def is_compatible(self) -> bool:
         """Return True when a loaded pickle has the current interval model layout."""
+        interval_version = getattr(self, "interval_version", None)
         compatible = (
-            getattr(self, "interval_version", None) == self.INTERVAL_VERSION
+            interval_version
+            in {self.INTERVAL_VERSION, *self.LEGACY_INTERVAL_VERSIONS}
             and getattr(self, "model_q025", None) is not None
             and getattr(self, "model_q50", None) is not None
             and getattr(self, "model_q975", None) is not None
         )
-        enabled, _, _ = self._lag24_residual_ensemble_config()
-        return compatible and (
-            not enabled or getattr(self, "model_q50_lag24_residual", None) is not None
-        )
+        enabled, _, _, _ = self._lag24_residual_ensemble_config()
+        if not compatible or (
+            enabled and getattr(self, "model_q50_lag24_residual", None) is None
+        ):
+            return False
+
+        regime_enabled, _, _, _ = self._q50_regime_config()
+        if interval_version == self.INTERVAL_VERSION and regime_enabled:
+            return (
+                bool(
+                    getattr(
+                        self,
+                        "q50_non_business_feature_columns",
+                        None,
+                    )
+                )
+                and getattr(self, "model_q50_non_business", None) is not None
+            )
+        return True
 
     def predict(self, target_date: date, cache: pd.DataFrame) -> list[HourlyForecast]:
         """Return 24-hour HourlyForecast list for target_date."""
@@ -125,7 +231,35 @@ class LGBMForecaster:
         q975 = self.model_q975.predict(X)
 
         q50 = np.asarray(q50_base, dtype=float).copy()
-        enabled, business_day_only, weight = self._lag24_residual_ensemble_config()
+        non_business_q50 = None
+        regime_enabled, _, _, regime_weight = self._q50_regime_config()
+        regime_active = (
+            getattr(self, "interval_version", None) == self.INTERVAL_VERSION
+            and regime_enabled
+        )
+        if regime_active:
+            non_business_mask = (
+                X["is_non_business_day"].to_numpy(dtype=float) == 1.0
+            )
+            non_business_q50 = np.asarray(
+                self.model_q50_non_business.predict(
+                    self._non_business_q50_inputs(X)
+                ),
+                dtype=float,
+            )
+            blended_non_business_q50 = (
+                (1.0 - regime_weight) * q50
+                + regime_weight * non_business_q50
+            )
+            q50 = np.where(
+                non_business_mask,
+                blended_non_business_q50,
+                q50,
+            )
+
+        enabled, business_day_only, same_business_type_only, weight = (
+            self._lag24_residual_ensemble_config()
+        )
         if enabled:
             residual_q50 = np.asarray(
                 self.model_q50_lag24_residual.predict(X),
@@ -141,13 +275,14 @@ class LGBMForecaster:
             )
             if business_day_only:
                 business_mask = X["is_non_business_day"].to_numpy(dtype=float) == 0.0
-                q50 = np.where(
-                    business_mask & blend_available,
-                    blended_q50,
-                    q50,
+                blend_available &= business_mask
+            if same_business_type_only:
+                same_business_type_mask = (
+                    X["lag_24h_business_type_mismatch"].to_numpy(dtype=float)
+                    == 0.0
                 )
-            else:
-                q50 = np.where(blend_available, blended_q50, q50)
+                blend_available &= same_business_type_mask
+            q50 = np.where(blend_available, blended_q50, q50)
 
         forecast_arrays = {
             "q025": np.asarray(q025, dtype=float),
@@ -155,6 +290,8 @@ class LGBMForecaster:
             "q50": np.asarray(q50, dtype=float),
             "q975": np.asarray(q975, dtype=float),
         }
+        if non_business_q50 is not None:
+            forecast_arrays["q50_non_business"] = non_business_q50
         invalid = [
             name
             for name, values in forecast_arrays.items()

@@ -25,13 +25,14 @@
 | 구현 | `python/forecast/lgbm_model.py` |
 | 피처 생성 | `python/forecast/feature_builder.py` |
 | 후처리 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| interval version | `q025_q50_q975_p95_v11_lag24_residual_ensemble` |
+| Challenger interval contract | `q025_q50_q975_p95_v12_regime_q50` |
+| 현재 Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (drift gate 통과 전까지 유지) |
 | 최소 학습량 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
 모델은 시간별 전력 수요를 예측하고, 오늘/내일 예측선, p95/p99 예측 밴드, 이상탐지 expected demand를 생성합니다.
 
-LightGBM은 절대수요 quantile regressor 3개와 lag-24 잔차 중앙값 regressor 1개를 학습합니다.
+LightGBM은 절대수요 quantile regressor 3개, lag-24 잔차 중앙값 regressor 1개, 비영업일 전용 중앙값 regressor 1개를 학습합니다.
 
 | 모델 | alpha | 역할 |
 |---|---:|---|
@@ -39,8 +40,9 @@ LightGBM은 절대수요 quantile regressor 3개와 lag-24 잔차 중앙값 regr
 | `q50` | 0.50 | 중심 예측선 |
 | `q975` | 0.975 | p95 상단 추정 |
 | `q50_lag24_residual` | 0.50 | `actual_mw - lag_24h` 중앙값 추정 |
+| `q50_non_business` | 0.50 | 토요일·일요일·공휴일 중심선의 보조 추정 |
 
-영업일 서빙 q50은 절대수요 q50과 `lag_24h + 잔차 q50`의 설정 가능한 결합이며 운영 가중치는 0.5입니다. 비영업일은 이 결합을 우회합니다. 대시보드는 최종 q50을 중심 예측선으로 사용합니다. `q025/q975`는 p95 밴드가 되고, p99 스타일 외곽 밴드는 원래 q025/q975 half-width를 결합 중심선 주위에서 한 번 더 확장해 계산합니다. 한쪽 quantile이 절대수요 q50에 붙는 경우에는 반대쪽의 큰 폭을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다.
+영업일 서빙 q50은 절대수요 q50과 `lag_24h + 잔차 q50`을 50:50으로 결합합니다. 비영업일은 lag-24 잔차 결합을 우회하고 통합 q50과 비영업일 전용 q50을 50:50으로 결합합니다. 대시보드는 이 최종 q50을 중심 예측선으로 사용합니다. `q025/q975`는 p95 밴드가 되고, p99 스타일 외곽 밴드는 원래 q025/q975 half-width를 결합 중심선 주위에서 한 번 더 확장해 계산합니다. 한쪽 quantile이 절대수요 q50에 붙는 경우에는 반대쪽의 큰 폭을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다.
 
 ---
 
@@ -98,7 +100,7 @@ TEPCO forecast fallback은 pipeline continuity를 위한 임시값입니다. Lig
 
 ## 4. 전체 피처 카탈로그
 
-현재 LightGBM 학습 피처는 63개입니다. 현재 구현은 LightGBM에 `categorical_feature`를 명시적으로 넘기지 않고 대부분 numeric matrix로 학습합니다. 따라서 아래의 "논리 타입"은 사람이 해석하는 의미이고, "모델 입력 타입"은 실제 모델에 들어가는 형태입니다.
+통합 q50, lag-24 잔차, q025/q975 모델은 63개 피처를 사용합니다. 비영업일 전용 q50은 출처 민감 변화량 4개를 제외한 59개를 사용합니다. 현재 구현은 LightGBM에 `categorical_feature`를 명시적으로 넘기지 않고 대부분 numeric matrix로 학습합니다. 따라서 아래의 "논리 타입"은 사람이 해석하는 의미이고, "모델 입력 타입"은 실제 모델에 들어가는 형태입니다.
 
 ### 캘린더
 
@@ -182,10 +184,10 @@ TEPCO forecast fallback은 pipeline continuity를 위한 임시값입니다. Lig
 | 56 | `lag_24h_gap_x_business_hour` | interaction | Float/Numeric | derived | gap x 영업시간 | 낮 시간대 lag 부족/과열 신호 |
 | 57 | `humidity_pct` | continuous weather | Float/Numeric | JMA/AMeDAS or fallback | 상대습도 | 고습 부하 직접 신호 |
 | 58 | `discomfort_index` | continuous derived | Float/Numeric | temp + humidity | 습도 기반 불쾌지수 | 덥고 습한 날 수요 신호 |
-| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | 전날 같은 시간 대비 습도 변화 | 오전/낮 체감 변화 |
-| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | 전날 대비 불쾌지수 변화 | 체감 부하 regime 변화 |
-| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | 영업일 오전 x 습도 변화 | 습한 오전 ramp 문맥 |
-| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | 영업일 오전 x 불쾌지수 변화 | 고습 영업일 오전 냉방 부하 |
+| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | 전날 같은 시간 대비 습도 변화 | 통합 모델에는 사용, 비영업일 전용 q50에서는 제외 |
+| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | 전날 대비 불쾌지수 변화 | 통합 모델에는 사용, 비영업일 전용 q50에서는 제외 |
+| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | 영업일 오전 x 습도 변화 | 통합 모델에는 사용, 비영업일 전용 q50에서는 제외 |
+| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | 영업일 오전 x 불쾌지수 변화 | 통합 모델에는 사용, 비영업일 전용 q50에서는 제외 |
 | 63 | `business_daytime_x_discomfort_index` | interaction | Float/Numeric | derived | 영업일 낮 x 불쾌지수 | 고습 낮 시간대 레벨 문맥 |
 
 ---
@@ -264,6 +266,7 @@ Raw LightGBM Forecast
 | 영역 | 설정 (Config Key) | 현재 값 | 운영 가이드 및 튜닝 팁 |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | 올리면 전일 대비 잔차 모델을 더 신뢰하고, 내리면 절대수요 모델 성향을 더 유지합니다. 버전 인지 rolling replay와 frozen-origin holdout을 함께 통과할 때만 조정합니다. |
+| forecast | `q50_regime_model.weight` | 0.5 | 비영업일 전용 q50 반영 비율입니다. 높이면 주말 레짐 분리가 강해지고, 낮추면 통합 q50 형태를 더 보존합니다. 비영업일 MAE와 shape를 함께 검증합니다. |
 | promotion | `retrain_weekday` | 0 (월요일) | Challenger 평가 요일입니다. 다른 날짜에는 현재 Champion을 그대로 사용합니다. |
 | promotion | `validation_window_days` | 28 | 평가할 때마다 최근 확정 28일을 사용합니다. 28일마다 한 번 재학습한다는 뜻이 아닙니다. |
 | promotion | 절대 품질 상한 | MAE 1000, WAPE 3.0%, shape 750, 최대 오차 6500 MW | 약한 baseline만 이겼지만 운영 품질이 나쁜 모델을 거부합니다. 구간별 상한은 MAE 1500, shape 1100 MW입니다. |

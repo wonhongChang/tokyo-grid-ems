@@ -23,7 +23,7 @@ The statistical baseline (`baseline_dow_hour_mean`) remains as a fallback when L
 
 ## Model
 
-`python/forecast/lgbm_model.py` trains three absolute-demand quantile regressors and one lag-24 residual median regressor.
+`python/forecast/lgbm_model.py` trains three absolute-demand quantile regressors, one lag-24 residual median regressor, and one dedicated non-business q50 regressor.
 
 | Model | Purpose |
 |---|---|
@@ -31,8 +31,9 @@ The statistical baseline (`baseline_dow_hour_mean`) remains as a fallback when L
 | q50 | point forecast |
 | q975 | upper p95 interval estimate |
 | q50 lag24 residual | median of `actual_mw - lag_24h` |
+| q50 non-business | auxiliary center estimate for Saturdays, Sundays, and holidays |
 
-On business days, the point forecast is a 50:50 blend of the absolute-demand q50 and `lag_24h + predicted residual`. This lets one model learn the demand level while the other learns how today should depart from yesterday. Non-business days keep the absolute-demand q50 path because their shape controls are tuned separately. q025/q975 interval half-widths are preserved and recentered around the blended q50, so the ensemble cannot collapse or inflate the forecast band by itself.
+On business days, the point forecast is a 50:50 blend of absolute-demand q50 and `lag_24h + predicted residual`. Non-business days instead blend unified q50 and dedicated non-business q50 50:50. The dedicated model excludes the 24-hour humidity/discomfort deltas and their two morning interactions to reduce sensitivity to weather-source transitions. q025/q975 interval half-widths are preserved and recentered around final q50, so the ensemble cannot collapse or inflate the forecast band by itself.
 
 The dashboard uses the resulting q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread. When one side of the quantile interval collapses near q50, the pipeline keeps only a minimum width on that side instead of mirroring the opposite side's larger uncertainty. When an independent quantile model produces a rare one-sided tail explosion after a weather-regime shift, interval sanity calibration caps the maximum p95 half-width and the upper/lower asymmetry ratio without changing q50.
 
@@ -61,7 +62,7 @@ Feature engineering lives in `python/forecast/feature_builder.py`.
 | Business/weather interactions | business-morning x temperature/humidity/discomfort delta, business-daytime x discomfort, late-afternoon x temperature/cooling delta | helps the model distinguish morning ramp-up, humid daytime load, afternoon cooling decay, and hysteresis-like demand behavior |
 | Lag context | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h business-type mismatch, recent same business-type mean, lag-to-anchor gaps | tells the model when lag values are holiday-contaminated or crossed a business/non-business boundary |
 
-The current feature set has 63 explicit LightGBM training features.
+The unified q50, lag-24 residual, and interval models use 63 features. The dedicated non-business q50 uses 59 of them.
 
 Cooling/heating degree balance points are configured in `config.yaml`:
 
@@ -137,6 +138,8 @@ See [Business-Type Lag Features](model-improvements/model-improvement-2026-05-16
 See [Midday Transition Guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md) and [Midday Transition Guard Re-enabled](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md) for the 12:00 lag-shape follow-up.
 
 See [Business Return Anchor Shortfall Guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [Positive Residual Slope Damping](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [Morning Ramp Continuity Guard](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [Evening Decline Continuity Guard](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [Negative Residual Continuity Floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [Forecast Interval Tail Sanity Guard](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [Morning Warm-Lag Overreaction Guard](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [Morning Positive Residual Carryover Damping](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), [Actual JSON Cache Persistence](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md), [Business-Return Shape Veto](model-improvements/model-improvement-2026-06-08-business-return-shape-veto.md), [Humidity/Discomfort Features and Localized Shape Spike Guard](model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md), [Morning Observed Ramp Floor and Band Tail Tightening](model-improvements/model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md), and [Non-Business Analog and Carryover Guards](model-improvements/model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md) for the latest operational guard and data-continuity layers.
+
+See [Regime-Aware Non-Business q50 Ensemble](model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md) for the dedicated non-business q50 contract and promotion evidence.
 
 ---
 

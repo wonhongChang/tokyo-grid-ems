@@ -25,13 +25,14 @@
 | 実装 | `python/forecast/lgbm_model.py` |
 | 特徴量生成 | `python/forecast/feature_builder.py` |
 | 後処理 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| interval version | `q025_q50_q975_p95_v11_lag24_residual_ensemble` |
+| Challenger interval contract | `q025_q50_q975_p95_v12_regime_q50` |
+| 現行Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble`（drift gate通過まで維持） |
 | 最小学習量 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
 モデルは時間別の電力需要を予測し、今日/明日の予測線、p95/p99予測バンド、異常検知用のexpected demandを生成します。
 
-LightGBMは絶対需要quantile regressor 3つとlag-24残差中央値regressor 1つを学習します。
+LightGBMは絶対需要quantile regressor 3つ、lag-24残差中央値regressor 1つ、非営業日専用中央値regressor 1つを学習します。
 
 | モデル | alpha | 役割 |
 |---|---:|---|
@@ -39,8 +40,9 @@ LightGBMは絶対需要quantile regressor 3つとlag-24残差中央値regressor 
 | `q50` | 0.50 | 中心予測線 |
 | `q975` | 0.975 | p95上側推定 |
 | `q50_lag24_residual` | 0.50 | `actual_mw - lag_24h`の中央値推定 |
+| `q50_non_business` | 0.50 | 土日祝日の中心線を補助する推定 |
 
-営業日の配信q50は、絶対需要q50と`lag_24h + 残差q50`の設定可能な合成であり、運用weightは0.5です。非営業日はこの合成を迂回します。ダッシュボードでは最終q50を中心予測線として使用します。`q025/q975`はp95バンドになり、p99風の外側バンドは元のq025/q975 half-widthを合成中心線の周囲でさらに拡張して計算します。
+営業日の配信q50は、絶対需要q50と`lag_24h + 残差q50`を50:50で合成します。非営業日はlag-24残差合成を迂回し、統合q50と非営業日専用q50を50:50で合成します。ダッシュボードでは最終q50を中心予測線として使用します。`q025/q975`はp95バンドになり、p99風の外側バンドは元のq025/q975 half-widthを合成中心線の周囲でさらに拡張して計算します。
 
 ---
 
@@ -90,7 +92,7 @@ TEPCO forecast fallbackは継続性のための一時入力です。lag構築に
 
 ## 4. 特徴量カタログ
 
-現在のLightGBM学習特徴量は63個です。現在の実装ではLightGBMに`categorical_feature`を明示的に渡しておらず、多くの特徴量はnumeric matrixとして入力されます。そのため「論理型」は人間が解釈する意味、「モデル入力型」はモデルに渡る形式を表します。
+統合q50、lag-24残差、q025/q975モデルは63特徴量を使用します。非営業日専用q50はsource-sensitive delta 4個を除いた59特徴量を使用します。現在の実装ではLightGBMに`categorical_feature`を明示的に渡しておらず、多くの特徴量はnumeric matrixとして入力されます。そのため「論理型」は人間が解釈する意味、「モデル入力型」はモデルに渡る形式を表します。
 
 ### カレンダー
 
@@ -174,10 +176,10 @@ TEPCO forecast fallbackは継続性のための一時入力です。lag構築に
 | 56 | `lag_24h_gap_x_business_hour` | interaction | Float/Numeric | derived | gap x 営業時間 | 日中lag gap |
 | 57 | `humidity_pct` | continuous weather | Float/Numeric | JMA/AMeDAS or fallback | 相対湿度 | 高湿度負荷の直接信号 |
 | 58 | `discomfort_index` | continuous derived | Float/Numeric | temp + humidity | 湿度考慮の不快指数 | 暖かく湿った日の需要信号 |
-| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | 前日同時刻からの湿度変化 | 朝/日中の体感変化 |
-| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | 前日からの不快指数変化 | 体感負荷regime変化 |
-| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | 営業日朝 x 湿度変化 | 湿った朝ramp文脈 |
-| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | 営業日朝 x 不快指数変化 | 高湿度の営業日朝冷房負荷 |
+| 59 | `humidity_delta_24h` | continuous delta | Float/Numeric | weather lag | 前日同時刻からの湿度変化 | 統合modelでは使用、非営業日専用q50では除外 |
+| 60 | `discomfort_delta_24h` | continuous delta | Float/Numeric | weather lag | 前日からの不快指数変化 | 統合modelでは使用、非営業日専用q50では除外 |
+| 61 | `business_morning_x_humidity_delta_24h` | interaction | Float/Numeric | derived | 営業日朝 x 湿度変化 | 統合modelでは使用、非営業日専用q50では除外 |
+| 62 | `business_morning_x_discomfort_delta_24h` | interaction | Float/Numeric | derived | 営業日朝 x 不快指数変化 | 統合modelでは使用、非営業日専用q50では除外 |
 | 63 | `business_daytime_x_discomfort_index` | interaction | Float/Numeric | derived | 営業日日中 x 不快指数 | 高湿度日中レベル文脈 |
 
 ---
@@ -249,6 +251,7 @@ Raw LightGBM Forecast
 | 領域 | Config Key | 現在値 | 運用ガイド |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | 上げるほど前日差残差モデルを重視し、下げるほど絶対需要モデルの性質を維持します。version-aware rolling replayとfrozen-origin holdoutを両方通過した場合のみ調整します。 |
+| forecast | `q50_regime_model.weight` | 0.5 | 非営業日専用q50の反映比率です。上げると週末特化が強くなり、下げると統合q50のshapeをより維持します。非営業日MAEとshapeを同時に検証します。 |
 | promotion | `retrain_weekday` | 0（月曜） | Challenger評価日です。それ以外の日は現在のChampionを継続利用します。 |
 | promotion | `validation_window_days` | 28 | 評価ごとに直近の確定28日を使います。28日ごとに一度だけ再学習する意味ではありません。 |
 | promotion | 絶対品質上限 | MAE 1000、WAPE 3.0%、shape 750、最大誤差6500 MW | 弱いbaselineを上回っても運用品質が低いモデルを拒否します。segment上限はMAE 1500、shape 1100 MWです。 |

@@ -3,8 +3,20 @@ forecast:
   min_samples_per_slot: 4  # minimum data points per (dow, hour) slot to generate forecast
   lag24_residual_ensemble:
     enabled: true
-    business_day_only: true # preserve the separately tuned non-business-day model path
+    business_day_only: true # non-business days use their dedicated q50 model
+    same_business_type_only: false # validation supports residual blending across business-day transitions
     weight: 0.5              # blend absolute demand and (demand - lag_24h) q50 estimates
+  q50_regime_model:
+    enabled: true
+    min_non_business_training_rows: 336
+    weight: 0.5 # blend the unified and non-business q50 models
+    # Keep these source-sensitive deltas in the unified model and diagnostics,
+    # but exclude them from the smaller non-business q50 model.
+    excluded_features:
+      - humidity_delta_24h
+      - discomfort_delta_24h
+      - business_morning_x_humidity_delta_24h
+      - business_morning_x_discomfort_delta_24h
 
 model_promotion:
   enabled: true

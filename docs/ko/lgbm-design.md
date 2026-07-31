@@ -23,7 +23,7 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 
 ## 모델 구조
 
-`python/forecast/lgbm_model.py`는 절대수요 quantile 모델 3개와 lag-24 잔차 중앙값 모델 1개를 학습합니다.
+`python/forecast/lgbm_model.py`는 절대수요 quantile 모델 3개, lag-24 잔차 중앙값 모델 1개, 비영업일 전용 q50 모델 1개를 학습합니다.
 
 | 모델 | 역할 |
 |---|---|
@@ -31,8 +31,9 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | q50 | 중심 예측값 |
 | q975 | p95 상단 구간 추정 |
 | q50 lag24 residual | `actual_mw - lag_24h`의 중앙값 추정 |
+| q50 non-business | 토요일·일요일·공휴일 중심선의 보조 추정 |
 
-영업일의 중심 예측은 절대수요 q50과 `lag_24h + 예측 잔차`를 50:50으로 결합합니다. 한 모델은 수요 절대 수준을, 다른 모델은 오늘이 어제와 얼마나 달라져야 하는지를 학습합니다. 별도로 조정된 비영업일 shape 경로는 기존 절대수요 q50을 유지합니다. q025/q975의 half-width는 보존한 채 결합 q50 주위로 이동하므로, 앙상블 자체가 예측 밴드를 갑자기 좁히거나 넓히지 않습니다.
+영업일의 중심 예측은 절대수요 q50과 `lag_24h + 예측 잔차`를 50:50으로 결합합니다. 비영업일은 통합 q50과 비영업일 전용 q50을 50:50으로 결합합니다. 전용 모델은 습도·불쾌지수의 24시간 변화량과 두 오전 interaction을 제외해 기상 출처 전환에 대한 민감도를 줄입니다. q025/q975의 half-width는 보존한 채 최종 q50 주위로 이동하므로, 앙상블 자체가 예측 밴드를 갑자기 좁히거나 넓히지 않습니다.
 
 대시보드는 최종 q50을 예측선으로 사용합니다. q025/q975는 p95 예측 밴드로 표시하고, p99 스타일의 더 넓은 구간은 q025/q975 폭을 바탕으로 확장합니다. 한쪽 quantile 구간이 q50 근처로 붙는 경우에는 반대쪽의 큰 불확실성을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다. 독립 quantile 모델이 날씨 regime 변화 이후 한쪽 tail만 드물게 과도하게 넓히는 경우에는 interval sanity calibration이 p95 최대 half-width와 상단/하단 비대칭 비율을 제한하며, q50 예측선은 변경하지 않습니다.
 
@@ -61,7 +62,7 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | 영업/기상 교호작용 | business-morning x 기온/습도/불쾌지수 변화, business-daytime x 불쾌지수, late-afternoon x 기온·냉방 변화 | 오전 램프업, 고습 낮 부하, 오후 냉방 둔화, 같은 기온에서도 상승기/하강기가 다른 수요 패턴 반영 |
 | 래그 컨텍스트 | lag_24h_dsh, lag_24h_consec, lag_168h_dsh, lag_24h 영업/비영업 mismatch, 최근 같은 영업타입 평균, lag-to-anchor gap | 래그값이 휴일 수요에 오염됐거나 영업/비영업 경계를 건넜는지 알려줌 |
 
-현재 명시적 LightGBM 학습 피처 수는 63개입니다.
+통합 q50, lag-24 잔차 및 밴드 모델은 63개 피처를 사용하고, 비영업일 전용 q50은 그중 59개를 사용합니다.
 
 냉방/난방 degree의 기준온도는 `config.yaml`에서 설정합니다.
 
@@ -139,6 +140,8 @@ residual = actualMw - modelForecastMw
 12:00 시간 전환 개선은 [2026-05-20 점심 시간대 전환 guard](model-improvements/model-improvement-2026-05-20-midday-transition-features.md)와 [2026-05-27 점심 전환 가드 재활성화](model-improvements/model-improvement-2026-05-27-midday-transition-guard-reenabled.md)에 정리했습니다.
 
 최신 운영 보정 및 데이터 연속성 레이어는 [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [2026-05-25 양수 잔차 슬로프 감쇠](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [2026-05-27 오전 램프 연속성 가드](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [2026-05-27 저녁 하락 연속성 가드](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [2026-05-30 음수 잔차 연속성 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [2026-06-03 예측 구간 상단 tail 안정화](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [2026-06-04 오전 warm-lag 과반응 가드](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), [2026-06-07 actual JSON 캐시 영속화](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md), [2026-06-11 습도/불쾌지수 피처와 국소 shape spike 가드](model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md), [2026-06-12 오전 실측 램프 floor와 밴드 tail 축소](model-improvements/model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md), [2026-06-13 비영업일 analog 및 carryover 가드](model-improvements/model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md)에 정리했습니다.
+
+비영업일 전용 q50 구조와 승격 검증은 [2026-07-31 비영업일 레짐 q50 앙상블](model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md)에 정리했습니다.
 
 ---
 

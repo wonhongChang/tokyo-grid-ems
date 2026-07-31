@@ -203,6 +203,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-07-31 非営業日レジームq50アンサンブル](docs/ja/model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md)
 - [2026-07-27 モデル昇格ゲートのFail-Closed化](docs/ja/model-improvements/model-improvement-2026-07-27-promotion-gate-fail-closed.md)
 - [2026-07-26 モデル昇格管理とデータソース整合性](docs/ja/model-improvements/model-improvement-2026-07-26-model-governance-and-source-integrity.md)
 - [2026-07-18 平日lag-24残差アンサンブル](docs/ja/model-improvements/model-improvement-2026-07-18-weekday-lag24-residual-ensemble.md)
