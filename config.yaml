@@ -6,6 +6,10 @@ forecast:
     business_day_only: true # non-business days use their dedicated q50 model
     same_business_type_only: false # validation supports residual blending across business-day transitions
     weight: 0.5              # blend absolute demand and (demand - lag_24h) q50 estimates
+    transition_cooling_attenuation:
+      enabled: true
+      zero_weight_delta_c: -4.0 # disable the residual blend after a sharp cooling transition
+      full_weight_delta_c: 0.0  # retain the normal blend when cooling demand did not fall
   q50_regime_model:
     enabled: true
     min_non_business_training_rows: 336
@@ -42,11 +46,13 @@ weather_forecast_bias_correction:
   # JMA official forecast is the source of truth for future hours.
   # Recent observed temperatures now prefer JMA AMeDAS before Open-Meteo fallback.
   enabled: true
-  lookback_hours: 4          # recent observed-vs-forecast temperature gap
+  lookback_hours: 4          # recent AMeDAS trend window before the JMA forecast boundary
   observation_lag_hours: 1   # avoid using the still-forming current hour
   horizon_hours: 3           # apply only to near-term same-day future hours
   min_abs_bias_c: 1.5        # ignore routine weather forecast noise
-  max_abs_bias_c: 1.5        # cap both warm and cold corrections
+  max_abs_bias_c: 2.5        # cap the observed-to-forecast continuity gap
+  shrinkage: 0.7             # retain JMA as the primary source; correct only part of the gap
+  max_observed_trend_c_per_hour: 1.0 # reject implausible short-term AMeDAS slopes
   decay_per_hour: 0.6        # fade the correction each hour ahead
 
 interval_calibration:

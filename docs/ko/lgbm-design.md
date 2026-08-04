@@ -33,7 +33,7 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | q50 lag24 residual | `actual_mw - lag_24h`의 중앙값 추정 |
 | q50 non-business | 토요일·일요일·공휴일 중심선의 보조 추정 |
 
-영업일의 중심 예측은 절대수요 q50과 `lag_24h + 예측 잔차`를 50:50으로 결합합니다. 비영업일은 통합 q50과 비영업일 전용 q50을 50:50으로 결합합니다. 전용 모델은 습도·불쾌지수의 24시간 변화량과 두 오전 interaction을 제외해 기상 출처 전환에 대한 민감도를 줄입니다. q025/q975의 half-width는 보존한 채 최종 q50 주위로 이동하므로, 앙상블 자체가 예측 밴드를 갑자기 좁히거나 넓히지 않습니다.
+영업일의 중심 예측은 일반적으로 절대수요 q50과 `lag_24h + 예측 잔차`를 50:50으로 결합합니다. 전날과 영업 타입이 다른 영업일에는 v13 계약이 `cooling_delta_24h`가 0도에서 -4도로 내려갈수록 잔차 비중을 0.5에서 0까지 연속 감쇠합니다. 비영업일은 통합 q50과 비영업일 전용 q50을 50:50으로 결합합니다. 전용 모델은 습도·불쾌지수의 24시간 변화량과 두 오전 interaction을 제외해 기상 출처 전환에 대한 민감도를 줄입니다. q025/q975의 half-width는 보존한 채 최종 q50 주위로 이동하므로, 앙상블 자체가 예측 밴드를 갑자기 좁히거나 넓히지 않습니다.
 
 대시보드는 최종 q50을 예측선으로 사용합니다. q025/q975는 p95 예측 밴드로 표시하고, p99 스타일의 더 넓은 구간은 q025/q975 폭을 바탕으로 확장합니다. 한쪽 quantile 구간이 q50 근처로 붙는 경우에는 반대쪽의 큰 불확실성을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다. 독립 quantile 모델이 날씨 regime 변화 이후 한쪽 tail만 드물게 과도하게 넓히는 경우에는 interval sanity calibration이 p95 최대 half-width와 상단/하단 비대칭 비율을 제한하며, q50 예측선은 변경하지 않습니다.
 
@@ -72,7 +72,7 @@ weather_features:
   heating_base_temp_c: 18.0
 ```
 
-기상 보강은 과거/현재 시간에는 JMA AMeDAS 실측을 우선 사용하고, 미래 시간의 기온은 JMA 공식 예보를 우선 사용합니다. Open-Meteo JMA는 습도 보완용 fallback으로만 사용하며 JMA 예보 기온을 덮어쓰지 않습니다. 공식 예보 습도가 없을 때도 습도 기반 체감온도와 불쾌지수 계산이 끊기지 않도록 humidity fallback을 적용합니다.
+기상 보강은 과거/현재 시간에는 JMA AMeDAS 실측을 우선 사용하고, 미래 시간의 기온은 JMA 공식 예보를 우선 사용합니다. Open-Meteo JMA는 습도 보완용 fallback으로만 사용하며 JMA 예보 기온을 덮어쓰지 않습니다. 첫 당일 JMA 예보가 최근 AMeDAS 추세와 크게 단절되면 cap과 decay가 있는 연속성 보정을 메모리의 모델 입력에만 적용합니다. 공식 예보 습도가 없을 때도 습도 기반 체감온도와 불쾌지수 계산이 끊기지 않도록 humidity fallback을 적용합니다.
 
 `temp_delta_24h`와 `cooling_delta_24h`는 오늘 날씨가 어제 같은 시간과 달라졌을 때, 전날 수요 lag를 얼마나 믿을지 모델에 알려주는 피처입니다. `temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요에 대해 같은 역할을 합니다. `temp_delta_1h`, `temp_delta_2h`, `apparent_temp_delta_1h`, `cooling_delta_1h`는 단기 기상 변화 방향을 반영합니다. `cooling_degree_3h_mean`, `cooling_degree_6h_mean`, `heating_degree_3h_mean`, `heating_degree_6h_mean`, `temp_72h_mean`, `cooling_degree_72h_mean`, `heating_degree_72h_mean`은 지속적인 더위나 추위의 누적 효과를 반영합니다. `apparent_temp_c`와 `apparent_cooling_degree`는 데이터 소스가 체감온도를 제공할 때 이를 보완 신호로 사용합니다.
 
@@ -142,6 +142,8 @@ residual = actualMw - modelForecastMw
 최신 운영 보정 및 데이터 연속성 레이어는 [2026-05-25 영업일 복귀 anchor 부족분 가드](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md), [2026-05-25 양수 잔차 슬로프 감쇠](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md), [2026-05-27 오전 램프 연속성 가드](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md), [2026-05-27 저녁 하락 연속성 가드](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md), [2026-05-30 음수 잔차 연속성 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md), [2026-06-03 예측 구간 상단 tail 안정화](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md), [2026-06-04 오전 warm-lag 과반응 가드](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md), [2026-06-05 오전 양수 잔차 carryover 감쇠](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md), [2026-06-07 actual JSON 캐시 영속화](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md), [2026-06-11 습도/불쾌지수 피처와 국소 shape spike 가드](model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md), [2026-06-12 오전 실측 램프 floor와 밴드 tail 축소](model-improvements/model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md), [2026-06-13 비영업일 analog 및 carryover 가드](model-improvements/model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md)에 정리했습니다.
 
 비영업일 전용 q50 구조와 승격 검증은 [2026-07-31 비영업일 레짐 q50 앙상블](model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md)에 정리했습니다.
+
+v13 영업 전환 계약, 기상 출처 연속성 replay와 현재 승격 상태는 [2026-08-04 영업 전환일 냉방 감쇠와 기상 연속성 보강](model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)에 정리했습니다.
 
 ---
 

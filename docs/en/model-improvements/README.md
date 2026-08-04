@@ -6,6 +6,10 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ---
 
+## 2026-08
+
+- [2026-08-04 transition cooling attenuation and weather continuity](model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)
+
 ## 2026-07
 
 - [2026-07-31 regime-aware non-business q50 ensemble](model-improvement-2026-07-31-regime-aware-non-business-q50.md)

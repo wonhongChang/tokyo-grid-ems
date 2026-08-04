@@ -25,7 +25,7 @@ Operational rules:
 | Implementation | `python/forecast/lgbm_model.py` |
 | Feature builder | `python/forecast/feature_builder.py` |
 | Post-processing | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| Challenger interval contract | `q025_q50_q975_p95_v12_regime_q50` |
+| Challenger interval contract | `q025_q50_q975_p95_v13_transition_cooling_blend` |
 | Current Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (retained until the drift gate passes) |
 | Minimum training rows | `90 * 24 = 2160` hourly rows |
 | Fallback | `baseline_dow_hour_mean` |
@@ -42,7 +42,7 @@ Three absolute-demand quantile regressors, one lag-24 residual median regressor,
 | `q50_lag24_residual` | 0.50 | median of `actual_mw - lag_24h` |
 | `q50_non_business` | 0.50 | auxiliary center estimate for weekends and holidays |
 
-Business-day q50 blends absolute q50 and `lag_24h + residual q50` 50:50. Non-business days bypass the lag-24 residual blend and instead combine unified q50 with the dedicated non-business q50 50:50. The dashboard uses the resulting q50 as the main forecast line. `q025/q975` form the p95 band, while a wider p99-style band is derived by extending the original q025/q975 half-width around the blended center. If one side collapses near the absolute q50, the system keeps only the configured minimum width on that side instead of mirroring the wider side.
+Business-day q50 normally blends absolute q50 and `lag_24h + residual q50` 50:50. On a business-type transition into a business day, v13 scales the residual weight continuously from 0.5 to 0 when `cooling_delta_24h` falls from 0 C to -4 C. Non-business days bypass the lag-24 residual blend and instead combine unified q50 with the dedicated non-business q50 50:50. The dashboard uses the resulting q50 as the main forecast line. `q025/q975` form the p95 band, while a wider p99-style band is derived by extending the original q025/q975 half-width around the blended center. If one side collapses near the absolute q50, the system keeps only the configured minimum width on that side instead of mirroring the wider side.
 
 ---
 
@@ -253,6 +253,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | Area | Config Key | Current value | Operational guide |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | Higher values trust the day-over-day residual model more; lower values retain more absolute-level behavior. Retune only with version-aware rolling and frozen-origin holdouts. |
+| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | zero at -4 C, full at 0 C | Applies only when a business day follows a different business type. Narrowing the range stops residual blending more abruptly; widening it affects more transition hours. |
 | forecast | `q50_regime_model.weight` | 0.5 | Controls the dedicated non-business q50 contribution. Higher values strengthen weekend specialization; lower values preserve more unified-q50 shape. Validate both non-business MAE and shape. |
 | promotion | `retrain_weekday` | 0 (Monday) | Controls when a challenger is evaluated. The current champion continues serving on other days. |
 | promotion | `validation_window_days` | 28 | Uses the latest 28 complete days at every evaluation. This is a rolling evidence window, not a 28-day retraining interval. |
@@ -260,7 +261,8 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | promotion | prediction drift limits | mean 900, hourly max 2500 MW | Rejects a full-data challenger whose today/tomorrow curve moves too far from the champion. |
 | weather | `cooling_base_temp_c` | 22.0 | Lower values activate cooling sensitivity earlier; higher values reduce early-summer overreaction. Validate across the full warm season. |
 | weather | `heating_base_temp_c` | 18.0 | Higher values strengthen heating signals; lower values reduce winter over-sensitivity. |
-| weather bias | `min_abs_bias_c` | 1.5 | Lower values apply forecast-bias correction more often; too low may chase weather noise. |
+| weather bias | `min_abs_bias_c` | 1.5 | Lower values apply AMeDAS-to-JMA continuity correction more often; too low may chase source-boundary noise. |
+| weather bias | `max_abs_bias_c`, `shrinkage`, `decay_per_hour` | 2.5, 0.7, 0.6 | Caps, partially applies, and fades the source-boundary gap. Higher values react faster but may distort a valid JMA regime change. |
 | interval | `min_p95_half_width_mw` | 500 | Prevents narrow bands. Raising it improves visual stability but may reduce alert sensitivity. |
 | interval | `max_p95_half_width_mw` | 3000 | Caps rare one-sided quantile-tail explosions. Lower values make the band easier to read but can understate real uncertainty on unstable days. |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | Limits upper/lower tail imbalance. Lower values make bands more symmetric; higher values preserve more model-estimated skew. |

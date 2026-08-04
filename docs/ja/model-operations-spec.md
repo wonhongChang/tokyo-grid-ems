@@ -25,7 +25,7 @@
 | 実装 | `python/forecast/lgbm_model.py` |
 | 特徴量生成 | `python/forecast/feature_builder.py` |
 | 後処理 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| Challenger interval contract | `q025_q50_q975_p95_v12_regime_q50` |
+| Challenger interval contract | `q025_q50_q975_p95_v13_transition_cooling_blend` |
 | 現行Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble`（drift gate通過まで維持） |
 | 最小学習量 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
@@ -42,7 +42,7 @@ LightGBMは絶対需要quantile regressor 3つ、lag-24残差中央値regressor 
 | `q50_lag24_residual` | 0.50 | `actual_mw - lag_24h`の中央値推定 |
 | `q50_non_business` | 0.50 | 土日祝日の中心線を補助する推定 |
 
-営業日の配信q50は、絶対需要q50と`lag_24h + 残差q50`を50:50で合成します。非営業日はlag-24残差合成を迂回し、統合q50と非営業日専用q50を50:50で合成します。ダッシュボードでは最終q50を中心予測線として使用します。`q025/q975`はp95バンドになり、p99風の外側バンドは元のq025/q975 half-widthを合成中心線の周囲でさらに拡張して計算します。
+営業日の配信q50は通常、絶対需要q50と`lag_24h + 残差q50`を50:50で合成します。前日と営業タイプが異なる営業日では、v13が`cooling_delta_24h`の0度から-4度への低下に応じて残差weightを0.5から0まで連続的に減衰します。非営業日はlag-24残差合成を迂回し、統合q50と非営業日専用q50を50:50で合成します。ダッシュボードでは最終q50を中心予測線として使用します。`q025/q975`はp95バンドになり、p99風の外側バンドは元のq025/q975 half-widthを合成中心線の周囲でさらに拡張して計算します。
 
 ---
 
@@ -251,6 +251,7 @@ Raw LightGBM Forecast
 | 領域 | Config Key | 現在値 | 運用ガイド |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | 上げるほど前日差残差モデルを重視し、下げるほど絶対需要モデルの性質を維持します。version-aware rolling replayとfrozen-origin holdoutを両方通過した場合のみ調整します。 |
+| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | -4度で0、0度で最大 | 前日と営業タイプが異なる営業日にだけ適用します。範囲を狭めると残差合成が急に停止し、広げるとより多くの遷移時間に影響します。 |
 | forecast | `q50_regime_model.weight` | 0.5 | 非営業日専用q50の反映比率です。上げると週末特化が強くなり、下げると統合q50のshapeをより維持します。非営業日MAEとshapeを同時に検証します。 |
 | promotion | `retrain_weekday` | 0（月曜） | Challenger評価日です。それ以外の日は現在のChampionを継続利用します。 |
 | promotion | `validation_window_days` | 28 | 評価ごとに直近の確定28日を使います。28日ごとに一度だけ再学習する意味ではありません。 |
@@ -258,7 +259,8 @@ Raw LightGBM Forecast
 | promotion | 予測drift上限 | 平均900、時間最大2500 MW | 全データ学習Challengerが今日・明日の曲線をChampionから過度に変える場合は昇格を拒否します。 |
 | weather | `cooling_base_temp_c` | 22.0 | 下げると冷房感度が早く立ち上がり、上げると初夏の過反応を抑えます。暖候期全体で検証します。 |
 | weather | `heating_base_temp_c` | 18.0 | 上げると暖房信号が強くなり、下げると冬の過敏反応を抑えます。 |
-| weather bias | `min_abs_bias_c` | 1.5 | 下げると予報bias補正が頻繁に作動します。低すぎると気象noiseを追います。 |
+| weather bias | `min_abs_bias_c` | 1.5 | 下げるとAMeDAS-JMA連続性補正が頻繁に作動し、上げると小さなsource境界noiseを無視します。低すぎると気象noiseを追います。 |
+| weather bias | `max_abs_bias_c`, `shrinkage`, `decay_per_hour` | 2.5, 0.7, 0.6 | source境界差をcapし、一部だけ反映して減衰します。値を上げると反応は速くなりますが、妥当なJMA regime変化まで歪める可能性があります。 |
 | interval | `min_p95_half_width_mw` | 500 | 狭すぎるbandを防ぎます。上げると安定しますがalert感度が下がる場合があります。 |
 | interval | `max_p95_half_width_mw` | 3000 | まれな片側quantile tailの過大化を制限します。下げるとbandは読みやすくなりますが、不安定日の実際の不確実性を小さく見せる場合があります。 |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | 上側/下側tailの非対称を制限します。下げるとbandはより対称的になり、上げるとモデルが推定したskewをより保持します。 |

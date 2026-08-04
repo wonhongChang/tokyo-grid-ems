@@ -377,6 +377,151 @@ def test_weather_forecast_bias_correction_applies_humid_apparent_bias(monkeypatc
     assert by_hour[11]["apparent_temp_c"] == pytest.approx(23.5)
 
 
+def test_weather_forecast_bias_correction_bridges_amedas_to_jma_without_fetch(
+    monkeypatch,
+):
+    base = pd.Timestamp("2024-08-03T06:00:00+09:00")
+    cache = pd.DataFrame([
+        {
+            "ts": base,
+            "actual_mw": 28_000.0,
+            "temp_c": 22.0,
+            "apparent_temp_c": 23.0,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        {
+            "ts": base + pd.Timedelta(hours=1),
+            "actual_mw": 29_000.0,
+            "temp_c": 22.2,
+            "apparent_temp_c": 23.2,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        *[
+            {
+                "ts": base + pd.Timedelta(hours=hour),
+                "actual_mw": float("nan"),
+                "temp_c": temp,
+                "apparent_temp_c": temp + 1.0,
+                "weather_source": "JMA_FORECAST+FORWARD_FILL",
+            }
+            for hour, temp in [(2, 25.0), (3, 26.0), (4, 27.0)]
+        ],
+    ])
+    monkeypatch.setattr(
+        "python.etl.fetch_weather.fetch_past_temps",
+        lambda start, end: (_ for _ in ()).throw(AssertionError("unexpected fetch")),
+    )
+
+    result = _apply_weather_forecast_bias_correction(
+        cache,
+        {
+            "weather_forecast_bias_correction": {
+                "enabled": True,
+                "lookback_hours": 4,
+                "observation_lag_hours": 1,
+                "horizon_hours": 3,
+                "min_abs_bias_c": 1.5,
+                "max_abs_bias_c": 2.5,
+                "shrinkage": 0.7,
+                "max_observed_trend_c_per_hour": 1.0,
+                "decay_per_hour": 0.6,
+            }
+        },
+        now=pd.Timestamp("2024-08-03T08:30:00+09:00"),
+    )
+
+    by_hour = {int(row["ts"].hour): row for _, row in result.iterrows()}
+    assert by_hour[6]["temp_c"] == pytest.approx(22.0)
+    assert by_hour[7]["temp_c"] == pytest.approx(22.2)
+    assert by_hour[8]["temp_c"] == pytest.approx(23.25)
+    assert by_hour[9]["temp_c"] == pytest.approx(24.95)
+    assert by_hour[10]["temp_c"] == pytest.approx(26.37)
+    assert by_hour[8]["apparent_temp_c"] == pytest.approx(24.25)
+
+
+def test_weather_forecast_bias_correction_ignores_small_source_transition(
+    monkeypatch,
+):
+    base = pd.Timestamp("2024-08-03T06:00:00+09:00")
+    cache = pd.DataFrame([
+        {
+            "ts": base,
+            "actual_mw": 28_000.0,
+            "temp_c": 22.0,
+            "apparent_temp_c": 23.0,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        {
+            "ts": base + pd.Timedelta(hours=1),
+            "actual_mw": 29_000.0,
+            "temp_c": 22.2,
+            "apparent_temp_c": 23.2,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        {
+            "ts": base + pd.Timedelta(hours=2),
+            "actual_mw": float("nan"),
+            "temp_c": 23.0,
+            "apparent_temp_c": 24.0,
+            "weather_source": "JMA_FORECAST",
+        },
+    ])
+    monkeypatch.setattr(
+        "python.etl.fetch_weather.fetch_past_temps",
+        lambda start, end: (_ for _ in ()).throw(AssertionError("unexpected fetch")),
+    )
+
+    result = _apply_weather_forecast_bias_correction(
+        cache,
+        {"weather_forecast_bias_correction": {"enabled": True}},
+        now=pd.Timestamp("2024-08-03T08:30:00+09:00"),
+    )
+
+    assert result.loc[result["ts"].dt.hour == 8, "temp_c"].iloc[0] == pytest.approx(23.0)
+
+
+def test_weather_forecast_bias_correction_bridges_upward_cold_jump():
+    base = pd.Timestamp("2024-01-03T06:00:00+09:00")
+    cache = pd.DataFrame([
+        {
+            "ts": base,
+            "actual_mw": 30_000.0,
+            "temp_c": 30.0,
+            "apparent_temp_c": 31.0,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        {
+            "ts": base + pd.Timedelta(hours=1),
+            "actual_mw": 31_000.0,
+            "temp_c": 30.2,
+            "apparent_temp_c": 31.2,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        {
+            "ts": base + pd.Timedelta(hours=2),
+            "actual_mw": float("nan"),
+            "temp_c": 27.0,
+            "apparent_temp_c": 28.0,
+            "weather_source": "JMA_FORECAST",
+        },
+    ])
+
+    result = _apply_weather_forecast_bias_correction(
+        cache,
+        {
+            "weather_forecast_bias_correction": {
+                "enabled": True,
+                "min_abs_bias_c": 1.5,
+                "max_abs_bias_c": 2.5,
+                "shrinkage": 0.7,
+            }
+        },
+        now=pd.Timestamp("2024-01-03T08:30:00+09:00"),
+    )
+
+    assert result.loc[result["ts"].dt.hour == 8, "temp_c"].iloc[0] == pytest.approx(28.75)
+
+
 def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):
     actual_dir = tmp_path / "actual"
     actual_dir.mkdir()

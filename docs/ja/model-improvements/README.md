@@ -6,6 +6,10 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ---
 
+## 2026-08
+
+- [2026-08-04 営業日遷移の冷房減衰と気象連続性](model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)
+
 ## 2026-07
 
 - [2026-07-31 非営業日レジームq50アンサンブル](model-improvement-2026-07-31-regime-aware-non-business-q50.md)

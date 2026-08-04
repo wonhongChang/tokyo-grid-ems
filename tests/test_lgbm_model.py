@@ -426,6 +426,26 @@ def test_legacy_v11_model_remains_compatible_without_regime_artifacts():
     assert f.is_compatible()
 
 
+def test_legacy_v12_model_keeps_regime_artifact_contract():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "q50_regime_model": {"enabled": True},
+        }
+    }
+    f.interval_version = "q025_q50_q975_p95_v12_regime_q50"
+    f.model_q025 = object()
+    f.model_q50 = object()
+    f.model_q975 = object()
+    f.q50_non_business_feature_columns = ["hour"]
+    f.model_q50_non_business = object()
+
+    assert f.is_compatible()
+
+    f.model_q50_non_business = None
+    assert not f.is_compatible()
+
+
 @pytest.mark.parametrize(
     ("is_non_business_day", "business_day_only", "weight", "expected_mid"),
     [
@@ -610,6 +630,110 @@ def test_predict_skips_lag24_blend_across_business_type_transition(monkeypatch):
 
     assert result[11].forecast_mw == 30_500.0
     assert result[12].forecast_mw == 32_000.0
+
+
+def test_predict_attenuates_transition_residual_blend_on_cooler_business_day(
+    monkeypatch,
+):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    mismatch = np.ones(24)
+    mismatch[4] = 0
+    non_business = np.zeros(24)
+    non_business[5] = 1
+    cooling_delta = np.zeros(24)
+    cooling_delta[:6] = [-4.0, -2.0, 0.0, 2.0, -4.0, -4.0]
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+            "lag_24h": np.full(24, 30_000.0),
+            "is_non_business_day": non_business,
+            "lag_24h_business_type_mismatch": mismatch,
+            "cooling_delta_24h": cooling_delta,
+        }),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "lag24_residual_ensemble": {
+                "enabled": True,
+                "business_day_only": True,
+                "weight": 0.5,
+                "transition_cooling_attenuation": {
+                    "enabled": True,
+                    "zero_weight_delta_c": -4.0,
+                    "full_weight_delta_c": 0.0,
+                },
+            }
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(31_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(33_000.0)
+    f.model_q50_lag24_residual = FakeModel(-1_000.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    assert result[0].forecast_mw == 32_000.0
+    assert result[1].forecast_mw == 31_250.0
+    assert result[2].forecast_mw == 30_500.0
+    assert result[3].forecast_mw == 30_500.0
+    assert result[4].forecast_mw == 30_500.0
+    assert result[5].forecast_mw == 32_000.0
+
+
+def test_legacy_v12_does_not_apply_v13_transition_attenuation(monkeypatch):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, _x):
+            return np.full(24, self.value)
+
+    import python.forecast.lgbm_model as mod
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+            "lag_24h": np.full(24, 30_000.0),
+            "is_non_business_day": np.zeros(24),
+            "lag_24h_business_type_mismatch": np.ones(24),
+            "cooling_delta_24h": np.full(24, -4.0),
+        }),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "lag24_residual_ensemble": {
+                "enabled": True,
+                "business_day_only": True,
+                "weight": 0.5,
+                "transition_cooling_attenuation": {"enabled": True},
+            },
+            "q50_regime_model": {"enabled": False},
+        }
+    }
+    f.interval_version = "q025_q50_q975_p95_v12_regime_q50"
+    f.model_q025 = FakeModel(31_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(33_000.0)
+    f.model_q50_lag24_residual = FakeModel(-1_000.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    assert all(point.forecast_mw == 30_500.0 for point in result)
 
 
 # ---------------------------------------------------------------------------

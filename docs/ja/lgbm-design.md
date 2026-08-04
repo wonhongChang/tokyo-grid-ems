@@ -33,7 +33,7 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | q50 lag24 residual | `actual_mw - lag_24h`の中央値推定 |
 | q50 non-business | 土日祝日の中心線を補助する推定 |
 
-営業日の中心予測は、絶対需要q50と`lag_24h + 予測残差`を50:50で合成します。非営業日は統合q50と非営業日専用q50を50:50で合成します。専用モデルは湿度・不快指数の24時間変化量と二つの朝interactionを除外し、気象source遷移への感度を抑えます。q025/q975のhalf-widthは維持したまま最終q50の周囲へ移動するため、アンサンブル自体が予測バンドを急に狭めたり広げたりしません。
+営業日の中心予測は通常、絶対需要q50と`lag_24h + 予測残差`を50:50で合成します。前日と営業タイプが異なる営業日では、v13契約が`cooling_delta_24h`の0度から-4度への低下に応じて残差weightを0.5から0まで連続的に減衰します。非営業日は統合q50と非営業日専用q50を50:50で合成します。専用モデルは湿度・不快指数の24時間変化量と二つの朝interactionを除外し、気象source遷移への感度を抑えます。q025/q975のhalf-widthは維持したまま最終q50の周囲へ移動するため、アンサンブル自体が予測バンドを急に狭めたり広げたりしません。
 
 ダッシュボードでは最終q50を予測線として使用します。q025/q975はp95予測バンドとして表示し、p99風の広い区間はq025/q975の幅から拡張します。片側のquantile区間がq50近くに潰れた場合、反対側の大きな不確実性をそのまま反映せず、その方向には最小幅のみを維持します。独立したquantileモデルが気象regime変化後に片側tailだけを稀に過度に広げる場合は、interval sanity calibrationがp95最大half-widthと上下非対称比率を制限し、q50予測線は変更しません。
 
@@ -72,7 +72,7 @@ weather_features:
   heating_base_temp_c: 18.0
 ```
 
-気象補強では、過去/現在時間はJMA AMeDAS観測を優先し、未来時間の気温はJMA公式予報を優先します。Open-Meteo JMAは湿度fallback専用で、JMA予報気温を上書きしません。公式予報に湿度がない場合でも、湿度由来の体感温度と不快指数を安定して計算できるようにfallbackを使います。
+気象補強では、過去/現在時間はJMA AMeDAS観測を優先し、未来時間の気温はJMA公式予報を優先します。Open-Meteo JMAは湿度fallback専用で、JMA予報気温を上書きしません。最初の当日JMA予報が直近AMeDAS trendから大きく不連続になる場合、capとdecayを持つ連続性補正をメモリ上のモデル入力だけに適用します。公式予報に湿度がない場合でも、湿度由来の体感温度と不快指数を安定して計算できるようにfallbackを使います。
 
 `temp_delta_24h` と `cooling_delta_24h` は、今日の天候が前日同時刻から変わった場合に、前日需要ラグをどの程度信頼するかをモデルに伝える特徴量です。`temp_delta_168h` と `cooling_delta_168h` は、前週同時刻の需要に対して同じ役割を持ちます。`temp_delta_1h`、`temp_delta_2h`、`apparent_temp_delta_1h`、`cooling_delta_1h` は短期の気象変化方向を表します。`cooling_degree_3h_mean`、`cooling_degree_6h_mean`、`heating_degree_3h_mean`、`heating_degree_6h_mean`、`temp_72h_mean`、`cooling_degree_72h_mean`、`heating_degree_72h_mean` は、持続的な暑さや寒さの蓄積効果を反映します。`apparent_temp_c` と `apparent_cooling_degree` は、データソースが体感温度を提供する場合に補助信号として使います。
 
@@ -142,6 +142,8 @@ residual = actualMw - modelForecastMw
 最新の運用補正およびデータ連続性レイヤーは [2026-05-25 営業日復帰 anchor 不足分 guard](model-improvements/model-improvement-2026-05-25-business-return-anchor-shortfall.md)、[2026-05-25 正の残差スロープ減衰](model-improvements/model-improvement-2026-05-25-positive-residual-slope-damping.md)、[2026-05-27 朝ランプ継続ガード](model-improvements/model-improvement-2026-05-27-morning-ramp-continuity-guard.md)、[2026-05-27 夕方下落継続ガード](model-improvements/model-improvement-2026-05-27-evening-decline-continuity-guard.md)、[2026-05-30 負の残差連続性 floor](model-improvements/model-improvement-2026-05-30-negative-residual-continuity-floor.md)、[2026-06-03 予測区間の上側 tail 安定化](model-improvements/model-improvement-2026-06-03-forecast-interval-tail-sanity-guard.md)、[2026-06-04 朝の warm-lag 過反応ガード](model-improvements/model-improvement-2026-06-04-morning-warm-lag-overreaction-guard.md)、[2026-06-05 朝の正の残差 carryover 減衰](model-improvements/model-improvement-2026-06-05-morning-positive-carryover-damping.md)、[2026-06-07 actual JSON キャッシュ永続化](model-improvements/model-improvement-2026-06-07-actual-cache-persistence.md)、[2026-06-11 湿度/不快指数特徴量と局所shape spikeガード](model-improvements/model-improvement-2026-06-11-humidity-discomfort-shape-spike-guard.md)、[2026-06-12 朝の実績ランプ floor と予測バンド tail 縮小](model-improvements/model-improvement-2026-06-12-morning-ramp-floor-and-band-tail-tightening.md)、[2026-06-13 非営業日のanalogおよびcarryoverガード](model-improvements/model-improvement-2026-06-13-non-business-analog-and-carryover-guards.md) に整理しています。
 
 非営業日専用q50構造と昇格検証は [2026-07-31 非営業日レジームq50アンサンブル](model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md) に整理しています。
+
+v13営業日遷移契約、気象source連続性replay、現在の昇格状態は [2026-08-04 営業日遷移の冷房減衰と気象連続性](model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md) に整理しています。
 
 ---
 

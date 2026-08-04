@@ -35,9 +35,14 @@ _LGBM_PARAMS = {
 
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
-    INTERVAL_VERSION = "q025_q50_q975_p95_v12_regime_q50"
+    INTERVAL_VERSION = "q025_q50_q975_p95_v13_transition_cooling_blend"
+    REGIME_Q50_INTERVAL_VERSIONS = {
+        INTERVAL_VERSION,
+        "q025_q50_q975_p95_v12_regime_q50",
+    }
     LEGACY_INTERVAL_VERSIONS = {
         "q025_q50_q975_p95_v11_lag24_residual_ensemble",
+        "q025_q50_q975_p95_v12_regime_q50",
     }
 
     def __init__(
@@ -108,6 +113,66 @@ class LGBMForecaster:
         )
         weight = min(1.0, max(0.0, float(regime_config.get("weight", 0.5))))
         return enabled, excluded_features, min_non_business_rows, weight
+
+    def _transition_cooling_attenuation_config(
+        self,
+    ) -> tuple[bool, float, float]:
+        forecast_config = (getattr(self, "config", {}) or {}).get("forecast", {})
+        ensemble_config = forecast_config.get("lag24_residual_ensemble", {})
+        attenuation_config = ensemble_config.get(
+            "transition_cooling_attenuation",
+            {},
+        )
+        enabled = bool(attenuation_config.get("enabled", False))
+        zero_weight_delta_c = float(
+            attenuation_config.get("zero_weight_delta_c", -4.0)
+        )
+        full_weight_delta_c = float(
+            attenuation_config.get("full_weight_delta_c", 0.0)
+        )
+        if (
+            not np.isfinite(zero_weight_delta_c)
+            or not np.isfinite(full_weight_delta_c)
+            or full_weight_delta_c <= zero_weight_delta_c
+        ):
+            enabled = False
+        return enabled, zero_weight_delta_c, full_weight_delta_c
+
+    def _lag24_residual_weights(
+        self,
+        features: pd.DataFrame,
+        configured_weight: float,
+    ) -> np.ndarray:
+        """Return row-level residual blend weights for the current model contract."""
+        weights = np.full(len(features), configured_weight, dtype=float)
+        attenuation_enabled, zero_delta, full_delta = (
+            self._transition_cooling_attenuation_config()
+        )
+        if (
+            getattr(self, "interval_version", None) != self.INTERVAL_VERSION
+            or not attenuation_enabled
+            or "lag_24h_business_type_mismatch" not in features.columns
+            or "cooling_delta_24h" not in features.columns
+        ):
+            return weights
+
+        mismatch = (
+            features["lag_24h_business_type_mismatch"].to_numpy(dtype=float) > 0.0
+        )
+        business_day = (
+            features["is_non_business_day"].to_numpy(dtype=float) == 0.0
+            if "is_non_business_day" in features.columns
+            else np.ones(len(features), dtype=bool)
+        )
+        cooling_delta = features["cooling_delta_24h"].to_numpy(dtype=float)
+        transition_rows = mismatch & business_day & np.isfinite(cooling_delta)
+        attenuation = np.clip(
+            (cooling_delta - zero_delta) / (full_delta - zero_delta),
+            0.0,
+            1.0,
+        )
+        weights[transition_rows] *= attenuation[transition_rows]
+        return weights
 
     def _non_business_q50_inputs(
         self,
@@ -208,7 +273,7 @@ class LGBMForecaster:
             return False
 
         regime_enabled, _, _, _ = self._q50_regime_config()
-        if interval_version == self.INTERVAL_VERSION and regime_enabled:
+        if interval_version in self.REGIME_Q50_INTERVAL_VERSIONS and regime_enabled:
             return (
                 bool(
                     getattr(
@@ -234,7 +299,8 @@ class LGBMForecaster:
         non_business_q50 = None
         regime_enabled, _, _, regime_weight = self._q50_regime_config()
         regime_active = (
-            getattr(self, "interval_version", None) == self.INTERVAL_VERSION
+            getattr(self, "interval_version", None)
+            in self.REGIME_Q50_INTERVAL_VERSIONS
             and regime_enabled
         )
         if regime_active:
@@ -267,7 +333,11 @@ class LGBMForecaster:
             )
             lag24 = X["lag_24h"].to_numpy(dtype=float)
             lag24_q50 = lag24 + residual_q50
-            blended_q50 = (1.0 - weight) * q50 + weight * lag24_q50
+            blend_weights = self._lag24_residual_weights(X, weight)
+            blended_q50 = (
+                (1.0 - blend_weights) * q50
+                + blend_weights * lag24_q50
+            )
             blend_available = (
                 np.isfinite(lag24)
                 & np.isfinite(residual_q50)

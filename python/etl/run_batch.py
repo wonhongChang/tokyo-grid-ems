@@ -34,6 +34,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -1302,9 +1303,9 @@ def _apply_weather_forecast_bias_correction(
 ) -> pd.DataFrame:
     """Nudge near-term same-day forecast weather toward recent observed weather.
 
-    This corrects the weather input, not the electric demand target. If the
-    forecast has been too cold or too warm during the last few observed hours,
-    apply a capped, fading +/- adjustment to the next same-day forecast hours.
+    This corrects the weather input, not the electric demand target. Source-aware
+    caches preserve AMeDAS observations and bridge only a material discontinuity
+    into the first JMA forecast hours. Older caches use the legacy bias comparison.
     """
     cfg = config.get("weather_forecast_bias_correction", {})
     if not cfg.get("enabled", True) or cache.empty or "ts" not in cache.columns:
@@ -1314,7 +1315,13 @@ def _apply_weather_forecast_bias_correction(
     observation_lag_hours = _bounded_float(cfg.get("observation_lag_hours"), 1.0, min_value=0.0)
     horizon_hours = int(_bounded_float(cfg.get("horizon_hours"), 3.0, min_value=1.0))
     min_abs_bias_c = _bounded_float(cfg.get("min_abs_bias_c"), 1.5, min_value=0.0)
-    max_abs_bias_c = _bounded_float(cfg.get("max_abs_bias_c"), 1.5, min_value=0.1)
+    max_abs_bias_c = _bounded_float(cfg.get("max_abs_bias_c"), 2.5, min_value=0.1)
+    shrinkage = min(1.0, _bounded_float(cfg.get("shrinkage"), 0.7, min_value=0.0))
+    max_observed_trend = _bounded_float(
+        cfg.get("max_observed_trend_c_per_hour"),
+        1.0,
+        min_value=0.0,
+    )
     decay_per_hour = min(1.0, _bounded_float(cfg.get("decay_per_hour"), 0.6, min_value=0.0))
 
     now_ts = _to_jst_timestamp(now or datetime.now(tz=JST))
@@ -1329,6 +1336,75 @@ def _apply_weather_forecast_bias_correction(
         if col not in result.columns:
             result[col] = _cache_default_value(col)
     result["ts"] = pd.to_datetime(result["ts"], utc=True).dt.tz_convert("Asia/Tokyo")
+
+    source = result["weather_source"].astype("string")
+    observed_mask = (
+        source.str.contains("AMEDAS_ACTUAL", na=False)
+        & (result["ts"] >= observed_start)
+        & (result["ts"] <= observed_cutoff)
+        & result["temp_c"].notna()
+    )
+    forecast_mask = (
+        ~source.str.contains("AMEDAS_ACTUAL", na=False)
+        & (result["ts"].dt.date == now_ts.date())
+        & (result["ts"] > observed_cutoff)
+        & result["actual_mw"].isna()
+        & result["temp_c"].notna()
+    )
+    observed_rows = result.loc[observed_mask, ["ts", "temp_c"]].sort_values("ts")
+    future_index = list(result.loc[forecast_mask].sort_values("ts").index[:horizon_hours])
+    if not observed_rows.empty and future_index:
+        slopes: list[float] = []
+        recent_rows = observed_rows.tail(max(2, int(lookback_hours) + 1))
+        for previous, current in zip(
+            recent_rows.itertuples(index=False),
+            recent_rows.iloc[1:].itertuples(index=False),
+        ):
+            elapsed_hours = (current.ts - previous.ts) / pd.Timedelta(hours=1)
+            if 0.5 <= elapsed_hours <= 1.5:
+                slopes.append((float(current.temp_c) - float(previous.temp_c)) / elapsed_hours)
+        observed_trend = float(np.median(slopes[-3:])) if slopes else 0.0
+        observed_trend = float(np.clip(
+            observed_trend,
+            -max_observed_trend,
+            max_observed_trend,
+        ))
+
+        latest_observed = observed_rows.iloc[-1]
+        first_forecast_ts = result.at[future_index[0], "ts"]
+        lead_hours = max(
+            0.0,
+            float((first_forecast_ts - latest_observed["ts"]) / pd.Timedelta(hours=1)),
+        )
+        expected_first_temp = (
+            float(latest_observed["temp_c"]) + observed_trend * lead_hours
+        )
+        raw_gap = expected_first_temp - float(result.at[future_index[0], "temp_c"])
+        continuity_bias = 0.0
+        if abs(raw_gap) >= min_abs_bias_c:
+            continuity_bias = float(np.clip(
+                raw_gap,
+                -max_abs_bias_c,
+                max_abs_bias_c,
+            )) * shrinkage
+
+        if continuity_bias != 0.0:
+            for step, idx in enumerate(future_index):
+                adjustment = continuity_bias * (decay_per_hour ** step)
+                result.at[idx, "temp_c"] = result.at[idx, "temp_c"] + adjustment
+                if pd.notna(result.at[idx, "apparent_temp_c"]):
+                    result.at[idx, "apparent_temp_c"] = (
+                        result.at[idx, "apparent_temp_c"] + adjustment
+                    )
+            print(
+                "[WEATHER] Forecast continuity correction "
+                f"{now_ts.date()}: gap={raw_gap:+.1f}C bias={continuity_bias:+.1f}C "
+                f"trend={observed_trend:+.1f}C/h "
+                f"(latest_obs={latest_observed['ts'].hour:02d}:00, "
+                f"first_forecast={first_forecast_ts.hour:02d}:00, "
+                f"hours={len(future_index)})"
+            )
+        return result.sort_values("ts").reset_index(drop=True)
 
     try:
         from python.etl.fetch_weather import fetch_past_temps

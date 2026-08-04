@@ -25,7 +25,7 @@
 | 구현 | `python/forecast/lgbm_model.py` |
 | 피처 생성 | `python/forecast/feature_builder.py` |
 | 후처리 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| Challenger interval contract | `q025_q50_q975_p95_v12_regime_q50` |
+| Challenger interval contract | `q025_q50_q975_p95_v13_transition_cooling_blend` |
 | 현재 Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (drift gate 통과 전까지 유지) |
 | 최소 학습량 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
@@ -42,7 +42,7 @@ LightGBM은 절대수요 quantile regressor 3개, lag-24 잔차 중앙값 regres
 | `q50_lag24_residual` | 0.50 | `actual_mw - lag_24h` 중앙값 추정 |
 | `q50_non_business` | 0.50 | 토요일·일요일·공휴일 중심선의 보조 추정 |
 
-영업일 서빙 q50은 절대수요 q50과 `lag_24h + 잔차 q50`을 50:50으로 결합합니다. 비영업일은 lag-24 잔차 결합을 우회하고 통합 q50과 비영업일 전용 q50을 50:50으로 결합합니다. 대시보드는 이 최종 q50을 중심 예측선으로 사용합니다. `q025/q975`는 p95 밴드가 되고, p99 스타일 외곽 밴드는 원래 q025/q975 half-width를 결합 중심선 주위에서 한 번 더 확장해 계산합니다. 한쪽 quantile이 절대수요 q50에 붙는 경우에는 반대쪽의 큰 폭을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다.
+영업일 서빙 q50은 일반적으로 절대수요 q50과 `lag_24h + 잔차 q50`을 50:50으로 결합합니다. 전날과 영업 타입이 다른 영업일에는 v13이 `cooling_delta_24h`가 0도에서 -4도로 내려갈수록 잔차 비중을 0.5에서 0까지 연속 감쇠합니다. 비영업일은 lag-24 잔차 결합을 우회하고 통합 q50과 비영업일 전용 q50을 50:50으로 결합합니다. 대시보드는 이 최종 q50을 중심 예측선으로 사용합니다. `q025/q975`는 p95 밴드가 되고, p99 스타일 외곽 밴드는 원래 q025/q975 half-width를 결합 중심선 주위에서 한 번 더 확장해 계산합니다. 한쪽 quantile이 절대수요 q50에 붙는 경우에는 반대쪽의 큰 폭을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다.
 
 ---
 
@@ -266,6 +266,7 @@ Raw LightGBM Forecast
 | 영역 | 설정 (Config Key) | 현재 값 | 운영 가이드 및 튜닝 팁 |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | 올리면 전일 대비 잔차 모델을 더 신뢰하고, 내리면 절대수요 모델 성향을 더 유지합니다. 버전 인지 rolling replay와 frozen-origin holdout을 함께 통과할 때만 조정합니다. |
+| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | -4도에서 0, 0도에서 최대 | 전날과 영업 타입이 다른 영업일에만 적용합니다. 구간을 좁히면 잔차 결합이 급하게 꺼지고, 넓히면 더 많은 전환 시간에 영향을 줍니다. |
 | forecast | `q50_regime_model.weight` | 0.5 | 비영업일 전용 q50 반영 비율입니다. 높이면 주말 레짐 분리가 강해지고, 낮추면 통합 q50 형태를 더 보존합니다. 비영업일 MAE와 shape를 함께 검증합니다. |
 | promotion | `retrain_weekday` | 0 (월요일) | Challenger 평가 요일입니다. 다른 날짜에는 현재 Champion을 그대로 사용합니다. |
 | promotion | `validation_window_days` | 28 | 평가할 때마다 최근 확정 28일을 사용합니다. 28일마다 한 번 재학습한다는 뜻이 아닙니다. |
@@ -273,7 +274,8 @@ Raw LightGBM Forecast
 | promotion | 예측 drift 상한 | 평균 900, 시간 최대 2500 MW | 전체 데이터로 학습한 Challenger가 오늘/내일 곡선을 Champion보다 과도하게 바꾸면 승격을 거부합니다. |
 | weather | `cooling_base_temp_c` | 22.0 | 낮추면 냉방 민감도가 빨리 켜지고, 올리면 여름 초입 과대반응을 줄입니다. 계절 전체 backtest로 조정해야 합니다. |
 | weather | `heating_base_temp_c` | 18.0 | 올리면 난방 수요 신호가 강해지고, 내리면 겨울철 과민 반응을 줄입니다. |
-| weather bias | `min_abs_bias_c` | 1.5 | 낮추면 예보 bias correction이 자주 켜지고, 높이면 작은 예보 오차를 무시합니다. 너무 낮으면 날씨 noise를 추종합니다. |
+| weather bias | `min_abs_bias_c` | 1.5 | 낮추면 AMeDAS-JMA 연속성 보정이 자주 켜지고, 높이면 작은 출처 경계 noise를 무시합니다. 너무 낮으면 날씨 noise를 추종합니다. |
+| weather bias | `max_abs_bias_c`, `shrinkage`, `decay_per_hour` | 2.5, 0.7, 0.6 | 출처 경계 차이를 제한하고 일부만 반영한 뒤 감쇠합니다. 값을 올리면 빠르게 반응하지만 정상적인 JMA 레짐 변화까지 왜곡할 수 있습니다. |
 | interval | `min_p95_half_width_mw` | 500 | 밴드 과소폭 방지 하한입니다. 올리면 안정적으로 보이지만 경보 민감도가 낮아질 수 있습니다. |
 | interval | `max_p95_half_width_mw` | 3000 | 드문 한쪽 quantile tail 폭주를 제한합니다. 낮추면 밴드가 읽기 쉬워지지만 불안정한 날의 실제 불확실성을 과소표현할 수 있습니다. |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | 상단/하단 tail 비대칭을 제한합니다. 낮추면 밴드가 더 대칭적이고, 높이면 모델이 추정한 skew를 더 보존합니다. |

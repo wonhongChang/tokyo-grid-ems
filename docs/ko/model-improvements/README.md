@@ -6,6 +6,10 @@
 
 ---
 
+## 2026-08
+
+- [2026-08-04 영업 전환일 냉방 감쇠와 기상 연속성 보강](model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)
+
 ## 2026-07
 
 - [2026-07-31 비영업일 레짐 q50 앙상블](model-improvement-2026-07-31-regime-aware-non-business-q50.md)
