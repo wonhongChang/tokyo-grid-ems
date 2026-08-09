@@ -1,12 +1,234 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-08-09T07:30:18+09:00",
-  "status": "champion_retained",
-  "reason": "not_scheduled",
+  "generatedAt": "2026-08-10T07:31:46+09:00",
+  "status": "rejected",
+  "reason": "promotion_gate_failed",
+  "trigger": "scheduled_weekly_retrain",
+  "validation": {
+    "schemaVersion": "1.0.0",
+    "timezone": "Asia/Tokyo",
+    "generatedAt": "2026-08-10T07:30:23+09:00",
+    "methodology": {
+      "type": "rolling_temporal_holdout",
+      "weatherContext": "final_observed_weather",
+      "demandLeakage": "target_day_actuals_removed",
+      "windowDays": 28,
+      "expectedHours": 672,
+      "note": "This validates the model contract before promotion. Operational serving behavior is evaluated separately."
+    },
+    "trainPeriod": {
+      "start": "2023-01-01",
+      "end": "2026-07-12",
+      "rows": 30936
+    },
+    "validationPeriod": {
+      "start": "2026-07-13",
+      "end": "2026-08-09",
+      "days": 28
+    },
+    "candidate": {
+      "overall": {
+        "hours": 672,
+        "maeMw": 1142.8,
+        "wapePct": 3.074,
+        "rmseMw": 1462.1,
+        "maxErrorMw": 5017.6,
+        "shapeDeltaMaeMw": 648.6
+      },
+      "regimes": {
+        "business": {
+          "hours": 456,
+          "maeMw": 1193.7,
+          "wapePct": 3.115,
+          "rmseMw": 1526.8,
+          "maxErrorMw": 5017.6,
+          "shapeDeltaMaeMw": 695.8
+        },
+        "nonBusiness": {
+          "hours": 216,
+          "maeMw": 1035.4,
+          "wapePct": 2.978,
+          "rmseMw": 1314.9,
+          "maxErrorMw": 3859.1,
+          "shapeDeltaMaeMw": 548.8
+        }
+      },
+      "timeBands": {
+        "overnight": {
+          "hours": 168,
+          "maeMw": 753.0,
+          "wapePct": 2.736,
+          "rmseMw": 929.3,
+          "maxErrorMw": 3060.8,
+          "shapeDeltaMaeMw": 290.0
+        },
+        "morning": {
+          "hours": 140,
+          "maeMw": 1130.0,
+          "wapePct": 3.046,
+          "rmseMw": 1443.3,
+          "maxErrorMw": 3841.6,
+          "shapeDeltaMaeMw": 808.9
+        },
+        "daytime": {
+          "hours": 140,
+          "maeMw": 1427.6,
+          "wapePct": 3.134,
+          "rmseMw": 1736.9,
+          "maxErrorMw": 3859.1,
+          "shapeDeltaMaeMw": 812.2
+        },
+        "late_afternoon": {
+          "hours": 84,
+          "maeMw": 1278.5,
+          "wapePct": 2.934,
+          "rmseMw": 1550.1,
+          "maxErrorMw": 4429.5,
+          "shapeDeltaMaeMw": 952.9
+        },
+        "evening": {
+          "hours": 140,
+          "maeMw": 1257.4,
+          "wapePct": 3.431,
+          "rmseMw": 1637.9,
+          "maxErrorMw": 5017.6,
+          "shapeDeltaMaeMw": 477.1
+        }
+      }
+    },
+    "baseline": {
+      "overall": {
+        "hours": 672,
+        "maeMw": 3727.8,
+        "wapePct": 10.026,
+        "rmseMw": 4682.2,
+        "maxErrorMw": 13162.8,
+        "shapeDeltaMaeMw": 447.4
+      },
+      "regimes": {
+        "business": {
+          "hours": 456,
+          "maeMw": 4062.5,
+          "wapePct": 10.601,
+          "rmseMw": 5048.9,
+          "maxErrorMw": 13162.8,
+          "shapeDeltaMaeMw": 459.9
+        },
+        "nonBusiness": {
+          "hours": 216,
+          "maeMw": 3021.3,
+          "wapePct": 8.689,
+          "rmseMw": 3793.3,
+          "maxErrorMw": 10019.7,
+          "shapeDeltaMaeMw": 420.9
+        }
+      },
+      "timeBands": {
+        "overnight": {
+          "hours": 168,
+          "maeMw": 2099.7,
+          "wapePct": 7.629,
+          "rmseMw": 2582.8,
+          "maxErrorMw": 6905.8,
+          "shapeDeltaMaeMw": 205.7
+        },
+        "morning": {
+          "hours": 140,
+          "maeMw": 3950.5,
+          "wapePct": 10.648,
+          "rmseMw": 4799.4,
+          "maxErrorMw": 12929.2,
+          "shapeDeltaMaeMw": 812.3
+        },
+        "daytime": {
+          "hours": 140,
+          "maeMw": 5280.3,
+          "wapePct": 11.593,
+          "rmseMw": 6243.3,
+          "maxErrorMw": 13162.8,
+          "shapeDeltaMaeMw": 436.0
+        },
+        "late_afternoon": {
+          "hours": 84,
+          "maeMw": 4632.5,
+          "wapePct": 10.63,
+          "rmseMw": 5547.8,
+          "maxErrorMw": 12662.4,
+          "shapeDeltaMaeMw": 595.2
+        },
+        "evening": {
+          "hours": 140,
+          "maeMw": 3363.7,
+          "wapePct": 9.178,
+          "rmseMw": 4091.9,
+          "maxErrorMw": 10848.8,
+          "shapeDeltaMaeMw": 280.0
+        }
+      }
+    },
+    "improvementPct": {
+      "maeVsBaseline": 69.34
+    },
+    "gate": {
+      "passed": false,
+      "failures": [
+        "overall.mae_above_absolute_limit",
+        "overall.wape_above_absolute_limit"
+      ],
+      "thresholds": {
+        "minMaeImprovementVsBaselinePct": 20.0,
+        "maxSegmentMaeRegressionPct": 10.0,
+        "maxValidationMaeMw": 1000,
+        "maxValidationWapePct": 3.0,
+        "maxValidationShapeDeltaMaeMw": 750,
+        "maxValidationMaxErrorMw": 6500,
+        "maxSegmentMaeMw": 1500,
+        "maxSegmentShapeDeltaMaeMw": 1100
+      }
+    }
+  },
+  "predictionDrift": {
+    "valid": true,
+    "expectedHours": 48,
+    "hours": 48,
+    "meanAbsDeltaMw": 1008.5,
+    "maxAbsDeltaMw": 2316.3,
+    "invalidPredictionCount": 0,
+    "invalidPredictions": [],
+    "largestChanges": [
+      {
+        "date": "2026-08-11",
+        "hour": 12,
+        "deltaMw": -2316.3
+      },
+      {
+        "date": "2026-08-11",
+        "hour": 23,
+        "deltaMw": -2228.0
+      },
+      {
+        "date": "2026-08-11",
+        "hour": 13,
+        "deltaMw": -2171.9
+      },
+      {
+        "date": "2026-08-11",
+        "hour": 16,
+        "deltaMw": -2167.6
+      },
+      {
+        "date": "2026-08-11",
+        "hour": 10,
+        "deltaMw": -1987.5
+      }
+    ]
+  },
+  "driftFailures": [
+    "mean_prediction_drift_exceeded"
+  ],
   "champion": {
     "artifact": ".lgbm_model.pkl",
     "sha256": "28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640"
-  },
-  "nextScheduledWeekday": 0
+  }
 }
