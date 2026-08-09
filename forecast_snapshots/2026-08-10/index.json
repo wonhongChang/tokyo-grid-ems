@@ -1,31 +1,9 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-08-10T03:34:21+09:00",
+  "generatedAt": "2026-08-10T05:33:34+09:00",
   "targetDate": "2026-08-10",
   "snapshots": [
-    {
-      "targetDate": "2026-08-10",
-      "generatedAt": "2026-08-09T07:30:37+09:00",
-      "runType": "etl",
-      "path": "forecast_snapshots/2026-08-10/2026-08-09T07-30-37-09-00.json",
-      "model": {
-        "name": "lgbm_quantile_q50",
-        "version": "mvp-1",
-        "nWeeks": 12
-      },
-      "peak": {
-        "forecastMw": 48110.5,
-        "at": "2026-08-10T15:00:00+09:00",
-        "interval": {
-          "p95Lower": 46229.4,
-          "p95Upper": 49286.2
-        }
-      },
-      "observedActualHoursAtGeneration": 0,
-      "fallbackActualHoursAtGeneration": 0,
-      "lastObservedActualHour": null
-    },
     {
       "targetDate": "2026-08-10",
       "generatedAt": "2026-08-09T07:42:41+09:00",
@@ -355,6 +333,28 @@
       "observedActualHoursAtGeneration": 3,
       "fallbackActualHoursAtGeneration": 0,
       "lastObservedActualHour": 2
+    },
+    {
+      "targetDate": "2026-08-10",
+      "generatedAt": "2026-08-10T05:33:34+09:00",
+      "runType": "intraday",
+      "path": "forecast_snapshots/2026-08-10/2026-08-10T05-33-34-09-00.json",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "version": "mvp-1",
+        "nWeeks": 12
+      },
+      "peak": {
+        "forecastMw": 46091.6,
+        "at": "2026-08-10T15:00:00+09:00",
+        "interval": {
+          "p95Lower": 43483.7,
+          "p95Upper": 47721.5
+        }
+      },
+      "observedActualHoursAtGeneration": 5,
+      "fallbackActualHoursAtGeneration": 0,
+      "lastObservedActualHour": 4
     }
   ]
 }
