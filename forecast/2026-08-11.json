@@ -27,9 +27,9 @@
     {
       "ts": "2026-08-11T01:00:00+09:00",
       "forecastMw": 23611.2,
-      "p95LowerMw": 22462.8,
+      "p95LowerMw": 22049.7,
       "p95UpperMw": 25448.6,
-      "p99LowerMw": 21314.4,
+      "p99LowerMw": 20488.2,
       "p99UpperMw": 27286.0
     },
     {
@@ -59,34 +59,34 @@
     {
       "ts": "2026-08-11T05:00:00+09:00",
       "forecastMw": 22727.2,
-      "p95LowerMw": 21522.7,
+      "p95LowerMw": 21165.7,
       "p95UpperMw": 24654.5,
-      "p99LowerMw": 20318.2,
+      "p99LowerMw": 19604.2,
       "p99UpperMw": 26581.8
     },
     {
       "ts": "2026-08-11T06:00:00+09:00",
       "forecastMw": 24316.7,
-      "p95LowerMw": 22485.9,
-      "p95UpperMw": 27246.1,
-      "p99LowerMw": 20655.1,
-      "p99UpperMw": 30175.5
+      "p95LowerMw": 21367.1,
+      "p95UpperMw": 27266.3,
+      "p99LowerMw": 18417.5,
+      "p99UpperMw": 30215.9
     },
     {
       "ts": "2026-08-11T07:00:00+09:00",
       "forecastMw": 27135.9,
-      "p95LowerMw": 24613.6,
+      "p95LowerMw": 24186.3,
       "p95UpperMw": 30135.9,
-      "p99LowerMw": 22091.3,
+      "p99LowerMw": 21236.7,
       "p99UpperMw": 33135.9
     },
     {
       "ts": "2026-08-11T08:00:00+09:00",
       "forecastMw": 28838.3,
-      "p95LowerMw": 27010.0,
-      "p95UpperMw": 31763.6,
-      "p99LowerMw": 25181.7,
-      "p99UpperMw": 34688.9
+      "p95LowerMw": 25888.7,
+      "p95UpperMw": 31787.9,
+      "p99LowerMw": 22939.1,
+      "p99UpperMw": 34737.5
     },
     {
       "ts": "2026-08-11T09:00:00+09:00",
@@ -208,5 +208,33 @@
       "p99LowerMw": 21414.1,
       "p99UpperMw": 33414.1
     }
-  ]
+  ],
+  "intervalCalibration": {
+    "schemaVersion": "1.0.0",
+    "availability": "ok",
+    "method": "rolling_conformal_minimum_floor",
+    "source": "finalized_actual_vs_served_forecast",
+    "targetCoveragePct": 95.0,
+    "windowDays": 28,
+    "minimumSamplesPerBand": 24,
+    "targetRegime": "nonBusiness",
+    "historyStart": "2026-07-14",
+    "historyEnd": "2026-08-10",
+    "contributingDates": 9,
+    "sampleHoursByTimeBand": {
+      "overnight": 54,
+      "morning": 45,
+      "daytime": 45,
+      "late_afternoon": 27,
+      "evening": 45
+    },
+    "floorsMwByTimeBand": {
+      "overnight": 1561.5,
+      "morning": 2949.6,
+      "daytime": 2230.6,
+      "late_afternoon": 3000.0,
+      "evening": 1870.0
+    },
+    "maxP95HalfWidthMw": 3000.0
+  }
 }
