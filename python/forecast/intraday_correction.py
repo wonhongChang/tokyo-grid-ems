@@ -1422,6 +1422,91 @@ class IntradayResidualCorrector:
             float(morning_anchor_config.get("min_reduction_mw", 100.0)),
             0.0,
         )
+        morning_anchor_non_business_config = morning_anchor_config.get(
+            "non_business_extension",
+            {},
+        )
+        self._morning_anchor_non_business_enabled = bool(
+            morning_anchor_non_business_config.get("enabled", False)
+        )
+        self._morning_anchor_non_business_max_reference_hour = int(
+            morning_anchor_non_business_config.get("max_reference_hour", 9)
+        )
+        self._morning_anchor_non_business_max_lead_hours = max(
+            int(morning_anchor_non_business_config.get("max_lead_hours", 4)),
+            1,
+        )
+        self._morning_anchor_non_business_min_overforecast_mw = max(
+            float(
+                morning_anchor_non_business_config.get(
+                    "min_latest_overforecast_mw",
+                    400.0,
+                )
+            ),
+            0.0,
+        )
+        self._morning_anchor_non_business_cap_buffer_mw = max(
+            float(morning_anchor_non_business_config.get("cap_buffer_mw", 0.0)),
+            0.0,
+        )
+        self._morning_anchor_non_business_shrinkage = min(
+            max(
+                float(morning_anchor_non_business_config.get("shrinkage", 0.75)),
+                0.0,
+            ),
+            1.0,
+        )
+        self._morning_anchor_non_business_max_reduction_mw = max(
+            float(
+                morning_anchor_non_business_config.get(
+                    "max_reduction_mw",
+                    1_000.0,
+                )
+            ),
+            0.0,
+        )
+        self._morning_anchor_non_business_min_reduction_mw = max(
+            float(
+                morning_anchor_non_business_config.get(
+                    "min_reduction_mw",
+                    100.0,
+                )
+            ),
+            0.0,
+        )
+        morning_anchor_non_business_veto_config = (
+            morning_anchor_non_business_config.get("ramp_veto", {})
+        )
+        self._morning_anchor_non_business_ramp_veto_enabled = bool(
+            morning_anchor_non_business_veto_config.get("enabled", True)
+        )
+        self._morning_anchor_non_business_veto_min_latest_slope_mw = max(
+            float(
+                morning_anchor_non_business_veto_config.get(
+                    "min_latest_slope_mw",
+                    4_000.0,
+                )
+            ),
+            0.0,
+        )
+        self._morning_anchor_non_business_veto_min_mean_slope_mw = max(
+            float(
+                morning_anchor_non_business_veto_config.get(
+                    "min_mean_slope_mw",
+                    2_500.0,
+                )
+            ),
+            0.0,
+        )
+        self._morning_anchor_non_business_veto_min_cumulative_support_mw = max(
+            float(
+                morning_anchor_non_business_veto_config.get(
+                    "min_cumulative_support_mw",
+                    2_500.0,
+                )
+            ),
+            0.0,
+        )
         morning_anchor_support_config = morning_anchor_config.get(
             "support_overhang",
             {},
@@ -3725,10 +3810,50 @@ class IntradayResidualCorrector:
             not self._morning_anchor_cap_enabled
             or last_observed_hour is None
             or last_observed_hour < self._morning_anchor_min_reference_hour
-            or last_observed_hour > self._morning_anchor_max_reference_hour
             or last_observed_hour not in actual_mw_by_hour
-            or self._morning_anchor_max_reduction_mw <= 0.0
         ):
+            return None
+
+        reference_row = self._feature_row_for_hour(
+            inference_features,
+            last_observed_hour,
+        )
+        is_non_business_day = False
+        if reference_row is not None:
+            non_business_value = self._finite_float(
+                reference_row.get("is_non_business_day")
+            )
+            if non_business_value is not None:
+                is_non_business_day = non_business_value == 1.0
+            elif forecasts:
+                is_non_business_day = _is_nonworking_day(
+                    pd.Timestamp(forecasts[0].ts)
+                )
+        elif forecasts:
+            is_non_business_day = _is_nonworking_day(
+                pd.Timestamp(forecasts[0].ts)
+            )
+
+        if is_non_business_day:
+            if (
+                self._morning_anchor_business_day_only
+                and not self._morning_anchor_non_business_enabled
+            ):
+                return None
+            if (
+                self._morning_anchor_non_business_enabled
+                and last_observed_hour
+                > self._morning_anchor_non_business_max_reference_hour
+            ):
+                return None
+            if (
+                self._morning_anchor_non_business_enabled
+                and self._morning_anchor_non_business_max_reduction_mw <= 0.0
+            ):
+                return None
+        elif last_observed_hour > self._morning_anchor_max_reference_hour:
+            return None
+        elif self._morning_anchor_max_reduction_mw <= 0.0:
             return None
 
         latest_residual = next(
@@ -3739,10 +3864,17 @@ class IntradayResidualCorrector:
             ),
             None,
         )
+        min_overforecast_mw = self._morning_anchor_min_overforecast_mw
+        if is_non_business_day and self._morning_anchor_non_business_enabled:
+            min_overforecast_mw = (
+                self._morning_anchor_non_business_min_overforecast_mw
+            )
         if (
             latest_residual is None
-            or latest_residual > -self._morning_anchor_min_overforecast_mw
+            or latest_residual > -min_overforecast_mw
         ):
+            if is_non_business_day:
+                return None
             if (
                 not self._morning_anchor_support_overhang_enabled
                 or latest_residual is None
@@ -3754,19 +3886,14 @@ class IntradayResidualCorrector:
         else:
             mode = "residual_overhang"
 
-        if self._morning_anchor_business_day_only:
-            row = self._feature_row_for_hour(inference_features, last_observed_hour)
-            if row is not None:
-                is_non_business_day = self._finite_float(row.get("is_non_business_day"))
-                if is_non_business_day == 1.0:
-                    return None
-            elif forecasts:
-                forecast_ts = pd.Timestamp(forecasts[0].ts)
-                if _is_nonworking_day(forecast_ts):
-                    return None
-
         recent_slopes: list[float] = []
-        if self._morning_anchor_ramp_veto_enabled:
+        if (
+            self._morning_anchor_ramp_veto_enabled
+            or (
+                is_non_business_day
+                and self._morning_anchor_non_business_ramp_veto_enabled
+            )
+        ):
             required_hours = [
                 last_observed_hour - 2,
                 last_observed_hour - 1,
@@ -3793,6 +3920,7 @@ class IntradayResidualCorrector:
                 if recent_slopes
                 else None
             ),
+            "isNonBusinessDay": is_non_business_day,
             "mode": mode,
         }
 
@@ -3810,17 +3938,25 @@ class IntradayResidualCorrector:
             or inference_features.empty
             or forecast_hour not in self._morning_anchor_target_hours
             or lead_hours <= 0
-            or lead_hours > self._morning_anchor_max_lead_hours
         ):
             return None
 
         row = self._feature_row_for_hour(inference_features, forecast_hour)
         if row is None:
             return None
-        if self._morning_anchor_business_day_only:
-            is_non_business_day = self._finite_float(row.get("is_non_business_day"))
-            if is_non_business_day == 1.0:
-                return None
+        is_non_business_day = bool(context.get("isNonBusinessDay", False))
+        if (
+            self._morning_anchor_business_day_only
+            and is_non_business_day
+            and not self._morning_anchor_non_business_enabled
+        ):
+            return None
+
+        max_lead_hours = self._morning_anchor_max_lead_hours
+        if is_non_business_day and self._morning_anchor_non_business_enabled:
+            max_lead_hours = self._morning_anchor_non_business_max_lead_hours
+        if lead_hours > max_lead_hours:
+            return None
 
         mode = context.get("mode", "residual_overhang")
         if mode == "support_overhang":
@@ -3859,28 +3995,52 @@ class IntradayResidualCorrector:
         latest_slope_mw = self._finite_float(context.get("latestSlopeMw"))
         mean_slope_mw = self._finite_float(context.get("meanSlopeMw"))
         latest_residual_mw = self._finite_float(context.get("latestResidualMw"))
-        if (
-            mode != "support_overhang"
-            and self._morning_anchor_ramp_veto_enabled
-            and latest_slope_mw is not None
-            and mean_slope_mw is not None
-            and latest_residual_mw is not None
-            and latest_slope_mw
-            >= self._morning_anchor_ramp_veto_min_latest_slope_mw
-            and mean_slope_mw
-            >= self._morning_anchor_ramp_veto_min_mean_slope_mw
-            and cumulative_support_mw
-            >= self._morning_anchor_ramp_veto_min_cumulative_support_mw
-            and -latest_residual_mw
-            <= self._morning_anchor_ramp_veto_max_latest_overforecast_mw
-        ):
-            return None
+        if mode != "support_overhang":
+            if (
+                is_non_business_day
+                and self._morning_anchor_non_business_enabled
+                and self._morning_anchor_non_business_ramp_veto_enabled
+                and latest_slope_mw is not None
+                and mean_slope_mw is not None
+                and latest_slope_mw
+                >= self._morning_anchor_non_business_veto_min_latest_slope_mw
+                and mean_slope_mw
+                >= self._morning_anchor_non_business_veto_min_mean_slope_mw
+                and cumulative_support_mw
+                >= self._morning_anchor_non_business_veto_min_cumulative_support_mw
+            ):
+                return None
+            if (
+                not is_non_business_day
+                and self._morning_anchor_ramp_veto_enabled
+                and latest_slope_mw is not None
+                and mean_slope_mw is not None
+                and latest_residual_mw is not None
+                and latest_slope_mw
+                >= self._morning_anchor_ramp_veto_min_latest_slope_mw
+                and mean_slope_mw
+                >= self._morning_anchor_ramp_veto_min_mean_slope_mw
+                and cumulative_support_mw
+                >= self._morning_anchor_ramp_veto_min_cumulative_support_mw
+                and -latest_residual_mw
+                <= self._morning_anchor_ramp_veto_max_latest_overforecast_mw
+            ):
+                return None
 
         cap_buffer_mw = self._morning_anchor_cap_buffer_mw
         shrinkage = self._morning_anchor_shrinkage
         max_reduction_mw = self._morning_anchor_max_reduction_mw
         min_reduction_mw = self._morning_anchor_min_reduction_mw
-        if mode == "support_overhang":
+        if is_non_business_day and self._morning_anchor_non_business_enabled:
+            cap_buffer_mw = self._morning_anchor_non_business_cap_buffer_mw
+            shrinkage = self._morning_anchor_non_business_shrinkage
+            max_reduction_mw = (
+                self._morning_anchor_non_business_max_reduction_mw
+            )
+            min_reduction_mw = (
+                self._morning_anchor_non_business_min_reduction_mw
+            )
+        elif mode == "support_overhang":
             cap_buffer_mw = self._morning_anchor_support_cap_buffer_mw
             shrinkage = self._morning_anchor_support_shrinkage
             max_reduction_mw = self._morning_anchor_support_max_reduction_mw

@@ -8,6 +8,8 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-08
 
+- [2026-08-11 rolling conformal予測バンド最小幅補正](model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
+- [2026-08-11 非営業日朝の実績anchor拡張](model-improvement-2026-08-11-non-business-morning-anchor-extension.md)
 - [2026-08-04 営業日遷移の冷房減衰と気象連続性](model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)
 
 ## 2026-07

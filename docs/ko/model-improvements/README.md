@@ -8,6 +8,8 @@
 
 ## 2026-08
 
+- [2026-08-11 rolling conformal 예측 밴드 최소 폭 보정](model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
+- [2026-08-11 비영업일 오전 실측 anchor 확장](model-improvement-2026-08-11-non-business-morning-anchor-extension.md)
 - [2026-08-04 영업 전환일 냉방 감쇠와 기상 연속성 보강](model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)
 
 ## 2026-07

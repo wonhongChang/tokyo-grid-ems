@@ -1318,6 +1318,9 @@ def test_write_forecast_snapshot_can_include_build_stage_diagnostics(tmp_path):
             "retention_days": 2,
             "max_per_day": 2,
         },
+        "interval_calibration": {
+            "rolling_conformal_floor": {"enabled": True},
+        },
     }
 
     snapshot_path = _write_forecast_snapshot(
@@ -1337,6 +1340,7 @@ def test_write_forecast_snapshot_can_include_build_stage_diagnostics(tmp_path):
 
     assert snapshot_path is not None
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["intervalCalibration"]["availability"] == "insufficient_history"
     assert snapshot["forecastBuild"]["stageSummary"]["raw_lgbm"]["hours"] == 2
     assert snapshot["forecastBuild"]["series"][0]["forecastMwByStage"]["raw_lgbm"] == 29_500.0
     assert snapshot["forecastBuild"]["series"][0]["forecastMwByStage"]["pre_calibration"] == 30_000.0

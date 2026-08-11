@@ -8,6 +8,8 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-08
 
+- [2026-08-11 rolling conformal interval floor](model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
+- [2026-08-11 non-business morning observed anchor extension](model-improvement-2026-08-11-non-business-morning-anchor-extension.md)
 - [2026-08-04 transition cooling attenuation and weather continuity](model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)
 
 ## 2026-07

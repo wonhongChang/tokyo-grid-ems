@@ -8,4 +8,4 @@ Languages: [한국어](../../ko/model-reviews/README.md) / [日本語](../../ja/
 
 ## Reviews
 
-- [2026-08-11 operational model review](model-review-2026-08-11.md) - pre-registered checklist; results will be completed after the morning ETL review.
+- [2026-08-11 operational model review](model-review-2026-08-11.md) - completed; v11 retained, v13 rejected, and a replay-qualified non-business morning guard accepted.

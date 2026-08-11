@@ -2,252 +2,136 @@
 
 Languages: [한국어](../../ko/model-reviews/model-review-2026-08-11.md) / [日本語](../../ja/model-reviews/model-review-2026-08-11.md)
 
-Created: 2026-08-10 JST  
-Scheduled review: after the 2026-08-11 morning ETL  
-Status: not started
+Review date: 2026-08-11 JST
 
-## 1. Purpose
+Evidence cutoff: finalized actuals through 2026-08-10 and intraday observations through the 2026-08-11 morning
 
-This review follows two cases where a multi-day review was followed by changes that made the live forecast worse. The review therefore pre-registers its evidence, gates, and stop conditions.
+Status: completed
 
-- Do not change the model merely because more days are available.
-- Do not let aggregate improvements hide date-level or shape regressions.
-- Evaluate the forecast that was actually served.
-- Separate raw-model, post-processing, intraday, and freeze effects.
-- Use the TEPCO forecast only as an external benchmark, never as an input or calibration target.
-- Do not relax acceptance gates after seeing the results.
-- Retain the Champion when causality or regression safety is not established.
+## Decision
 
-## 2. Fixed Facts
+- Retain the v11 `lag24_residual_ensemble` Champion.
+- Reject promotion of the current v13 Challenger. It passes the supplemental 84-day view but fails the recent 28-day MAE, WAPE, and daytime-segment limits.
+- Accept two isolated operational changes: extend the observed morning anchor cap to non-business days, and add a leakage-safe rolling conformal minimum interval floor after a separate band replay.
+- Keep q50 features, training window, raw quantile models, business-day lunch logic, and global intraday limits unchanged. The interval floor changes published width only.
+- TEPCO remains an external benchmark only. It is not an input, anchor, target, or calibration source.
 
-- Current production Champion: v11 lag24 residual ensemble.
-- Current Challenger contract: v13 transition cooling blend.
-- On 2026-08-04, v13 passed the 84-day gate but was not promoted because its 28-day MAE was `1,036.6 MW`, above the `1,000 MW` ceiling.
-- 2026-08-11 is Japan's Mountain Day holiday despite being a Tuesday.
-- It must be represented as `is_holiday=1` and `is_non_business_day=1`.
-- The chart's 12:00 bucket represents demand from 12:00 to 13:00.
-- The business-day lunch dip is evidence-driven, not a fixed downward offset.
-- `MiddayTransitionGuard` must skip non-business days.
+## Data Integrity
 
-## 3. Evaluation Scope
-
-| Regime | Dates | Purpose |
+| Check | Result | Evidence |
 |---|---|---|
-| Business days | 2026-08-05 to 2026-08-07 | Baseline shape, morning ramp, lunch dip, afternoon and evening |
-| Weekend | 2026-08-08 to 2026-08-09 | Non-business q50 and weekend shape |
-| Business return | 2026-08-10 | Weekend-to-business lag contamination and return ramp |
-| Holiday forecast | 2026-08-11 | Holiday calendar path, non-business behavior, midday bypass |
+| Final actual coverage | Pass | `actual/2026-08-10.json` has 24 observed hours |
+| Actual-source integrity | Pass | No `tepco_forecast_fallback` value was scored as final actual |
+| Calendar path | Pass | 2026-08-11 is Mountain Day with `is_holiday=1` and `is_non_business_day=1` |
+| Holiday guard isolation | Pass | Business-only q50 and `MiddayTransitionGuard` paths were inactive |
+| Weather inputs | Pass | No unexplained NaN or source discontinuity caused the 2026-08-11 morning miss |
+| Public artifacts | Pass | Public status, actual, forecast, report, and promotion files validated |
 
-Final accuracy for 2026-08-11 will be assessed after the 2026-08-12 ETL.
+The 2026-08-11 final daily score is intentionally excluded because the day was still open. Its morning snapshots were used only for stage attribution and candidate behavior checks.
 
-Long-window checks:
+## Recent Live Performance
 
-- 28 complete days: exactly `672` hours.
-- 84 complete days: exactly `2,016` hours.
-- Report business, non-business, and business-type transition segments separately.
-- Do not cancel opposite recent and long-window errors through a single average.
+These rows evaluate the forecast that was actually served for each finalized date.
 
-## 4. Data Integrity Gate
+| Date | Regime | MAE MW | WAPE | RMSE MW | Bias MW | Max error MW | TEPCO MAE MW |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 2026-08-05 | Business | 643.3 | 1.85% | 762.6 | -223.7 | 1,731.4 | 347.5 |
+| 2026-08-06 | Business | 960.4 | 2.57% | 1,219.8 | -897.5 | 3,234.7 | 308.8 |
+| 2026-08-07 | Business | 1,119.1 | 2.85% | 1,364.1 | -374.6 | 3,829.9 | 272.1 |
+| 2026-08-08 | Weekend | 853.4 | 2.44% | 1,125.2 | +654.8 | 2,570.0 | 334.6 |
+| 2026-08-09 | Weekend | 1,362.9 | 4.24% | 1,626.7 | +1,344.2 | 3,111.1 | 517.5 |
+| 2026-08-10 | Business return | 1,730.2 | 5.30% | 2,113.3 | +1,721.4 | 4,929.9 | 578.8 |
 
-Stop model comparison if any required input is invalid.
+The sign reversal from business-day underprediction on August 6-7 to non-business and return-day overprediction on August 9-10 shows a regime problem rather than one global level offset. A global q50 shift or a larger intraday cap would therefore trade one failure direction for the other.
 
-- [ ] Local ETL completed successfully and recorded its execution time.
-- [ ] The latest ETL commit exists on the `data` branch.
-- [ ] `actual/2026-08-10.json` contains 24 non-null actual values.
-- [ ] `tepco_forecast_fallback` is not treated as validation actual.
-- [ ] The 2026-08-10 daily and internal diagnostic reports exist.
-- [ ] The 2026-08-11 forecast and forecast snapshots exist.
-- [ ] Model artifact, training cutoff, metadata, and interval version agree.
-- [ ] Weather data contains no unexplained source transition, NaN, or extended forward-fill.
-- [ ] Missing snapshots caused by Actions/Pages incidents are explicitly recorded.
-- [ ] Final actual coverage is not confused with stage-snapshot coverage.
+## 28-Day Operational Replay
 
-| Item | Result | Evidence | Decision |
-|---|---|---|---|
-| ETL |  |  |  |
-| 24-hour actual |  |  |  |
-| Weather sources |  |  |  |
-| Forecast snapshots |  |  |  |
-| Model metadata |  |  |  |
-| Actions/Pages |  |  |  |
+Period: 2026-07-14 through 2026-08-10, 672 served hours.
 
-## 5. Daily Live Performance
+| Segment | MAE MW | WAPE | RMSE MW | Shape delta MAE MW |
+|---|---:|---:|---:|---:|
+| Overall | 890.1 | 2.399% | 1,182.1 | 705.0 |
+| Business | 889.4 | 2.328% | 1,199.4 | 729.6 |
+| Non-business | 891.6 | 2.564% | 1,144.8 | 653.0 |
+| Morning | 970.2 | 2.618% | 1,295.7 | 997.6 |
+| Daytime | 960.4 | 2.111% | 1,231.4 | 725.8 |
+| Late afternoon | 1,152.8 | 2.654% | 1,529.7 | 898.3 |
 
-Use the model/config and snapshots that were active for each date.
+The served system remains better than the raw-model-only snapshot path, but morning and late-afternoon shape are still the highest-risk operational segments.
 
-| Date | Day type | Model/config | MAE | WAPE | RMSE | Bias | Max error | TEPCO MAE | Notes |
-|---|---|---|---:|---:|---:|---:|---:|---:|---|
-| 2026-08-05 | Business |  |  |  |  |  |  |  |  |
-| 2026-08-06 | Business |  |  |  |  |  |  |  |  |
-| 2026-08-07 | Business |  |  |  |  |  |  |  |  |
-| 2026-08-08 | Weekend |  |  |  |  |  |  |  |  |
-| 2026-08-09 | Weekend |  |  |  |  |  |  |  |  |
-| 2026-08-10 | Business return |  |  |  |  |  |  |  |  |
+## Challenger Validation
 
-- [ ] Identify dates with all-day one-sided bias.
-- [ ] Identify dates with repeated error-sign changes and unstable shape.
-- [ ] Keep TEPCO dominance hours as a secondary reference only.
-- [ ] Do not compare dates as if they used the same serving version when they did not.
-- [ ] Record each day's worst window and its likely stage.
+The same v13 contract was trained only on data before each holdout window.
 
-## 6. Time-Band Review
+| Window | MAE MW | WAPE | RMSE MW | Max error MW | Shape delta MAE MW | Decision |
+|---|---:|---:|---:|---:|---:|---|
+| Recent 28 days | 1,208.1 | 3.256% | 1,532.8 | 5,050.8 | 628.3 | Reject |
+| Supplemental 84 days | 790.6 | 2.526% | 1,114.5 | 5,432.4 | 481.3 | Pass supplemental view only |
 
-| Hours | Primary question | Model MAE/WAPE | Shape delta error | Decision |
-|---|---|---:|---:|---|
-| 00-05 | Did day-boundary carryover or lag24 distort the base level? |  |  |  |
-| 06-11 | Was the morning ramp jagged or directionally biased? |  |  |  |
-| 12 | Did the business-day lunch dip act only with evidence? |  |  |  |
-| 13-16 | Did rebound or local spike processing distort the curve? |  |  |  |
-| 17-19 | Was there an unsupported evening rebound? |  |  |  |
-| 20-23 | Were late decline and the 23:00 fallback boundary stable? |  |  |  |
+Recent 28-day segment MAE was 1,290.7 MW on business days, 1,033.6 MW on non-business days, and 1,549.4 MW in daytime. The last value exceeds the fixed 1,500 MW segment ceiling. The recent-window MAE and WAPE also exceed the fixed 1,000 MW and 3.0% limits. Long-window averaging cannot override these failures.
 
-## 7. Business-Day Lunch-Dip Audit
+Training-window reductions to 730, 548, and 365 days, q50 blend changes, and a business residual-weight change did not produce a stable recent-window gain. They were rejected.
 
-Review dates: 2026-08-05, 2026-08-06, 2026-08-07, and 2026-08-10.
+## Lunch-Dip Audit
 
-- [ ] `is_non_business_day` equals 0.
-- [ ] Record `business_midday_x_lag_24h_delta`.
-- [ ] Record `business_midday_x_recent_delta_mean`.
-- [ ] Record `business_midday_x_recent_delta_q25`.
-- [ ] Record `business_midday_x_same_day_recent_delta_mean`.
-- [ ] Confirm whether lag and recent same-business shape actually support a dip.
+The 12:00 bucket is the 12:00-13:00 interval. On the reviewed business days, the actual 11-to-12 changes were +60, +40, -550, and -290 MW for August 5, 6, 7, and 10. The raw-model changes were -1,014.4, +608.5, -111.5, and -1,209.6 MW.
 
-| Date | Actual 11->12 | Actual 12->13 | Raw 11->12 | Midday delta | Pre-calibration | Served | Decision |
-|---|---:|---:|---:|---:|---:|---:|---|
-| 2026-08-05 |  |  |  |  |  |  |  |
-| 2026-08-06 |  |  |  |  |  |  |  |
-| 2026-08-07 |  |  |  |  |  |  |  |
-| 2026-08-10 |  |  |  |  |  |  |  |
+`MiddayTransitionGuard` applied `0 MW` on all four dates because its additional evidence gate did not pass. This was correct: the raw model already contained a dip on three dates, and two dates had no actual 11-to-12 decline. The guard must not manufacture a fixed weekday lunch drop. No lunch parameter was changed.
 
-Expected behavior:
+## 2026-08-11 Holiday Diagnosis
 
-- Do not manufacture a fixed dip when recent business-day evidence is weak.
-- Apply only a capped downward adjustment when supported shape is negative and the forecast is materially elevated.
-- Do not carry a one-slot noon shock into a persistent afternoon decline.
-- Do not let intraday residuals propagate the lunch shock across the afternoon.
-- Attribute a served-versus-midday-stage difference to freeze or prior snapshots instead of the guard itself.
+The calendar and guard routing were correct, but raw q50 was too high in the morning. At 09:00 the pre-calibration forecast was about 33.0 GW while actual demand was 28.56 GW. Intraday residual correction reached its -1.2 GW limit, yet the remaining near-term forecast was still elevated.
 
-## 8. 2026-08-11 Holiday Path
+The existing observed morning anchor cap was restricted to business days. This left a gap on weekends and holidays: clear same-day overprediction evidence existed, but the extra near-term level cap was unavailable. The problem was not a missing holiday flag or an active business-day lunch guard.
 
-- [ ] `jpholiday` identifies Mountain Day.
-- [ ] `is_holiday=1` and `is_non_business_day=1`.
-- [ ] Business-only q50 paths and guards remain inactive.
-- [ ] `MiddayTransitionGuard` is bypassed.
-- [ ] Business-morning and business-daytime interactions are zero or inactive.
-- [ ] Non-business anchors and lag mismatch context are valid.
-- [ ] The 2026-08-10 business-day lag does not over-elevate holiday demand.
-- [ ] No fixed holiday downward offset is introduced.
+## Accepted Operational Change
 
-## 9. Stage Attribution
+`morning_observed_anchor_cap.non_business_extension` is enabled with these constraints:
 
-Record the value and delta for each affected hour:
+- only weekend or holiday forecasts;
+- only after the latest observed hour is 08:00 or 09:00;
+- latest model residual must show at least 400 MW of overprediction;
+- only target hours already supported by lag-24 or recent same-business shape;
+- at most four lead hours and 1,000 MW reduction;
+- 0.75 shrinkage rather than a hard clamp;
+- veto when the latest observed ramp is at least 4,000 MW, its two-step mean is at least 2,500 MW, and cumulative shape support is at least 2,500 MW;
+- automatic handoff after the latest observed hour passes 09:00.
 
-1. `raw_lgbm`
-2. `analog_adjusted`
-3. `post_holiday_guarded`
-4. `midday_guarded`
-5. `localized_shape_guarded`
-6. `pre_calibration`
-7. Intraday residual correction
-8. `served_forecast`
-9. Published Forecast Freeze gap
+This layer uses only TokyoGridEMS model output, finalized demand history, same-day TEPCO actual demand, calendar state, and internal lag/shape features. It never reads the TEPCO forecast value.
 
-| Date/hour | Raw | Analog delta | Guard delta | Intraday delta | Served | Actual | Primary stage |
-|---|---:|---:|---:|---:|---:|---:|---|
-|  |  |  |  |  |  |  |  |
+## Candidate Replay
 
-Use one of: `data_quality`, `raw_model_level`, `raw_model_shape`, `weather_regime`, `calendar_regime`, `analog_adjustment`, `shape_guard`, `intraday_carryover`, `freeze_artifact`, or `insufficient_evidence`.
+Historical calibration snapshots from nine non-business mornings between 2026-07-18 and 2026-08-09 supplied 68 comparable forecast-hour records.
 
-## 10. Interval Review
-
-- [ ] Compute p95 coverage by date and time band.
-- [ ] Verify the interval remains centered on q50.
-- [ ] Record minimum-width and maximum-tail-cap effects.
-- [ ] Inspect q025/q975 asymmetry and rebalancing.
-- [ ] Do not hide a centerline error by widening the band.
-
-| Band | Coverage | Mean width | Maximum width | Miss direction | Decision |
-|---|---:|---:|---:|---|---|
-| All |  |  |  |  |  |
-| 00-05 |  |  |  |  |  |
-| 06-11 |  |  |  |  |  |
-| 12-16 |  |  |  |  |  |
-| 17-23 |  |  |  |  |  |
-
-## 11. Champion/Challenger Gates
-
-Compare Champion v11 and Challenger v13 before introducing another candidate.
-
-| Gate | Fixed limit | Result | Pass |
+| Metric | Existing behavior | Candidate | Result |
 |---|---:|---:|---|
-| 28-day coverage | 672/672 hours |  |  |
-| MAE improvement vs baseline | at least 20% |  |  |
-| 28-day MAE | at most 1,000 MW |  |  |
-| 28-day WAPE | at most 3.0% |  |  |
-| Shape delta MAE | at most 750 MW |  |  |
-| Maximum error | at most 6,500 MW |  |  |
-| Segment MAE | at most 1,500 MW |  |  |
-| Segment shape delta MAE | at most 1,100 MW |  |  |
-| Segment MAE regression | at most 10% |  |  |
-| Mean 48-hour prediction drift | at most 900 MW |  |  |
-| Maximum hourly prediction drift | at most 2,500 MW |  |  |
+| Morning snapshot MAE | 1,456.2 MW | 1,282.9 MW | -173.3 MW (-11.9%) |
+| Records changed | 0 | 13 | Narrow intervention |
+| Maximum reduction | 0 MW | 1,000 MW | Configured cap respected |
+| Confirmed explosive ramp on 2026-08-08 | Preserved | Preserved | Ramp veto worked |
 
-Regression segments must include consecutive business days, business-to-weekend, weekend, weekend/holiday-to-business, a midweek holiday, rapid warming, rapid cooling, and humidity transitions.
+One affected 2026-07-18 record worsened slightly, so the candidate is not described as universally improving every hour. The aggregate gain, limited intervention count, hard cap, strong-ramp veto, and post-09:00 handoff support deployment as an operational guard rather than a model promotion.
 
-Any failed gate blocks promotion.
+## Interval Review
 
-## 12. Change Policy
+The 28-day p95 coverage was 93.8% overall. Coverage was 90.7% on non-business days, 89.3% in the morning, 91.4% in daytime, 89.3% in late afternoon, and 99.3% in the evening.
 
-Immediate fixes are limited to calendar errors, actual-source contamination, stage-order bugs, ignored config, metadata/snapshot defects, and deterministic calculation bugs.
+A separate causal walk-forward experiment applied the finite-sample 95% absolute-error quantile from the previous 28 finalized dates, split by business regime and time band, only as a minimum half-width. Overall coverage improved to 95.8%, non-business coverage to 95.8%, morning to 94.3%, and daytime to 95.7%. Average half-width increased by 144.6 MW and the existing 3,000 MW maximum remained intact. The target date, fallback actuals, and TEPCO forecasts are excluded.
 
-Model features, guard thresholds, caps, shrinkage, lag blend weights, and interval widths require an isolated experiment and replay first.
+Late-afternoon coverage improved only to 90.5% at the cap, confirming a centerline/shape issue rather than a band-width issue. Evening remained overcovered at 99.3%; the safe minimum-floor policy does not narrow existing intervals.
 
-Prohibited:
+## Verification
 
-- Using TEPCO forecasts as calibration input.
-- Fitting already observed demand back into the same forecast date.
-- Date-specific conditions.
-- Relaxing promotion thresholds to pass a candidate.
-- Accepting a recent gain that regresses the 28/84-day or another regime.
-- Changing the model and operational post-processing in one experiment.
+- `155` focused intraday, batch, and interval tests passed.
+- Full suite in the primary workspace: `500 passed`.
+- Public artifact validator passed.
+- Production-equivalent `run_batch.py --status-only` completed.
+- The v11 Champion artifact and promotion thresholds remain unchanged.
 
-## 13. Additional Review Items
+## Residual Risk And Next Review
 
-New evidence may add review items, but cannot change the pre-registered gates.
-
-| Added item | Reason | Required evidence | Result | Follow-up |
-|---|---|---|---|---|
-|  |  |  |  |  |
-
-## 14. Execution Record
-
-| Run | Command/tool | Start | End | Output | Status |
-|---|---|---|---|---|---|
-| Public data validation | `python scripts/validate_public_before_publish.py` |  |  |  |  |
-| Python tests | `python -m pytest -q` |  |  |  |  |
-| 28-day operational replay | Internal evaluator |  |  | `metrics/operational_replay.json` |  |
-| Challenger validation | Promotion evaluator |  |  | `metrics/model_promotion.json` |  |
-| Prediction drift | Champion/Challenger 48h |  |  |  |  |
-
-## 15. Final Decision
-
-- [ ] Retain Champion with no code change.
-- [ ] Fix only a data or operational defect.
-- [ ] Keep a post-processing candidate in shadow evaluation.
-- [ ] Keep a model candidate as Challenger.
-- [ ] Promote only after every gate passes.
-
-Record:
-
-- Primary cause:
-- Why a change is or is not required:
-- Areas intentionally unchanged:
-- Regression results:
-- Residual risk:
-- Next review date:
-
-Before publication:
-
-- [ ] The user confirmed the final change and promotion scope.
-- [ ] Model behavior and documentation agree.
-- [ ] A model-improvement document exists only when an implementation change was accepted.
+- The extension cannot repair hours already frozen or forecasts before enough same-day evidence exists.
+- Final 2026-08-11 accuracy must be scored after the August 12 ETL; the open day is not backfilled into this decision.
+- Late-afternoon p95 coverage remains below target and requires centerline/shape work; it must not be hidden with a wider-than-3,000 MW band.
+- Evening overcoverage requires a separate two-sided narrowing experiment before any production reduction.
+- Recheck after the next finalized weekend, on 2026-08-17 JST. Earlier changes are limited to deterministic data, calendar, or pipeline defects.

@@ -63,6 +63,11 @@ interval_calibration:
   rebalance_extreme_asymmetry: true # keep final bands visually centered when one quantile side collapses
   rebalance_p95_asymmetry_ratio: 1.6 # preserve total p95 width while reducing one-sided band drift
   mirror_collapsed_side: false # avoid mirroring one-sided quantile uncertainty into the other side
+  rolling_conformal_floor:
+    enabled: true
+    window_days: 28            # use only finalized days before the target date
+    target_coverage: 0.95      # finite-sample p95 absolute-error quantile
+    min_samples_per_band: 24   # fail closed when a regime/time-band has too little evidence
 
 intraday_correction:
   enabled: true
@@ -346,6 +351,20 @@ intraday_correction:
     shrinkage: 1.0
     max_reduction_mw: 1000
     min_reduction_mw: 100
+    non_business_extension:
+      enabled: true
+      max_reference_hour: 9  # use only the first confirmed weekend/holiday ramp buckets
+      max_lead_hours: 4
+      min_latest_overforecast_mw: 400
+      cap_buffer_mw: 0
+      shrinkage: 0.75
+      max_reduction_mw: 1000
+      min_reduction_mw: 100
+      ramp_veto:
+        enabled: true
+        min_latest_slope_mw: 4000 # preserve a confirmed explosive weekend/holiday ramp
+        min_mean_slope_mw: 2500
+        min_cumulative_support_mw: 2500
     support_overhang:
       enabled: true
       min_projected_overhang_mw: 1200

@@ -264,12 +264,14 @@ Raw LightGBM Forecast
 | interval | `min_p95_half_width_mw` | 500 | 狭すぎるbandを防ぎます。上げると安定しますがalert感度が下がる場合があります。 |
 | interval | `max_p95_half_width_mw` | 3000 | まれな片側quantile tailの過大化を制限します。下げるとbandは読みやすくなりますが、不安定日の実際の不確実性を小さく見せる場合があります。 |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | 上側/下側tailの非対称を制限します。下げるとbandはより対称的になり、上げるとモデルが推定したskewをより保持します。 |
+| interval | `rolling_conformal_floor` | 有効、28日、95%、24標本 | 同じ営業レジーム・時間帯の確定実績と当時公開q50の誤差をp95最小半幅として使います。既存bandを狭めず、3,000MW上限も超えません。windowを短くすると反応は速くなりますがnoiseが増え、最小標本を上げるとfail-closedが増えます。 |
 | intraday | `lookback_hours` | 3 | 短いほど反応が速く、長いほど滑らかですが遅れます。 |
 | intraday | `decay_per_hour` | 0.92 | 高いほどresidualが遠い時間まで残り、低いほど近距離中心になります。shape汚染時は引き下げを検討します。 |
 | intraday | `max_abs_adjustment_mw` | 1200 | 当日residual補正のhard capです。上げると大きなmissに追従しやすい一方、overshootリスクが増えます。 |
 | intraday | `morning_observed_ramp_floor.max_lift_mw` | 1200 | 当日実績のramp証拠が強い場合だけ、08-11時の近距離営業日朝予測を支えます。上げると急なramp過小予測に強くなりますが、一時的な実績急騰を過度に追う可能性があります。 |
 | intraday | `morning_observed_ramp_floor.non_business_floor_basis` | latest | 非営業日の遅いrampでは、最新slopeが2,000 MW以上かつ平均slopeが1,200 MW以上のとき、2区間平均ではなく最新実績slopeをfloor基準にします。週末朝を無条件に上げないよう `non_business_max_lift_mw` は保守的に維持します。 |
 | intraday | `morning_observed_anchor_cap.max_reduction_mw` | 1000 | 当日実績がすでにモデルの過大予測を示し、lag/recent shape が公開予測レベルを説明できない場合に、近い 09-13 時の予測だけを制限します。 |
+| intraday | `morning_observed_anchor_cap.non_business_extension` | enabled、shrinkage 0.75、cap 1000 MW | 08時または09時の非営業日朝に、最新の負residualで過大予測が確認された場合だけobserved anchorを拡張します。最新ramp 4,000MWのvetoで実際の遅い急騰を保護し、09時以降は自動的に引き継ぎます。 |
 | intraday | `morning_observed_anchor_cap.support_overhang` | enabled | 最新観測 residual が中立でも、暑い日の 09-10 時予測ジャンプが観測 ramp support を大きく超える場合に、狭い cap を許可します。実際の強い朝 ramp を抑えないよう overhang しきい値は高く保ちます。 |
 | intraday | `morning_observed_anchor_cap.ramp_veto` | enabled | 直近の当日rampが非常に強く、2区間平均rampも強く、shape supportが十分で、直近over-forecastが小さい場合にcapをスキップします。実際の朝ramp-upを守りつつ、深刻な過大予測防御は維持します。 |
 | intraday | `afternoon_observed_anchor_cap.max_reduction_mw` | 1200 | 午後の当日実績が継続的な過大予測を示す場合に、近い 14-16 時の plateau overhang だけを制限します。上げると unsupported daytime plateau に速く反応しますが、実際の午後需要上昇を抑えるリスクがあります。 |

@@ -18,6 +18,7 @@ def calibrate_p95_half_widths(
     half_lo: float,
     half_hi: float,
     config: dict | None = None,
+    minimum_half_width_mw: float | None = None,
 ) -> tuple[float, float]:
     """Return calibrated lower/upper p95 half-widths.
 
@@ -36,6 +37,15 @@ def calibrate_p95_half_widths(
             )
         ),
     )
+    requested_minimum = _positive_float(minimum_half_width_mw)
+    if requested_minimum is not None:
+        min_half_width = max(min_half_width, requested_minimum)
+
+    max_half_width = _positive_float(
+        interval_config.get("max_p95_half_width_mw")
+    )
+    if max_half_width is not None:
+        min_half_width = min(min_half_width, max_half_width)
 
     half_lo = max(0.0, float(half_lo))
     half_hi = max(0.0, float(half_hi))
@@ -50,9 +60,6 @@ def calibrate_p95_half_widths(
         half_lo = max(half_lo, min_half_width)
         half_hi = max(half_hi, min_half_width)
 
-    max_half_width = _positive_float(
-        interval_config.get("max_p95_half_width_mw")
-    )
     max_asymmetry_ratio = _positive_float(
         interval_config.get("max_p95_asymmetry_ratio")
     )

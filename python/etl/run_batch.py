@@ -46,6 +46,10 @@ from python.forecast.baseline import (
     compute_forecast, forecast_to_dict, peak_of_forecasts, HourlyForecast,
 )
 from python.forecast.interval_calibration import calibrate_p95_half_widths
+from python.forecast.rolling_interval_calibration import (
+    build_rolling_conformal_floor_profile,
+    interval_time_band,
+)
 from python.anomaly.detector import (
     DEFAULT_RESERVE_CRITICAL_PCT,
     DEFAULT_RESERVE_WARNING_PCT,
@@ -418,8 +422,15 @@ def build_actual_json(d: date, hourly: pd.DataFrame) -> dict:
 def _normalize_forecast_bands(
     fc_list: list[HourlyForecast],
     config: dict | None = None,
+    interval_floor_profile: dict | None = None,
 ) -> list[HourlyForecast]:
     result: list[HourlyForecast] = []
+    floor_by_band = (
+        interval_floor_profile.get("floorsMwByTimeBand", {})
+        if interval_floor_profile
+        and interval_floor_profile.get("availability") == "ok"
+        else {}
+    )
     for forecast in fc_list:
         point_forecast_mw = round(float(forecast.forecast_mw), 1)
         ordered_p95_lower = round(
@@ -430,10 +441,17 @@ def _normalize_forecast_bands(
             max(float(forecast.p95_lower_mw), float(forecast.p95_upper_mw), point_forecast_mw),
             1,
         )
+        try:
+            forecast_hour = pd.Timestamp(forecast.ts).hour
+        except (TypeError, ValueError):
+            forecast_hour = -1
+        time_band = interval_time_band(forecast_hour)
+        minimum_half_width = floor_by_band.get(time_band)
         half_lo, half_hi = calibrate_p95_half_widths(
             point_forecast_mw - ordered_p95_lower,
             ordered_p95_upper - point_forecast_mw,
             config,
+            minimum_half_width_mw=minimum_half_width,
         )
         p95_lower = round(point_forecast_mw - half_lo, 1)
         p95_upper = round(point_forecast_mw + half_hi, 1)
@@ -450,7 +468,14 @@ def _normalize_forecast_bands(
     return result
 
 
-def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = "baseline_dow_hour_mean") -> dict:
+def build_forecast_json(
+    d: date,
+    fc_list: list,
+    config: dict,
+    model_name: str = "baseline_dow_hour_mean",
+    *,
+    out_dir: Path | None = None,
+) -> dict:
     if not fc_list:
         return {
             "date": d.isoformat(),
@@ -459,9 +484,18 @@ def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = 
             "series": [],
             "message": "Insufficient historical data for this date.",
         }
-    fc_list = _normalize_forecast_bands(fc_list, config)
+    interval_floor_profile = (
+        build_rolling_conformal_floor_profile(out_dir, d, config)
+        if out_dir is not None
+        else None
+    )
+    fc_list = _normalize_forecast_bands(
+        fc_list,
+        config,
+        interval_floor_profile=interval_floor_profile,
+    )
     cfg_fc = config.get("forecast", {})
-    return {
+    payload = {
         "date": d.isoformat(),
         "timezone": "Asia/Tokyo",
         "availability": "ok",
@@ -473,6 +507,9 @@ def build_forecast_json(d: date, fc_list: list, config: dict, model_name: str = 
         "peak": peak_of_forecasts(fc_list),
         "series": [forecast_to_dict(f) for f in fc_list],
     }
+    if interval_floor_profile is not None:
+        payload["intervalCalibration"] = interval_floor_profile
+    return payload
 
 
 def _load_existing_forecast(out_dir: Path, d: date) -> tuple[list[HourlyForecast], str | None]:
@@ -1873,7 +1910,13 @@ def _write_forecast_snapshot(
     if not snapshot_config["enabled"] or not forecasts:
         return None
 
-    forecast_json = build_forecast_json(target_date, forecasts, config, model_name)
+    forecast_json = build_forecast_json(
+        target_date,
+        forecasts,
+        config,
+        model_name,
+        out_dir=out_dir,
+    )
     if forecast_json.get("availability") != "ok":
         return None
 
@@ -1905,6 +1948,8 @@ def _write_forecast_snapshot(
         "observationSummary": _actual_observation_summary(actual_series),
         "series": forecast_json.get("series", []),
     }
+    if forecast_json.get("intervalCalibration") is not None:
+        snapshot["intervalCalibration"] = forecast_json["intervalCalibration"]
     if stage_forecasts:
         snapshot["forecastBuild"] = {
             "stageSummary": _forecast_stage_summary(stage_forecasts),
@@ -2924,9 +2969,9 @@ def _run_status_only(
         else "intraday"
     )
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
-               build_forecast_json(today, today_fc, config, today_model))
+               build_forecast_json(today, today_fc, config, today_model, out_dir=out_dir))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
-               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
+               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model, out_dir=out_dir))
     _write_forecast_snapshot(
         out_dir,
         today,
@@ -3079,7 +3124,7 @@ def main() -> None:
                        build_alerts_json(d, events))
             if should_write_forecast:
                 write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
-                           build_forecast_json(d, fc_list, config))
+                           build_forecast_json(d, fc_list, config, out_dir=out_dir))
             write_json(out_dir / "actual" / f"{d.isoformat()}.json",
                        build_actual_json(d, hourly))
 
@@ -3170,7 +3215,7 @@ def main() -> None:
                     config, adjuster, guard, midday_guard, localized_shape_guard
                 )
                 write_json(out_dir / "forecast" / f"{d.isoformat()}.json",
-                           build_forecast_json(d, fc_list, config, model_name))
+                           build_forecast_json(d, fc_list, config, model_name, out_dir=out_dir))
                 _build_today_alerts(out_dir, d, config)
                 print(f"[LGBM] Re-forecast {d} -> {model_name}")
             except Exception as e:
@@ -3213,9 +3258,9 @@ def main() -> None:
     snapshot_generated_at = ts_now()
     snapshot_run_type = "etl"
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
-               build_forecast_json(today, today_fc, config, today_model))
+               build_forecast_json(today, today_fc, config, today_model, out_dir=out_dir))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
-               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model))
+               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model, out_dir=out_dir))
     _write_forecast_snapshot(
         out_dir,
         today,

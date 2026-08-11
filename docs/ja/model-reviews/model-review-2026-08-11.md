@@ -1,251 +1,137 @@
-# 2026-08-11 モデル運用レビュー
+# 2026-08-11 運用モデルレビュー
 
 言語: [English](../../en/model-reviews/model-review-2026-08-11.md) / [한국어](../../ko/model-reviews/model-review-2026-08-11.md)
 
-作成日: 2026-08-10 JST  
-レビュー予定: 2026-08-11 朝のETL完了後  
-状態: レビュー前
+レビュー日: 2026-08-11 JST
 
-## 1. 目的
+根拠範囲: 2026-08-10までの確定実績と2026-08-11午前のintraday観測
 
-複数日の結果をまとめて確認した後の変更によって、実運用予測がさらに悪化した事例が2回続いた。このため、今回は証拠、合格ゲート、中断条件を事前に固定する。
+状態: 完了
 
-- 日数が増えたことだけを理由にモデルを変更しない。
-- 全体平均の改善で日別・時間帯別のshape回帰を隠さない。
-- 実際に公開されたserved forecastを評価する。
-- raw model、後処理、Intraday、Freezeの影響を分離する。
-- TEPCO予測は外部比較値としてのみ使用し、入力や補正目標にしない。
-- 結果を見た後に合格基準を緩和しない。
-- 原因と回帰安全性を確認できない場合はChampionを維持する。
+## 決定
 
-## 2. 事前に固定する事実
+- v11 `lag24_residual_ensemble` Championを維持する。
+- 現在のv13 Challengerは昇格させない。補助84日検証は通過したが、直近28日のMAE、WAPE、昼間segment基準に失敗した。
+- 独立した運用変更を二つだけ採用する。非営業日朝の実績anchor capを限定的に拡張し、別のband replayを通過したleakage-safeなrolling conformal最小幅を追加する。
+- q50 feature、学習期間、raw quantile model、平日昼休みロジック、全体intraday上限は変更しない。最小幅補正は公開band幅だけを変更する。
+- TEPCO予測は外部benchmarkとしてのみ使用し、入力、anchor、target、calibration値には使用しない。
 
-- 現在の運用Champion: v11 lag24 residual ensemble。
-- 現在のChallenger契約: v13 transition cooling blend。
-- 2026-08-04の評価でv13は84日ゲートを通過したが、28日MAEが`1,036.6 MW`で上限`1,000 MW`を超えたため昇格していない。
-- 2026-08-11は火曜日だが、日本の祝日「山の日」である。
-- `is_holiday=1`、`is_non_business_day=1`でなければならない。
-- チャートの12時bucketは12:00から13:00の需要を表す。
-- 営業日の昼休みdipは固定offsetではなく、過去の同一営業タイプshapeが支持する場合だけ適用する。
-- 非営業日では`MiddayTransitionGuard`を必ずスキップする。
+## データ整合性
 
-## 3. 評価対象
-
-| レジーム | 日付 | 目的 |
+| 確認 | 結果 | 根拠 |
 |---|---|---|
-| 営業日 | 2026-08-05から2026-08-07 | 基本shape、朝ramp、昼休みdip、午後・夕方 |
-| 週末 | 2026-08-08から2026-08-09 | 非営業日q50と週末shape |
-| 営業復帰 | 2026-08-10 | 週末lag汚染と復帰ramp |
-| 祝日予測 | 2026-08-11 | 祝日カレンダー、非営業日経路、昼guardのスキップ |
+| 確定実績coverage | 通過 | `actual/2026-08-10.json`に観測24時間が存在 |
+| 実績source | 通過 | `tepco_forecast_fallback`を確定実績として評価していない |
+| Calendar path | 通過 | 2026-08-11は山の日で`is_holiday=1`、`is_non_business_day=1` |
+| 祝日guard分離 | 通過 | 営業日専用q50と`MiddayTransitionGuard`は非作動 |
+| 気象入力 | 通過 | 8月11日朝のmissを説明するNaNや異常なsource遷移なし |
+| 公開artifact | 通過 | status、actual、forecast、report、promotionファイルを検証 |
 
-2026-08-11の最終精度は2026-08-12 ETL後に確定する。
+8月11日は進行中のため日次最終性能から除外した。午前snapshotはstage attributionと候補動作の確認にだけ使用した。
 
-- 直近28確定日: 正確に`672`時間。
-- 直近84確定日: 正確に`2,016`時間。
-- 営業日、非営業日、営業タイプ遷移日を別々に集計する。
-- 最近と長期で逆方向の誤差がある場合、全体平均で相殺しない。
+## 直近の運用性能
 
-## 4. データ完全性ゲート
+各確定日に実際に公開されたserved forecastを評価した。
 
-必須入力に問題があればモデル比較を中断し、データ問題を先に修正する。
+| 日付 | 区分 | MAE MW | WAPE | RMSE MW | Bias MW | 最大誤差 MW | TEPCO MAE MW |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 2026-08-05 | 営業日 | 643.3 | 1.85% | 762.6 | -223.7 | 1,731.4 | 347.5 |
+| 2026-08-06 | 営業日 | 960.4 | 2.57% | 1,219.8 | -897.5 | 3,234.7 | 308.8 |
+| 2026-08-07 | 営業日 | 1,119.1 | 2.85% | 1,364.1 | -374.6 | 3,829.9 | 272.1 |
+| 2026-08-08 | 週末 | 853.4 | 2.44% | 1,125.2 | +654.8 | 2,570.0 | 334.6 |
+| 2026-08-09 | 週末 | 1,362.9 | 4.24% | 1,626.7 | +1,344.2 | 3,111.1 | 517.5 |
+| 2026-08-10 | 営業復帰 | 1,730.2 | 5.30% | 2,113.3 | +1,721.4 | 4,929.9 | 578.8 |
 
-- [ ] Local ETLが成功し、実行時刻が記録されている。
-- [ ] `data`ブランチに最新ETLコミットがある。
-- [ ] `actual/2026-08-10.json`に24個の非null実績がある。
-- [ ] `tepco_forecast_fallback`を検証actualとして扱っていない。
-- [ ] 2026-08-10の日次・内部診断レポートがある。
-- [ ] 2026-08-11のforecastとsnapshotがある。
-- [ ] model artifact、学習終了日、metadata、interval versionが一致する。
-- [ ] 気象データに説明できないsource遷移、NaN、長時間forward-fillがない。
-- [ ] Actions/Pages障害によるsnapshot欠損を明示する。
-- [ ] final actual coverageとstage snapshot coverageを混同しない。
+8月6〜7日の営業日での過小予測が、8月9〜10日の非営業日・営業復帰日では過大予測へ反転した。単一の全体level offsetではなくregime問題である。q50全体の移動やintraday上限拡大は、一方向を改善する代わりに反対方向を悪化させる。
 
-| 項目 | 結果 | 根拠 | 判定 |
-|---|---|---|---|
-| ETL |  |  |  |
-| 24時間actual |  |  |  |
-| Weather source |  |  |  |
-| Forecast snapshots |  |  |  |
-| Model metadata |  |  |  |
-| Actions/Pages |  |  |  |
+## 28日運用Replay
 
-## 5. 日別の運用性能
+期間: 2026-07-14〜2026-08-10、実際のserving 672時間。
 
-各日で実際に使用されたmodel/configとsnapshotを基準にする。
+| Segment | MAE MW | WAPE | RMSE MW | Shape delta MAE MW |
+|---|---:|---:|---:|---:|
+| 全体 | 890.1 | 2.399% | 1,182.1 | 705.0 |
+| 営業日 | 889.4 | 2.328% | 1,199.4 | 729.6 |
+| 非営業日 | 891.6 | 2.564% | 1,144.8 | 653.0 |
+| 朝 | 970.2 | 2.618% | 1,295.7 | 997.6 |
+| 昼間 | 960.4 | 2.111% | 1,231.4 | 725.8 |
+| 午後遅め | 1,152.8 | 2.654% | 1,529.7 | 898.3 |
 
-| 日付 | Day type | Model/config | MAE | WAPE | RMSE | Bias | Max error | TEPCO MAE | 備考 |
-|---|---|---|---:|---:|---:|---:|---:|---:|---|
-| 2026-08-05 | 営業日 |  |  |  |  |  |  |  |  |
-| 2026-08-06 | 営業日 |  |  |  |  |  |  |  |  |
-| 2026-08-07 | 営業日 |  |  |  |  |  |  |  |  |
-| 2026-08-08 | 週末 |  |  |  |  |  |  |  |  |
-| 2026-08-09 | 週末 |  |  |  |  |  |  |  |  |
-| 2026-08-10 | 営業復帰 |  |  |  |  |  |  |  |  |
+運用後処理を含むserved forecastはraw snapshot経路より良いが、朝と午後遅めのshapeは依然として最もリスクの高い区間である。
 
-- [ ] 一日中同じ方向に偏った日を特定した。
-- [ ] 誤差符号が繰り返し変わるshape不安定日を特定した。
-- [ ] TEPCO dominance hoursは補助参考値としてのみ記録した。
-- [ ] 異なるserving versionの日を同条件として比較していない。
-- [ ] 各日の最悪区間と原因stageを記録した。
+## Challenger検証
 
-## 6. 時間帯別評価
+同じv13契約を各holdout開始前のデータだけで学習した。
 
-| 時間帯 | 主な確認事項 | Model MAE/WAPE | Shape delta error | 判定 |
-|---|---|---:|---:|---|
-| 00-05 | 日付境界carryoverまたはlag24が基底を歪めたか |  |  |  |
-| 06-11 | 朝rampが不自然または一方向に偏ったか |  |  |  |
-| 12 | 営業日の昼休みdipが根拠に応じて作動したか |  |  |  |
-| 13-16 | reboundや局所spike処理が曲線を歪めたか |  |  |  |
-| 17-19 | 根拠のない夕方reboundがあったか |  |  |  |
-| 20-23 | 夜間低下と23時fallback境界が安定したか |  |  |  |
+| 期間 | MAE MW | WAPE | RMSE MW | 最大誤差 MW | Shape delta MAE MW | 決定 |
+|---|---:|---:|---:|---:|---:|---|
+| 直近28日 | 1,208.1 | 3.256% | 1,532.8 | 5,050.8 | 628.3 | 却下 |
+| 補助84日 | 790.6 | 2.526% | 1,114.5 | 5,432.4 | 481.3 | 補助viewのみ通過 |
 
-## 7. 営業日の昼休みdip監査
+直近28日のsegment MAEは営業日1,290.7MW、非営業日1,033.6MW、昼間1,549.4MWだった。昼間は固定1,500MW上限を超え、全体MAEとWAPEも1,000MWと3.0%の基準を超えた。長期平均で直近の失敗を相殺してはならない。
 
-対象日: 2026-08-05、2026-08-06、2026-08-07、2026-08-10。
+学習期間を730日、548日、365日に縮める実験、q50 blend変更、営業日residual weight変更は安定した直近改善を作れず却下した。
 
-- [ ] `is_non_business_day`が0である。
-- [ ] `business_midday_x_lag_24h_delta`を記録した。
-- [ ] `business_midday_x_recent_delta_mean`を記録した。
-- [ ] `business_midday_x_recent_delta_q25`を記録した。
-- [ ] `business_midday_x_same_day_recent_delta_mean`を記録した。
-- [ ] lagと同一営業タイプshapeが実際に低下を支持している。
+## 平日Lunch Dip監査
 
-| 日付 | Actual 11->12 | Actual 12->13 | Raw 11->12 | Midday delta | Pre-calibration | Served | 判定 |
-|---|---:|---:|---:|---:|---:|---:|---|
-| 2026-08-05 |  |  |  |  |  |  |  |
-| 2026-08-06 |  |  |  |  |  |  |  |
-| 2026-08-07 |  |  |  |  |  |  |  |
-| 2026-08-10 |  |  |  |  |  |  |  |
+Chartの12時bucketは12:00〜13:00需要である。8月5日、6日、7日、10日の実績11→12時変化は+60、+40、-550、-290MWで、raw model変化は-1,014.4、+608.5、-111.5、-1,209.6MWだった。
 
-正常な動作:
+4日とも`MiddayTransitionGuard`の追加補正は`0 MW`だった。3日はraw modelにすでに下落shapeがあり、2日は実績11→12時の下落自体がなかったため正しい動作である。平日という理由だけで固定lunch dipを作ってはならない。昼休み関連parameterは変更しなかった。
 
-- 最近の営業日根拠が弱い場合、固定dipを作らない。
-- 支持shapeが負でforecastが明確に高い場合のみ、cap内で下方調整する。
-- 12時の単発dipを午後の継続低下として伝播しない。
-- Intraday residualが昼のshockを午後全体へ伝播しない。
-- servedとmidday stageの差はFreezeまたは過去snapshotとして分離する。
+## 2026-08-11 祝日診断
 
-## 8. 2026-08-11 祝日経路
+Calendarとguard routingは正常だったが、朝のraw q50 levelが高かった。09時のpre-calibrationは約33.0GW、実績は28.56GWだった。Intraday residual補正は-1.2GW上限に達したが、近距離の将来予測にはoverhangが残った。
 
-- [ ] `jpholiday`が「山の日」と判定する。
-- [ ] `is_holiday=1`、`is_non_business_day=1`である。
-- [ ] 営業日専用q50/guardが有効にならない。
-- [ ] `MiddayTransitionGuard`をスキップする。
-- [ ] business morning/daytime interactionが0または無効である。
-- [ ] non-business anchorとlag mismatch contextが正しい。
-- [ ] 2026-08-10の営業日lagが祝日需要を過度に持ち上げない。
-- [ ] 固定の祝日下方offsetを追加しない。
+既存のobserved morning anchor capは営業日専用だった。そのため週末・祝日では当日過大予測の証拠が明確でも、追加の近距離level capを使えない空白があった。原因は祝日flag欠落や平日昼休みguardの誤作動ではない。
 
-## 9. Stage別の原因分解
+## 採用した運用変更
 
-問題時間ごとに値とdeltaを記録する。
+`morning_observed_anchor_cap.non_business_extension`は次の条件でのみ作動する。
 
-1. `raw_lgbm`
-2. `analog_adjusted`
-3. `post_holiday_guarded`
-4. `midday_guarded`
-5. `localized_shape_guarded`
-6. `pre_calibration`
-7. Intraday residual correction
-8. `served_forecast`
-9. Published Forecast Freeze gap
+- 週末または祝日の予測;
+- 最終実績時刻が08時または09時の場合のみ;
+- 最新model residualが少なくとも400MWの過大予測を示す;
+- lag-24または直近同営業区分shapeが支える対象時刻のみ;
+- 最大lead 4時間、最大減額1,000MW;
+- hard clampではなく0.75 shrinkage;
+- 最新実績ramp 4,000MW以上、直近2区間平均2,500MW以上、累積shape support 2,500MW以上ならveto;
+- 最終実績が09時を過ぎると自動終了。
 
-| 日付/時間 | Raw | Analog delta | Guard delta | Intraday delta | Served | Actual | 主原因stage |
-|---|---:|---:|---:|---:|---:|---:|---|
-|  |  |  |  |  |  |  |  |
+このlayerはTokyoGridEMSのmodel出力、確定需要履歴、当日のTEPCO実績需要、calendar、内部lag/shape featureだけを使用する。TEPCO予測値は参照しない。
 
-原因タグは`data_quality`、`raw_model_level`、`raw_model_shape`、`weather_regime`、`calendar_regime`、`analog_adjustment`、`shape_guard`、`intraday_carryover`、`freeze_artifact`、`insufficient_evidence`から選ぶ。
+## 候補Replay
 
-## 10. 予測バンド監査
+2026-07-18〜2026-08-09の非営業日朝9日について、過去calibration snapshotから比較可能なforecast-hour 68件を復元した。
 
-- [ ] 日別・時間帯別p95 coverageを計算した。
-- [ ] バンド中心がq50と一致する。
-- [ ] 最小幅と最大tail capの影響を記録した。
-- [ ] q025/q975非対称とrebalanceを確認した。
-- [ ] 中心線誤差をバンド拡大だけで隠していない。
-
-| 区間 | Coverage | 平均幅 | 最大幅 | 逸脱方向 | 判定 |
-|---|---:|---:|---:|---|---|
-| 全体 |  |  |  |  |  |
-| 00-05 |  |  |  |  |  |
-| 06-11 |  |  |  |  |  |
-| 12-16 |  |  |  |  |  |
-| 17-23 |  |  |  |  |  |
-
-## 11. Champion/Challengerゲート
-
-新候補を追加する前にChampion v11とChallenger v13を比較する。
-
-| ゲート | 固定基準 | 結果 | 通過 |
+| 指標 | 既存 | 候補 | 結果 |
 |---|---:|---:|---|
-| 28日coverage | 672/672時間 |  |  |
-| Baseline比MAE改善 | 20%以上 |  |  |
-| 28日MAE | 1,000 MW以下 |  |  |
-| 28日WAPE | 3.0%以下 |  |  |
-| Shape delta MAE | 750 MW以下 |  |  |
-| Max error | 6,500 MW以下 |  |  |
-| Segment MAE | 1,500 MW以下 |  |  |
-| Segment shape delta MAE | 1,100 MW以下 |  |  |
-| Segment MAE回帰 | 10%以下 |  |  |
-| 48時間平均drift | 900 MW以下 |  |  |
-| 時間最大drift | 2,500 MW以下 |  |  |
+| 朝snapshot MAE | 1,456.2 MW | 1,282.9 MW | -173.3 MW (-11.9%) |
+| 変更record | 0 | 13 | 限定介入 |
+| 最大減額 | 0 MW | 1,000 MW | 設定上限を遵守 |
+| 2026-08-08の実際の急激なramp | 保持 | 保持 | Ramp veto作動 |
 
-営業日連続、営業日から週末、週末連続、週末/祝日から営業日、平日中の祝日、急昇温、急低温、高湿度遷移を別々に回帰確認する。
+影響を受けた2026-07-18の1 recordはわずかに悪化した。そのため全時間で必ず改善すると表現しない。全体改善、少ない介入数、hard cap、強いramp veto、09時以降のhandoffを根拠に、model昇格ではなく運用guardとしてのみ採用する。
 
-ゲートが1つでも失敗すれば昇格しない。
+## 予測Band監査
 
-## 12. 変更ルール
+直近28日のp95 coverageは全体93.8%、非営業日90.7%、朝89.3%、昼間91.4%、午後遅め89.3%、夕方99.3%だった。
 
-即時修正できるのは、カレンダー誤り、actual source汚染、stage順序バグ、config無視、metadata/snapshot欠陥、再現可能な計算バグに限る。
+別の因果的walk-forward実験で、直前の確定28日における絶対誤差の有限標本95%分位点を営業レジームと時間帯で分け、最小半幅としてのみ適用した。全体coverageは95.8%、非営業日は95.8%、朝は94.3%、昼間は95.7%へ改善した。平均半幅は144.6MW増え、既存の3,000MW最大値は維持した。対象日、fallback実績、TEPCO予測は入力から除外する。
 
-新feature、guard threshold、cap、shrinkage、lag blend weight、バンド幅の変更は、独立した実験とreplay後にのみ検討する。
+午後遅めは上限でも90.5%までしか改善せず、band幅より中心予測とshapeの問題であることを確認した。夕方は99.3%のovercoverageを維持し、安全な最小幅policyは既存bandを狭めない。
 
-禁止事項:
+## 検証
 
-- TEPCO予測を補正入力に使う。
-- 観測済み実績で同日の予測を事後適合する。
-- 特定日付の条件を追加する。
-- 候補を通すために昇格基準を緩和する。
-- 直近だけ改善し、28/84日または別レジームを悪化させる変更を採用する。
-- モデルと運用後処理を同じ実験で変更する。
+- intraday、batch、intervalの集中test `155件`通過。
+- メインworkspaceの全test `500 passed`。
+- 公開artifact validator通過。
+- 運用同等の`run_batch.py --status-only`完了。
+- v11 Champion artifactと昇格thresholdは変更なし。
 
-## 13. 追加確認項目
+## 残存リスクと次回レビュー
 
-新しい証拠により項目を追加できるが、事前ゲートは変更しない。
-
-| 追加項目 | 理由 | 必要な証拠 | 結果 | 後続対応 |
-|---|---|---|---|---|
-|  |  |  |  |  |
-
-## 14. 実行記録
-
-| 実行 | コマンド/ツール | 開始 | 終了 | 出力 | 状態 |
-|---|---|---|---|---|---|
-| 公開データ検証 | `python scripts/validate_public_before_publish.py` |  |  |  |  |
-| Python tests | `python -m pytest -q` |  |  |  |  |
-| 28日operational replay | 内部evaluator |  |  | `metrics/operational_replay.json` |  |
-| Challenger validation | promotion evaluator |  |  | `metrics/model_promotion.json` |  |
-| Prediction drift | Champion/Challenger 48h |  |  |  |  |
-
-## 15. 最終判断
-
-- [ ] Champion維持、コード変更なし。
-- [ ] データまたは運用上の欠陥のみ修正。
-- [ ] 後処理候補をshadow評価で維持。
-- [ ] モデル候補をChallengerとして維持。
-- [ ] 全ゲート通過後にのみ昇格。
-
-記録:
-
-- 主原因:
-- 変更が必要または不要な理由:
-- 意図的に変更しない領域:
-- 回帰検証結果:
-- 残存リスク:
-- 次回レビュー日:
-
-公開前確認:
-
-- [ ] 最終変更範囲と昇格可否をユーザーが確認した。
-- [ ] モデル動作と文書が一致する。
-- [ ] 実装変更を採用した場合にのみmodel-improvement文書を追加した。
+- 実績根拠が蓄積する前、またはすでにfreezeされた時刻はこの拡張では修復できない。
+- 8月11日の最終評価は8月12日のETL後に実施し、進行中の日を今回の判断へ事後追加しない。
+- 午後遅めのp95 coverageは依然として基準未達である。3,000MWより広いbandで隠さず、中心予測とshapeを改善する必要がある。
+- 夕方のovercoverageは、運用幅を狭める前に別の両側縮小実験が必要である。
+- 次回定期レビューは次の週末実績が確定する2026-08-17 JSTとする。それ以前は決定的なdata、calendar、pipeline不具合だけを即時修正する。
