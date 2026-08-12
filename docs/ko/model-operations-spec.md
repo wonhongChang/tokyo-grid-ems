@@ -203,6 +203,7 @@ TEPCO forecast fallback은 pipeline continuity를 위한 임시값입니다. Lig
 | `recent_same_business_type_delta_mean` | 최근 같은 영업 타입의 평균 시간별 변화 |
 | `recent_same_business_type_delta_q25` | 같은 영업 타입 변화량의 하위 quantile |
 | `same_day_latest_actual_hour` | 당일 최신 실측 hour |
+| `same_day_latest_actual_mw` | 근거리 가드의 증거로 쓰는 당일 최신 실측 수요 |
 | `same_day_latest_hourly_delta` | 최신 당일 실측 기울기 |
 | `same_day_recent_hourly_delta_mean` | 최근 당일 실측 평균 기울기 |
 | `business_midday_x_lag_24h_delta` | 영업일 점심 x lag24 delta |
@@ -300,6 +301,7 @@ Raw LightGBM Forecast
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | 오늘이 전날보다 뚜렷하게 더울 때 warm-day lag24 cap에 추가 여유를 줍니다. 올리면 급격한 기온 상승일의 가짜 골짜기를 줄이고, 낮추면 어제 수요 anchor를 더 엄격하게 적용합니다. |
 | post-processing | `analogous_day.enabled` | false | 최근 stage replay에서 MAE와 shape가 악화되어 비활성화했습니다. 영업 구분과 시간대별 shadow 결과가 일관되게 좋아진 뒤 다시 켭니다. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | 영업일 복귀 anchor 리프트 전에 예측 램프가 최근 같은 영업 타입 램프보다 충분히 부족한지 확인합니다. 낮추면 더 자주 올리고, 높이면 이미 건강한 raw shape를 과하게 돕는 위험을 줄입니다. |
+| post-processing | `business_return_anchor_shortfall.observed_overforecast_veto` | `hour>=7`, lead `1..3`, 오차 `>=1200 MW` | 당일 실측이 큰 과대예측을 확인한 뒤 영업일 복귀 추가 리프트만 취소합니다. 오차 임계값을 낮추면 더 자주 개입하고, lead 범위를 늘리면 정상적인 후반 회복까지 누를 위험이 커집니다. |
 | post-processing | `business_declining_analog_uplift_cap.max_allowed_shift_mw` | 100 | 두 수요 shape 기준이 정체/하락하고 당일이 전날보다 더 덥지 않을 때 허용할 최대 유사일 양수 shift입니다. 올리면 유사일 residual을 더 신뢰하고, 내리면 raw LGBM에 더 가깝게 유지합니다. |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | intraday 보정 전에 근거 없는 단일 오후 피크를 줄일 수 있는 최대치입니다. 올리면 artifact 제거가 강해지고, 내리면 raw/analog 피크 shape를 더 보존합니다. |
 | post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | 양쪽 이웃 시간보다 이 값 이상 높을 때만 guard를 평가합니다. 낮추면 작은 artifact도 잡지만 실제 국소 피크를 건드릴 수 있습니다. |

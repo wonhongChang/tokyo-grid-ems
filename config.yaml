@@ -542,6 +542,11 @@ adjustment:
       allowance_mw: 1000
       max_clipping_mw: 1000
       min_shape_shortfall_mw: 800
+      observed_overforecast_veto:
+        enabled: true
+        min_reference_hour: 7      # require a confirmed morning ramp bucket
+        max_lead_hours: 3          # stop only nearby uplift, not the whole-day shape
+        min_overforecast_mw: 1200  # strong same-day evidence before canceling the uplift
       shrinkage_map:
         6: 0.25
         7: 0.35

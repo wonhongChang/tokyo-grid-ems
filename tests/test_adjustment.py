@@ -452,6 +452,12 @@ def _guard_config(
                     "allowance_mw": 1_000.0,
                     "max_clipping_mw": 1_000.0,
                     "min_shape_shortfall_mw": 800.0,
+                    "observed_overforecast_veto": {
+                        "enabled": True,
+                        "min_reference_hour": 7,
+                        "max_lead_hours": 3,
+                        "min_overforecast_mw": 1_200.0,
+                    },
                     "shrinkage_map": {
                         6: 0.25,
                         7: 0.35,
@@ -998,6 +1004,65 @@ def test_guard_lifts_business_return_anchor_shortfall():
     assert result[9].p95_lower_mw == pytest.approx(29_182.5)
     assert result[9].p95_upper_mw == pytest.approx(31_182.5)
     assert result[8].forecast_mw == pytest.approx(29_570.0)
+
+
+def test_guard_stops_business_return_lift_after_observed_overforecast():
+    """Confirmed same-day overforecast vetoes only the supplemental return uplift."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 8, 12)
+    raw = _make_raw_forecasts(target, 29_570.0)
+    adj = _make_raw_forecasts(target, 29_570.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=1, temp_anomaly_daytime=0.5)
+
+    for forecasts in (raw, adj):
+        forecasts[7] = HourlyForecast(
+            ts=forecasts[7].ts,
+            forecast_mw=27_500.0,
+            p95_lower_mw=26_500.0,
+            p95_upper_mw=28_500.0,
+            p99_lower_mw=26_000.0,
+            p99_upper_mw=29_000.0,
+        )
+    inf.loc[inf["hour"] == 9, "lag_24h"] = 22_830.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_mean"] = 31_795.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_delta_mean"] = 1_500.0
+    inf.loc[inf["hour"] == 9, "lag_24h_business_type_mismatch"] = 1
+    inf.loc[inf["hour"] == 9, "same_day_latest_actual_hour"] = 7
+    inf.loc[inf["hour"] == 9, "same_day_latest_actual_mw"] = 25_380.0
+
+    result = guard.apply(raw, adj, inf)
+
+    assert result[9].forecast_mw == pytest.approx(29_570.0)
+    assert result[9].p95_upper_mw == pytest.approx(30_570.0)
+
+
+def test_guard_keeps_business_return_lift_when_observed_overforecast_is_modest():
+    """Small same-day misses do not erase a supported business-return correction."""
+    guard = PostHolidayTimeBandGuard(_guard_config())
+    target = date(2026, 8, 12)
+    raw = _make_raw_forecasts(target, 29_570.0)
+    adj = _make_raw_forecasts(target, 29_570.0)
+    inf = _make_post_holiday_inf(consec=0, dsh=1, temp_anomaly_daytime=0.5)
+
+    for forecasts in (raw, adj):
+        forecasts[7] = HourlyForecast(
+            ts=forecasts[7].ts,
+            forecast_mw=26_400.0,
+            p95_lower_mw=25_400.0,
+            p95_upper_mw=27_400.0,
+            p99_lower_mw=24_900.0,
+            p99_upper_mw=27_900.0,
+        )
+    inf.loc[inf["hour"] == 9, "lag_24h"] = 22_830.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_mean"] = 31_795.0
+    inf.loc[inf["hour"] == 9, "recent_same_business_type_delta_mean"] = 1_500.0
+    inf.loc[inf["hour"] == 9, "lag_24h_business_type_mismatch"] = 1
+    inf.loc[inf["hour"] == 9, "same_day_latest_actual_hour"] = 7
+    inf.loc[inf["hour"] == 9, "same_day_latest_actual_mw"] = 25_380.0
+
+    result = guard.apply(raw, adj, inf)
+
+    assert result[9].forecast_mw == pytest.approx(30_182.5)
 
 
 def test_guard_skips_business_return_lift_when_shape_is_already_supported():

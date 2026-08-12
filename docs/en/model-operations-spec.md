@@ -195,6 +195,7 @@ These values are not LightGBM training features. They are generated at inference
 | `recent_same_business_type_delta_mean` | recent same-business-type average hourly slope |
 | `recent_same_business_type_delta_q25` | lower quantile for same-business-type slope |
 | `same_day_latest_actual_hour` | latest same-day observed hour |
+| `same_day_latest_actual_mw` | latest same-day observed demand used by near-term guard evidence |
 | `same_day_latest_hourly_delta` | latest same-day observed slope |
 | `same_day_recent_hourly_delta_mean` | recent same-day average slope |
 | `business_midday_x_lag_24h_delta` | business midday x lag24 slope |
@@ -287,6 +288,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | post-processing | `post_holiday_timeband_guard.daytime.lag24_warm_day_weather_allowance_mw_per_c` | 1200 | Adds extra headroom to the warm-day lag24 cap when the current day is materially hotter than yesterday. Raising it prevents false valleys on rapid warming days; lowering it restores a stricter yesterday-anchor cap. |
 | post-processing | `analogous_day.enabled` | false | Recent stage replay degraded MAE and shape. Re-enable only after business/non-business and time-band shadow results improve consistently. |
 | post-processing | `business_return_anchor_shortfall.min_shape_shortfall_mw` | 800 | Requires the forecast ramp to be materially weaker than the recent same-business ramp before lifting a Monday/business-return anchor shortfall. Lower values lift more often; higher values avoid over-helping an already healthy raw shape. |
+| post-processing | `business_return_anchor_shortfall.observed_overforecast_veto` | `hour>=7`, lead `1..3`, error `>=1200 MW` | Cancels only the supplemental return-day lift after same-day observations confirm a large overforecast. Lowering the error threshold intervenes more often; extending the lead window risks suppressing a legitimate later recovery. |
 | post-processing | `business_declining_analog_uplift_cap.max_allowed_shift_mw` | 100 | Maximum positive analog shift when both demand-shape references are flat/down and the day is not warmer than yesterday. Raising it trusts analogous-day residuals more; lowering it stays closer to raw LGBM. |
 | post-processing | `localized_shape_spike_guard.max_reduction_mw` | 700 | Caps how much a single unsupported afternoon peak can be reduced before intraday correction. Raising it removes artifacts more aggressively; lowering it preserves more raw/analog peak shape. |
 | post-processing | `localized_shape_spike_guard.min_neighbor_excess_mw` | 600 | Minimum one-hour excess over both neighboring hours before the guard evaluates. Lower values catch smaller artifacts but may touch legitimate local peaks. |

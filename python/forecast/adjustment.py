@@ -376,6 +376,24 @@ class PostHolidayTimeBandGuard:
             float(business_return_config.get("min_shape_shortfall_mw", 800.0)),
             0.0,
         )
+        observed_veto_config = business_return_config.get(
+            "observed_overforecast_veto",
+            {},
+        )
+        self._business_return_observed_veto_enabled = bool(
+            observed_veto_config.get("enabled", True)
+        )
+        self._business_return_observed_veto_min_reference_hour = int(
+            observed_veto_config.get("min_reference_hour", 7)
+        )
+        self._business_return_observed_veto_max_lead_hours = max(
+            int(observed_veto_config.get("max_lead_hours", 3)),
+            0,
+        )
+        self._business_return_observed_veto_min_overforecast_mw = max(
+            float(observed_veto_config.get("min_overforecast_mw", 1_200.0)),
+            0.0,
+        )
         raw_shrinkage_map = business_return_config.get(
             "shrinkage_map",
             {6: 0.25, 7: 0.35, 8: 0.45, 9: 0.50, 10: 0.30, 11: 0.20},
@@ -831,6 +849,14 @@ class PostHolidayTimeBandGuard:
                 result.append(forecast)
                 continue
 
+            if self._business_return_observed_overforecast_veto_active(
+                hour,
+                row,
+                forecasts_by_hour,
+            ):
+                result.append(forecast)
+                continue
+
             lower_bound_mw = recent_mean - self._business_return_allowance_mw
             if forecast_mw >= lower_bound_mw:
                 result.append(forecast)
@@ -849,6 +875,48 @@ class PostHolidayTimeBandGuard:
             changed = True
 
         return result if changed else forecasts
+
+    def _business_return_observed_overforecast_veto_active(
+        self,
+        forecast_hour: int,
+        row,
+        forecasts_by_hour: dict[int, object],
+    ) -> bool:
+        """Stop a return-day uplift after same-day demand disproves the level."""
+        if (
+            not self._business_return_observed_veto_enabled
+            or self._business_return_observed_veto_max_lead_hours <= 0
+            or self._business_return_observed_veto_min_overforecast_mw <= 0.0
+        ):
+            return False
+
+        latest_actual_hour = self._finite_float(
+            row.get("same_day_latest_actual_hour")
+        )
+        latest_actual_mw = self._finite_float(row.get("same_day_latest_actual_mw"))
+        if latest_actual_hour is None or latest_actual_mw is None:
+            return False
+
+        reference_hour = int(latest_actual_hour)
+        lead_hours = forecast_hour - reference_hour
+        if (
+            reference_hour < self._business_return_observed_veto_min_reference_hour
+            or lead_hours <= 0
+            or lead_hours > self._business_return_observed_veto_max_lead_hours
+        ):
+            return False
+
+        reference_forecast = forecasts_by_hour.get(reference_hour)
+        if reference_forecast is None:
+            return False
+        reference_forecast_mw = self._finite_float(reference_forecast.forecast_mw)
+        if reference_forecast_mw is None:
+            return False
+
+        return (
+            reference_forecast_mw - latest_actual_mw
+            >= self._business_return_observed_veto_min_overforecast_mw
+        )
 
     def _business_return_excess_may_apply(
         self,

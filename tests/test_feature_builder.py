@@ -870,6 +870,7 @@ def test_inference_midday_context_includes_same_day_softening():
     hour_12 = out[out["hour"] == 12].iloc[0]
 
     assert hour_12["same_day_latest_actual_hour"] == pytest.approx(11.0)
+    assert hour_12["same_day_latest_actual_mw"] == pytest.approx(33_300.0)
     assert hour_12["same_day_latest_hourly_delta"] == pytest.approx(-700.0)
     assert hour_12["business_midday_x_same_day_recent_delta_mean"] < 0.0
 

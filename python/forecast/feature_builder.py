@@ -81,6 +81,7 @@ INFERENCE_CONTEXT_COLS: list[str] = [
     "recent_same_business_type_delta_mean",
     "recent_same_business_type_delta_q25",
     "same_day_latest_actual_hour",
+    "same_day_latest_actual_mw",
     "same_day_latest_hourly_delta",
     "same_day_recent_hourly_delta_mean",
     "business_midday_x_lag_24h_delta",
@@ -1014,6 +1015,11 @@ def build_inference_features(
             if len(same_day_actuals_before_ts) > 0
             else np.nan
         )
+        same_day_latest_actual_mw = (
+            float(same_day_actuals_before_ts["actual_mw"].iloc[-1])
+            if len(same_day_actuals_before_ts) > 0
+            else np.nan
+        )
         same_day_latest_hourly_delta = (
             float(same_day_actuals_before_ts["_actual_hourly_delta"].iloc[-1])
             if len(same_day_actuals_before_ts) > 0
@@ -1055,6 +1061,7 @@ def build_inference_features(
             "recent_same_business_type_delta_mean": recent_same_business_type_delta_mean,
             "recent_same_business_type_delta_q25": recent_same_business_type_delta_q25,
             "same_day_latest_actual_hour": same_day_latest_actual_hour,
+            "same_day_latest_actual_mw": same_day_latest_actual_mw,
             "same_day_latest_hourly_delta": same_day_latest_hourly_delta,
             "same_day_recent_hourly_delta_mean": same_day_recent_hourly_delta_mean,
             "lag_last_biz_hour":      lag_last_biz_hour,
