@@ -1375,22 +1375,36 @@ def _apply_weather_forecast_bias_correction(
     result["ts"] = pd.to_datetime(result["ts"], utc=True).dt.tz_convert("Asia/Tokyo")
 
     source = result["weather_source"].astype("string")
+    # A source-tagged AMeDAS row is already a published point observation. Use
+    # the latest available hour as the forecast boundary instead of discarding
+    # it via the conservative lag retained for legacy/source-less caches.
+    source_observed_cutoff = now_ts.floor("h")
+    source_observed_start = max(
+        pd.Timestamp(now_ts.date(), tz=JST),
+        source_observed_cutoff - pd.Timedelta(hours=lookback_hours),
+    )
     observed_mask = (
         source.str.contains("AMEDAS_ACTUAL", na=False)
-        & (result["ts"] >= observed_start)
-        & (result["ts"] <= observed_cutoff)
-        & result["temp_c"].notna()
-    )
-    forecast_mask = (
-        ~source.str.contains("AMEDAS_ACTUAL", na=False)
-        & (result["ts"].dt.date == now_ts.date())
-        & (result["ts"] > observed_cutoff)
-        & result["actual_mw"].isna()
+        & (result["ts"] >= source_observed_start)
+        & (result["ts"] <= source_observed_cutoff)
         & result["temp_c"].notna()
     )
     observed_rows = result.loc[observed_mask, ["ts", "temp_c"]].sort_values("ts")
-    future_index = list(result.loc[forecast_mask].sort_values("ts").index[:horizon_hours])
-    if not observed_rows.empty and future_index:
+    if not observed_rows.empty:
+        latest_observed_ts = observed_rows.iloc[-1]["ts"]
+        forecast_mask = (
+            ~source.str.contains("AMEDAS_ACTUAL", na=False)
+            & (result["ts"].dt.date == now_ts.date())
+            & (result["ts"] > latest_observed_ts)
+            & result["actual_mw"].isna()
+            & result["temp_c"].notna()
+        )
+        future_index = list(
+            result.loc[forecast_mask].sort_values("ts").index[:horizon_hours]
+        )
+        if not future_index:
+            return result.sort_values("ts").reset_index(drop=True)
+
         slopes: list[float] = []
         recent_rows = observed_rows.tail(max(2, int(lookback_hours) + 1))
         for previous, current in zip(
@@ -1420,19 +1434,42 @@ def _apply_weather_forecast_bias_correction(
         continuity_bias = 0.0
         if abs(raw_gap) >= min_abs_bias_c:
             continuity_bias = float(np.clip(
-                raw_gap,
+                raw_gap * shrinkage,
                 -max_abs_bias_c,
                 max_abs_bias_c,
-            )) * shrinkage
+            ))
 
         if continuity_bias != 0.0:
+            from python.etl.fetch_weather import (
+                _apparent_temp_from_observation,
+                _combine_weather_source,
+                _discomfort_index,
+            )
+
             for step, idx in enumerate(future_index):
                 adjustment = continuity_bias * (decay_per_hour ** step)
                 result.at[idx, "temp_c"] = result.at[idx, "temp_c"] + adjustment
-                if pd.notna(result.at[idx, "apparent_temp_c"]):
+                humidity_pct = result.at[idx, "humidity_pct"]
+                if pd.notna(humidity_pct):
+                    result.at[idx, "apparent_temp_c"] = (
+                        _apparent_temp_from_observation(
+                            result.at[idx, "temp_c"],
+                            humidity_pct,
+                            float("nan"),
+                        )
+                    )
+                    result.at[idx, "discomfort_index"] = _discomfort_index(
+                        result.at[idx, "temp_c"],
+                        humidity_pct,
+                    )
+                elif pd.notna(result.at[idx, "apparent_temp_c"]):
                     result.at[idx, "apparent_temp_c"] = (
                         result.at[idx, "apparent_temp_c"] + adjustment
                     )
+                result.at[idx, "weather_source"] = _combine_weather_source(
+                    result.at[idx, "weather_source"],
+                    "CONTINUITY_CORRECTED",
+                )
             print(
                 "[WEATHER] Forecast continuity correction "
                 f"{now_ts.date()}: gap={raw_gap:+.1f}C bias={continuity_bias:+.1f}C "

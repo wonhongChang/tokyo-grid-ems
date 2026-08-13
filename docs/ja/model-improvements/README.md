@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-08
 
+- [2026-08-13 AMeDAS-JMA 境界の整合性補正](model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 営業日復帰補正の実績過大予測 veto](model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
 - [2026-08-11 rolling conformal予測バンド最小幅補正](model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
 - [2026-08-11 非営業日朝の実績anchor拡張](model-improvement-2026-08-11-non-business-morning-anchor-extension.md)

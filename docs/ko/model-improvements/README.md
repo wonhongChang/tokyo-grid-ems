@@ -8,6 +8,7 @@
 
 ## 2026-08
 
+- [2026-08-13 AMeDAS-JMA 경계 일관성 보정](model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 영업일 복귀 보정의 실측 과대예측 veto](model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
 - [2026-08-11 rolling conformal 예측 밴드 최소 폭 보정](model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
 - [2026-08-11 비영업일 오전 실측 anchor 확장](model-improvement-2026-08-11-non-business-morning-anchor-extension.md)

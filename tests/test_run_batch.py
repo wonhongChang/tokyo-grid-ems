@@ -433,10 +433,82 @@ def test_weather_forecast_bias_correction_bridges_amedas_to_jma_without_fetch(
     by_hour = {int(row["ts"].hour): row for _, row in result.iterrows()}
     assert by_hour[6]["temp_c"] == pytest.approx(22.0)
     assert by_hour[7]["temp_c"] == pytest.approx(22.2)
-    assert by_hour[8]["temp_c"] == pytest.approx(23.25)
-    assert by_hour[9]["temp_c"] == pytest.approx(24.95)
-    assert by_hour[10]["temp_c"] == pytest.approx(26.37)
-    assert by_hour[8]["apparent_temp_c"] == pytest.approx(24.25)
+    assert by_hour[8]["temp_c"] == pytest.approx(23.18)
+    assert by_hour[9]["temp_c"] == pytest.approx(24.908)
+    assert by_hour[10]["temp_c"] == pytest.approx(26.3448)
+    assert by_hour[8]["apparent_temp_c"] == pytest.approx(24.18)
+    assert "CONTINUITY_CORRECTED" in by_hour[8]["weather_source"]
+
+
+def test_weather_forecast_bias_correction_uses_latest_published_amedas_boundary():
+    base = pd.Timestamp("2026-08-13T13:00:00+09:00")
+    cache = pd.DataFrame([
+        {
+            "ts": base,
+            "actual_mw": 33_020.0,
+            "temp_c": 27.4,
+            "apparent_temp_c": 32.2,
+            "humidity_pct": 86.0,
+            "discomfort_index": 79.5,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        {
+            "ts": base + pd.Timedelta(hours=1),
+            "actual_mw": 32_910.0,
+            "temp_c": 28.0,
+            "apparent_temp_c": 32.7,
+            "humidity_pct": 80.0,
+            "discomfort_index": 79.7,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        {
+            "ts": base + pd.Timedelta(hours=2),
+            "actual_mw": float("nan"),
+            "temp_c": 24.3,
+            "apparent_temp_c": 27.7,
+            "humidity_pct": 96.0,
+            "discomfort_index": 75.3,
+            "weather_source": "AMEDAS_ACTUAL",
+        },
+        {
+            "ts": base + pd.Timedelta(hours=3),
+            "actual_mw": float("nan"),
+            "temp_c": 28.7,
+            "apparent_temp_c": 35.0,
+            "humidity_pct": 96.0,
+            "discomfort_index": 81.3,
+            "weather_source": "JMA_FORECAST+FORWARD_FILL",
+        },
+    ])
+
+    result = _apply_weather_forecast_bias_correction(
+        cache,
+        {
+            "weather_forecast_bias_correction": {
+                "enabled": True,
+                "lookback_hours": 4,
+                "observation_lag_hours": 1,
+                "horizon_hours": 3,
+                "min_abs_bias_c": 1.5,
+                "max_abs_bias_c": 2.5,
+                "shrinkage": 0.7,
+                "max_observed_trend_c_per_hour": 1.0,
+                "decay_per_hour": 0.6,
+            }
+        },
+        now=pd.Timestamp("2026-08-13T15:50:00+09:00"),
+    )
+
+    hour_16 = result.loc[result["ts"].dt.hour == 16].iloc[0]
+    expected_discomfort = round(
+        0.81 * 26.2 + 0.01 * 96.0 * (0.99 * 26.2 - 14.3) + 46.3,
+        1,
+    )
+    assert hour_16["temp_c"] == pytest.approx(26.2)
+    assert hour_16["discomfort_index"] == pytest.approx(expected_discomfort)
+    assert hour_16["discomfort_index"] < 81.3
+    assert hour_16["apparent_temp_c"] < 35.0
+    assert "CONTINUITY_CORRECTED" in hour_16["weather_source"]
 
 
 def test_weather_forecast_bias_correction_ignores_small_source_transition(
@@ -519,7 +591,7 @@ def test_weather_forecast_bias_correction_bridges_upward_cold_jump():
         now=pd.Timestamp("2024-01-03T08:30:00+09:00"),
     )
 
-    assert result.loc[result["ts"].dt.hour == 8, "temp_c"].iloc[0] == pytest.approx(28.75)
+    assert result.loc[result["ts"].dt.hour == 8, "temp_c"].iloc[0] == pytest.approx(29.38)
 
 
 def test_actual_json_latest_fallback_uses_yesterday_when_csv_pending(tmp_path):
