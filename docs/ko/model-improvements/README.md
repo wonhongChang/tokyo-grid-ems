@@ -8,6 +8,7 @@
 
 ## 2026-08
 
+- [2026-08-18 동일 시점 TEPCO 평가와 모델 승격 거버넌스](model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
 - [2026-08-13 AMeDAS-JMA 경계 일관성 보정](model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 영업일 복귀 보정의 실측 과대예측 veto](model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
 - [2026-08-11 rolling conformal 예측 밴드 최소 폭 보정](model-improvement-2026-08-11-rolling-conformal-interval-floor.md)

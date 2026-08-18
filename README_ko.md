@@ -187,12 +187,17 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 | `forecast/YYYY-MM-DD.json` | 시간별 예측값 + 예측 구간(95/99%) |
 | `actual/YYYY-MM-DD.json` | 시간별 실적값 (당일 실시간 포함) |
 | `forecast_snapshots/YYYY-MM-DD/*.json` | 운영 분석용 lead-time 예측 스냅샷 (UI에는 직접 연결하지 않음) |
-| `metrics/forecast_accuracy.json` | TEPCO 예측 대비 자체 모델 운영 성능 |
+| `metrics/forecast_accuracy.json` | TEPCO 최신 게시값 기준 운영 참고치. 공식 동일 vintage 비교에는 사용하지 않음 |
+| `metrics/forecast_vintage_accuracy.json` | 같은 캡처 시점과 lead-time으로 맞춘 모델/TEPCO 비교 및 28/84일 자격 판정 |
 | `metrics/model_backtest.json` | 베이스라인 대비 LightGBM 백테스트 |
+| `metrics/model_promotion.json` | Champion/Challenger 28/56/84일 검증, drift, 복구 승격 판단 |
+| `metrics/model_shadow_evaluation.json` | 성능 저하 Champion 복구 승인 전에 필요한 artifact 결합 shadow 근거 |
+| `metrics/operational_replay.json` | 실제 게시 예측, 단계별 shadow, TEPCO 참고치, 밴드 coverage replay |
 | `reports/daily/*.json` | 검증 탭에 표시하는 전날 운영 리포트 |
 | `reports/ai/daily/{ko,en,ja}/*.json` | 운영 리포트 탭의 일일 해설. OpenAI 설정 시 AI 해설, 미설정 시 deterministic fallback 사용 |
 | `reports/internal/daily-diagnostics/*.json` | 운영 산출물과 함께 저장하는 내부 분석용 lag/기온/shape 진단 JSON (UI에는 연결하지 않음) |
 | `reports/internal/operational-calibration/*.json` | 운영 디버깅용 source confidence와 보정 메타데이터 |
+| `reports/internal/forecast-vintages/*.json` | 공정한 lead-time 평가를 위해 같은 실행에서 함께 캡처한 모델/TEPCO append-only 장부 |
 
 > 타임스탬프는 전 산출물에서 `Asia/Tokyo (+09:00)` 기준 ISO 8601로 출력합니다.
 
@@ -211,6 +216,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 - [처음 접하는 사람을 위한 프로젝트 가이드](docs/ko/project-walkthrough.md)
 - [LightGBM 모델 설계](docs/ko/lgbm-design.md)
 - [모델 운영 명세](docs/ko/model-operations-spec.md)
+- [모델 승격 및 성능 저하 Champion 정책](docs/ko/model-promotion-policy.md)
 - [운영 Runbook](docs/ko/operations-runbook.md)
 - [모델 점검 기록](docs/ko/model-reviews/README.md)
 - [기온 데이터 연동 설계](docs/ko/weather-integration.md)
@@ -227,6 +233,8 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-08-18 동일 시점 TEPCO 평가와 모델 승격 거버넌스](docs/ko/model-improvements/model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
+- [2026-08-13 AMeDAS-JMA 경계 일관성 보정](docs/ko/model-improvements/model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 영업일 복귀 보정의 실측 과대예측 veto](docs/ko/model-improvements/model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
 - [2026-08-11 rolling conformal 예측 밴드 최소 폭 보정](docs/ko/model-improvements/model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
 - [2026-08-11 비영업일 오전 실측 anchor 확장](docs/ko/model-improvements/model-improvement-2026-08-11-non-business-morning-anchor-extension.md)

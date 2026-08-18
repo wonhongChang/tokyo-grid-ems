@@ -164,12 +164,17 @@ ETLが `web/public/` 以下に生成するファイルです。
 | `forecast/YYYY-MM-DD.json` | 時間別予測値 + 予測区間（95/99%） |
 | `actual/YYYY-MM-DD.json` | 時間別実績値（当日リアルタイム含む） |
 | `forecast_snapshots/YYYY-MM-DD/*.json` | 運用分析用のlead-time予測スナップショット（UIからは直接リンクしない） |
-| `metrics/forecast_accuracy.json` | TEPCO予測に対する運用精度 |
+| `metrics/forecast_accuracy.json` | TEPCO最新公開値による運用参考値。正式な同一vintage比較には使用しない |
+| `metrics/forecast_vintage_accuracy.json` | 同一capture・lead-timeで揃えたモデル/TEPCO比較と28/84日資格判定 |
 | `metrics/model_backtest.json` | ベースラインに対するLightGBMバックテスト |
+| `metrics/model_promotion.json` | Champion/Challengerの28/56/84日検証、drift、復旧昇格判断 |
+| `metrics/model_shadow_evaluation.json` | 性能低下Championの復旧承認前に必要なartifact紐付きshadow証拠 |
+| `metrics/operational_replay.json` | 実配信予測、stage shadow、TEPCO参考値、band coverage replay |
 | `reports/daily/*.json` | 検証タブに表示する前日運用サマリー |
 | `reports/ai/daily/{ko,en,ja}/*.json` | 運用レポートタブの日次解説。OpenAI設定時はAI解説、未設定時はdeterministic fallbackを使用 |
 | `reports/internal/daily-diagnostics/*.json` | 運用出力と一緒に保存する内部向けlag/気温/shape診断（UIからはリンクしない） |
 | `reports/internal/operational-calibration/*.json` | 運用デバッグ用の source confidence と補正メタデータ |
+| `reports/internal/forecast-vintages/*.json` | 公平なlead-time評価のため同一実行で保存したモデル/TEPCO append-only台帳 |
 
 > タイムスタンプはすべて `Asia/Tokyo (+09:00)` 基準のISO 8601形式で出力します。
 
@@ -188,6 +193,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [初めて読む人のためのプロジェクトガイド](docs/ja/project-walkthrough.md)
 - [LightGBMモデル設計](docs/ja/lgbm-design.md)
 - [モデル運用仕様](docs/ja/model-operations-spec.md)
+- [モデル昇格および性能低下Championポリシー](docs/ja/model-promotion-policy.md)
 - [運用 Runbook](docs/ja/operations-runbook.md)
 - [モデルレビュー記録](docs/ja/model-reviews/README.md)
 - [気温データ連携設計](docs/ja/weather-integration.md)
@@ -204,6 +210,8 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-08-18 同一vintage TEPCO評価とモデル昇格ガバナンス](docs/ja/model-improvements/model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
+- [2026-08-13 AMeDAS-JMA 境界の整合性補正](docs/ja/model-improvements/model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 営業日復帰補正の実績過大予測 veto](docs/ja/model-improvements/model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
 - [2026-08-11 rolling conformal予測バンド最小幅補正](docs/ja/model-improvements/model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
 - [2026-08-11 非営業日朝の実績anchor拡張](docs/ja/model-improvements/model-improvement-2026-08-11-non-business-morning-anchor-extension.md)

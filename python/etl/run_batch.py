@@ -60,6 +60,10 @@ JST = ZoneInfo("Asia/Tokyo")
 
 _LGBM_MODEL_NAME = ".lgbm_model.pkl"
 _LGBM_MODEL_METADATA_NAME = ".lgbm_model_meta.json"
+_LGBM_SHADOW_MODEL_NAME = ".lgbm_model.shadow.pkl"
+_LGBM_SHADOW_METADATA_NAME = ".lgbm_model.shadow_meta.json"
+_LGBM_ROLLBACK_MODEL_NAME = ".lgbm_model.rollback.pkl"
+_LGBM_ROLLBACK_METADATA_NAME = ".lgbm_model.rollback_meta.json"
 _MODEL_PROMOTION_REPORT = "metrics/model_promotion.json"
 _LGBM_MIN_ROWS   = 90 * 24
 _TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
@@ -1034,6 +1038,317 @@ def _write_model_promotion_report(out_dir: Path, report: dict) -> None:
     write_json(path, report)
 
 
+def _read_json_payload(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return None
+
+
+def _last_model_evaluation(out_dir: Path) -> dict | None:
+    previous = _read_json_payload(out_dir / _MODEL_PROMOTION_REPORT)
+    if not previous:
+        return None
+    if previous.get("status") in {
+        "promoted",
+        "recovery_promoted",
+        "recovery_approval_rejected",
+        "rejected",
+        "shadow_required",
+        "recovery_candidate_ready",
+        "gate_error",
+    }:
+        return previous
+    if isinstance(previous.get("lastEvaluation"), dict):
+        return previous["lastEvaluation"]
+    return None
+
+
+def _champion_health(out_dir: Path, champion, config: dict) -> dict:
+    from python.eval.model_validation import config_fingerprint
+
+    metadata = _read_json_payload(out_dir / _LGBM_MODEL_METADATA_NAME) or {}
+    integrity_failures: list[str] = []
+    if not metadata.get("trainingCutoff"):
+        integrity_failures.append("training_cutoff_missing")
+    stored_fingerprint = metadata.get("configFingerprint")
+    current_fingerprint = config_fingerprint(config)
+    if not stored_fingerprint:
+        integrity_failures.append("config_fingerprint_missing")
+    elif stored_fingerprint != current_fingerprint:
+        integrity_failures.append("config_fingerprint_mismatch")
+    if champion is None or not getattr(champion, "is_compatible", lambda: False)():
+        integrity_failures.append("artifact_incompatible")
+
+    replay = _read_json_payload(
+        out_dir / "metrics" / "operational_replay.json"
+    ) or {}
+    operational = (replay.get("served") or {}).get("overall") or {}
+    degraded_config = config.get("model_promotion", {}).get(
+        "degraded_champion",
+        {},
+    )
+    performance_failures: list[str] = []
+    mae = operational.get("maeMw")
+    wape = operational.get("wapePct")
+    if mae is not None and float(mae) > float(
+        degraded_config.get("max_operational_mae_mw", 900)
+    ):
+        performance_failures.append("operational_mae_degraded")
+    if wape is not None and float(wape) > float(
+        degraded_config.get("max_operational_wape_pct", 2.7)
+    ):
+        performance_failures.append("operational_wape_degraded")
+
+    critical = (
+        mae is not None
+        and float(mae) > float(
+            degraded_config.get("critical_operational_mae_mw", 1000)
+        )
+    ) or (
+        wape is not None
+        and float(wape) > float(
+            degraded_config.get("critical_operational_wape_pct", 3.0)
+        )
+    )
+    minimum_failures = int(
+        degraded_config.get("min_failed_performance_conditions", 2)
+    )
+    degraded = critical or len(performance_failures) >= minimum_failures
+    if degraded:
+        status = "degraded"
+    elif integrity_failures:
+        status = "review_required"
+    elif not operational:
+        status = "insufficient_operational_data"
+    else:
+        status = "healthy"
+    return {
+        "status": status,
+        "eligibleForRecoveryPath": degraded,
+        "integrityFailures": integrity_failures,
+        "performanceFailures": performance_failures,
+        "operationalMetrics": {
+            "maeMw": mae,
+            "wapePct": wape,
+            "hours": operational.get("hours"),
+        },
+        "artifact": {
+            "intervalVersion": getattr(champion, "interval_version", None),
+            "trainingCutoff": metadata.get("trainingCutoff"),
+            "storedConfigFingerprint": stored_fingerprint,
+            "currentConfigFingerprint": current_fingerprint,
+        },
+    }
+
+
+def _auxiliary_recovery_passed(reports: dict[str, dict]) -> tuple[bool, list[str]]:
+    failures: list[str] = []
+    for name, report in reports.items():
+        comparison = report.get("contractComparison") or {}
+        improvement = comparison.get("improvementPct") or {}
+        mae_improvement = improvement.get("mae")
+        wape_improvement = improvement.get("wape")
+        if mae_improvement is None or float(mae_improvement) < 0:
+            failures.append(f"{name}.mae_regression_vs_champion")
+        if wape_improvement is None or float(wape_improvement) < 0:
+            failures.append(f"{name}.wape_regression_vs_champion")
+    return not failures, failures
+
+
+def _recovery_shadow_evidence(
+    out_dir: Path,
+    config: dict,
+    *,
+    expected_artifact_sha256: str | None = None,
+) -> dict:
+    """Fail closed until a recovery candidate has enough finalized shadow data."""
+    promotion_config = config.get("model_promotion", {})
+    required_hours = int(
+        promotion_config.get("recovery_shadow_hours", 72)
+    )
+    required_days = int(
+        promotion_config.get("recovery_shadow_finalized_days", 2)
+    )
+    path = out_dir / "metrics" / "model_shadow_evaluation.json"
+    payload = _read_json_payload(path)
+    failures: list[str] = []
+    if payload is None:
+        failures.append("shadow_evaluation_missing")
+        hours = 0
+        finalized_days = 0
+        reported_pass = False
+        evidence_artifact_sha256 = None
+    else:
+        hours = int(payload.get("hours") or 0)
+        finalized_days = int(payload.get("finalizedDays") or 0)
+        reported_pass = payload.get("passed") is True
+        evidence_artifact_sha256 = payload.get("artifactSha256")
+        if not reported_pass:
+            failures.append("shadow_evaluation_failed")
+        if (
+            expected_artifact_sha256 is not None
+            and evidence_artifact_sha256 != expected_artifact_sha256
+        ):
+            failures.append("shadow_evaluation_artifact_mismatch")
+    if hours < required_hours:
+        failures.append("insufficient_shadow_hours")
+    if finalized_days < required_days:
+        failures.append("insufficient_shadow_finalized_days")
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "hours": hours,
+        "finalizedDays": finalized_days,
+        "requiredHours": required_hours,
+        "requiredFinalizedDays": required_days,
+        "artifactSha256": evidence_artifact_sha256,
+        "path": "metrics/model_shadow_evaluation.json",
+    }
+
+
+def _recovery_shadow_candidate_state(out_dir: Path, config: dict) -> dict:
+    """Validate that shadow evidence belongs to the preserved candidate."""
+    from python.eval.model_validation import artifact_sha256, config_fingerprint
+
+    model_path = out_dir / _LGBM_SHADOW_MODEL_NAME
+    metadata_path = out_dir / _LGBM_SHADOW_METADATA_NAME
+    if not model_path.exists() and not metadata_path.exists():
+        return {
+            "available": False,
+            "ready": False,
+            "failures": [],
+            "shadowEvidence": _recovery_shadow_evidence(out_dir, config),
+        }
+
+    failures: list[str] = []
+    metadata = _read_json_payload(metadata_path) or {}
+    artifact_hash = artifact_sha256(model_path)
+    if artifact_hash is None:
+        failures.append("shadow_artifact_missing")
+    if not metadata:
+        failures.append("shadow_metadata_missing")
+    elif metadata.get("artifactSha256") != artifact_hash:
+        failures.append("shadow_metadata_artifact_mismatch")
+    if metadata.get("configFingerprint") != config_fingerprint(config):
+        failures.append("shadow_config_fingerprint_mismatch")
+    if not metadata.get("trainingCutoff"):
+        failures.append("shadow_training_cutoff_missing")
+
+    previous = _last_model_evaluation(out_dir) or {}
+    if (
+        artifact_hash is not None
+        and previous.get("status") == "recovery_promoted"
+        and (previous.get("champion") or {}).get("sha256") == artifact_hash
+    ):
+        return {
+            "available": True,
+            "ready": False,
+            "alreadyPromoted": True,
+            "failures": [],
+            "artifactSha256": artifact_hash,
+            "intervalVersion": metadata.get("intervalVersion"),
+            "metadata": metadata,
+            "shadowEvidence": _recovery_shadow_evidence(
+                out_dir,
+                config,
+                expected_artifact_sha256=artifact_hash,
+            ),
+            "lastEvaluation": previous,
+        }
+    previous_challenger = previous.get("challenger") or {}
+    if previous.get("reason") not in {
+        "recovery_replay_passed_shadow_evidence_required",
+        "recovery_gates_passed_manual_approval_required",
+    }:
+        failures.append("shadow_recovery_replay_not_verified")
+    if previous_challenger.get("sha256") != artifact_hash:
+        failures.append("shadow_promotion_report_artifact_mismatch")
+
+    evidence = _recovery_shadow_evidence(
+        out_dir,
+        config,
+        expected_artifact_sha256=artifact_hash,
+    )
+    failures.extend(evidence["failures"])
+    return {
+        "available": True,
+        "ready": not failures,
+        "failures": list(dict.fromkeys(failures)),
+        "artifactSha256": artifact_hash,
+        "intervalVersion": metadata.get("intervalVersion"),
+        "metadata": metadata,
+        "shadowEvidence": evidence,
+        "lastEvaluation": previous,
+    }
+
+
+def _promote_recovery_shadow(
+    out_dir: Path,
+    champion,
+    champion_health: dict,
+    candidate_state: dict,
+):
+    """Atomically promote the exact shadow artifact that passed evaluation."""
+    from python.eval.model_validation import artifact_sha256
+    from python.forecast.lgbm_model import LGBMForecaster
+
+    shadow_path = out_dir / _LGBM_SHADOW_MODEL_NAME
+    staged_model_path = out_dir / f"{_LGBM_MODEL_NAME}.approved"
+    staged_metadata_path = out_dir / f"{_LGBM_MODEL_METADATA_NAME}.approved"
+    model_path = out_dir / _LGBM_MODEL_NAME
+    metadata_path = out_dir / _LGBM_MODEL_METADATA_NAME
+
+    shutil.copy2(shadow_path, staged_model_path)
+    approved = LGBMForecaster.load(staged_model_path)
+    if not approved.is_compatible():
+        staged_model_path.unlink(missing_ok=True)
+        raise RuntimeError("Approved recovery shadow artifact is incompatible.")
+    metadata = dict(candidate_state["metadata"])
+    metadata.update({
+        "schemaVersion": "2.0.0",
+        "promotionMode": "recovery_promoted",
+        "promotedAt": ts_now(),
+        "sourceShadowArtifact": _LGBM_SHADOW_MODEL_NAME,
+    })
+    write_json(staged_metadata_path, metadata)
+
+    if model_path.exists():
+        shutil.copy2(model_path, out_dir / _LGBM_ROLLBACK_MODEL_NAME)
+    if metadata_path.exists():
+        shutil.copy2(
+            metadata_path,
+            out_dir / _LGBM_ROLLBACK_METADATA_NAME,
+        )
+    os.replace(staged_model_path, model_path)
+    os.replace(staged_metadata_path, metadata_path)
+    report = {
+        "schemaVersion": "2.0.0",
+        "timezone": "Asia/Tokyo",
+        "generatedAt": ts_now(),
+        "status": "recovery_promoted",
+        "reason": "approved_shadow_artifact_promoted",
+        "championHealth": champion_health,
+        "champion": {
+            "artifact": _LGBM_MODEL_NAME,
+            "sha256": artifact_sha256(model_path),
+            "intervalVersion": getattr(approved, "interval_version", None),
+        },
+        "rollback": {
+            "artifact": _LGBM_ROLLBACK_MODEL_NAME,
+            "sha256": artifact_sha256(
+                out_dir / _LGBM_ROLLBACK_MODEL_NAME
+            ),
+            "intervalVersion": getattr(champion, "interval_version", None),
+        },
+        "shadowEvidence": candidate_state["shadowEvidence"],
+        "lastEvaluation": candidate_state["lastEvaluation"],
+    }
+    _write_model_promotion_report(out_dir, report)
+    print(f"[LGBM] Approved recovery shadow promoted -> {_LGBM_MODEL_NAME}")
+    return approved
+
+
 def _load_or_promote_lgbm(
     cache: pd.DataFrame,
     out_dir: Path,
@@ -1042,26 +1357,88 @@ def _load_or_promote_lgbm(
     *,
     drift_cache_by_date: dict[date, pd.DataFrame] | None = None,
 ):
-    """Keep the champion unless a scheduled challenger passes all gates."""
+    """Keep the Champion unless normal or explicitly approved recovery gates pass."""
     champion = _try_load_lgbm(out_dir)
     due, reason = _model_retrain_due(target_date, config, champion)
     trigger_reason = reason
     model_path = out_dir / _LGBM_MODEL_NAME
+    metadata_path = out_dir / _LGBM_MODEL_METADATA_NAME
     promotion_config = config.get("model_promotion", {})
+    champion_health = _champion_health(out_dir, champion, config)
+    shadow_candidate = _recovery_shadow_candidate_state(out_dir, config)
+    recovery_approved = _env_flag(
+        "TOKYO_GRID_EMS_APPROVE_RECOVERY_PROMOTION"
+    )
+
+    if shadow_candidate.get("alreadyPromoted"):
+        recovery_approved = False
+    elif shadow_candidate["available"] and shadow_candidate["ready"]:
+        if recovery_approved:
+            return _promote_recovery_shadow(
+                out_dir,
+                champion,
+                champion_health,
+                shadow_candidate,
+            )
+        from python.eval.model_validation import artifact_sha256
+
+        _write_model_promotion_report(out_dir, {
+            "schemaVersion": "2.0.0",
+            "timezone": "Asia/Tokyo",
+            "generatedAt": ts_now(),
+            "status": "recovery_candidate_ready",
+            "reason": "recovery_gates_passed_manual_approval_required",
+            "championHealth": champion_health,
+            "champion": {
+                "artifact": _LGBM_MODEL_NAME,
+                "sha256": artifact_sha256(model_path),
+                "intervalVersion": getattr(champion, "interval_version", None),
+            },
+            "challenger": {
+                "artifact": _LGBM_SHADOW_MODEL_NAME,
+                "sha256": shadow_candidate["artifactSha256"],
+                "intervalVersion": shadow_candidate["intervalVersion"],
+                "preserved": True,
+            },
+            "shadowEvidence": shadow_candidate["shadowEvidence"],
+            "lastEvaluation": shadow_candidate["lastEvaluation"],
+        })
+        print("[LGBM] Recovery shadow ready; explicit approval required")
+        return champion
+
+    if recovery_approved:
+        _write_model_promotion_report(out_dir, {
+            "schemaVersion": "2.0.0",
+            "timezone": "Asia/Tokyo",
+            "generatedAt": ts_now(),
+            "status": "recovery_approval_rejected",
+            "reason": "recovery_shadow_not_ready",
+            "championHealth": champion_health,
+            "shadowCandidate": shadow_candidate,
+            "lastEvaluation": _last_model_evaluation(out_dir),
+        })
+        print(
+            "[LGBM] Recovery approval rejected; shadow evidence is not ready",
+            file=sys.stderr,
+        )
+        return champion
 
     if not due:
         from python.eval.model_validation import artifact_sha256
 
         _write_model_promotion_report(out_dir, {
-            "schemaVersion": "1.0.0",
+            "schemaVersion": "2.0.0",
             "timezone": "Asia/Tokyo",
             "generatedAt": ts_now(),
             "status": "champion_retained",
             "reason": reason,
+            "championHealth": champion_health,
             "champion": {
                 "artifact": _LGBM_MODEL_NAME,
                 "sha256": artifact_sha256(model_path),
+                "intervalVersion": getattr(champion, "interval_version", None),
             },
+            "lastEvaluation": _last_model_evaluation(out_dir),
             "nextScheduledWeekday": int(
                 promotion_config.get("retrain_weekday", 0)
             ),
@@ -1078,27 +1455,29 @@ def _load_or_promote_lgbm(
         )
         from python.forecast.lgbm_model import LGBMForecaster
 
+        generated_at = ts_now()
+        champion_interval_version = getattr(champion, "interval_version", None)
         validation = build_temporal_validation_report(
             cache,
             config,
             window_days=int(
                 promotion_config.get("validation_window_days", 28)
             ),
-            generated_at=ts_now(),
+            generated_at=generated_at,
+            champion_interval_version=champion_interval_version,
         )
         training_cutoff = pd.Timestamp(target_date, tz=JST)
         training_cache = cache[cache["ts"] < training_cutoff].copy()
         challenger = LGBMForecaster(config=config)
         challenger.fit(training_cache)
 
-        today_cache = cache.copy()
         drift = None
         drift_failures: list[str] = []
         if champion is not None:
             drift = prediction_drift_report(
                 champion,
                 challenger,
-                today_cache,
+                cache.copy(),
                 [target_date, target_date + timedelta(days=1)],
                 cache_by_date=drift_cache_by_date,
             )
@@ -1123,85 +1502,184 @@ def _load_or_promote_lgbm(
             ):
                 drift_failures.append("hour_prediction_drift_exceeded")
 
+        auxiliary_validation: dict[str, dict] = {}
+        primary_recovery_passed = bool(
+            (validation.get("recoveryGate") or {}).get("passed")
+        )
+        if (
+            champion_health["eligibleForRecoveryPath"]
+            and primary_recovery_passed
+            and champion_interval_version
+        ):
+            for window_days in promotion_config.get(
+                "auxiliary_validation_window_days",
+                [56, 84],
+            ):
+                days = int(window_days)
+                auxiliary_validation[f"{days}d"] = (
+                    build_temporal_validation_report(
+                        cache,
+                        config,
+                        window_days=days,
+                        generated_at=generated_at,
+                        champion_interval_version=champion_interval_version,
+                    )
+                )
+        auxiliary_passed, auxiliary_failures = _auxiliary_recovery_passed(
+            auxiliary_validation
+        )
+        required_auxiliary = len(
+            promotion_config.get("auxiliary_validation_window_days", [56, 84])
+        )
+        auxiliary_complete = len(auxiliary_validation) == required_auxiliary
+        drift_valid = "prediction_drift_invalid" not in drift_failures
+        recovery_replay_ready = (
+            champion_health["eligibleForRecoveryPath"]
+            and primary_recovery_passed
+            and auxiliary_complete
+            and auxiliary_passed
+            and not drift_failures
+        )
         validation_passed = bool(validation.get("gate", {}).get("passed"))
-        promoted = validation_passed and not drift_failures
+        normal_promoted = validation_passed and not drift_failures
+        promoted = normal_promoted
         bootstrap_override = champion is None and bool(
             promotion_config.get("bootstrap_when_champion_missing", False)
         )
         if bootstrap_override and not promoted:
             promoted = True
+            status = "promoted"
             reason = "bootstrap_without_compatible_champion"
-        elif promoted:
+        elif normal_promoted:
+            status = "promoted"
             reason = "all_promotion_gates_passed"
+        elif recovery_replay_ready:
+            status = "shadow_required"
+            reason = "recovery_replay_passed_shadow_evidence_required"
+        elif validation_passed and drift_valid and drift_failures:
+            status = "shadow_required"
+            reason = "accuracy_gates_passed_prediction_drift_requires_shadow"
         else:
+            status = "rejected"
             reason = "promotion_gate_failed"
 
         staged_model_path = out_dir / f"{_LGBM_MODEL_NAME}.candidate"
         staged_metadata_path = out_dir / f"{_LGBM_MODEL_METADATA_NAME}.candidate"
-        staged_report_path = (
-            out_dir / "metrics" / ".model_promotion.candidate.json"
-        )
         staged_model_hash = None
         metadata = None
-        if promoted:
+        preserve_challenger = promoted or status in {
+            "shadow_required",
+        }
+        if preserve_challenger:
             challenger.save(staged_model_path)
             staged_challenger = LGBMForecaster.load(staged_model_path)
             if not staged_challenger.is_compatible():
                 raise RuntimeError("Staged challenger artifact is incompatible.")
             staged_model_hash = artifact_sha256(staged_model_path)
+            observed_training = training_cache.loc[
+                _observed_cache_mask(training_cache),
+                "ts",
+            ]
             metadata = {
-                "schemaVersion": "1.0.0",
-                "promotedAt": ts_now(),
-                "trainingCutoff": str(
-                    training_cache.loc[
-                        _observed_cache_mask(training_cache),
-                        "ts",
-                    ].dt.date.max()
-                ),
+                "schemaVersion": "2.0.0",
+                "createdAt": ts_now(),
+                "promotionMode": status,
+                "trainingCutoff": str(observed_training.dt.date.max()),
                 "intervalVersion": challenger.interval_version,
                 "configFingerprint": config_fingerprint(config),
                 "artifactSha256": staged_model_hash,
                 "validationPeriod": validation.get("validationPeriod"),
             }
+            write_json(staged_metadata_path, metadata)
 
+        original_champion_hash = (
+            artifact_sha256(model_path) if model_path.exists() else None
+        )
+        shadow_evidence = {
+            "passed": False,
+            "failures": ["shadow_evaluation_pending_for_candidate"],
+            "hours": 0,
+            "finalizedDays": 0,
+            "requiredHours": int(
+                promotion_config.get("recovery_shadow_hours", 72)
+            ),
+            "requiredFinalizedDays": int(
+                promotion_config.get("recovery_shadow_finalized_days", 2)
+            ),
+            "artifactSha256": staged_model_hash,
+            "path": "metrics/model_shadow_evaluation.json",
+        }
         promotion_report = {
-            "schemaVersion": "1.0.0",
+            "schemaVersion": "2.0.0",
             "timezone": "Asia/Tokyo",
             "generatedAt": ts_now(),
-            "status": "promoted" if promoted else "rejected",
+            "status": status,
             "reason": reason,
             "trigger": trigger_reason,
+            "championHealth": champion_health,
             "validation": validation,
+            "auxiliaryValidation": auxiliary_validation,
+            "auxiliaryRecoveryFailures": auxiliary_failures,
+            "shadowEvidence": shadow_evidence,
             "predictionDrift": drift,
             "driftFailures": drift_failures,
             "champion": {
                 "artifact": _LGBM_MODEL_NAME,
                 "sha256": (
-                    staged_model_hash
-                    if promoted
-                    else artifact_sha256(model_path)
+                    staged_model_hash if promoted else original_champion_hash
                 ),
+                "intervalVersion": (
+                    challenger.interval_version
+                    if promoted
+                    else champion_interval_version
+                ),
+            },
+            "challenger": {
+                "artifact": (
+                    _LGBM_MODEL_NAME if promoted else _LGBM_SHADOW_MODEL_NAME
+                ),
+                "sha256": staged_model_hash,
+                "intervalVersion": challenger.interval_version,
+                "preserved": preserve_challenger,
             },
         }
         if promoted:
-            write_json(staged_metadata_path, metadata)
-            write_json(staged_report_path, promotion_report)
+            if model_path.exists():
+                shutil.copy2(model_path, out_dir / _LGBM_ROLLBACK_MODEL_NAME)
+            if metadata_path.exists():
+                shutil.copy2(
+                    metadata_path,
+                    out_dir / _LGBM_ROLLBACK_METADATA_NAME,
+                )
             os.replace(staged_model_path, model_path)
-            os.replace(
-                staged_metadata_path,
-                out_dir / _LGBM_MODEL_METADATA_NAME,
-            )
-            os.replace(
-                staged_report_path,
-                out_dir / _MODEL_PROMOTION_REPORT,
-            )
+            os.replace(staged_metadata_path, metadata_path)
+            _write_model_promotion_report(out_dir, promotion_report)
             champion = challenger
             print(f"[LGBM] Challenger promoted -> {_LGBM_MODEL_NAME}")
-        else:
+        elif preserve_challenger:
+            os.replace(
+                staged_model_path,
+                out_dir / _LGBM_SHADOW_MODEL_NAME,
+            )
+            os.replace(
+                staged_metadata_path,
+                out_dir / _LGBM_SHADOW_METADATA_NAME,
+            )
             _write_model_promotion_report(out_dir, promotion_report)
             print(
-                f"[LGBM] Challenger rejected; champion retained "
-                f"({', '.join(validation.get('gate', {}).get('failures', []) + drift_failures)})"
+                "[LGBM] Challenger preserved for shadow/recovery review "
+                f"({status})"
+            )
+        else:
+            _write_model_promotion_report(out_dir, promotion_report)
+            failures = (
+                validation.get("gate", {}).get("failures", [])
+                + auxiliary_failures
+                + drift_failures
+            )
+            print(
+                "[LGBM] Challenger rejected; champion retained "
+                f"({', '.join(failures)})"
             )
         return champion
     except Exception as exc:
@@ -1213,11 +1691,14 @@ def _load_or_promote_lgbm(
             staged_path.unlink(missing_ok=True)
         print(f"[WARN] Model promotion gate failed: {exc}", file=sys.stderr)
         _write_model_promotion_report(out_dir, {
-            "schemaVersion": "1.0.0",
+            "schemaVersion": "2.0.0",
             "timezone": "Asia/Tokyo",
             "generatedAt": ts_now(),
             "status": "gate_error",
             "reason": str(exc),
+            "trigger": trigger_reason,
+            "championHealth": champion_health,
+            "lastEvaluation": _last_model_evaluation(out_dir),
         })
         if champion is not None:
             return champion
@@ -1973,6 +2454,31 @@ def _write_forecast_snapshot(
         return None
 
     actual_series = _load_actual_series(out_dir, target_date)
+    try:
+        from python.eval.forecast_vintage_accuracy import (
+            append_forecast_vintage_snapshot,
+        )
+
+        vintage_path = append_forecast_vintage_snapshot(
+            out_dir,
+            target_date,
+            generated_at=generated_at,
+            run_type=run_type,
+            model=forecast_json.get("model"),
+            model_series=forecast_json.get("series", []),
+            tepco_series=actual_series,
+            config=config,
+        )
+        if vintage_path is not None:
+            print(
+                "[SNAPSHOT] Matched forecast vintage -> "
+                f"{vintage_path.relative_to(out_dir)}"
+            )
+    except Exception as e:
+        print(
+            f"[WARN] Matched forecast vintage capture failed: {e}",
+            file=sys.stderr,
+        )
     snapshot = {
         "schemaVersion": "1.0.0",
         "timezone": "Asia/Tokyo",
@@ -2628,6 +3134,40 @@ def _write_forecast_accuracy_report(out_dir: Path) -> None:
         print(f"[WARN] Forecast accuracy report failed: {e}", file=sys.stderr)
 
 
+def _write_forecast_vintage_accuracy_report(out_dir: Path, config: dict) -> None:
+    try:
+        from python.eval.forecast_vintage_accuracy import (
+            backfill_forecast_vintages_from_snapshots,
+            build_forecast_vintage_accuracy_report,
+        )
+
+        backfill = backfill_forecast_vintages_from_snapshots(
+            out_dir,
+            config=config,
+        )
+        report = build_forecast_vintage_accuracy_report(
+            out_dir,
+            generated_at=ts_now(),
+            config=config,
+        )
+        write_json(
+            out_dir / "metrics" / "forecast_vintage_accuracy.json",
+            report,
+        )
+        coverage = report.get("coverage", {})
+        print(
+            "[METRICS] Matched-vintage accuracy report updated "
+            f"({coverage.get('dates', 0)} days, "
+            f"{coverage.get('matchedRows', 0)} rows, "
+            f"legacy_imported={backfill.get('imported', 0)})"
+        )
+    except Exception as e:
+        print(
+            f"[WARN] Matched-vintage accuracy report failed: {e}",
+            file=sys.stderr,
+        )
+
+
 def _write_model_backtest_report(
     out_dir: Path,
     cache: pd.DataFrame,
@@ -3050,6 +3590,7 @@ def _run_status_only(
         display_cache=forecast_weather_cache,
     ))
     _write_forecast_accuracy_report(out_dir)
+    _write_forecast_vintage_accuracy_report(out_dir, config)
     _write_daily_operation_reports(out_dir)
     if internal_diagnostics_out is not None:
         _write_internal_daily_diagnostics(out_dir, extended_with_actuals, config, internal_diagnostics_out)
@@ -3336,6 +3877,7 @@ def main() -> None:
         display_cache=forecast_weather_cache,
     ))
     _write_forecast_accuracy_report(out_dir)
+    _write_forecast_vintage_accuracy_report(out_dir, config)
     _write_model_backtest_report(out_dir, hourly_cache, config)
     _write_operational_replay_report(out_dir, config)
     _write_daily_operation_reports(out_dir)

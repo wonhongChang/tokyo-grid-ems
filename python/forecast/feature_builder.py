@@ -382,6 +382,8 @@ def _add_holiday_lag_cols(
 def build_training_features(
     cache: pd.DataFrame,
     config: dict | None = None,
+    *,
+    start_ts: pd.Timestamp | None = None,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Return (X, y) from hourly cache for training.
 
@@ -625,6 +627,13 @@ def build_training_features(
         * positive_temp_anomaly_7d
     )
 
+    if start_ts is not None:
+        normalized_start = pd.Timestamp(start_ts)
+        if normalized_start.tzinfo is None:
+            normalized_start = normalized_start.tz_localize(JST)
+        else:
+            normalized_start = normalized_start.tz_convert(JST)
+        df = df[df["ts"] >= normalized_start]
     df = df.dropna(subset=FEATURE_COLS).reset_index(drop=True)
     return df[FEATURE_COLS].copy(), df["actual_mw"].copy()
 

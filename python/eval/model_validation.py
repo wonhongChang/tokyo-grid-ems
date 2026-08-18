@@ -1,6 +1,7 @@
 """Temporal validation and promotion checks for the production forecaster."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from dataclasses import dataclass
@@ -283,12 +284,173 @@ def _absolute_gate_failures(candidate: dict, promotion_config: dict) -> list[str
     return failures
 
 
+def _metric_improvement_pct(
+    candidate: dict,
+    reference: dict,
+    metric: str,
+) -> float | None:
+    candidate_value = candidate.get(metric)
+    reference_value = reference.get(metric)
+    if candidate_value is None or reference_value in (None, 0):
+        return None
+    candidate_float = float(candidate_value)
+    reference_float = float(reference_value)
+    if not np.isfinite(candidate_float) or not np.isfinite(reference_float):
+        return None
+    return (reference_float - candidate_float) / reference_float * 100.0
+
+
+def _contract_comparison(
+    candidate: dict,
+    champion: dict,
+    promotion_config: dict,
+) -> dict:
+    min_improvement_pct = float(
+        promotion_config.get("min_mae_improvement_vs_champion_pct", 5.0)
+    )
+    max_segment_regression_pct = float(
+        promotion_config.get("max_segment_regression_vs_champion_pct", 5.0)
+    )
+    mae_improvement = _metric_improvement_pct(
+        candidate["overall"], champion["overall"], "maeMw"
+    )
+    wape_improvement = _metric_improvement_pct(
+        candidate["overall"], champion["overall"], "wapePct"
+    )
+    segment_ok, segment_failures = _segment_passes(
+        candidate,
+        champion,
+        1.0 + max_segment_regression_pct / 100.0,
+    )
+    failures = [
+        f"champion.{failure}"
+        for failure in segment_failures
+    ]
+    if mae_improvement is None or mae_improvement < min_improvement_pct:
+        failures.append("champion.overall.mae_improvement_below_threshold")
+    return {
+        "candidate": candidate,
+        "champion": champion,
+        "improvementPct": {
+            "mae": round(float(mae_improvement), 2)
+            if mae_improvement is not None
+            else None,
+            "wape": round(float(wape_improvement), 2)
+            if wape_improvement is not None
+            else None,
+        },
+        "gate": {
+            "passed": not failures and segment_ok,
+            "failures": failures,
+            "thresholds": {
+                "minMaeImprovementPct": min_improvement_pct,
+                "maxSegmentRegressionPct": max_segment_regression_pct,
+            },
+        },
+    }
+
+
+def _recovery_gate(
+    candidate: dict,
+    champion: dict,
+    promotion_config: dict,
+) -> dict:
+    min_improvement_pct = float(
+        promotion_config.get("recovery_min_improvement_pct", 10.0)
+    )
+    max_risk_regression_pct = float(
+        promotion_config.get("recovery_max_risk_regression_pct", 5.0)
+    )
+    min_weak_segment_improvement_pct = float(
+        promotion_config.get(
+            "recovery_min_weak_segment_improvement_pct",
+            10.0,
+        )
+    )
+    failures: list[str] = []
+    overall_candidate = candidate["overall"]
+    overall_champion = champion["overall"]
+    improvements = {
+        metric: _metric_improvement_pct(
+            overall_candidate,
+            overall_champion,
+            metric,
+        )
+        for metric in ("maeMw", "wapePct")
+    }
+    for metric, improvement in improvements.items():
+        if improvement is None or improvement < min_improvement_pct:
+            failures.append(f"overall.{metric}_recovery_improvement_below_threshold")
+
+    max_risk_ratio = 1.0 + max_risk_regression_pct / 100.0
+    for metric in ("maxErrorMw", "shapeDeltaMaeMw"):
+        candidate_value = overall_candidate.get(metric)
+        champion_value = overall_champion.get(metric)
+        if candidate_value is None or champion_value in (None, 0):
+            failures.append(f"overall.{metric}_recovery_comparison_invalid")
+        elif float(candidate_value) > float(champion_value) * max_risk_ratio:
+            failures.append(f"overall.{metric}_recovery_regression")
+
+    segment_ok, segment_failures = _segment_passes(
+        candidate,
+        champion,
+        max_risk_ratio,
+    )
+    failures.extend(
+        f"recovery.{failure}" for failure in segment_failures
+    )
+    segment_improvements: dict[str, float] = {}
+    for section in ("regimes", "timeBands"):
+        for name, candidate_metrics in candidate[section].items():
+            champion_metrics = champion[section].get(name, {})
+            if min(
+                int(candidate_metrics.get("hours", 0)),
+                int(champion_metrics.get("hours", 0)),
+            ) < 24:
+                continue
+            improvement = _metric_improvement_pct(
+                candidate_metrics,
+                champion_metrics,
+                "maeMw",
+            )
+            if improvement is not None:
+                segment_improvements[f"{section}.{name}"] = round(
+                    float(improvement),
+                    2,
+                )
+    if not any(
+        improvement >= min_weak_segment_improvement_pct
+        for improvement in segment_improvements.values()
+    ):
+        failures.append("segments.no_material_weak_segment_recovery")
+
+    return {
+        "passed": not failures and segment_ok,
+        "failures": failures,
+        "improvementPct": {
+            "mae": round(float(improvements["maeMw"]), 2)
+            if improvements["maeMw"] is not None
+            else None,
+            "wape": round(float(improvements["wapePct"]), 2)
+            if improvements["wapePct"] is not None
+            else None,
+            "segments": segment_improvements,
+        },
+        "thresholds": {
+            "minMaeAndWapeImprovementPct": min_improvement_pct,
+            "maxRiskAndSegmentRegressionPct": max_risk_regression_pct,
+            "minWeakSegmentImprovementPct": min_weak_segment_improvement_pct,
+        },
+    }
+
+
 def build_temporal_validation_report(
     cache: pd.DataFrame,
     config: dict,
     *,
     window_days: int = 28,
     generated_at: str | None = None,
+    champion_interval_version: str | None = None,
 ) -> dict:
     """Train before a rolling holdout and evaluate the current model contract."""
     normalized = cache.copy()
@@ -319,6 +481,32 @@ def build_temporal_validation_report(
     )
     candidate_metrics = _metric_bundle(candidate_rows)
     baseline_metrics = _metric_bundle(baseline_rows)
+    champion_metrics = None
+    contract_comparison = None
+    recovery_gate = None
+    if (
+        champion_interval_version
+        and champion_interval_version != forecaster.interval_version
+    ):
+        champion_contract = copy.deepcopy(forecaster)
+        champion_contract.interval_version = champion_interval_version
+        champion_rows, _ = _forecast_rows(
+            normalized,
+            validation_dates,
+            champion_contract,
+            config,
+        )
+        champion_metrics = _metric_bundle(champion_rows)
+        contract_comparison = _contract_comparison(
+            candidate_metrics,
+            champion_metrics,
+            config.get("model_promotion", {}),
+        )
+        recovery_gate = _recovery_gate(
+            candidate_metrics,
+            champion_metrics,
+            config.get("model_promotion", {}),
+        )
     expected_hours = len(validation_dates) * 24
 
     promotion_cfg = config.get("model_promotion", {})
@@ -348,6 +536,8 @@ def build_temporal_validation_report(
     if improvement_pct is None or improvement_pct < min_improvement_pct:
         failures.append("overall.mae_improvement_below_threshold")
     failures.extend(_absolute_gate_failures(candidate_metrics, promotion_cfg))
+    if contract_comparison and not contract_comparison["gate"]["passed"]:
+        failures.extend(contract_comparison["gate"]["failures"])
 
     return {
         "schemaVersion": "1.0.0",
@@ -362,7 +552,9 @@ def build_temporal_validation_report(
             "expectedHours": expected_hours,
             "note": (
                 "This validates the model contract before promotion. "
-                "Operational serving behavior is evaluated separately."
+                "A legacy Champion contract is replayed with the same train "
+                "cutoff when its interval version differs. Operational "
+                "serving behavior is evaluated separately."
             ),
         },
         "trainPeriod": {
@@ -377,6 +569,9 @@ def build_temporal_validation_report(
         },
         "candidate": candidate_metrics,
         "baseline": baseline_metrics,
+        "championContract": champion_metrics,
+        "contractComparison": contract_comparison,
+        "recoveryGate": recovery_gate,
         "improvementPct": {
             "maeVsBaseline": round(float(improvement_pct), 2)
             if improvement_pct is not None
@@ -494,8 +689,16 @@ def artifact_sha256(path: Path) -> str | None:
 
 
 def config_fingerprint(config: dict) -> str:
+    artifact_config = {
+        key: config.get(key, {})
+        for key in (
+            "forecast",
+            "weather_features",
+            "interval_calibration",
+        )
+    }
     encoded = json.dumps(
-        config,
+        artifact_config,
         ensure_ascii=True,
         sort_keys=True,
         separators=(",", ":"),

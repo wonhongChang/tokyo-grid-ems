@@ -77,17 +77,25 @@ GitHub scheduled runs can be delayed or skipped. Do not classify one missed run 
 | `reports/ai/daily/YYYY-MM-DD.json` | Previous-day narrative | `provider: openai` preferred; regenerate on failure |
 | `ops/local_etl_status.json` | Latest local batch state | publish, deploy, and intraday stages recorded |
 | `metrics/model_promotion.json` | Champion/challenger outcome | Interpret using the status table below |
+| `metrics/model_shadow_evaluation.json` | Recovery-candidate live evidence | `passed: true`, at least 72 hours and two finalized days before approval |
 | `metrics/operational_replay.json` | Recent served performance | Period, segment error, and interval coverage reviewed |
+| `metrics/forecast_vintage_accuracy.json` | Fair TEPCO benchmark | `collecting` until complete 28/84-day windows; never treat collecting as a pass |
 
 ## 5. Weekly Model Operations
 
 By default, challenger evaluation runs during Monday ETL. `validation_window_days: 28` means every evaluation uses the latest 28 finalized days as a rolling window; it does not mean the model is replaced once every 28 days.
+
+Degraded-Champion recovery criteria are defined in the [Model Promotion and Degraded Champion Policy](model-promotion-policy.md). Recovery is fail-closed: a candidate must pass temporal recovery gates, auxiliary windows, drift, shadow evidence, and explicit approval.
 
 ### 5.1 Promotion Status
 
 | `status` | Meaning | Operator action |
 |---|---|---|
 | `promoted` | All validation and drift gates passed | Inspect the new champion curve and metadata |
+| `recovery_promoted` | Approved degraded-Champion recovery completed | Verify rollback artifact and stabilization metrics immediately |
+| `recovery_candidate_ready` | Replay and required shadow evidence passed; manual approval remains | Keep serving Champion until the operator explicitly approves recovery |
+| `recovery_approval_rejected` | Approval was requested for missing, stale, or insufficient shadow evidence | Champion remains active; repair the evidence contract and never bypass it |
+| `shadow_required` | Drift is high or recovery shadow evidence is missing/incomplete | Do not promote; inspect the preserved shadow artifact and evidence failures |
 | `rejected` | A quality or drift gate failed | Keep the champion and record failed gates as experiment evidence |
 | `champion_retained` | Retraining is not due | Normal state; do not force retraining |
 | `gate_error` | Evaluation execution failed | Confirm champion continuity, then repair logs or input data |
@@ -102,7 +110,7 @@ The current gate combines:
 - segment regressions across time bands and business-day types;
 - mean and maximum today/tomorrow prediction drift versus the champion.
 
-TEPCO performance is reported as an external reference and is not a promotion condition.
+TEPCO is not a training or calibration target. `forecast_accuracy.json` is a latest-value reference; only the complete same-capture `forecast_vintage_accuracy.json` can support parity qualification.
 
 ### 5.3 Forced Retraining
 

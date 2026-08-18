@@ -170,4 +170,6 @@ v13 영업 전환 계약, 기상 출처 연속성 replay와 현재 승격 상태
 
 모델 승격 결정과 rolling 검증 근거는 `metrics/model_promotion.json`에 저장합니다.
 
+정상 승격과 성능 저하 Champion의 복구 경로는 [모델 승격 및 성능 저하 Champion 정책](model-promotion-policy.md)에 정리했습니다. 코드는 동일 cutoff 계약 재현, recovery gate, shadow/rollback artifact, 명시적 승인을 구현했으며 matched-vintage TEPCO 이력은 아직 수집 중입니다.
+
 TEPCO 예측은 내부 정보가 반영될 수 있는 강한 기준선입니다. 이 프로젝트의 목적은 TEPCO를 항상 이긴다고 주장하는 것이 아니라, 공개 데이터만으로 만든 모델을 투명하게 비교하고 운영하는 것입니다.

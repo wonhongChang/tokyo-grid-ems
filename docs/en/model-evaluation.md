@@ -2,12 +2,13 @@
 
 Languages: [한국어](../ko/model-evaluation.md) · [日本語](../ja/model-evaluation.md)
 
-Tokyo Grid EMS evaluates forecast quality from two angles.
+Tokyo Grid EMS evaluates forecast quality from three angles.
 
 1. **Offline backtest**: checks whether the model improves over the statistical baseline on historical data.
 2. **Operational comparison**: checks whether the project model or TEPCO's published forecast was closer to actual demand in the dashboard's operating window.
+3. **Matched-vintage benchmark**: compares model and TEPCO values captured in the same run and at the same lead time.
 
-Both outputs are generated under `web/public/metrics/` and displayed in the dashboard's **Validation** tab.
+All three outputs are generated under `web/public/metrics/`. The dashboard's **Validation** tab currently shows the offline backtest and latest-published-value operational comparison; the matched-vintage result remains an internal promotion and qualification artifact until sufficient history is available.
 
 ---
 
@@ -76,8 +77,27 @@ Key metrics:
 
 Important caveat:
 
-TEPCO's forecast is a strong official operational baseline and may reflect information unavailable to this project. This comparison is not a claim that the project model always beats TEPCO; it is a transparent operational scorecard for when each forecast is closer to actual demand.
+TEPCO's forecast is a strong official operational baseline and may reflect information unavailable to this project. It can revise elapsed-hour values, so `forecast_accuracy.json` is explicitly a `latest_published_value_reference` and is not eligible for formal parity claims.
 
 For strict train/test separation, use `model_backtest.json` as the primary model-quality signal.
 
 Advantage-hour counts are supporting context, not the primary ranking signal. The dashboard prioritizes WAPE and large-error risk over a sports-like win/loss interpretation.
+
+---
+
+## Matched-vintage TEPCO Benchmark
+
+Output:
+
+```text
+web/public/metrics/forecast_vintage_accuracy.json
+```
+
+- Each ETL/Intraday run stores future model and TEPCO values observed together under `reports/internal/forecast-vintages/`.
+- Later TEPCO revisions cannot rewrite an earlier capture.
+- `capturedAt` is used as the observable vintage because TEPCO does not expose an immutable issuance timestamp.
+- Metrics are separated into `0-2h`, `2-4h`, `4-8h`, and `8-24h` lead buckets, then into operational time bands.
+- Formal qualification requires complete 28-day and 84-day windows, overall MAE/WAPE ratio at or below 1.10, and each sufficiently covered time-band MAE ratio at or below 1.25.
+- A paired date-block bootstrap reports uncertainty in model-minus-TEPCO absolute error.
+
+`collecting` means the benchmark is functioning but does not yet have enough history. It must never be interpreted as a pass or failure.

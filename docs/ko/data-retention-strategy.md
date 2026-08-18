@@ -29,6 +29,7 @@ repository는 영구 데이터 저장소가 아니라 공개 서빙 계층으로
 | `actual/YYYY-MM-DD.json` | 최근 180-365일 | 월별 archive JSON | 과거 실측은 TEPCO CSV/ZIP로 재구성 가능 |
 | `forecast/YYYY-MM-DD.json` | 최근 180-365일 | 월별 archive 또는 일별 metrics | 과거 예측은 주로 평가용 |
 | `forecast_snapshots/YYYY-MM-DD/*.json` | 최근 21일, 날짜별 최대 16개 | 추후 compact lead-time metrics | 각 갱신 시점의 모델 판단을 분석하기 위한 자료 |
+| `reports/internal/forecast-vintages/*.json` | 최근 120 target date, 날짜별 최대 48개 | rolling 28/84일 지표 | 공정한 비교용 같은 실행의 모델/TEPCO 압축 값 |
 | `alerts/YYYY-MM-DD.json` | 최근 180-365일 | 월별 archive 또는 요약 metrics | UI 응답성 유지 |
 | `metrics/*.json` | 유지 | rolling/monthly metrics | 작고 포트폴리오 가치가 높음 |
 | `.hourly_cache.parquet` | 현재 snapshot만 | 원천 데이터에서 재생성 가능 | Actions에는 유용하지만 Git history 비대화 위험 |
@@ -84,6 +85,8 @@ lead-time 예측 스냅샷은 ETL과 intraday 실행 시 `forecast_snapshots/` �
 - 생성 시점의 실측/TEPCO fallback 관측 개수를 함께 기록합니다.
 - 예측 series와 peak 요약을 저장해 나중에 운영 관점에서 원인을 분석할 수 있게 합니다.
 - 공개 UI에는 직접 연결하지 않고, 모델 검토와 사고 분석용으로만 사용합니다.
+
+Matched-vintage 장부는 공식 자격 판정에 84일 창이 필요하므로 별도 120일을 보존합니다. 전체 진단이 아니라 미래 시간의 모델/TEPCO 쌍만 압축 저장하고 target date 기준으로 정리합니다. 이 보존 기간은 가장 긴 자격 판정 창보다 짧게 줄이면 안 됩니다.
 
 ## 향후 구현 작업
 

@@ -77,17 +77,25 @@ GitHubのscheduleは遅延・欠落する場合があります。1回の欠落�
 | `reports/ai/daily/YYYY-MM-DD.json` | 前日運用解説 | `provider: openai`を推奨、失敗時は再生成 |
 | `ops/local_etl_status.json` | 最新local batch状態 | publish、deploy、intraday段階を確認 |
 | `metrics/model_promotion.json` | Champion/Challenger結果 | 下表のstatusで判断 |
+| `metrics/model_shadow_evaluation.json` | 復旧候補の実運用証拠 | 承認前に`passed: true`、72時間以上、確定2日以上 |
 | `metrics/operational_replay.json` | 最近のserved性能 | 期間、segment誤差、interval coverage |
+| `metrics/forecast_vintage_accuracy.json` | 公平なTEPCO benchmark | 28/84日window完成までは`collecting`。合格と解釈しない |
 
 ## 5. 週次モデル運用
 
 既定では月曜日ETLでChallenger評価を行います。`validation_window_days: 28`は28日ごとの交換ではなく、各評価で直近の確定28日を使うrolling windowです。
+
+性能低下Championの復旧昇格は[モデル昇格および性能低下Championポリシー](model-promotion-policy.md)に従います。temporal recovery gate、補助window、drift、shadow証拠、明示承認をすべて要求するfail-closed経路です。
 
 ### 5.1 Promotion status
 
 | `status` | 意味 | 運用対応 |
 |---|---|---|
 | `promoted` | 全validation・drift gate通過 | 新Championのcurveとmetadataを確認 |
+| `recovery_promoted` | 承認済み性能低下Champion復旧完了 | rollback artifactと安定化指標を即時確認 |
+| `recovery_candidate_ready` | replayと必須shadow証拠を通過し、手動承認のみ残る | 運用者が復旧を明示承認するまでChampionを維持 |
+| `recovery_approval_rejected` | 欠落・古い・不十分なshadow証拠に対して承認を要求 | Champion維持、証拠contractを修復し迂回しない |
+| `shadow_required` | driftが大きい、または復旧shadow証拠が欠落・不足 | 昇格せず、保存済みshadow artifactと証拠failureを確認 |
 | `rejected` | 品質またはdrift gate失敗 | Championを維持し、失敗項目を実験候補として記録 |
 | `champion_retained` | 再学習予定日ではない | 正常。強制再学習しない |
 | `gate_error` | 評価実行自体が失敗 | Champion継続を確認後、logと入力を復旧 |
@@ -102,7 +110,7 @@ GitHubのscheduleは遅延・欠落する場合があります。1回の欠落�
 - 時間帯、営業日・非営業日segmentの退行
 - Championに対する今日・明日予測の平均・最大drift
 
-TEPCO性能は外部参考値であり、promotion条件には使用しません。
+TEPCOは学習・補正targetには使用しません。`forecast_accuracy.json`は最新値の参考であり、完成した`forecast_vintage_accuracy.json`だけがparity資格根拠になります。
 
 ### 5.3 強制再学習
 

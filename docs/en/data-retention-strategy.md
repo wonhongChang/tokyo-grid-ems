@@ -29,6 +29,7 @@ Use the repository as a public serving layer, not as the permanent data warehous
 | `actual/YYYY-MM-DD.json` | recent 180-365 days | monthly archive JSON | historical actuals are reproducible from TEPCO CSV/ZIP |
 | `forecast/YYYY-MM-DD.json` | recent 180-365 days | monthly archive or daily metrics | old forecasts matter mainly for evaluation |
 | `forecast_snapshots/YYYY-MM-DD/*.json` | recent 21 days, max 16 per day | compact lead-time metrics later | used to inspect what the model believed at each update time |
+| `reports/internal/forecast-vintages/*.json` | recent 120 target days, max 48 captures per day | rolling 28/84-day metrics | compact same-run model/TEPCO values; required for fair benchmarking |
 | `alerts/YYYY-MM-DD.json` | recent 180-365 days | monthly archive or summary metrics | keeps UI responsive |
 | `metrics/*.json` | keep | compact rolling/monthly metrics | small and portfolio-relevant |
 | `.hourly_cache.parquet` | current snapshot only | rebuildable from sources | useful for Actions, risky if committed forever with history |
@@ -84,6 +85,8 @@ Lead-time forecast snapshots are now written under `forecast_snapshots/` for bot
 - Store actual/fallback observation counts at generation time.
 - Store the forecast series and peak summary for later operational diagnosis.
 - Do not link these files directly from the public UI; they are for model review and incident analysis.
+
+Matched-vintage ledgers have a separate 120-day retention because the formal qualification requires an 84-day window. They store only compact future-hour model/TEPCO pairs, not full diagnostics, and are pruned by target date. This bounded history must not be shortened below the longest qualification window.
 
 ## Future Implementation Tasks
 

@@ -2,12 +2,13 @@
 
 언어: [English](../en/model-evaluation.md) · [日本語](../ja/model-evaluation.md)
 
-Tokyo Grid EMS는 예측 성능을 두 관점으로 분리해서 평가합니다.
+Tokyo Grid EMS는 예측 성능을 세 관점으로 분리해서 평가합니다.
 
 1. **오프라인 백테스트**: 모델 자체가 과거 데이터에서 안정적으로 예측하는지 확인합니다.
 2. **운영 비교**: 실제 대시보드 운영 상황에서 TEPCO 예측과 자체 모델 중 어느 쪽이 실적에 더 가까웠는지 확인합니다.
+3. **동일 vintage 비교**: 같은 실행, 같은 lead-time에 관측한 자체 모델과 TEPCO 예측을 공정하게 비교합니다.
 
-두 결과는 `web/public/metrics/` 아래 JSON으로 생성되며, GitHub Pages 대시보드의 **검증** 탭에서 표시됩니다.
+세 결과는 `web/public/metrics/` 아래 JSON으로 생성됩니다. 현재 **검증** 탭은 오프라인 백테스트와 최신 게시값 운영 비교를 표시하고, 동일 vintage 비교는 이력이 충분해질 때까지 내부 승격·자격 판정 자료로만 유지합니다.
 
 ---
 
@@ -80,6 +81,7 @@ web/public/metrics/forecast_accuracy.json
 해석 시 주의점:
 
 - TEPCO 예측은 공식 운영 예측이며, 당일 갱신 시점에 따라 매우 강한 기준선이 됩니다.
+- TEPCO는 지나간 시간의 예측값도 수정할 수 있으므로 `forecast_accuracy.json`은 `latest_published_value_reference` 운영 참고치이며 공식 parity 판정에는 사용하지 않습니다.
 - 자체 모델은 GitHub Actions 기반 정적 대시보드 운영을 목표로 하며, 최근 실적이 들어온 경우 intraday residual correction을 적용합니다.
 - 따라서 이 비교는 논문식 순수 모델 비교라기보다, 사용자가 실제 화면에서 보게 되는 운영 성능 비교입니다.
 - 엄격한 학습/평가 분리 기준의 모델 성능은 `model_backtest.json`를 기준으로 봅니다.
@@ -96,3 +98,22 @@ web/public/metrics/forecast_accuracy.json
 3. **모델 백테스트**: LightGBM이 기존 베이스라인 대비 실제로 개선되는지 확인합니다.
 
 이 구조는 “모델이 좋아 보인다”가 아니라, **운영 중인 예측 시스템을 어떻게 검증하고 설명하는지**를 보여주기 위한 것입니다.
+
+---
+
+## 3. 동일 vintage TEPCO 벤치마크
+
+출력 파일:
+
+```text
+web/public/metrics/forecast_vintage_accuracy.json
+```
+
+- 각 ETL/Intraday 실행에서 아직 지나지 않은 시간의 모델/TEPCO 값을 함께 `reports/internal/forecast-vintages/`에 저장합니다.
+- 이후 TEPCO 수정값은 앞선 캡처를 덮어쓸 수 없습니다.
+- TEPCO가 불변 발행 시각을 제공하지 않으므로 프로젝트의 `capturedAt`을 관측 가능한 vintage로 사용합니다.
+- `0~2h`, `2~4h`, `4~8h`, `8~24h` lead bucket과 운영 시간대로 나눠 계산합니다.
+- 공식 자격 판정은 28일과 84일 창이 모두 차고, 전체 MAE/WAPE 비율이 1.10 이하이며, 표본이 충분한 각 시간대 MAE 비율이 1.25 이하일 때만 통과합니다.
+- 날짜 단위 paired block bootstrap으로 모델과 TEPCO 절대 오차 차이의 불확실성도 표시합니다.
+
+`collecting`은 기능은 정상이나 이력이 부족하다는 뜻이며 합격이나 실패로 해석하지 않습니다.

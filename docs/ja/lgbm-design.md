@@ -170,4 +170,6 @@ v13営業日遷移契約、気象source連続性replay、現在の昇格状態�
 
 モデル昇格判断とrolling検証根拠は`metrics/model_promotion.json`に保存します。
 
+通常昇格と性能低下Championの復旧経路は[モデル昇格および性能低下Championポリシー](model-promotion-policy.md)に整理しています。コードは同一cutoff契約replay、recovery gate、shadow/rollback artifact、明示承認を実装済みで、matched-vintage TEPCO履歴は収集中です。
+
 TEPCO予測は内部情報を反映している可能性がある強い基準線です。このプロジェクトの目的はTEPCOに常に勝つことではなく、公開データだけで構築したモデルを透明に比較し、運用することです。

@@ -63,14 +63,41 @@ class LGBMForecaster:
         self.model_q50_lag24_residual: "LGBMRegressor | None" = None
         self.model_q50_non_business: "LGBMRegressor | None" = None
         self.q50_non_business_feature_columns: list[str] | None = None
+        self.training_window_days: int | None = None
+        self.training_window_start: str | None = None
 
     def _make_model(self, alpha: float) -> "LGBMRegressor":
+        forecast_config = (getattr(self, "config", {}) or {}).get("forecast", {})
+        configured_params = forecast_config.get("lightgbm_params", {})
+        allowed_params = {
+            "num_leaves",
+            "min_child_samples",
+            "subsample",
+            "subsample_freq",
+            "colsample_bytree",
+            "reg_alpha",
+            "reg_lambda",
+            "max_depth",
+        }
+        unknown = sorted(set(configured_params).difference(allowed_params))
+        if unknown:
+            raise ValueError(
+                "forecast.lightgbm_params contains unsupported keys: "
+                + ", ".join(unknown)
+            )
+        model_params = {**_LGBM_PARAMS, **configured_params}
+        n_estimators = int(
+            forecast_config.get("n_estimators", self.n_estimators)
+        )
+        learning_rate = float(
+            forecast_config.get("learning_rate", self.learning_rate)
+        )
         return LGBMRegressor(
             objective="quantile",
             alpha=alpha,
-            n_estimators=self.n_estimators,
-            learning_rate=self.learning_rate,
-            **_LGBM_PARAMS,
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            **model_params,
         )
 
     def _calibrate_interval_half_widths(
@@ -193,7 +220,40 @@ class LGBMForecaster:
 
     def fit(self, cache: pd.DataFrame) -> None:
         """Train interval, q50, residual, and non-business regime models."""
-        X, y = build_training_features(cache, self.config)
+        forecast_config = (getattr(self, "config", {}) or {}).get("forecast", {})
+        configured_window = forecast_config.get("training_window_days")
+        training_start = None
+        self.training_window_days = None
+        self.training_window_start = None
+        if configured_window is not None:
+            window_days = int(configured_window)
+            if window_days < 90:
+                raise ValueError(
+                    "forecast.training_window_days must be at least 90 days."
+                )
+            observed_mask = cache["actual_mw"].notna()
+            if "actual_source" in cache.columns:
+                observed_mask &= (
+                    cache["actual_source"].fillna("observed")
+                    != "tepco_forecast_fallback"
+                )
+            observed_ts = pd.to_datetime(
+                cache.loc[observed_mask, "ts"],
+                utc=True,
+            ).dt.tz_convert(JST)
+            if observed_ts.empty:
+                raise ValueError(
+                    "LGBMForecaster.fit: no observed timestamp for training window."
+                )
+            training_start = observed_ts.max() - pd.Timedelta(days=window_days)
+            self.training_window_days = window_days
+            self.training_window_start = training_start.isoformat()
+
+        X, y = build_training_features(
+            cache,
+            self.config,
+            start_ts=training_start,
+        )
         if len(X) < self.MIN_TRAIN_ROWS:
             raise ValueError(
                 f"LGBMForecaster.fit: need >= {self.MIN_TRAIN_ROWS} rows (90 days), "

@@ -8,4 +8,5 @@ Languages: [한국어](../../ko/model-reviews/README.md) / [日本語](../../ja/
 
 ## Reviews
 
+- [2026-08-18 operational model review](model-review-2026-08-18.md) - completed; the August 14-18 stage reconstruction retains v11 only temporarily and starts immediate replay work on raw q50, the morning guard, and residual sign reversal.
 - [2026-08-11 operational model review](model-review-2026-08-11.md) - completed; v11 retained, v13 rejected, and a replay-qualified non-business morning guard accepted.

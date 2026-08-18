@@ -20,7 +20,10 @@ from python.etl.run_batch import (
     _inject_today_actuals,
     _load_or_promote_lgbm,
     _load_existing_forecast,
+    _last_model_evaluation,
     _model_retrain_due,
+    _recovery_shadow_candidate_state,
+    _recovery_shadow_evidence,
     _reserve_risk_severity_from_alerts_payload,
     _write_forecast_snapshot,
     _write_operational_calibration_snapshot,
@@ -898,6 +901,152 @@ def test_model_retrain_due_uses_weekly_schedule(monkeypatch):
         True,
         "manual_force",
     )
+
+
+def test_recovery_shadow_evidence_fails_closed_when_missing(tmp_path):
+    result = _recovery_shadow_evidence(tmp_path, {"model_promotion": {}})
+
+    assert result["passed"] is False
+    assert result["hours"] == 0
+    assert "shadow_evaluation_missing" in result["failures"]
+    assert "insufficient_shadow_hours" in result["failures"]
+
+
+def test_last_model_evaluation_prefers_current_decision_over_nested_history(
+    tmp_path,
+):
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    current = {
+        "status": "recovery_promoted",
+        "champion": {"sha256": "new"},
+        "lastEvaluation": {"status": "shadow_required"},
+    }
+    (metrics_dir / "model_promotion.json").write_text(
+        json.dumps(current),
+        encoding="utf-8",
+    )
+
+    assert _last_model_evaluation(tmp_path) == current
+
+    retained = {
+        "status": "champion_retained",
+        "lastEvaluation": current,
+    }
+    (metrics_dir / "model_promotion.json").write_text(
+        json.dumps(retained),
+        encoding="utf-8",
+    )
+    assert _last_model_evaluation(tmp_path) == current
+
+
+def test_recovery_shadow_evidence_requires_hours_and_finalized_days(tmp_path):
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    (metrics_dir / "model_shadow_evaluation.json").write_text(
+        json.dumps({"passed": True, "hours": 72, "finalizedDays": 2}),
+        encoding="utf-8",
+    )
+
+    result = _recovery_shadow_evidence(tmp_path, {
+        "model_promotion": {
+            "recovery_shadow_hours": 72,
+            "recovery_shadow_finalized_days": 2,
+        },
+    })
+
+    assert result["passed"] is True
+    assert result["failures"] == []
+
+
+def test_recovery_shadow_candidate_requires_matching_artifact_evidence(tmp_path):
+    from python.eval.model_validation import artifact_sha256, config_fingerprint
+
+    config = {"forecast": {"n_weeks": 12}}
+    shadow_path = tmp_path / ".lgbm_model.shadow.pkl"
+    shadow_path.write_bytes(b"preserved-shadow-candidate")
+    shadow_hash = artifact_sha256(shadow_path)
+    (tmp_path / ".lgbm_model.shadow_meta.json").write_text(json.dumps({
+        "artifactSha256": shadow_hash,
+        "configFingerprint": config_fingerprint(config),
+        "trainingCutoff": "2026-08-17",
+        "intervalVersion": "candidate-v1",
+    }), encoding="utf-8")
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    (metrics_dir / "model_promotion.json").write_text(json.dumps({
+        "status": "shadow_required",
+        "reason": "recovery_replay_passed_shadow_evidence_required",
+        "challenger": {"sha256": shadow_hash},
+    }), encoding="utf-8")
+    (metrics_dir / "model_shadow_evaluation.json").write_text(json.dumps({
+        "passed": True,
+        "hours": 72,
+        "finalizedDays": 2,
+        "artifactSha256": shadow_hash,
+    }), encoding="utf-8")
+
+    result = _recovery_shadow_candidate_state(tmp_path, config)
+    assert result["ready"] is True
+
+    (metrics_dir / "model_shadow_evaluation.json").write_text(json.dumps({
+        "passed": True,
+        "hours": 72,
+        "finalizedDays": 2,
+        "artifactSha256": "different-candidate",
+    }), encoding="utf-8")
+    result = _recovery_shadow_candidate_state(tmp_path, config)
+    assert result["ready"] is False
+    assert "shadow_evaluation_artifact_mismatch" in result["failures"]
+
+
+def test_recovery_approval_promotes_preserved_shadow_not_new_training(
+    tmp_path,
+    monkeypatch,
+):
+    champion = object()
+    approved = object()
+    candidate_state = {
+        "available": True,
+        "ready": True,
+        "artifactSha256": "candidate-sha",
+        "intervalVersion": "candidate-v1",
+        "shadowEvidence": {"passed": True},
+        "lastEvaluation": {},
+    }
+    promoted_args = []
+    monkeypatch.setattr(
+        "python.etl.run_batch._try_load_lgbm",
+        lambda out_dir: champion,
+    )
+    monkeypatch.setattr(
+        "python.etl.run_batch._champion_health",
+        lambda *args: {"status": "degraded"},
+    )
+    monkeypatch.setattr(
+        "python.etl.run_batch._recovery_shadow_candidate_state",
+        lambda *args: candidate_state,
+    )
+
+    def fake_promote(*args):
+        promoted_args.append(args)
+        return approved
+
+    monkeypatch.setattr(
+        "python.etl.run_batch._promote_recovery_shadow",
+        fake_promote,
+    )
+    monkeypatch.setenv("TOKYO_GRID_EMS_APPROVE_RECOVERY_PROMOTION", "true")
+
+    result = _load_or_promote_lgbm(
+        pd.DataFrame(),
+        tmp_path,
+        {"model_promotion": {"enabled": True}},
+        date(2026, 8, 18),
+    )
+
+    assert result is approved
+    assert promoted_args[0][-1] is candidate_state
 
 
 def test_model_promotion_rejects_challenger_and_keeps_champion(

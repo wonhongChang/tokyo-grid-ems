@@ -26,7 +26,7 @@
 | 피처 생성 | `python/forecast/feature_builder.py` |
 | 후처리 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
 | Challenger interval contract | `q025_q50_q975_p95_v13_transition_cooling_blend` |
-| 현재 Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (drift gate 통과 전까지 유지) |
+| 현재 Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (임시 유지; Challenger가 정상 또는 복구 gate 전체를 통과해야 교체) |
 | 최소 학습량 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
@@ -95,6 +95,8 @@ TEPCO forecast fallback은 pipeline continuity를 위한 임시값입니다. Lig
 - hyperparameter를 자주 흔들기보다 먼저 데이터 소스, lag regime, post-processing carryover를 점검합니다.
 - 특정 하루의 shape를 맞추기 위해 모델 복잡도를 올리는 수정은 피합니다.
 - 신규 피처는 전체 MAE뿐 아니라 시간대별 WAPE/RMSE와 shape 부작용을 함께 봅니다.
+
+후보 실험에서는 `forecast.training_window_days`, `forecast.n_estimators`, `forecast.learning_rate`, `forecast.lightgbm_params`를 선택적으로 지정할 수 있습니다. 이 값들은 Challenger 재현 실험용이며 현재 운영 설정에는 활성화되어 있지 않습니다. `training_window_days`는 최소 90일이고, `lightgbm_params`는 코드에서 허용한 규제·복잡도 파라미터만 받습니다. 값을 바꿔도 같은 cutoff의 Champion replay와 28/56/84일 검증을 모두 다시 통과하기 전에는 운영 모델에 반영하지 않습니다.
 
 ---
 
@@ -273,6 +275,10 @@ Raw LightGBM Forecast
 | promotion | `validation_window_days` | 28 | 평가할 때마다 최근 확정 28일을 사용합니다. 28일마다 한 번 재학습한다는 뜻이 아닙니다. |
 | promotion | 절대 품질 상한 | MAE 1000, WAPE 3.0%, shape 750, 최대 오차 6500 MW | 약한 baseline만 이겼지만 운영 품질이 나쁜 모델을 거부합니다. 구간별 상한은 MAE 1500, shape 1100 MW입니다. |
 | promotion | 예측 drift 상한 | 평균 900, 시간 최대 2500 MW | 전체 데이터로 학습한 Challenger가 오늘/내일 곡선을 Champion보다 과도하게 바꾸면 승격을 거부합니다. |
+| promotion | Champion 상대 gate | MAE 개선 5%, 핵심 구간 퇴행 최대 5% | 기존 모델이 약하거나 절대 상한이 느슨하다는 이유만으로 후보가 통과하지 못하게 합니다. 두 계약은 동일 cutoff에서 재현합니다. |
+| promotion | 성능 저하 Champion 복구 | MAE/WAPE 10% 개선, 56/84일 비퇴행 | 정상 절대 상한을 낮추지 않고 교체할 수 있는 통제 경로입니다. 이 조건만으로 배포를 승인하지는 않습니다. |
+| promotion | 복구 shadow 근거 | 72 forecast-hour, 확정 2일 | `metrics/model_shadow_evaluation.json`이 없거나 부족하면 fail-closed입니다. 통과 뒤에도 명시적 승인이 필요합니다. |
+| benchmark | `forecast_vintages` 자격 | 28/84일, coverage 80%, MAE/WAPE 1.10 | 같은 캡처의 TEPCO/모델 값을 사용합니다. RMSE 비율 1.15, 최대오차·구간 비율 1.25, paired bootstrap MAE 비율 상한 1.10도 요구합니다. |
 | weather | `cooling_base_temp_c` | 22.0 | 낮추면 냉방 민감도가 빨리 켜지고, 올리면 여름 초입 과대반응을 줄입니다. 계절 전체 backtest로 조정해야 합니다. |
 | weather | `heating_base_temp_c` | 18.0 | 올리면 난방 수요 신호가 강해지고, 내리면 겨울철 과민 반응을 줄입니다. |
 | weather bias | `min_abs_bias_c` | 1.5 | 낮추면 AMeDAS-JMA 연속성 보정이 자주 켜지고, 높이면 작은 출처 경계 noise를 무시합니다. 너무 낮으면 날씨 noise를 추종합니다. |
@@ -318,7 +324,10 @@ Raw LightGBM Forecast
 - 오늘·내일 drift는 실제 서빙과 같은 weather/lag 입력에서 48개 유한값을 요구하며, 누락·`NaN`·무한값은 즉시 승격을 거부합니다.
 - 시간 순서 검증은 target 날짜의 수요를 숨기고 최종 기상 문맥을 사용하며, 운영 후처리를 제외한 모델 계약을 평가합니다.
 - `metrics/operational_replay.json`은 실제 서빙된 예측을 평가하고 TEPCO는 외부 참고 지표로만 표시합니다.
+- `metrics/forecast_accuracy.json`은 데이터에 마지막으로 남은 TEPCO 값을 사용하므로 참고 scorecard이지 공식 parity 근거가 아닙니다.
+- `metrics/forecast_vintage_accuracy.json`이 공식 동일-capture benchmark입니다. 28/84일 lead bucket coverage와 risk·신뢰구간 gate가 완성될 때까지 `collecting`을 유지합니다.
 - Stage replay는 날짜별 최신 calibration snapshot을 사용하므로 모든 Intraday 게시 이력을 완전히 복원한 결과가 아닙니다.
+- 성능 저하 Champion의 복구 후보는 shadow 72시간, 확정 2일, 명시적 승인이 없으면 `shadow_required`를 넘지 못합니다.
 - TEPCO forecast fallback은 lag 연속성에는 사용할 수 있지만 학습 target과 검증 actual에서는 제외합니다.
 
 ### 평가 지표

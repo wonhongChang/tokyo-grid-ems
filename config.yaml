@@ -26,8 +26,11 @@ model_promotion:
   enabled: true
   retrain_weekday: 0         # Monday; ETL still runs daily with the current champion
   validation_window_days: 28 # rolling temporal holdout, not a 28-day replacement cycle
+  auxiliary_validation_window_days: [56, 84]
   min_mae_improvement_vs_baseline_pct: 20.0
   max_segment_mae_regression_pct: 10.0
+  min_mae_improvement_vs_champion_pct: 5.0
+  max_segment_regression_vs_champion_pct: 5.0
   max_validation_mae_mw: 1000
   max_validation_wape_pct: 3.0
   max_validation_shape_delta_mae_mw: 750
@@ -36,6 +39,17 @@ model_promotion:
   max_segment_shape_delta_mae_mw: 1100
   max_mean_prediction_drift_mw: 900
   max_hour_prediction_drift_mw: 2500
+  degraded_champion:
+    max_operational_mae_mw: 900
+    max_operational_wape_pct: 2.7
+    critical_operational_mae_mw: 1000
+    critical_operational_wape_pct: 3.0
+    min_failed_performance_conditions: 2
+  recovery_min_improvement_pct: 10.0
+  recovery_max_risk_regression_pct: 5.0
+  recovery_min_weak_segment_improvement_pct: 10.0
+  recovery_shadow_hours: 72
+  recovery_shadow_finalized_days: 2
   bootstrap_when_champion_missing: false # failed validation falls back to baseline, never bypasses the gate
 
 weather_features:
@@ -466,6 +480,17 @@ forecast_snapshots:
   enabled: true
   retention_days: 21         # bounded public history for operational review
   max_per_day: 16            # enough for scheduled intraday + ETL refreshes
+
+forecast_vintages:
+  enabled: true
+  retention_days: 120        # supports formal 28/84-day matched-vintage windows
+  max_snapshots_per_day: 48  # hourly runs plus manual recovery headroom
+  minimum_qualification_days: 84
+  non_inferiority_ratio: 1.10
+  max_segment_ratio: 1.25
+  minimum_bucket_coverage_ratio: 0.80
+  max_rmse_ratio: 1.15
+  max_max_error_ratio: 1.25
 
 operational_calibration_snapshots:
   enabled: true

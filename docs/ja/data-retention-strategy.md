@@ -29,6 +29,7 @@ repositoryは恒久的なデータウェアハウスではなく、公開配信�
 | `actual/YYYY-MM-DD.json` | 直近180-365日 | 月次archive JSON | 過去実績はTEPCO CSV/ZIPから再構成可能 |
 | `forecast/YYYY-MM-DD.json` | 直近180-365日 | 月次archiveまたは日次metrics | 過去予測は主に評価用途 |
 | `forecast_snapshots/YYYY-MM-DD/*.json` | 直近21日、日付ごと最大16件 | 将来はcompact lead-time metrics | 各更新時点でモデルが何を見ていたかを分析するため |
+| `reports/internal/forecast-vintages/*.json` | 直近120 target date、日付ごと最大48件 | rolling 28/84日指標 | 公平な比較用の同一実行モデル/TEPCO圧縮値 |
 | `alerts/YYYY-MM-DD.json` | 直近180-365日 | 月次archiveまたは要約metrics | UI応答性を維持 |
 | `metrics/*.json` | 保持 | rolling/monthly metrics | 小さくポートフォリオ価値が高い |
 | `.hourly_cache.parquet` | 現在snapshotのみ | 元データから再生成可能 | Actionsには便利だがGit history肥大化リスク |
@@ -84,6 +85,8 @@ lead-time予測スナップショットは、ETLとintraday実行時に `forecas
 - 生成時点の実績/TEPCO fallback観測数を一緒に記録します。
 - 予測seriesとpeakサマリーを保存し、後から運用観点で原因分析できるようにします。
 - 公開UIからは直接リンクせず、モデルレビューと障害分析用として扱います。
+
+Matched-vintage台帳は正式資格に84日windowが必要なため、別途120日保持します。完全な診断ではなく未来時間のモデル/TEPCOペアだけを圧縮保存し、target date基準でpruneします。この保持期間は最長資格windowより短くしてはいけません。
 
 ## 今後の実装タスク
 

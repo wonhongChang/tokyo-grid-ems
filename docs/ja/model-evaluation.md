@@ -2,12 +2,13 @@
 
 言語: [English](../en/model-evaluation.md) · [한국어](../ko/model-evaluation.md)
 
-Tokyo Grid EMSでは、予測性能を2つの観点で評価します。
+Tokyo Grid EMSでは、予測性能を3つの観点で評価します。
 
 1. **オフラインバックテスト**: 過去データ上でLightGBMが統計ベースラインを改善しているか確認します。
 2. **運用比較**: 実際のダッシュボード運用期間で、自社モデルとTEPCO予測のどちらが実績に近かったか確認します。
+3. **同一vintage benchmark**: 同一実行・同一lead-timeで観測した自モデルとTEPCO予測を比較します。
 
-両方の結果は `web/public/metrics/` に生成され、ダッシュボードの**検証**タブで表示されます。
+3つの結果はすべて`web/public/metrics/`に生成されます。現在のダッシュボードの**検証**タブにはオフラインバックテストと最新公開値による運用比較を表示し、同一vintage比較は十分な履歴が蓄積するまで内部の昇格・資格判定資料として扱います。
 
 ---
 
@@ -76,8 +77,27 @@ web/public/metrics/forecast_accuracy.json
 
 注意点:
 
-TEPCO予測は公式の運用予測であり、このプロジェクトでは使えない情報を反映している可能性があります。この比較は「常にTEPCOに勝つ」主張ではなく、どの条件でどちらの予測が実績に近いかを透明に示すための運用スコアカードです。
+TEPCO予測は公式の運用予測であり、このプロジェクトでは使えない情報を反映している可能性があります。また経過時間の値も修正されるため、`forecast_accuracy.json`は`latest_published_value_reference`運用参考値であり、正式なparity判定には使用しません。
 
 厳密な学習/評価分離に基づくモデル性能は `model_backtest.json` を主な指標として確認します。
 
 優位時間は補助情報であり、主順位そのものではありません。ダッシュボードでは単純な勝敗表現よりも、WAPEと大きな誤差リスクを優先します。
+
+---
+
+## 同一vintage TEPCO Benchmark
+
+出力:
+
+```text
+web/public/metrics/forecast_vintage_accuracy.json
+```
+
+- 各ETL/Intraday実行で、未来時間のモデル/TEPCO値を同時に`reports/internal/forecast-vintages/`へ保存します。
+- 後のTEPCO修正値は過去captureを上書きできません。
+- TEPCOが不変の発行時刻を提供しないため、プロジェクトの`capturedAt`を観測可能なvintageとして使います。
+- `0-2h`、`2-4h`、`4-8h`、`8-24h` lead bucketと運用時間帯に分けて評価します。
+- 正式資格には28日・84日両windowの完成、全体MAE/WAPE ratio 1.10以下、十分な標本がある各時間帯MAE ratio 1.25以下が必要です。
+- paired日付block bootstrapでモデルとTEPCOの絶対誤差差の不確実性も記録します。
+
+`collecting`は機能しているが履歴が不足している状態であり、合格または不合格を意味しません。

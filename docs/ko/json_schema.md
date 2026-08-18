@@ -620,6 +620,28 @@ intraday 실행별 운영 보정 상태를 제한적으로 보관합니다. 최�
 
 ---
 
+# 동일 시점 Forecast Vintage 계약
+
+`reports/internal/forecast-vintages/YYYY-MM-DD.json`은 append-only 장부입니다. 각 snapshot은 `capturedAt`, `captureOrigin`, `runType`, `modelName`과 미래 시간만 포함하는 `ts`, `leadMinutes`, `modelForecastMw`, `tepcoForecastMw` 행을 가집니다. 같은 `capturedAt`은 무시하며 이후 source 수정으로 앞선 행을 덮어쓰지 않습니다.
+
+`metrics/forecast_vintage_accuracy.json`은 다음을 포함합니다.
+
+- `methodology.type: "matched_capture_lead_time_evaluation"`
+- `0_2h`, `2_4h`, `4_8h`, `8_24h` lead bucket으로 나눈 28일/84일 창
+- 모델과 TEPCO의 MAE/WAPE/RMSE/최대 오차 및 비율
+- 운영 시간대별 비율과 날짜 단위 paired block bootstrap 구간
+- `qualification.status`: `collecting`, `qualified`, `not_qualified`
+
+자격 판정은 lead bucket·시간대별 paired-hour coverage 80%, MAE/WAPE와 paired-bootstrap 상한 비율 1.10 이하, RMSE 비율 1.15 이하, 최대 오차·시간대 비율 1.25 이하를 요구합니다.
+
+별도 `forecast_accuracy.json`은 `formalParityEligible: false`를 명시하며 최신 게시값 기준 참고치로 유지합니다.
+
+# 모델 승격 계약
+
+`metrics/model_promotion.json`은 Champion health, 동일 cutoff 28/56/84일 검증, recovery·drift 실패, 보존된 shadow/rollback artifact와 `shadowEvidence`를 기록합니다. `metrics/model_shadow_evaluation.json`이 `passed: true`, 일치하는 `artifactSha256`, `hours` 72 이상, `finalizedDays` 2 이상을 확인하기 전에는 복구 후보가 `shadow_required`를 넘지 못하며, 그 뒤에도 명시적 승인이 필요합니다.
+
+---
+
 # 대시보드 구현 팁(프론트)
 - 결측은 `null`로 처리하여 라인이 끊기도록(연속선 금지)
 - `availability !== "ok"`이면 탭 상단에 배지/메시지 표시

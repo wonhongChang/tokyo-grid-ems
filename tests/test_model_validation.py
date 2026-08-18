@@ -9,8 +9,11 @@ import pytest
 from python.eval.model_validation import (
     _absolute_gate_failures,
     _complete_dates,
+    _contract_comparison,
     _metric_rows,
+    _recovery_gate,
     _segment_passes,
+    config_fingerprint,
     prediction_drift_report,
 )
 from python.forecast.baseline import HourlyForecast
@@ -162,6 +165,76 @@ def test_absolute_gate_rejects_nonfinite_metrics():
     })
 
     assert "overall.maeMw_invalid" in failures
+
+
+def _comparison_metrics(mae: float, wape: float, *, segment_mae: float) -> dict:
+    return {
+        "overall": {
+            "hours": 672,
+            "maeMw": mae,
+            "wapePct": wape,
+            "rmseMw": mae * 1.2,
+            "maxErrorMw": 4_000.0,
+            "shapeDeltaMaeMw": 600.0,
+        },
+        "regimes": {
+            "business": {
+                "hours": 480,
+                "maeMw": segment_mae,
+                "shapeDeltaMaeMw": 600.0,
+            },
+        },
+        "timeBands": {
+            "morning": {
+                "hours": 140,
+                "maeMw": segment_mae,
+                "shapeDeltaMaeMw": 700.0,
+            },
+        },
+    }
+
+
+def test_contract_comparison_requires_material_champion_improvement():
+    candidate = _comparison_metrics(900.0, 2.5, segment_mae=950.0)
+    champion = _comparison_metrics(1_000.0, 2.8, segment_mae=1_000.0)
+
+    comparison = _contract_comparison(candidate, champion, {
+        "min_mae_improvement_vs_champion_pct": 5.0,
+        "max_segment_regression_vs_champion_pct": 5.0,
+    })
+
+    assert comparison["gate"]["passed"] is True
+    assert comparison["improvementPct"]["mae"] == pytest.approx(10.0)
+
+
+def test_recovery_gate_rejects_candidate_that_improves_mae_but_not_wape():
+    candidate = _comparison_metrics(850.0, 2.75, segment_mae=850.0)
+    champion = _comparison_metrics(1_000.0, 2.8, segment_mae=1_000.0)
+
+    gate = _recovery_gate(candidate, champion, {
+        "recovery_min_improvement_pct": 10.0,
+        "recovery_max_risk_regression_pct": 5.0,
+        "recovery_min_weak_segment_improvement_pct": 10.0,
+    })
+
+    assert gate["passed"] is False
+    assert "overall.wapePct_recovery_improvement_below_threshold" in gate["failures"]
+
+
+def test_config_fingerprint_ignores_non_artifact_operating_settings():
+    base = {
+        "forecast": {"n_weeks": 12},
+        "weather_features": {"cooling_base_temp_c": 22.0},
+        "interval_calibration": {"min_p95_half_width_mw": 500},
+        "forecast_snapshots": {"retention_days": 21},
+    }
+    changed = {
+        **base,
+        "forecast_snapshots": {"retention_days": 120},
+        "model_promotion": {"validation_window_days": 84},
+    }
+
+    assert config_fingerprint(base) == config_fingerprint(changed)
 
 
 class _FakeForecaster:

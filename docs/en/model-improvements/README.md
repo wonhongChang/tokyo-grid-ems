@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-08
 
+- [2026-08-18 matched-vintage TEPCO evaluation and promotion governance](model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
 - [2026-08-13 AMeDAS-JMA boundary consistency](model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 business-return observed overforecast veto](model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
 - [2026-08-11 rolling conformal interval floor](model-improvement-2026-08-11-rolling-conformal-interval-floor.md)

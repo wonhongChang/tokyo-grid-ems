@@ -619,6 +619,28 @@ intraday実行ごとの運用補正状態を限定的に保存します。最新
 
 ---
 
+# 同一時点Forecast Vintage契約
+
+`reports/internal/forecast-vintages/YYYY-MM-DD.json`はappend-only台帳です。各snapshotは`capturedAt`、`captureOrigin`、`runType`、`modelName`と、未来時間のみの`ts`、`leadMinutes`、`modelForecastMw`、`tepcoForecastMw`行を持ちます。同じ`capturedAt`は無視し、後のsource修正で過去行を上書きしません。
+
+`metrics/forecast_vintage_accuracy.json`には次を含みます。
+
+- `methodology.type: "matched_capture_lead_time_evaluation"`
+- `0_2h`、`2_4h`、`4_8h`、`8_24h` lead bucket別の28日/84日window
+- モデルとTEPCOのMAE/WAPE/RMSE/最大誤差と比率
+- 運用時間帯別比率と日付単位paired block bootstrap区間
+- `qualification.status`: `collecting`、`qualified`、`not_qualified`
+
+資格判定では、lead bucket・時間帯別paired-hour coverage 80%、MAE/WAPEおよびpaired-bootstrap上限比率1.10以下、RMSE比率1.15以下、最大誤差・時間帯比率1.25以下を要求します。
+
+別の`forecast_accuracy.json`は`formalParityEligible: false`を明示し、最新公開値による参考値として維持します。
+
+# モデル昇格契約
+
+`metrics/model_promotion.json`はChampion health、同一cutoff 28/56/84日検証、recovery・drift失敗、保持されたshadow/rollback artifact、`shadowEvidence`を記録します。`metrics/model_shadow_evaluation.json`が`passed: true`、一致する`artifactSha256`、`hours` 72以上、`finalizedDays` 2以上を確認するまでは復旧候補は`shadow_required`を超えず、その後も明示的承認が必要です。
+
+---
+
 # ダッシュボード実装のヒント（フロント）
 - 欠損は `null` で処理してラインが途切れるように（連続線禁止）
 - `availability !== "ok"` の場合はタブ上部にバッジ・メッセージを表示

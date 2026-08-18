@@ -26,7 +26,7 @@
 | 特徴量生成 | `python/forecast/feature_builder.py` |
 | 後処理 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
 | Challenger interval contract | `q025_q50_q975_p95_v13_transition_cooling_blend` |
-| 現行Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble`（drift gate通過まで維持） |
+| 現行Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble`（暫定維持。Challengerが通常または復旧gateをすべて通過した場合のみ置換） |
 | 最小学習量 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
@@ -87,6 +87,8 @@ TEPCO forecast fallbackは継続性のための一時入力です。lag構築に
 | `min_p95_half_width_mw` | `500` | 非現実的に狭いバンドを防止 |
 
 運用上は、LightGBMの複雑度を変える前に、データ品質、lag regime、calibration挙動を先に確認します。
+
+Challenger実験では、`forecast.training_window_days`、`forecast.n_estimators`、`forecast.learning_rate`、`forecast.lightgbm_params`を任意で指定できます。これらは再現可能な候補実験用であり、現在の本番設定では有効化していません。`training_window_days`は90日以上、`lightgbm_params`は実装が許可した正則化・複雑度キーだけを受け付けます。変更した候補は、同一cutoffのChampion replayと28/56/84日検証を再度通過するまで運用モデルへ反映しません。
 
 ---
 
@@ -258,6 +260,10 @@ Raw LightGBM Forecast
 | promotion | `validation_window_days` | 28 | 評価ごとに直近の確定28日を使います。28日ごとに一度だけ再学習する意味ではありません。 |
 | promotion | 絶対品質上限 | MAE 1000、WAPE 3.0%、shape 750、最大誤差6500 MW | 弱いbaselineを上回っても運用品質が低いモデルを拒否します。segment上限はMAE 1500、shape 1100 MWです。 |
 | promotion | 予測drift上限 | 平均900、時間最大2500 MW | 全データ学習Challengerが今日・明日の曲線をChampionから過度に変える場合は昇格を拒否します。 |
+| promotion | Champion相対gate | MAE改善5%、重要segment退行最大5% | 現行モデルが弱い、または絶対上限が緩いという理由だけで候補を通さないため、同一cutoffで両契約を再現します。 |
+| promotion | 性能低下Champion復旧 | MAE/WAPE 10%改善、56/84日非退行 | 通常の絶対上限を緩めずに置換する統制経路です。この条件だけでは配備を承認しません。 |
+| promotion | 復旧shadow証拠 | 72 forecast-hour、確定2日 | `metrics/model_shadow_evaluation.json`が欠落または不足ならfail-closedです。通過後も明示的承認が必要です。 |
+| benchmark | `forecast_vintages`資格 | 28/84日、coverage 80%、MAE/WAPE 1.10 | 同一captureのTEPCO/モデル値を使います。RMSE比率1.15、最大誤差・segment比率1.25、paired bootstrap MAE比率上限1.10も要求します。 |
 | weather | `cooling_base_temp_c` | 22.0 | 下げると冷房感度が早く立ち上がり、上げると初夏の過反応を抑えます。暖候期全体で検証します。 |
 | weather | `heating_base_temp_c` | 18.0 | 上げると暖房信号が強くなり、下げると冬の過敏反応を抑えます。 |
 | weather bias | `min_abs_bias_c` | 1.5 | 下げるとAMeDAS-JMA連続性補正が頻繁に作動し、上げると小さなsource境界noiseを無視します。低すぎると気象noiseを追います。 |
@@ -303,7 +309,10 @@ Raw LightGBM Forecast
 - 今日・明日のdriftは実配信相当のweather/lag入力で48個の有限値を要求し、欠落・`NaN`・無限値は昇格を拒否します。
 - 時系列検証はtarget日の需要を隠し、最終気象文脈を利用して、運用後処理を除くモデル契約を評価します。
 - `metrics/operational_replay.json`は実際に配信した予測を評価し、TEPCOは外部参考指標としてのみ表示します。
+- `metrics/forecast_accuracy.json`はデータに最後に残ったTEPCO値を使うため参考scorecardであり、正式parity証拠ではありません。
+- `metrics/forecast_vintage_accuracy.json`が正式な同一capture benchmarkです。28/84日lead bucket coverageとrisk・信頼区間gateが完了するまでは`collecting`です。
 - Stage replayは日付別の最新calibration snapshotを利用するため、全Intraday公開履歴の完全な再現ではありません。
+- 性能低下Championの復旧候補はshadow 72時間、確定2日、明示的承認がなければ`shadow_required`を超えません。
 - TEPCO forecast fallbackはlag連続性には使えますが、学習targetと検証actualから除外します。
 
 ### 指標

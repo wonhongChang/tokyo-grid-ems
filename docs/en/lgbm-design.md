@@ -168,4 +168,6 @@ Three reports are generated:
 
 Model promotion decisions and their rolling validation evidence are stored in `metrics/model_promotion.json`.
 
+Normal promotion and degraded-Champion recovery are separated by the [Model Promotion and Degraded Champion Policy](model-promotion-policy.md). The code implements same-cutoff contract replay, recovery gates, shadow/rollback artifacts, and explicit approval; matched-vintage TEPCO history is still collecting.
+
 The operational comparison is a scorecard, not a claim that the project always beats TEPCO. TEPCO may use internal information unavailable to this project.

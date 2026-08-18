@@ -261,6 +261,18 @@ def build_forecast_accuracy_report(
         "timezone": "Asia/Tokyo",
         "generatedAt": generated_at,
         "windowDays": max_days,
+        "methodology": {
+            "type": "latest_published_value_reference",
+            "tepcoForecastVintage": "not_preserved",
+            "tepcoSourceMayRevisePastValues": True,
+            "formalParityEligible": False,
+            "matchedVintageReport": "metrics/forecast_vintage_accuracy.json",
+            "note": (
+                "Use this report for dashboard context only. Formal TEPCO "
+                "parity requires forecasts captured at the same time and "
+                "evaluated in the same lead-time bucket."
+            ),
+        },
         "modelScope": {
             "summaryModelFamily": current_model_family,
             "summaryModelNames": sorted({

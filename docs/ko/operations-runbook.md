@@ -77,17 +77,25 @@ GitHub 예약 실행은 지연되거나 누락될 수 있다. 한 번의 누락�
 | `reports/ai/daily/YYYY-MM-DD.json` | 전날 운영 해설 | `provider: openai` 권장, 실패 시 재생성 |
 | `ops/local_etl_status.json` | 로컬 배치 최종 상태 | publish, deploy, intraday 단계 확인 |
 | `metrics/model_promotion.json` | Champion/Challenger 결과 | 아래 상태표에 따라 판단 |
+| `metrics/model_shadow_evaluation.json` | 복구 후보 실운영 근거 | 승인 전에 `passed: true`, 72시간 이상, 확정 2일 이상 |
 | `metrics/operational_replay.json` | 최근 운영 성능 | 기간, 구간별 오차, 밴드 coverage 확인 |
+| `metrics/forecast_vintage_accuracy.json` | 공정한 TEPCO 벤치마크 | 28/84일 창이 찰 때까지 `collecting`; 이를 합격으로 해석하지 않음 |
 
 ## 5. 주간 모델 운영
 
 기본 Challenger 평가는 월요일 ETL에 실행된다. `validation_window_days: 28`은 28일마다 교체한다는 뜻이 아니라, 매 평가 시점에 최근 확정 28일을 다시 사용하는 rolling window다.
+
+성능 저하 Champion의 복구 승격은 [모델 승격 및 성능 저하 Champion 정책](model-promotion-policy.md)을 따른다. temporal recovery gate, 보조 기간, drift, shadow 근거, 명시적 승인이 모두 있어야 하는 fail-closed 경로다.
 
 ### 5.1 승격 상태
 
 | `status` | 의미 | 운영 조치 |
 |---|---|---|
 | `promoted` | 모든 검증과 drift 게이트 통과 | 새 Champion의 오늘·내일 곡선과 metadata 확인 |
+| `recovery_promoted` | 승인된 성능 저하 Champion 복구 완료 | rollback artifact와 안정화 지표를 즉시 확인 |
+| `recovery_candidate_ready` | replay와 필수 shadow 근거 통과, 수동 승인만 남음 | 운영자가 복구를 명시적으로 승인할 때까지 Champion 유지 |
+| `recovery_approval_rejected` | 누락·오래됨·불충분한 shadow 근거에 승인을 요청함 | Champion 유지, 근거 계약을 복구하고 우회 금지 |
+| `shadow_required` | drift가 크거나 복구 shadow 근거가 누락·불충분 | 승격 금지, 보존된 shadow artifact와 근거 실패 항목 확인 |
 | `rejected` | 품질 또는 drift 게이트 실패 | 기존 Champion 유지, 실패 항목을 실험 후보로 기록 |
 | `champion_retained` | 평가 요일이 아니거나 재학습 불필요 | 정상 상태, 수동 재학습 금지 |
 | `gate_error` | 평가 실행 자체가 실패 | 기존 Champion 사용 여부 확인 후 로그와 입력 데이터 복구 |
@@ -102,7 +110,7 @@ GitHub 예약 실행은 지연되거나 누락될 수 있다. 한 번의 누락�
 - 오전, 낮, 저녁, 영업일·비영업일 등 구간별 퇴행
 - Champion 대비 오늘·내일 예측의 평균·최대 drift
 
-TEPCO 성능은 외부 참고값으로 표시하지만 승격 조건으로 사용하지 않는다.
+TEPCO는 학습·보정 target으로 사용하지 않는다. `forecast_accuracy.json`은 최신값 참고치이며, 완성된 `forecast_vintage_accuracy.json`만 parity 자격 근거로 사용할 수 있다.
 
 ### 5.3 강제 재학습
 

@@ -619,6 +619,28 @@ Provides an **AI-generated daily operations analysis** for the Daily Report tab.
 
 ---
 
+# Matched Forecast Vintage Contracts
+
+`reports/internal/forecast-vintages/YYYY-MM-DD.json` is an append-only ledger. Each snapshot contains `capturedAt`, `captureOrigin`, `runType`, `modelName`, and future-only rows with `ts`, `leadMinutes`, `modelForecastMw`, and `tepcoForecastMw`. A repeated `capturedAt` is ignored and later source revisions never rewrite an earlier row.
+
+`metrics/forecast_vintage_accuracy.json` contains:
+
+- `methodology.type: "matched_capture_lead_time_evaluation"`;
+- 28-day and 84-day windows split into `0_2h`, `2_4h`, `4_8h`, and `8_24h` lead buckets;
+- model and TEPCO MAE/WAPE/RMSE/max-error metrics and their ratios;
+- operational time-band ratios and a paired date-block bootstrap interval;
+- `qualification.status`: `collecting`, `qualified`, or `not_qualified`.
+
+Qualification requires 80% paired-hour coverage per lead bucket and time band, MAE/WAPE and paired-bootstrap upper ratio at most 1.10, RMSE ratio at most 1.15, and maximum-error/time-band ratios at most 1.25.
+
+`forecast_accuracy.json` separately declares `formalParityEligible: false`; it remains a latest-published-value reference.
+
+# Model Promotion Contracts
+
+`metrics/model_promotion.json` records Champion health, same-cutoff 28/56/84-day validation, recovery and drift failures, preserved shadow/rollback artifacts, and `shadowEvidence`. Recovery cannot advance beyond `shadow_required` until `metrics/model_shadow_evaluation.json` reports `passed: true`, the matching `artifactSha256`, at least 72 `hours`, and at least two `finalizedDays`; explicit approval is still required afterward.
+
+---
+
 # Dashboard Implementation Tips (Frontend)
 - Treat missing values as `null` so the line breaks rather than interpolates
 - If `availability !== "ok"`, show a badge or message at the top of the tab

@@ -26,7 +26,7 @@ Operational rules:
 | Feature builder | `python/forecast/feature_builder.py` |
 | Post-processing | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
 | Challenger interval contract | `q025_q50_q975_p95_v13_transition_cooling_blend` |
-| Current Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (retained until the drift gate passes) |
+| Current Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (temporary; retained until a Challenger passes all normal or recovery gates) |
 | Minimum training rows | `90 * 24 = 2160` hourly rows |
 | Fallback | `baseline_dow_hour_mean` |
 
@@ -87,6 +87,8 @@ TEPCO forecast fallback is a continuity input. It may support lag construction, 
 | `min_p95_half_width_mw` | `500` | prevent unrealistically narrow bands |
 
 Operational tuning should start with data quality, lag regime, and calibration behavior before changing LightGBM complexity.
+
+Candidate experiments may optionally set `forecast.training_window_days`, `forecast.n_estimators`, `forecast.learning_rate`, and `forecast.lightgbm_params`. These controls are for reproducible Challenger experiments and are not enabled in the current production configuration. `training_window_days` has a 90-day minimum, and `lightgbm_params` accepts only the regularization and complexity keys allowed by the implementation. A changed candidate must still pass same-cutoff Champion replay and the 28/56/84-day validation windows before it can serve.
 
 ---
 
@@ -260,6 +262,10 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | promotion | `validation_window_days` | 28 | Uses the latest 28 complete days at every evaluation. This is a rolling evidence window, not a 28-day retraining interval. |
 | promotion | absolute quality limits | MAE 1000, WAPE 3.0%, shape 750, max error 6500 MW | Rejects a challenger even when it beats a weak baseline but remains operationally poor. Segment limits are MAE 1500 and shape 1100 MW. |
 | promotion | prediction drift limits | mean 900, hourly max 2500 MW | Rejects a full-data challenger whose today/tomorrow curve moves too far from the champion. |
+| promotion | Champion-relative gate | MAE improvement 5%, critical-segment regression at most 5% | Prevents a candidate from passing only because the incumbent is weak or the absolute ceiling is loose. Both contracts are replayed at the same cutoff. |
+| promotion | degraded-Champion recovery | MAE/WAPE improvement 10%, 56/84-day non-regression | Allows a controlled replacement path without weakening the normal absolute limits. It does not itself authorize deployment. |
+| promotion | recovery shadow evidence | 72 forecast-hours, 2 finalized days | Missing or insufficient `metrics/model_shadow_evaluation.json` evidence fails closed. Explicit approval remains mandatory after this gate. |
+| benchmark | `forecast_vintages` qualification | 28/84 days, 80% coverage, MAE/WAPE 1.10 | Uses same-capture TEPCO/model values. RMSE ratio is capped at 1.15, maximum-error and segment ratios at 1.25, and the paired bootstrap MAE-ratio upper bound at 1.10. |
 | weather | `cooling_base_temp_c` | 22.0 | Lower values activate cooling sensitivity earlier; higher values reduce early-summer overreaction. Validate across the full warm season. |
 | weather | `heating_base_temp_c` | 18.0 | Higher values strengthen heating signals; lower values reduce winter over-sensitivity. |
 | weather bias | `min_abs_bias_c` | 1.5 | Lower values apply AMeDAS-to-JMA continuity correction more often; too low may chase source-boundary noise. |
@@ -305,7 +311,10 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 - Today/tomorrow drift requires 48 finite values on production-equivalent weather and lag inputs; missing, `NaN`, or infinite values reject promotion.
 - Temporal validation uses target-day weather with target demand removed. It evaluates the model contract without operational post-processing.
 - `metrics/operational_replay.json` evaluates forecasts that were actually served and reports TEPCO only as an external reference.
+- `metrics/forecast_accuracy.json` uses the latest TEPCO value left in the data and is therefore a reference scorecard, not formal parity evidence.
+- `metrics/forecast_vintage_accuracy.json` is the formal same-capture benchmark. It remains `collecting` until 28/84-day lead-bucket coverage and risk/confidence gates are complete.
 - Stage replay uses the latest available calibration snapshot per date. It is diagnostic shadow evidence, not an exact reconstruction of every intraday publication.
+- A degraded-Champion recovery candidate cannot advance beyond `shadow_required` without 72 shadow hours, two finalized days, and explicit approval.
 - TEPCO forecast fallback can support lag continuity, but it is excluded from training targets and all validation actuals.
 
 ### Metrics
