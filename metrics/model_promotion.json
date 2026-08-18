@@ -1,12 +1,37 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "2.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-08-18T07:30:18+09:00",
+  "generatedAt": "2026-08-19T07:30:19+09:00",
   "status": "champion_retained",
   "reason": "not_scheduled",
+  "championHealth": {
+    "status": "degraded",
+    "eligibleForRecoveryPath": true,
+    "integrityFailures": [
+      "training_cutoff_missing",
+      "config_fingerprint_mismatch"
+    ],
+    "performanceFailures": [
+      "operational_mae_degraded",
+      "operational_wape_degraded"
+    ],
+    "operationalMetrics": {
+      "maeMw": 949.8,
+      "wapePct": 2.717,
+      "hours": 672
+    },
+    "artifact": {
+      "intervalVersion": "q025_q50_q975_p95_v11_lag24_residual_ensemble",
+      "trainingCutoff": null,
+      "storedConfigFingerprint": "07f080ab6dd73c4b07db02c195caba8145092f63e941518835ba1e90a03935b6",
+      "currentConfigFingerprint": "c9eae1108a6d0b5870e324bb69e08bb1b044cd9c818dcb1a5bb5fbcaf9464464"
+    }
+  },
   "champion": {
     "artifact": ".lgbm_model.pkl",
-    "sha256": "28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640"
+    "sha256": "28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640",
+    "intervalVersion": "q025_q50_q975_p95_v11_lag24_residual_ensemble"
   },
+  "lastEvaluation": null,
   "nextScheduledWeekday": 0
 }
