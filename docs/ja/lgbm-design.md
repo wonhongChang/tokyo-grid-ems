@@ -23,7 +23,7 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 
 ## モデル構造
 
-`python/forecast/lgbm_model.py` は絶対需要quantileモデル3つ、lag-24残差中央値モデル1つ、非営業日専用q50モデル1つを学習します。
+隔離stagingのv14候補artifactは絶対需要quantileモデル3つに加え、lag-24残差、非営業日regime、日次レベル用q50補助モデルを含みます。
 
 | モデル | 役割 |
 |---|---|
@@ -32,8 +32,11 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 | q975 | p95上側区間推定 |
 | q50 lag24 residual | `actual_mw - lag_24h`の中央値推定 |
 | q50 non-business | 土日祝日の中心線を補助する推定 |
+| q50 daily-level | 24時間共通レベルshiftに使う日平均推定 |
 
-営業日の中心予測は通常、絶対需要q50と`lag_24h + 予測残差`を50:50で合成します。前日と営業タイプが異なる営業日では、v13契約が`cooling_delta_24h`の0度から-4度への低下に応じて残差weightを0.5から0まで連続的に減衰します。非営業日は統合q50と非営業日専用q50を50:50で合成します。専用モデルは湿度・不快指数の24時間変化量と二つの朝interactionを除外し、気象source遷移への感度を抑えます。q025/q975のhalf-widthは維持したまま最終q50の周囲へ移動するため、アンサンブル自体が予測バンドを急に狭めたり広げたりしません。
+staging artifactは運用v11のq025、q50、q975、lag-24 residual boosterを正確に保持します。営業日q50は絶対需要q50と`lag_24h + 予測残差`の50:50合成を維持します。非営業日はこの統合q50と新たに学習した非営業日専用q50を50:50で合成します。v13 transition-coolingモデルは棄却済みの過去実験で、staging v14の時間別backboneには含まれません。
+
+v14はその上に保守的な階層型レベル補正を適用します。直近最大730完全日を学習した日次モデルが、予測日平均と時間別q50平均の差の20%だけを反映し、24時間共通shiftを+/-750MWに制限します。補助経路は前日24時間がすべて確定しているか、00〜22時が確定し23時だけがTEPCO予測fallbackの場合に限って作動します。それ以外の不完全なパターンではq50がv11と完全に一致します。独立D+1モデルはありません。q025/q975 half-widthは最終q50の周囲に保持されます。
 
 ダッシュボードでは最終q50を予測線として使用します。q025/q975はp95予測バンドとして表示し、p99風の広い区間はq025/q975の幅から拡張します。片側のquantile区間がq50近くに潰れた場合、反対側の大きな不確実性をそのまま反映せず、その方向には最小幅のみを維持します。独立したquantileモデルが気象regime変化後に片側tailだけを稀に過度に広げる場合は、interval sanity calibrationがp95最大half-widthと上下非対称比率を制限し、q50予測線は変更しません。
 
@@ -143,7 +146,9 @@ residual = actualMw - modelForecastMw
 
 非営業日専用q50構造と昇格検証は [2026-07-31 非営業日レジームq50アンサンブル](model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md) に整理しています。
 
-v13営業日遷移契約、気象source連続性replay、現在の昇格状態は [2026-08-04 営業日遷移の冷房減衰と気象連続性](model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md) に整理しています。
+v13営業日遷移契約、気象source連続性replay、当時の昇格状態は [2026-08-04 営業日遷移の冷房減衰と気象連続性](model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md) に整理しています。
+
+最終v14契約、棄却した代替案、data coverage監査、同一cutoff検証、staging昇格記録は [2026-08-21 v14 Champion保持型キャリブレーション](model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md) に整理しています。
 
 ---
 
@@ -151,7 +156,7 @@ v13営業日遷移契約、気象source連続性replay、現在の昇格状態�
 
 1. ETLがTEPCO月次ZIPから確定済み履歴データを読み込みます。
 2. JMA AMeDAS観測気象、JMA公式予報気温、湿度fallbackフィールドを付与します。
-3. Full ETLは現在のChampionを維持します。設定した週次評価日にはChallengerを学習し、直近28日の時系列検証、segment・絶対品質、予測drift gateをすべて通過した場合のみ昇格します。
+3. Full ETLは現在のChampionを維持します。v14安定化中は汎用の定期Challenger学習を無効にし、正確なChampion保持型候補だけを明示承認されたdegraded-Champion復旧経路で生成・承認します。
 4. 昇格済みモデルだけを`web/public/.lgbm_model.pkl`へ保存し、status/intraday workflowはこのChampionを再ロードします。
 5. 月次ZIPがまだ更新されていない期間は、直近のactual JSONでcacheを補完して保存し、次回実行のlag連続性を維持します。
 6. 今日の予測を生成し、intraday residual correctionを適用します。

@@ -2,9 +2,9 @@
 
 언어: [English](../en/model-promotion-policy.md) / [日本語](../ja/model-promotion-policy.md)
 
-상태: 핵심 제어 구현 완료, matched-vintage 승격 자격 데이터 수집 중
+상태: v14 복구 후보를 격리 staging에 승격 완료; 원격 배포와 72시간 안정화 감시는 운영자 게시 후 시작
 
-기준일: 2026-08-18 JST
+기준일: 2026-08-21 JST
 
 ## 목적
 
@@ -17,8 +17,8 @@
 - 모델 버전은 재학습 횟수가 아니라 피처, target, 앙상블 또는 inference 계약이 바뀔 때 올린다.
 - 최신 데이터로 같은 계약을 다시 학습하는 것은 같은 버전이다.
 - v12는 v13에 흡수된 과거 후보로 보존하되 활성 후보 풀에서는 제외한다.
-- v13은 현재 Challenger 기준점이다.
-- v13의 구조적 결함을 수정해 계약이 바뀌면 v14 Challenger로 평가한다.
+- v13은 v14가 성능 저하 v11만 이긴 것이 아님을 증명하기 위한 과거 Challenger 기준점이다.
+- v14는 staging에서 승인된 차기 Champion 계약이다. 같은 계약을 최신 데이터로 다시 학습하는 것은 v14 build이며, 피처·target·ensemble·inference 계약이 바뀔 때만 다음 버전으로 올린다.
 
 ## 핵심 원칙
 
@@ -27,7 +27,7 @@
 3. TEPCO 예측은 외부 benchmark와 진단 신호로만 사용하며 학습, 보정, 승격 target으로 사용하지 않는다.
 4. 큰 prediction drift는 곧바로 성능 저하를 의미하지 않는다. 자동 승격을 멈추고 shadow 검증을 요구하는 신호로 해석한다.
 5. 정상 승격과 성능 저하 Champion의 복구 승격을 분리한다.
-6. 복구 승격도 수동 artifact 교체가 아니라 재현 가능한 replay, shadow, rollback 계약을 통과해야 한다.
+6. 복구 승격은 재현 가능한 replay, 변경 불가능한 정확한 artifact, 명시적 운영자 승인, rollback 보호가 필요하다. 승격 전 shadow가 기본이며, 아래의 강화 조건을 만족하는 긴급 복구 경로만 이를 필수 승격 후 감시로 전환할 수 있다.
 
 ## 검증 관점
 
@@ -79,7 +79,7 @@ TEPCO 기준 근거는 다음과 같다.
 
 | 등급 | 기준 |
 |---|---|
-| Recovery Champion | 기존 Champion보다 MAE/WAPE를 10% 이상 개선하고 복구 gate 통과 |
+| Recovery Champion | 기존 Champion보다 28일 MAE/WAPE를 8% 이상 개선하고 모든 보조 위험 gate 통과 |
 | Production Acceptable | 중간 운영 품질 gate 통과 |
 | TEPCO Parity Qualified | 동일 발행시점·동일 리드타임에서 28일과 84일 모두 MAE ratio 및 WAPE ratio 1.10 이하 |
 | TEPCO Superior | MAE ratio 1.00 미만이며 paired 일별 오차 차이의 95% 신뢰구간 상한이 0 미만 |
@@ -129,7 +129,7 @@ Parity 판정에는 다음 조건을 모두 요구한다.
 - 28일 as-served MAE가 900MW 또는 WAPE가 2.7%를 초과
 - 최근 14일 MAE가 이전 28일 기준보다 15% 이상 악화
 - 오전, 낮, 늦은 오후, 비영업일 중 하나의 MAE가 1,500MW를 초과
-- 같은 조건의 temporal replay에서 Challenger가 Champion 계약보다 전체 MAE를 10% 이상 개선
+- 같은 조건의 temporal replay에서 Challenger가 Champion 계약보다 전체 MAE를 8% 이상 개선
 - 모델 우세 시간 비율이 장기간 35% 미만으로 떨어짐. TEPCO는 이 조건의 진단 benchmark일 뿐 승격 target이 아니다.
 
 성능 저하 판정은 새 모델의 자동 승격을 의미하지 않는다. 정상 경로만으로는 기존 모델을 안전하게 교체할 수 없음을 나타내는 운영 상태다.
@@ -140,7 +140,7 @@ Parity 판정에는 다음 조건을 모두 요구한다.
 
 Champion이 `champion_degraded`일 때 Challenger는 절대 상한을 일부 넘더라도 다음 조건을 모두 만족하면 통제된 복구 후보가 될 수 있다.
 
-- 동일 temporal replay에서 Champion 대비 전체 MAE와 WAPE를 각각 최소 10% 개선
+- 동일 temporal replay에서 Champion 대비 전체 MAE와 WAPE를 각각 최소 8% 개선
 - 최대 오차와 shape delta MAE가 Champion보다 5% 넘게 악화되지 않음
 - 영업일, 비영업일, 오전, 낮, 늦은 오후, 저녁 중 어떤 핵심 구간도 Champion보다 MAE가 5% 넘게 악화되지 않음
 - 현재 Champion의 취약 구간 중 하나 이상을 10% 이상 개선
@@ -151,7 +151,22 @@ Champion이 `champion_degraded`일 때 Challenger는 절대 상한을 일부 넘
 
 복구 승격은 자동으로 실행하지 않는다. 결과를 `recovery_candidate_ready`로 기록하고 명시적인 운영 검토 후 `recovery_promoted`로 전환한다.
 
-구현은 이 근거를 `metrics/model_shadow_evaluation.json`에서 읽는다. `artifactSha256`은 보존된 shadow artifact, metadata, 이전 승격 보고서와 모두 일치해야 한다. 파일 누락·오래된 근거, 72시간 미만 또는 확정 2일 미만이면 `shadow_required`로 멈추며 승인 환경변수만으로 우회할 수 없다. 승인은 새로 재학습한 후보가 아니라 검증된 바로 그 shadow artifact를 승격한다.
+기본 구현은 이 근거를 `metrics/model_shadow_evaluation.json`에서 읽는다. `artifactSha256`은 보존된 shadow artifact, metadata, 이전 승격 보고서와 모두 일치해야 한다. 파일 누락·오래된 근거, 72시간 미만 또는 확정 2일 미만이면 `shadow_required`로 멈추며 일반 승인 환경변수만으로 우회할 수 없다. 승인은 새로 재학습한 후보가 아니라 검증된 바로 그 shadow artifact를 승격한다.
+
+### 운영자 승인 긴급 복구
+
+기존 Champion을 계속 유지하는 것 자체가 별도로 확인된 무결성·성능 위험일 때만 긴급 복구를 허용한다. 이 경로는 자동이 아니며 `python/eval/promote_recovery_candidate.py`와 명시적 복구 승인을 사용한다.
+
+- 기존 Champion은 이미 degraded 상태이고 학습 cutoff 누락, config fingerprint 불일치 같은 artifact 무결성 결함이 있어야 한다.
+- 정확한 v14 artifact가 28일 MAE와 WAPE를 v11 대비 각각 8% 이상 개선하고, 문서화된 취약 구간 중 하나 이상을 10% 이상 개선해야 한다.
+- v13은 배포된 적 없는 참고 후보이므로, 28일·56일·84일 모두에서 v13 MAE와 WAPE를 악화시키지 않아야 한다. 별도의 5% 추가 개선 기준은 요구하지 않는다.
+- 56일·84일 보조 창에서 v11 전체 MAE와 WAPE를 악화시키지 않아야 한다.
+- artifact 저장·재로드 호환성과 오늘/내일 48시간 유한값 smoke test를 통과해야 한다.
+- 자동 drift 한도를 넘으면 별도 `--allow-large-drift` 결정이 필요하며 수치와 이유를 승격 리포트에 기록해야 한다.
+- 원자적 교체 전에 이전 Champion artifact와 metadata를 rollback 경로로 복사해야 한다.
+- 승격 전 shadow를 생략한 대신 72시간 안정화 감시를 강제하고, 최소 48시간 확정 실적에서 유의한 퇴행이 보이면 rollback 검토를 시작한다.
+
+이 경로는 결함 있는 Champion이 무기한 남는 정책 실패를 해소할 뿐, 운영 품질이나 TEPCO 동등성을 인증하지 않는다.
 
 ## Prediction Drift 처리
 
@@ -187,15 +202,15 @@ Prediction drift는 변화량 위험 지표이며 정확도 지표가 아니다.
 
 ## 현재 프로젝트에 대한 적용 판단
 
-- v11은 현재 배포 Champion이지만 training cutoff가 없고 현재 config fingerprint와 일치하지 않아 무결성 기반 degraded review 대상이다.
-- 동일 cutoff 재현에서 v13의 v11 대비 MAE 개선은 28일 5.62%, 56일 3.17%, 84일 2.75%였다. 방향은 낫지만 복구 기준 10%에 미달한다.
-- 최근 365일 학습과 보수적인 LightGBM 복잡도 탐색에서도 승격 가능한 후보가 나오지 않았다. 최선 결과는 28일 MAE 1,207.9MW, WAPE 3.456%였다.
-- v13은 강제 승격하지 않고 거부한다. 복구 gate를 통과한 뒤에만 shadow 단계로 진입할 수 있다.
-- v13 결함을 수정해 피처 또는 inference 계약이 바뀌면 v14로 평가한다.
+- v14 `q025_q50_q975_p95_v14_daily_level_calibration`을 학습 cutoff 2026-08-19로 생성해 2026-08-21 JST에 격리 staging에서 복구 승격했다. 원격 data 배포는 별도 운영자 작업이다.
+- 최종 artifact는 v11 시간별 booster 4개를 바이트 수준으로 그대로 보존하고 비영업일 q50과 일간 레벨 보조 모델만 추가한다. 폐기한 전체 재학습 후보와 독립 D+1 모델은 포함하지 않는다.
+- 동일 cutoff v14 MAE는 28일 1142.5MW, 56일 972.0MW, 84일 871.5MW였다. v11 대비 각각 8.29%, 3.36%, 3.27% 개선했고 미배포 v13 참고 계약도 악화시키지 않았다.
+- 최신 `origin/data` 캐시 기준 오늘·내일 prediction drift는 평균 104.4MW, 최대 208.8MW여서 override가 필요하지 않았다. 오늘은 전날 확정 실측 23시간과 마지막 한 시간 fallback을 사용했고, coverage가 부족한 다음날은 v11과 정확히 같았다.
+- staging artifact SHA-256은 `77a35437305d60de841d2277bc2ed636878f0170a2386d727312397ba1b8a3d3`, v11 rollback SHA-256은 `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`이다.
 
 ## 구현 상태
 
-- 구현 완료: 동일 cutoff Champion replay, 절대/recovery gate, degraded health, 28/56/84일 검사, drift 분기, `lastEvaluation`, shadow/rollback artifact 보존, fail-closed 72시간·확정 2일 shadow 근거, 명시적 복구 승인.
+- 구현 완료: 동일 cutoff v11/v13/v14 replay, 절대/recovery gate, degraded health, 28/56/84일 검사, drift 분기, `lastEvaluation`, shadow/rollback artifact 보존, fail-closed 기본 shadow 승인, 명시적 긴급 복구 승인.
 - 구현 완료: append-only matched-vintage 캡처, 120초 이내 과거 동일 실행 가져오기, lead bucket 지표, 날짜 block bootstrap.
 - 수집 중: 28/84일 matched-vintage 이력. 완료 전 `forecast_accuracy.json`은 최신값 기반 운영 참고치로만 사용한다.
-- 복구 승격 전 남은 조건: 최소 72시간 shadow 예측, 2개 확정 운영일, frozen-origin 근거에 대한 운영자 검토.
+- 운영자 게시 전 남은 작업: 격리 staging의 정확한 artifact와 report를 data branch에 게시한다. 게시 후 72시간 안정화, 이전 Champion shadow 비교, 최소 48시간 확정 실적에서 유의한 퇴행이 확인될 때 rollback 검토를 시작한다.

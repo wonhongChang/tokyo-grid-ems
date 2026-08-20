@@ -7,7 +7,7 @@ forecast:
     same_business_type_only: false # validation supports residual blending across business-day transitions
     weight: 0.5              # blend absolute demand and (demand - lag_24h) q50 estimates
     transition_cooling_attenuation:
-      enabled: true
+      enabled: false # retained for v13 research replay; staged v14 preserves v11 blending
       zero_weight_delta_c: -4.0 # disable the residual blend after a sharp cooling transition
       full_weight_delta_c: 0.0  # retain the normal blend when cooling demand did not fall
   q50_regime_model:
@@ -21,9 +21,26 @@ forecast:
       - discomfort_delta_24h
       - business_morning_x_humidity_delta_24h
       - business_morning_x_discomfort_delta_24h
-
+  daily_level_model:
+    enabled: true
+    training_window_days: 730 # recent two-year level regimes; hourly shape still uses the full training set
+    weight: 0.20              # conservative whole-day correction; preserves more of the v11 level
+    max_abs_adjustment_mw: 750 # preserve the v11 hourly shape and cap whole-day movement
+    n_estimators: 350
+    learning_rate: 0.035
+    lightgbm_params:
+      num_leaves: 15
+      min_child_samples: 20
+      subsample: 0.85
+      colsample_bytree: 0.8
+      reg_lambda: 1.0
+  partial_lag_q50_fallback:
+    enabled: true
+    min_valid_lag24_hours: 24 # fallback when provenance is unavailable
+    min_observed_lag24_hours: 23 # allow only the final 23:00 TEPCO fallback
 model_promotion:
   enabled: true
+  scheduled_challenger_training_enabled: false # v14 uses explicit, exact-artifact recovery while stabilizing
   retrain_weekday: 0         # Monday; ETL still runs daily with the current champion
   validation_window_days: 28 # rolling temporal holdout, not a 28-day replacement cycle
   auxiliary_validation_window_days: [56, 84]
@@ -45,7 +62,7 @@ model_promotion:
     critical_operational_mae_mw: 1000
     critical_operational_wape_pct: 3.0
     min_failed_performance_conditions: 2
-  recovery_min_improvement_pct: 10.0
+  recovery_min_improvement_pct: 8.0 # paired with 56/84d and segment risk gates
   recovery_max_risk_regression_pct: 5.0
   recovery_min_weak_segment_improvement_pct: 10.0
   recovery_shadow_hours: 72

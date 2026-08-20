@@ -15,6 +15,7 @@ from python.etl.run_batch import (
     _finalize_previous_actual_json_fallbacks,
     _apply_intraday_residual_correction,
     _apply_weather_forecast_bias_correction,
+    _champion_health,
     _extend_cache_with_forecast_weather,
     _freeze_observed_forecast_hours,
     _inject_today_actuals,
@@ -901,6 +902,60 @@ def test_model_retrain_due_uses_weekly_schedule(monkeypatch):
         True,
         "manual_force",
     )
+
+
+def test_model_retrain_due_can_disable_scheduled_candidate_training(monkeypatch):
+    config = {
+        "model_promotion": {
+            "enabled": True,
+            "scheduled_challenger_training_enabled": False,
+            "retrain_weekday": 0,
+        },
+    }
+    champion = object()
+
+    assert _model_retrain_due(date(2026, 8, 24), config, champion) == (
+        False,
+        "scheduled_challenger_training_disabled",
+    )
+
+    monkeypatch.setenv("TOKYO_GRID_EMS_FORCE_MODEL_TRAIN", "true")
+    assert _model_retrain_due(date(2026, 8, 24), config, champion) == (
+        True,
+        "manual_force",
+    )
+
+
+def test_champion_health_detects_artifact_config_fingerprint_mismatch(tmp_path):
+    from python.eval.model_validation import config_fingerprint
+
+    class Champion:
+        interval_version = "test"
+        config = {"forecast": {"daily_level_model": {"weight": 0.20}}}
+
+        @staticmethod
+        def is_compatible():
+            return True
+
+    project_config = {"model_promotion": {}}
+    metadata = {
+        "trainingCutoff": "2026-08-19",
+        "configFingerprint": config_fingerprint(project_config),
+        "artifactConfigFingerprint": config_fingerprint(
+            {"forecast": {"daily_level_model": {"weight": 0.25}}}
+        ),
+    }
+    (tmp_path / ".lgbm_model_meta.json").write_text(
+        json.dumps(metadata),
+        encoding="utf-8",
+    )
+
+    result = _champion_health(tmp_path, Champion(), project_config)
+
+    assert result["status"] == "review_required"
+    assert result["integrityFailures"] == [
+        "artifact_config_fingerprint_mismatch"
+    ]
 
 
 def test_recovery_shadow_evidence_fails_closed_when_missing(tmp_path):

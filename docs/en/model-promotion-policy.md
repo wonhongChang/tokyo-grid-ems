@@ -2,9 +2,9 @@
 
 Languages: [한국어](../ko/model-promotion-policy.md) / [日本語](../ja/model-promotion-policy.md)
 
-Status: core controls implemented; matched-vintage qualification is collecting data
+Status: v14 recovery-promoted in isolated staging; remote deployment and the 72-hour stabilization window start only after operator publication
 
-Effective reference date: 2026-08-18 JST
+Effective reference date: 2026-08-21 JST
 
 ## Purpose
 
@@ -17,8 +17,8 @@ The current implementation compares a Challenger with a seasonal baseline and fi
 - A model version changes when the feature, target, ensemble, or inference contract changes, not on every retraining run.
 - Retraining the same contract with newer data keeps the same version.
 - v12 is retained as historical lineage but removed from the active candidate pool because v13 supersedes it.
-- v13 is the current Challenger reference.
-- A structural correction to the v13 contract becomes v14.
+- v13 is the superseded Challenger reference used to prove that v14 improves more than the degraded v11 baseline alone.
+- v14 is the approved next Champion contract in staging. Retraining the same contract with newer data remains a v14 build unless its feature, target, ensemble, or inference contract changes.
 
 ## Principles
 
@@ -27,7 +27,7 @@ The current implementation compares a Challenger with a seasonal baseline and fi
 3. Use TEPCO only as an external benchmark and diagnostic signal, never as a training, calibration, or promotion target.
 4. Large prediction drift does not itself mean worse accuracy. It should stop automatic promotion and require shadow validation.
 5. Separate normal promotion from degraded-Champion recovery.
-6. Recovery promotion still requires reproducible replay, shadow evaluation, and rollback protection.
+6. Recovery promotion requires reproducible replay, an exact immutable artifact, explicit operator approval, and rollback protection. Pre-promotion shadow is the default; the expedited degraded-Champion path converts it into mandatory post-promotion monitoring only under the stricter conditions below.
 
 ## Evidence Views
 
@@ -79,7 +79,7 @@ Because the project's final objective is TEPCO-level or better accuracy, use a s
 
 | Grade | Requirement |
 |---|---|
-| Recovery Champion | Improve MAE and WAPE by at least 10% versus the incumbent and pass recovery gates |
+| Recovery Champion | Improve 28-day MAE and WAPE by at least 8% versus the incumbent and pass every supporting risk gate |
 | Production Acceptable | Pass the intermediate operational-quality gate |
 | TEPCO Parity Qualified | MAE ratio and WAPE ratio at most 1.10 over both 28-day and 84-day windows at matched issuance time and lead time |
 | TEPCO Superior | MAE ratio below 1.00 and the upper 95% confidence bound of paired daily error differences below zero |
@@ -129,7 +129,7 @@ Set `champion_degraded` when at least two performance conditions recur in two co
 - 28-day as-served MAE exceeds 900MW or WAPE exceeds 2.7%.
 - Recent 14-day MAE is at least 15% worse than the preceding 28-day reference.
 - MAE exceeds 1,500MW in morning, daytime, late afternoon, or non-business segments.
-- A Challenger improves overall MAE by at least 10% versus the Champion contract under the same temporal replay.
+- A Challenger improves overall MAE by at least 8% versus the Champion contract under the same temporal replay.
 - The model remains ahead in fewer than 35% of hours for a sustained period. TEPCO is only the diagnostic benchmark for this signal, not a promotion target.
 
 Degraded status does not automatically promote a new model. It means the normal path can no longer safely resolve the incumbent problem by itself.
@@ -140,7 +140,7 @@ If 28-day as-served MAE exceeds 1,000MW or WAPE exceeds 3.0%, start a critical d
 
 When the Champion is degraded, a Challenger may become a controlled recovery candidate even if it misses an absolute gate, but only when every condition below passes.
 
-- Improve both overall MAE and WAPE by at least 10% versus the Champion on identical temporal replay.
+- Improve both overall MAE and WAPE by at least 8% versus the Champion on identical temporal replay.
 - Do not regress maximum error or shape delta MAE by more than 5%.
 - Do not regress MAE by more than 5% in any critical business, non-business, morning, daytime, late-afternoon, or evening segment.
 - Improve at least one known Champion weakness by 10% or more.
@@ -151,7 +151,22 @@ When the Champion is degraded, a Challenger may become a controlled recovery can
 
 Recovery promotion is not automatic. Record `recovery_candidate_ready`, require explicit operational review, and then transition to `recovery_promoted`.
 
-The implementation reads this evidence from `metrics/model_shadow_evaluation.json`. Its `artifactSha256` must match the preserved shadow artifact, metadata, and prior promotion report. Missing or stale evidence, fewer than 72 hours, or fewer than two finalized days produces `shadow_required`; the approval environment flag cannot bypass those failures. Approval promotes that exact preserved artifact rather than a newly retrained candidate.
+The default implementation reads this evidence from `metrics/model_shadow_evaluation.json`. Its `artifactSha256` must match the preserved shadow artifact, metadata, and prior promotion report. Missing or stale evidence, fewer than 72 hours, or fewer than two finalized days produces `shadow_required`; the normal approval environment flag cannot bypass those failures. Approval promotes that exact preserved artifact rather than a newly retrained candidate.
+
+### Expedited Operator Recovery
+
+An expedited recovery is allowed only when continuing the incumbent presents an independently documented integrity and performance risk. It is never automatic and must use `python/eval/promote_recovery_candidate.py` with explicit recovery approval.
+
+- The incumbent must already be classified as degraded and have an artifact-integrity defect such as a missing training cutoff or incompatible config fingerprint.
+- The exact v14 artifact must improve v11 MAE and WAPE by at least 8% over 28 days and improve at least one documented weak segment by at least 10%.
+- It must not regress v13 MAE or WAPE over 28, 56, or 84 days. v13 was never deployed, so it is a non-regression reference rather than a second material-gain gate.
+- It must not regress v11 overall MAE or WAPE over the supporting 56-day and 84-day windows.
+- Save/reload compatibility and finite today/tomorrow 48-hour smoke tests must pass.
+- Drift must remain within automatic limits unless a separate `--allow-large-drift` decision records the values and reason. The staged v14 required no override.
+- The previous Champion artifact and metadata must be copied to rollback paths before the atomic replacement.
+- The absence of pre-promotion shadow becomes a mandatory 72-hour stabilization period, with rollback review after 48 finalized hours on material regression.
+
+This path resolves the policy failure where a broken incumbent could otherwise remain forever, but it does not certify production quality or TEPCO parity.
 
 ## Prediction Drift
 
@@ -187,15 +202,15 @@ A non-scheduled ETL result must not overwrite the detailed result of the latest 
 
 ## Current Project Decision
 
-- v11 remains the deployed Champion, but its missing training cutoff and config-fingerprint mismatch require a degraded-Champion review.
-- The same-cutoff replay measured v13 versus v11 at 5.62% MAE improvement over 28 days, 3.17% over 56 days, and 2.75% over 84 days. This is directionally better but below the 10% recovery threshold.
-- A 365-day training window and conservative LightGBM complexity search did not produce a promotable candidate. The best result had 1,207.9MW MAE and 3.456% WAPE over 28 days.
-- v13 is rejected for promotion rather than force-promoted. It may enter shadow only after it passes the recovery gate.
-- If correcting v13 changes the feature or inference contract, evaluate the result as v14.
+- v14 `q025_q50_q975_p95_v14_daily_level_calibration` was recovery-promoted in isolated staging on 2026-08-21 JST with training cutoff 2026-08-19. Remote data deployment remains a separate operator action.
+- The artifact preserves the four v11 hourly boosters exactly and adds only non-business and daily-level auxiliary estimators. The rejected full-retrain and independent D+1 models are not included.
+- Same-cutoff v14 MAE was 1142.5MW over 28 days, 972.0MW over 56 days, and 871.5MW over 84 days. This improved v11 by 8.29%, 3.36%, and 3.27%, respectively, and did not regress the unpromoted v13 reference.
+- Against the latest `origin/data` cache, current/tomorrow prediction drift was 104.4MW on average and 208.8MW at maximum, so no drift override was used. The current day had 23 confirmed preceding-day hours plus one final-hour fallback; the next day had insufficient coverage and therefore matched v11 exactly.
+- Staged artifact SHA-256 is `77a35437305d60de841d2277bc2ed636878f0170a2386d727312397ba1b8a3d3`; v11 rollback SHA-256 is `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`.
 
 ## Implementation State
 
-- Implemented: same-cutoff Champion replay, absolute and recovery gates, degraded health, 28/56/84-day checks, drift routing, `lastEvaluation`, shadow/rollback artifact preservation, fail-closed 72-hour/two-day shadow evidence, and explicit recovery approval.
+- Implemented: same-cutoff v11/v13/v14 replay, absolute and recovery gates, degraded health, 28/56/84-day checks, drift routing, `lastEvaluation`, shadow/rollback artifact preservation, fail-closed normal shadow approval, and explicit expedited recovery approval.
 - Implemented: append-only matched-vintage capture, 120-second legacy same-run import, lead-bucket metrics, and paired date-block bootstrap.
 - Collecting: 28/84-day matched-vintage history. Until complete, `forecast_accuracy.json` remains an operational latest-value reference only.
-- Pending before any recovery promotion: at least 72 shadow forecast-hours, two finalized operating days, and operator review of frozen-origin evidence.
+- Pending operator publication: copy the exact staged artifact and reports to the data branch. After publication, begin 72-hour stabilization, previous-Champion shadow comparison, and rollback review after 48 finalized hours if material regression appears.

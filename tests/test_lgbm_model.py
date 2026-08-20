@@ -125,6 +125,30 @@ def test_fit_rejects_unknown_non_business_feature_exclusion():
         f.fit(_make_cache(105))
 
 
+def test_fit_builds_v14_daily_level_model_when_enabled():
+    f = LGBMForecaster(
+        n_estimators=10,
+        learning_rate=0.1,
+        config={
+            "forecast": {
+                "daily_level_model": {
+                    "enabled": True,
+                    "training_window_days": 90,
+                    "n_estimators": 10,
+                    "learning_rate": 0.1,
+                }
+            }
+        },
+    )
+
+    f.fit(_make_cache(105))
+
+    assert f.model_q50_daily_level is not None
+    assert f.q50_daily_level_feature_columns
+    assert f.daily_level_training_days == 90
+    assert f.is_compatible()
+
+
 # ---------------------------------------------------------------------------
 # predict — structure
 # ---------------------------------------------------------------------------
@@ -411,6 +435,26 @@ def test_enabled_q50_regime_requires_feature_contract_and_non_business_model():
     assert f.is_compatible()
 
 
+def test_v14_daily_level_contract_requires_model_and_feature_columns():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "daily_level_model": {"enabled": True},
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = object()
+    f.model_q50 = object()
+    f.model_q975 = object()
+    f.model_q50_daily_level = None
+    f.q50_daily_level_feature_columns = ["lag_24h__mean"]
+
+    assert not f.is_compatible()
+
+    f.model_q50_daily_level = object()
+    assert f.is_compatible()
+
+
 def test_legacy_v11_model_remains_compatible_without_regime_artifacts():
     f = LGBMForecaster.__new__(LGBMForecaster)
     f.config = {
@@ -444,6 +488,24 @@ def test_legacy_v12_model_keeps_regime_artifact_contract():
 
     f.model_q50_non_business = None
     assert not f.is_compatible()
+
+
+def test_legacy_v13_model_remains_compatible_without_daily_level_artifact():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "q50_regime_model": {"enabled": True},
+            "daily_level_model": {"enabled": True},
+        }
+    }
+    f.interval_version = "q025_q50_q975_p95_v13_transition_cooling_blend"
+    f.model_q025 = object()
+    f.model_q50 = object()
+    f.model_q975 = object()
+    f.q50_non_business_feature_columns = ["hour"]
+    f.model_q50_non_business = object()
+
+    assert f.is_compatible()
 
 
 @pytest.mark.parametrize(
@@ -734,6 +796,232 @@ def test_legacy_v12_does_not_apply_v13_transition_attenuation(monkeypatch):
     result = f.predict(date(2023, 5, 1), pd.DataFrame())
 
     assert all(point.forecast_mw == 30_500.0 for point in result)
+
+
+def test_v14_daily_level_model_recenters_q50_with_a_bounded_adjustment(
+    monkeypatch,
+):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, x):
+            return np.full(len(x), self.value)
+
+    import python.forecast.lgbm_model as mod
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+        }),
+    )
+    monkeypatch.setattr(
+        mod,
+        "build_daily_level_features",
+        lambda _features: (pd.DataFrame({"daily": [1.0]}), [0]),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "daily_level_model": {
+                "enabled": True,
+                "weight": 0.25,
+                "max_abs_adjustment_mw": 750,
+            },
+            "partial_lag_q50_fallback": {"enabled": False},
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(31_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(33_000.0)
+    f.model_q50_daily_level = FakeModel(40_000.0)
+    f.q50_daily_level_feature_columns = ["daily"]
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    assert all(point.forecast_mw == 32_750.0 for point in result)
+    assert all(point.p95_lower_mw == 31_750.0 for point in result)
+    assert all(point.p95_upper_mw == 33_750.0 for point in result)
+
+
+@pytest.mark.parametrize(
+    ("valid_lag_hours", "expected_forecast"),
+    [(12, 32_000.0), (24, 30_750.0)],
+)
+def test_v14_partial_lag_fallback_uses_v11_q50_until_lag_is_complete(
+    monkeypatch,
+    valid_lag_hours,
+    expected_forecast,
+):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, x):
+            return np.full(len(x), self.value)
+
+    import python.forecast.lgbm_model as mod
+    lag24 = np.full(24, np.nan)
+    lag24[:valid_lag_hours] = 30_000.0
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+            "lag_24h": lag24,
+            "is_non_business_day": np.ones(24),
+        }),
+    )
+    monkeypatch.setattr(
+        mod,
+        "build_daily_level_features",
+        lambda _features: (pd.DataFrame({"daily": [1.0]}), [0]),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "lag24_residual_ensemble": {
+                "enabled": True,
+                "business_day_only": True,
+                "weight": 0.5,
+            },
+            "q50_regime_model": {"enabled": True, "weight": 0.5},
+            "daily_level_model": {
+                "enabled": True,
+                "weight": 0.25,
+                "max_abs_adjustment_mw": 750,
+            },
+            "partial_lag_q50_fallback": {
+                "enabled": True,
+                "min_valid_lag24_hours": 24,
+            },
+        }
+    }
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.model_q025 = FakeModel(31_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(33_000.0)
+    f.model_q50_lag24_residual = FakeModel(0.0)
+    f.model_q50_non_business = FakeModel(28_000.0)
+    f.q50_non_business_feature_columns = ["hour"]
+    f.model_q50_daily_level = FakeModel(40_000.0)
+    f.q50_daily_level_feature_columns = ["daily"]
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    assert all(point.forecast_mw == expected_forecast for point in result)
+
+
+@pytest.mark.parametrize(
+    ("observed_hours", "fallback_active"),
+    [(22, True), (23, False), (24, False)],
+)
+def test_v14_partial_lag_fallback_uses_observed_source_coverage(
+    observed_hours,
+    fallback_active,
+):
+    target = date(2026, 8, 21)
+    timestamps = pd.date_range(
+        "2026-08-20 00:00:00+09:00",
+        periods=24,
+        freq="h",
+    )
+    sources = np.full(24, "tepco_forecast_fallback", dtype=object)
+    sources[:observed_hours] = "observed"
+    cache = pd.DataFrame({
+        "ts": timestamps,
+        "actual_mw": np.full(24, 30_000.0),
+        "actual_source": sources,
+    })
+    features = pd.DataFrame({"lag_24h": np.full(24, 30_000.0)})
+    forecaster = LGBMForecaster.__new__(LGBMForecaster)
+    forecaster.interval_version = LGBMForecaster.INTERVAL_VERSION
+    forecaster.config = {
+        "forecast": {
+            "partial_lag_q50_fallback": {
+                "enabled": True,
+                "min_valid_lag24_hours": 24,
+                "min_observed_lag24_hours": 23,
+            }
+        }
+    }
+
+    assert forecaster._partial_lag_fallback_active(
+        features,
+        cache=cache,
+        target_date=target,
+    ) is fallback_active
+
+
+def test_v14_partial_lag_fallback_rejects_non_final_missing_actual_hour():
+    target = date(2026, 8, 21)
+    timestamps = pd.date_range(
+        "2026-08-20 00:00:00+09:00",
+        periods=24,
+        freq="h",
+    )
+    sources = np.full(24, "observed", dtype=object)
+    sources[12] = "tepco_forecast_fallback"
+    cache = pd.DataFrame({
+        "ts": timestamps,
+        "actual_mw": np.full(24, 30_000.0),
+        "actual_source": sources,
+    })
+    features = pd.DataFrame({"lag_24h": np.full(24, 30_000.0)})
+    forecaster = LGBMForecaster.__new__(LGBMForecaster)
+    forecaster.interval_version = LGBMForecaster.INTERVAL_VERSION
+    forecaster.config = {
+        "forecast": {
+            "partial_lag_q50_fallback": {
+                "enabled": True,
+                "min_valid_lag24_hours": 24,
+                "min_observed_lag24_hours": 23,
+            }
+        }
+    }
+
+    assert forecaster._partial_lag_fallback_active(
+        features,
+        cache=cache,
+        target_date=target,
+    ) is True
+
+
+def test_legacy_v13_does_not_apply_v14_daily_level_adjustment(monkeypatch):
+    class FakeModel:
+        def __init__(self, value: float) -> None:
+            self.value = value
+
+        def predict(self, x):
+            return np.full(len(x), self.value)
+
+    import python.forecast.lgbm_model as mod
+    monkeypatch.setattr(
+        mod,
+        "build_inference_features",
+        lambda _cache, _target_date, _config=None: pd.DataFrame({
+            "hour": range(24),
+        }),
+    )
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "daily_level_model": {"enabled": True},
+        }
+    }
+    f.interval_version = "q025_q50_q975_p95_v13_transition_cooling_blend"
+    f.model_q025 = FakeModel(31_000.0)
+    f.model_q50 = FakeModel(32_000.0)
+    f.model_q975 = FakeModel(33_000.0)
+
+    result = f.predict(date(2023, 5, 1), pd.DataFrame())
+
+    assert all(point.forecast_mw == 32_000.0 for point in result)
 
 
 # ---------------------------------------------------------------------------

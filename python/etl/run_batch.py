@@ -1026,6 +1026,8 @@ def _model_retrain_due(
         return True, "champion_missing"
     if _env_flag("TOKYO_GRID_EMS_FORCE_MODEL_TRAIN"):
         return True, "manual_force"
+    if not promotion_config.get("scheduled_challenger_training_enabled", True):
+        return False, "scheduled_challenger_training_disabled"
     retrain_weekday = int(promotion_config.get("retrain_weekday", 0))
     if target_date.weekday() == retrain_weekday:
         return True, "scheduled_weekly_retrain"
@@ -1077,6 +1079,17 @@ def _champion_health(out_dir: Path, champion, config: dict) -> dict:
         integrity_failures.append("config_fingerprint_missing")
     elif stored_fingerprint != current_fingerprint:
         integrity_failures.append("config_fingerprint_mismatch")
+    stored_artifact_fingerprint = metadata.get("artifactConfigFingerprint")
+    current_artifact_fingerprint = (
+        config_fingerprint(getattr(champion, "config", {}) or {})
+        if champion is not None
+        else None
+    )
+    if (
+        stored_artifact_fingerprint
+        and stored_artifact_fingerprint != current_artifact_fingerprint
+    ):
+        integrity_failures.append("artifact_config_fingerprint_mismatch")
     if champion is None or not getattr(champion, "is_compatible", lambda: False)():
         integrity_failures.append("artifact_incompatible")
 
@@ -1138,6 +1151,8 @@ def _champion_health(out_dir: Path, champion, config: dict) -> dict:
             "trainingCutoff": metadata.get("trainingCutoff"),
             "storedConfigFingerprint": stored_fingerprint,
             "currentConfigFingerprint": current_fingerprint,
+            "storedArtifactConfigFingerprint": stored_artifact_fingerprint,
+            "currentArtifactConfigFingerprint": current_artifact_fingerprint,
         },
     }
 

@@ -23,7 +23,7 @@ The statistical baseline (`baseline_dow_hour_mean`) remains as a fallback when L
 
 ## Model
 
-`python/forecast/lgbm_model.py` trains three absolute-demand quantile regressors, one lag-24 residual median regressor, and one dedicated non-business q50 regressor.
+The staged v14 candidate artifact contains three absolute-demand quantile regressors plus q50 auxiliary models for lag-24 residuals, non-business regimes, and whole-day level.
 
 | Model | Purpose |
 |---|---|
@@ -32,8 +32,11 @@ The statistical baseline (`baseline_dow_hour_mean`) remains as a fallback when L
 | q975 | upper p95 interval estimate |
 | q50 lag24 residual | median of `actual_mw - lag_24h` |
 | q50 non-business | auxiliary center estimate for Saturdays, Sundays, and holidays |
+| q50 daily-level | daily mean estimate used for a capped common 24-hour level shift |
 
-On business days, the point forecast is normally a 50:50 blend of absolute-demand q50 and `lag_24h + predicted residual`. When a business day follows a different business type, the v13 contract attenuates the residual weight continuously from 0.5 to 0 as `cooling_delta_24h` falls from 0 C to -4 C. Non-business days instead blend unified q50 and dedicated non-business q50 50:50. The dedicated model excludes the 24-hour humidity/discomfort deltas and their two morning interactions to reduce sensitivity to weather-source transitions. q025/q975 interval half-widths are preserved and recentered around final q50, so the ensemble cannot collapse or inflate the forecast band by itself.
+The staged artifact preserves the deployed v11 q025, q50, q975, and lag-24 residual boosters exactly. On business days, its hourly q50 remains a 50:50 blend of absolute-demand q50 and `lag_24h + predicted residual`. Non-business days blend that unified q50 with a newly fitted dedicated non-business q50 50:50. The v13 transition-cooling model remains a rejected historical experiment and is not part of the staged v14 hourly backbone.
+
+The v14 contract then applies a conservative hierarchical level calibration. A daily model trained on up to 730 complete recent days contributes 20% of the difference between its predicted daily mean and the hourly q50 mean, capped at a common +/-750MW shift. The auxiliaries run only when the preceding day has either 24 confirmed hours or confirmed hours 00:00-22:00 plus the known 23:00 TEPCO forecast fallback; every other incomplete pattern falls back to v11 q50. There is no independent D+1 estimator. q025/q975 interval half-widths are preserved and recentered around final q50.
 
 The dashboard uses the resulting q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread. When one side of the quantile interval collapses near q50, the pipeline keeps only a minimum width on that side instead of mirroring the opposite side's larger uncertainty. When an independent quantile model produces a rare one-sided tail explosion after a weather-regime shift, interval sanity calibration caps the maximum p95 half-width and the upper/lower asymmetry ratio without changing q50.
 
@@ -141,7 +144,9 @@ See [Business Return Anchor Shortfall Guard](model-improvements/model-improvemen
 
 See [Regime-Aware Non-Business q50 Ensemble](model-improvements/model-improvement-2026-07-31-regime-aware-non-business-q50.md) for the dedicated non-business q50 contract and promotion evidence.
 
-See [Transition Cooling Attenuation and Weather Continuity](model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md) for the v13 business-transition contract, weather-source continuity replay, and current promotion status.
+See [Transition Cooling Attenuation and Weather Continuity](model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md) for the v13 business-transition contract, weather-source continuity replay, and promotion status at that time.
+
+See [v14 Champion-Preserving Calibration](model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md) for the final contract, rejected alternatives, data-coverage audit, same-cutoff evidence, and staging promotion record.
 
 ---
 
@@ -149,7 +154,7 @@ See [Transition Cooling Attenuation and Weather Continuity](model-improvements/m
 
 1. ETL loads confirmed historical TEPCO data from monthly ZIP files.
 2. Weather enrichment fills JMA AMeDAS observed weather, JMA official forecast temperatures, and humidity fallback fields.
-3. Full ETL keeps the current Champion. On the configured weekly evaluation day, it trains a Challenger and promotes it only after rolling 28-day temporal, segment, absolute-quality, and prediction-drift gates pass.
+3. Full ETL keeps the current Champion. Generic scheduled Challenger training is disabled during v14 stabilization; the exact Champion-preserving candidate is built and approved through the explicit degraded-Champion recovery path.
 4. The promoted model is saved to `web/public/.lgbm_model.pkl`; status/intraday workflows only reload this Champion.
 5. Recent actual JSON files are injected into the cache and persisted to fill gaps before the monthly ZIP is updated.
 6. Today's forecast is generated and adjusted with intraday residual correction.

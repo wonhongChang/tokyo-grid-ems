@@ -81,9 +81,9 @@ GitHub 예약 실행은 지연되거나 누락될 수 있다. 한 번의 누락�
 | `metrics/operational_replay.json` | 최근 운영 성능 | 기간, 구간별 오차, 밴드 coverage 확인 |
 | `metrics/forecast_vintage_accuracy.json` | 공정한 TEPCO 벤치마크 | 28/84일 창이 찰 때까지 `collecting`; 이를 합격으로 해석하지 않음 |
 
-## 5. 주간 모델 운영
+## 5. 모델 후보 운영
 
-기본 Challenger 평가는 월요일 ETL에 실행된다. `validation_window_days: 28`은 28일마다 교체한다는 뜻이 아니라, 매 평가 시점에 최근 확정 28일을 다시 사용하는 rolling window다.
+v14 안정화 중에는 `scheduled_challenger_training_enabled: false`가 월요일 ETL의 시간별 모델 재학습을 막는다. v14 후보는 `python/eval/build_v14_candidate.py`와 정확한 artifact 복구 경로로만 만든다. `validation_window_days: 28`은 최근 확정 28일을 쓰는 rolling 근거이며, 28일마다 모델을 교체한다는 뜻이 아니다.
 
 성능 저하 Champion의 복구 승격은 [모델 승격 및 성능 저하 Champion 정책](model-promotion-policy.md)을 따른다. temporal recovery gate, 보조 기간, drift, shadow 근거, 명시적 승인이 모두 있어야 하는 fail-closed 경로다.
 
@@ -114,13 +114,13 @@ TEPCO는 학습·보정 target으로 사용하지 않는다. `forecast_accuracy.
 
 ### 5.3 강제 재학습
 
-다음 경우에만 `TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1`을 사용한다.
+`TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1`은 v14 Champion 보존형 builder가 아니라 일반 trainer를 실행한다. 정상 v14 운영에서는 설정하지 말고 다음 통제 상황에서만 사용한다.
 
 - 학습 피처 또는 모델 구조가 변경됨
 - Champion artifact가 손상되었거나 존재하지 않음
 - 정기 승격 로직 자체를 검증하는 통제된 실험
 
-단순히 오늘 오차가 컸다는 이유로 강제 재학습하지 않는다.
+단순히 오늘 오차가 컸다는 이유로 강제 재학습하지 않으며, 별도 계약 replay 없이 그 산출물을 v14로 승격하지 않는다.
 
 ## 6. 운영 Replay 판독
 

@@ -2,9 +2,9 @@
 
 言語: [English](../en/model-promotion-policy.md) / [한국어](../ko/model-promotion-policy.md)
 
-状態: 中核制御を実装済み、matched-vintage資格データを収集中
+状態: v14復旧候補を隔離stagingへ昇格済み。remote配備と72時間安定化監視はoperator公開後に開始
 
-基準日: 2026-08-18 JST
+基準日: 2026-08-21 JST
 
 ## 目的
 
@@ -17,8 +17,8 @@
 - モデルversionは再学習回数ではなく、feature、target、ensemble、inference contractが変わる場合に更新する。
 - 同じcontractを新しいデータで再学習してもversionは維持する。
 - v12はv13に継承された過去系譜として保存し、active candidate poolからは除外する。
-- v13を現在のChallenger基準とする。
-- v13の構造的欠陥を修正してcontractが変わる場合はv14として評価する。
+- v13は、v14が劣化v11だけを上回ったのではないことを証明するための旧Challenger基準とする。
+- v14はstagingで承認された次期Champion契約とする。同じcontractを新しいデータで再学習する場合はv14 buildであり、feature・target・ensemble・inference契約が変わる場合だけ次versionへ進める。
 
 ## 基本原則
 
@@ -27,7 +27,7 @@
 3. TEPCO予測は外部benchmarkと診断信号に限定し、学習・補正・昇格targetには使用しない。
 4. 大きなprediction driftは直ちに性能低下を意味しない。自動昇格を止めてshadow検証を要求する信号として扱う。
 5. 通常昇格と性能低下Championの復旧昇格を分離する。
-6. 復旧昇格でも再現可能なreplay、shadow、rollback契約を必須とする。
+6. 復旧昇格には再現可能なreplay、不変の正確なartifact、明示的operator承認、rollback保護が必要である。昇格前shadowを基本とし、下記の強化条件を満たす緊急復旧だけが必須の昇格後監視へ切り替えられる。
 
 ## 検証観点
 
@@ -79,7 +79,7 @@ TEPCO基準の根拠は次の通りである。
 
 | 等級 | 基準 |
 |---|---|
-| Recovery Champion | 現ChampionよりMAE/WAPEを10%以上改善し復旧gate通過 |
+| Recovery Champion | 現Championより28日MAE/WAPEを8%以上改善し、すべての補助risk gateを通過 |
 | Production Acceptable | 中間運用品質gate通過 |
 | TEPCO Parity Qualified | 同一発行時点・同一lead timeで28日と84日のMAE ratioおよびWAPE ratioが1.10以下 |
 | TEPCO Superior | MAE ratioが1.00未満で、paired日別誤差差分の95%信頼区間上限が0未満 |
@@ -129,7 +129,7 @@ Parity判定では次をすべて要求する。
 - 28日as-served MAEが900MWまたはWAPEが2.7%を超過。
 - 直近14日MAEがそれ以前の28日基準より15%以上悪化。
 - 朝、昼、夕方前半、非営業日のいずれかでMAEが1,500MWを超過。
-- 同一temporal replayでChallengerがChampion contractより全体MAEを10%以上改善。
+- 同一temporal replayでChallengerがChampion contractより全体MAEを8%以上改善。
 - モデル優位時間率が長期間35%未満。TEPCOはこの信号の診断benchmarkであり昇格targetではない。
 
 性能低下判定は新モデルの自動昇格を意味しない。通常経路だけでは既存モデルを安全に置換できない運用状態を示す。
@@ -140,7 +140,7 @@ Parity判定では次をすべて要求する。
 
 Championが`champion_degraded`の場合、Challengerは絶対上限を一部超えていても次の条件をすべて満たせば統制された復旧候補になれる。
 
-- 同一temporal replayでChampion比の全体MAEとWAPEをそれぞれ最低10%改善。
+- 同一temporal replayでChampion比の全体MAEとWAPEをそれぞれ最低8%改善。
 - 最大誤差とshape delta MAEをChampion比で5%超悪化させない。
 - 営業日、非営業日、朝、昼、夕方前半、夜のどの重要segmentでもMAEを5%超悪化させない。
 - Championの既知の弱点を一つ以上10%以上改善。
@@ -151,7 +151,22 @@ Championが`champion_degraded`の場合、Challengerは絶対上限を一部超�
 
 復旧昇格は自動実行しない。`recovery_candidate_ready`を記録し、明示的な運用レビュー後に`recovery_promoted`へ移行する。
 
-実装はこの証拠を`metrics/model_shadow_evaluation.json`から読み取る。`artifactSha256`は保持shadow artifact、metadata、以前の昇格reportとすべて一致しなければならない。欠落・古い証拠、72時間未満、または確定2日未満では`shadow_required`で停止し、承認環境変数だけでは迂回できない。承認時は新規再学習候補ではなく、検証済みの同一shadow artifactを昇格する。
+基本実装はこの証拠を`metrics/model_shadow_evaluation.json`から読み取る。`artifactSha256`は保持shadow artifact、metadata、以前の昇格reportとすべて一致しなければならない。欠落・古い証拠、72時間未満、または確定2日未満では`shadow_required`で停止し、通常の承認環境変数だけでは迂回できない。承認時は新規再学習候補ではなく、検証済みの同一shadow artifactを昇格する。
+
+### Operator承認による緊急復旧
+
+旧Championを継続すること自体が、別途確認された整合性・性能リスクである場合にのみ緊急復旧を許可する。この経路は自動ではなく、`python/eval/promote_recovery_candidate.py`と明示的復旧承認を使う。
+
+- 旧Championがすでにdegradedで、学習cutoff欠落やconfig fingerprint不一致などのartifact整合性欠陥を持つこと。
+- 正確なv14 artifactが28日MAE/WAPEをv11比でそれぞれ8%以上改善し、文書化された弱点segmentを一つ以上10%以上改善すること。
+- v13は未配備の参考候補であるため、28日・56日・84日のすべてでv13 MAE/WAPEを悪化させないこと。別途5%の追加改善は要求しない。
+- 56日・84日補助windowでv11全体MAE/WAPEを悪化させないこと。
+- artifact保存・再読込互換性と今日/翌日48時間の有限値smoke testを通過すること。
+- 自動drift上限を超える場合は別途`--allow-large-drift`判断が必要で、数値と理由を昇格reportへ記録すること。
+- atomic置換前に旧Champion artifactとmetadataをrollback pathへコピーすること。
+- 昇格前shadowを省略する代わりに72時間の安定化監視を必須とし、最低48確定時間で明確な退行があればrollback reviewを開始すること。
+
+この経路は欠陥Championが無期限に残る政策上の失敗を解消するものであり、運用品質やTEPCO parityを認証するものではない。
 
 ## Prediction Driftの扱い
 
@@ -187,15 +202,15 @@ Prediction driftは変化リスク指標であり、精度指標ではない。
 
 ## 現在プロジェクトへの適用判断
 
-- v11は配信Championだがtraining cutoffがなく、現在のconfig fingerprintと不一致のため、整合性ベースのdegraded review対象である。
-- 同一cutoff再現でv13のv11比MAE改善は28日5.62%、56日3.17%、84日2.75%だった。方向は良いが復旧基準10%未満である。
-- 直近365日学習と保守的なLightGBM複雑度探索でも昇格可能な候補は得られなかった。最良結果は28日MAE 1,207.9MW、WAPE 3.456%だった。
-- v13は強制昇格せず棄却する。復旧gate通過後にのみshadowへ進める。
-- v13修正によりfeatureまたはinference contractが変わる場合はv14として評価する。
+- v14 `q025_q50_q975_p95_v14_daily_level_calibration`を学習cutoff 2026-08-19で生成し、2026-08-21 JSTに隔離stagingで復旧昇格した。remote data配備は別のoperator作業である。
+- 最終artifactはv11の時間別booster 4つをbyte単位で保持し、非営業日q50と日次level補助modelだけを追加する。棄却した全体再学習候補と独立D+1 modelは含まない。
+- 同一cutoff v14 MAEは28日1142.5MW、56日972.0MW、84日871.5MWで、v11比8.29%、3.36%、3.27%改善し、未配備v13参考contractも悪化させなかった。
+- 最新`origin/data` cache基準の今日・翌日prediction driftは平均104.4MW、最大208.8MWでoverrideは不要だった。今日は前日の確定実績23時間と最後の1時間fallbackを使い、coverage不足の翌日はv11と完全に一致した。
+- staging artifact SHA-256は`77a35437305d60de841d2277bc2ed636878f0170a2386d727312397ba1b8a3d3`、v11 rollback SHA-256は`28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`である。
 
 ## 実装状態
 
-- 実装済み: 同一cutoff Champion replay、絶対/recovery gate、degraded health、28/56/84日検査、drift分岐、`lastEvaluation`、shadow/rollback artifact保持、fail-closedな72時間・確定2日のshadow証拠、明示的復旧承認。
+- 実装済み: 同一cutoff v11/v13/v14 replay、絶対/recovery gate、degraded health、28/56/84日検査、drift分岐、`lastEvaluation`、shadow/rollback artifact保持、fail-closedな通常shadow承認、明示的緊急復旧承認。
 - 実装済み: append-only matched-vintage capture、120秒以内の過去同一実行import、lead bucket指標、日付block bootstrap。
 - 収集中: 28/84日matched-vintage履歴。完了前の`forecast_accuracy.json`は最新値ベースの運用参考に限定する。
-- 復旧昇格前の残条件: 最低72時間のshadow予測、2確定運用日、frozen-origin根拠の運用者レビュー。
+- operator公開前の残作業: 隔離stagingの正確なartifactとreportをdata branchへ公開する。公開後に72時間安定化、旧Champion shadow比較、最低48確定時間で明確な退行が確認された場合のrollback reviewを開始する。

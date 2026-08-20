@@ -69,6 +69,7 @@ def test_metric_rows_reports_level_and_shape_errors():
     metrics = _metric_rows(rows)
 
     assert metrics["maeMw"] == pytest.approx(7.5)
+    assert metrics["meanBiasMw"] == pytest.approx(7.5)
     assert metrics["rmseMw"] == pytest.approx(7.9)
     assert metrics["shapeDeltaMaeMw"] == pytest.approx(5.0)
 

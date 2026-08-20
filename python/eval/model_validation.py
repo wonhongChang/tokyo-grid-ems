@@ -68,6 +68,7 @@ def _metric_rows(rows: Iterable[dict]) -> dict:
         return {
             "hours": 0,
             "maeMw": None,
+            "meanBiasMw": None,
             "wapePct": None,
             "rmseMw": None,
             "maxErrorMw": None,
@@ -97,6 +98,7 @@ def _metric_rows(rows: Iterable[dict]) -> dict:
     return {
         "hours": int(len(values)),
         "maeMw": round(float(np.mean(np.abs(errors))), 1),
+        "meanBiasMw": round(float(np.mean(errors)), 1),
         "wapePct": round(float(np.abs(errors).sum() / denominator * 100.0), 3)
         if denominator > 0
         else None,

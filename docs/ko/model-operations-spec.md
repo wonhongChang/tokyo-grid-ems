@@ -25,14 +25,14 @@
 | 구현 | `python/forecast/lgbm_model.py` |
 | 피처 생성 | `python/forecast/feature_builder.py` |
 | 후처리 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| Challenger interval contract | `q025_q50_q975_p95_v13_transition_cooling_blend` |
-| 현재 Champion artifact | `q025_q50_q975_p95_v11_lag24_residual_ensemble` (임시 유지; Challenger가 정상 또는 복구 gate 전체를 통과해야 교체) |
+| staging 후보 contract | `q025_q50_q975_p95_v14_daily_level_calibration` |
+| 원격 Champion | `q025_q50_q975_p95_v11_lag24_residual_ensemble`; v14는 2026-08-21 JST 격리 staging에서만 승인됨 |
 | 최소 학습량 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
 모델은 시간별 전력 수요를 예측하고, 오늘/내일 예측선, p95/p99 예측 밴드, 이상탐지 expected demand를 생성합니다.
 
-LightGBM은 절대수요 quantile regressor 3개, lag-24 잔차 중앙값 regressor 1개, 비영업일 전용 중앙값 regressor 1개를 학습합니다.
+staging v14 artifact는 절대수요 quantile regressor 3개와 q50 보조 regressor 3개를 포함합니다.
 
 | 모델 | alpha | 역할 |
 |---|---:|---|
@@ -41,8 +41,9 @@ LightGBM은 절대수요 quantile regressor 3개, lag-24 잔차 중앙값 regres
 | `q975` | 0.975 | p95 상단 추정 |
 | `q50_lag24_residual` | 0.50 | `actual_mw - lag_24h` 중앙값 추정 |
 | `q50_non_business` | 0.50 | 토요일·일요일·공휴일 중심선의 보조 추정 |
+| `q50_daily_level` | 0.50 | 24시간 공통 레벨 이동에 사용하는 일평균 추정 |
 
-영업일 서빙 q50은 일반적으로 절대수요 q50과 `lag_24h + 잔차 q50`을 50:50으로 결합합니다. 전날과 영업 타입이 다른 영업일에는 v13이 `cooling_delta_24h`가 0도에서 -4도로 내려갈수록 잔차 비중을 0.5에서 0까지 연속 감쇠합니다. 비영업일은 lag-24 잔차 결합을 우회하고 통합 q50과 비영업일 전용 q50을 50:50으로 결합합니다. 대시보드는 이 최종 q50을 중심 예측선으로 사용합니다. `q025/q975`는 p95 밴드가 되고, p99 스타일 외곽 밴드는 원래 q025/q975 half-width를 결합 중심선 주위에서 한 번 더 확장해 계산합니다. 한쪽 quantile이 절대수요 q50에 붙는 경우에는 반대쪽의 큰 폭을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다.
+staging artifact는 운영 v11 시간별 booster를 보존합니다. 영업일 q50은 절대수요 q50과 `lag_24h + 잔차 q50`의 50:50 혼합을 유지합니다. 비영업일은 통합 q50과 전용 비영업일 q50을 50:50으로 결합합니다. v14는 일간 레벨 차이의 20%를 반영하되 24시간 공통 이동량을 +/-750MW로 제한합니다. 보조 경로는 전날 24시간이 모두 확정됐거나 00~22시가 확정되고 23시만 TEPCO 예측 fallback인 경우에만 작동하며, 그 밖의 불완전한 패턴은 v11 q50을 사용합니다. 독립 D+1 모델은 없습니다. 대시보드는 최종 q50을 중심선으로 사용하고 `q025/q975` half-width를 그 주위에 보존합니다.
 
 ---
 
@@ -73,6 +74,20 @@ TEPCO forecast fallback은 pipeline continuity를 위한 임시값입니다. Lig
 - 미래 기온은 JMA 공식 forecast를 우선합니다.
 - Open-Meteo JMA는 기온을 덮어쓰지 않고 습도 결측 보완에만 사용합니다.
 - `weather_source`는 예측 튐 원인을 추적하는 핵심 필드입니다.
+
+### 관측 입력 공백과 외부 benchmark 맥락
+
+2026-08-21 캐시 감사 범위는 2023-01-01부터 현재 예측 horizon까지 31,897개 시간 행입니다. 기온은 완전했지만 `humidity_pct`, `discomfort_index`, `weather_source`는 전체 이력의 93.0%가 비어 있었고 최근 60일만 세 항목이 완전했습니다. LightGBM은 결측을 처리할 수 있지만, 이 이력으로는 계절을 가로지르는 안정적인 습도 반응을 학습하기 어렵습니다.
+
+| 공백 | 현재 프로젝트 입력 | 더 풍부한 운영 맥락을 보여주는 공개 근거 | 우선순위 |
+|---|---|---|---:|
+| 시간 해상도 | 시간 단위 수요 | TEPCO AREA 실적 파일은 30분 수요·발전·재생에너지 출력을 제공 | 높음 |
+| 기상 공간장 | 도쿄 AMeDAS 한 지점 | 광역 수요는 공급구역 내 지역별 기상 차이에 반응 가능 | 높음 |
+| 예보 vintage | 과거 replay에 최종 관측 기상 사용 | 실제 발행 시점에 이용 가능했던 기상 예보가 보존되지 않음 | 최우선 |
+| 재생에너지 맥락 | 운영 피처 없음 | AREA 파일에 재생에너지 출력이 있음. 5개 lag 피처 실험은 28일만 개선하고 56/84일을 악화시켜 기각 | 중간, 재설계 필요 |
+| 운영 맥락 | 달력과 공휴일 | 산업체 일정, 대형 이벤트, 수요반응, 계통 운영 신호 없음 | 연구 |
+
+TEPCO의 비공개 운영 피처는 알 수 없습니다. 특정 비공개 입력을 쓴다는 설명은 사실이 아니라 추정으로만 다뤄야 합니다. 프로젝트에서 먼저 해결할 수 있는 공백은 발행 시점 기상 vintage 보존이며, 이후 지역 기상과 30분 shape 피처를 같은 28/56/84일 gate로 검증합니다.
 
 ---
 
@@ -269,15 +284,19 @@ Raw LightGBM Forecast
 | 영역 | 설정 (Config Key) | 현재 값 | 운영 가이드 및 튜닝 팁 |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | 올리면 전일 대비 잔차 모델을 더 신뢰하고, 내리면 절대수요 모델 성향을 더 유지합니다. 버전 인지 rolling replay와 frozen-origin holdout을 함께 통과할 때만 조정합니다. |
-| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | -4도에서 0, 0도에서 최대 | 전날과 영업 타입이 다른 영업일에만 적용합니다. 구간을 좁히면 잔차 결합이 급하게 꺼지고, 넓히면 더 많은 전환 시간에 영향을 줍니다. |
+| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | 비활성 | v13 연구 replay를 위해서만 남겨둔 설정입니다. staging v14는 v11 잔차 혼합을 보존하므로 이를 켜면 inference 계약이 달라지며 새 버전과 replay가 필요합니다. |
 | forecast | `q50_regime_model.weight` | 0.5 | 비영업일 전용 q50 반영 비율입니다. 높이면 주말 레짐 분리가 강해지고, 낮추면 통합 q50 형태를 더 보존합니다. 비영업일 MAE와 shape를 함께 검증합니다. |
-| promotion | `retrain_weekday` | 0 (월요일) | Challenger 평가 요일입니다. 다른 날짜에는 현재 Champion을 그대로 사용합니다. |
+| forecast | `daily_level_model.training_window_days` | 730 | 계층형 레벨 추정에는 최근 완전 일자만 사용하고 시간별 모델은 설정된 전체 이력을 유지합니다. 줄이면 변화에 빨리 적응하지만 계절 noise를 따라갈 위험이 커집니다. |
+| forecast | `daily_level_model.weight`, `max_abs_adjustment_mw` | 0.20, 750MW | shape를 바꾸지 않고 24시간 곡선을 예측 일평균 쪽으로 이동합니다. 올리면 레벨 bias를 빨리 고치지만 하루 전체 과보정 위험이 커집니다. |
+| forecast | `partial_lag_q50_fallback.min_observed_lag24_hours` | 23 | 전날 확정 실측이 부족하면 v14 보조 모델을 끕니다. 마지막 한 시간 fallback만 허용하려면 23을 유지해야 하며, 값을 낮추면 더 불완전한 D+1 lag를 신뢰하게 됩니다. |
+| promotion | `scheduled_challenger_training_enabled`, `retrain_weekday` | false, 0 (월요일) | 일반 trainer가 보존된 시간별 booster를 교체하지 못하도록 v14 안정화 중 정기 후보 학습을 잠급니다. 명시적 candidate build만 허용하며, 동일한 Champion 보존형 검증 경로가 마련된 뒤에만 정기 학습을 다시 켭니다. |
 | promotion | `validation_window_days` | 28 | 평가할 때마다 최근 확정 28일을 사용합니다. 28일마다 한 번 재학습한다는 뜻이 아닙니다. |
 | promotion | 절대 품질 상한 | MAE 1000, WAPE 3.0%, shape 750, 최대 오차 6500 MW | 약한 baseline만 이겼지만 운영 품질이 나쁜 모델을 거부합니다. 구간별 상한은 MAE 1500, shape 1100 MW입니다. |
 | promotion | 예측 drift 상한 | 평균 900, 시간 최대 2500 MW | 전체 데이터로 학습한 Challenger가 오늘/내일 곡선을 Champion보다 과도하게 바꾸면 승격을 거부합니다. |
 | promotion | Champion 상대 gate | MAE 개선 5%, 핵심 구간 퇴행 최대 5% | 기존 모델이 약하거나 절대 상한이 느슨하다는 이유만으로 후보가 통과하지 못하게 합니다. 두 계약은 동일 cutoff에서 재현합니다. |
-| promotion | 성능 저하 Champion 복구 | MAE/WAPE 10% 개선, 56/84일 비퇴행 | 정상 절대 상한을 낮추지 않고 교체할 수 있는 통제 경로입니다. 이 조건만으로 배포를 승인하지는 않습니다. |
+| promotion | 성능 저하 Champion 복구 | 28일 MAE/WAPE 8% 개선, 56/84일 비퇴행 | 8% 기준은 구간, 최대오차, shape, 정확한 artifact, smoke, drift gate를 모두 통과할 때만 유효하며 이 조건만으로 배포를 승인하지 않습니다. |
 | promotion | 복구 shadow 근거 | 72 forecast-hour, 확정 2일 | `metrics/model_shadow_evaluation.json`이 없거나 부족하면 fail-closed입니다. 통과 뒤에도 명시적 승인이 필요합니다. |
+| promotion | 운영자 승인 긴급 복구 | 28일 v11 MAE/WAPE +8%, v13 비퇴행, 56/84일 비퇴행 | 무결성이 저하된 Champion에만 사용합니다. 정확한 artifact, 제한된 drift, rollback 보존, 배포 후 72시간 감시가 필요합니다. |
 | benchmark | `forecast_vintages` 자격 | 28/84일, coverage 80%, MAE/WAPE 1.10 | 같은 캡처의 TEPCO/모델 값을 사용합니다. RMSE 비율 1.15, 최대오차·구간 비율 1.25, paired bootstrap MAE 비율 상한 1.10도 요구합니다. |
 | weather | `cooling_base_temp_c` | 22.0 | 낮추면 냉방 민감도가 빨리 켜지고, 올리면 여름 초입 과대반응을 줄입니다. 계절 전체 backtest로 조정해야 합니다. |
 | weather | `heating_base_temp_c` | 18.0 | 올리면 난방 수요 신호가 강해지고, 내리면 겨울철 과민 반응을 줄입니다. |
@@ -318,7 +337,8 @@ Raw LightGBM Forecast
 
 ### 승격과 리플레이 해석
 
-- 모델 승격 평가는 기본적으로 매주 실행하지만, 매번 최근 확정 28일 rolling window를 사용합니다.
+- 일반 주간 후보 학습은 현재 비활성입니다. v14는 보존된 v11 시간별 booster가 조용히 재학습되지 않도록 정확한 artifact 복구 도구로만 생성·승격합니다.
+- 호환되는 미래 계약에서 정기 학습을 다시 켜면 매 실행마다 최근 확정 28일 rolling window를 평가하며, 평가 사이에 28일을 기다린다는 뜻은 아닙니다.
 - Challenger 학습은 평가 당일의 부분 실측을 제외하고 `target_date` 이전 데이터만 사용합니다.
 - 검증은 timestamp 중복을 제거한 `window_days × 24`시간의 완전한 coverage를 요구합니다.
 - 오늘·내일 drift는 실제 서빙과 같은 weather/lag 입력에서 48개 유한값을 요구하며, 누락·`NaN`·무한값은 즉시 승격을 거부합니다.
@@ -327,7 +347,7 @@ Raw LightGBM Forecast
 - `metrics/forecast_accuracy.json`은 데이터에 마지막으로 남은 TEPCO 값을 사용하므로 참고 scorecard이지 공식 parity 근거가 아닙니다.
 - `metrics/forecast_vintage_accuracy.json`이 공식 동일-capture benchmark입니다. 28/84일 lead bucket coverage와 risk·신뢰구간 gate가 완성될 때까지 `collecting`을 유지합니다.
 - Stage replay는 날짜별 최신 calibration snapshot을 사용하므로 모든 Intraday 게시 이력을 완전히 복원한 결과가 아닙니다.
-- 성능 저하 Champion의 복구 후보는 shadow 72시간, 확정 2일, 명시적 승인이 없으면 `shadow_required`를 넘지 못합니다.
+- 기본 복구 경로는 shadow 72시간, 확정 2일, 명시적 승인이 없으면 `shadow_required`를 넘지 못합니다. 별도 긴급 운영자 경로는 더 강한 v11/v13 replay, rollback 보존, 승격 후 72시간 감시를 요구합니다.
 - TEPCO forecast fallback은 lag 연속성에는 사용할 수 있지만 학습 target과 검증 actual에서는 제외합니다.
 
 ### 평가 지표

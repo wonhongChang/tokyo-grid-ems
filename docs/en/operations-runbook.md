@@ -81,9 +81,9 @@ GitHub scheduled runs can be delayed or skipped. Do not classify one missed run 
 | `metrics/operational_replay.json` | Recent served performance | Period, segment error, and interval coverage reviewed |
 | `metrics/forecast_vintage_accuracy.json` | Fair TEPCO benchmark | `collecting` until complete 28/84-day windows; never treat collecting as a pass |
 
-## 5. Weekly Model Operations
+## 5. Model Candidate Operations
 
-By default, challenger evaluation runs during Monday ETL. `validation_window_days: 28` means every evaluation uses the latest 28 finalized days as a rolling window; it does not mean the model is replaced once every 28 days.
+During v14 stabilization, `scheduled_challenger_training_enabled: false` prevents Monday ETL from rebuilding the preserved hourly stack. v14 candidates must use `python/eval/build_v14_candidate.py` and the exact-artifact recovery path. `validation_window_days: 28` remains a rolling evidence window; it does not mean the model is replaced every 28 days.
 
 Degraded-Champion recovery criteria are defined in the [Model Promotion and Degraded Champion Policy](model-promotion-policy.md). Recovery is fail-closed: a candidate must pass temporal recovery gates, auxiliary windows, drift, shadow evidence, and explicit approval.
 
@@ -114,13 +114,13 @@ TEPCO is not a training or calibration target. `forecast_accuracy.json` is a lat
 
 ### 5.3 Forced Retraining
 
-Use `TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1` only when:
+`TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1` invokes the generic trainer, not the v14 Champion-preserving builder. Keep it unset in normal v14 operation and use it only when:
 
 - training features or model structure changed;
 - the champion artifact is missing or corrupted; or
 - the promotion path is being tested in a controlled experiment.
 
-Do not force retraining merely because today's error is large.
+Do not force retraining merely because today's error is large, and do not promote its output as v14 without a separate contract replay.
 
 ## 6. Reading Operational Replay
 

@@ -81,9 +81,9 @@ GitHubのscheduleは遅延・欠落する場合があります。1回の欠落�
 | `metrics/operational_replay.json` | 最近のserved性能 | 期間、segment誤差、interval coverage |
 | `metrics/forecast_vintage_accuracy.json` | 公平なTEPCO benchmark | 28/84日window完成までは`collecting`。合格と解釈しない |
 
-## 5. 週次モデル運用
+## 5. モデル候補運用
 
-既定では月曜日ETLでChallenger評価を行います。`validation_window_days: 28`は28日ごとの交換ではなく、各評価で直近の確定28日を使うrolling windowです。
+v14安定化中は`scheduled_challenger_training_enabled: false`により、月曜日ETLが保持済み時間別stackを再学習しないようにします。v14候補は`python/eval/build_v14_candidate.py`とexact-artifact復旧経路だけで作成します。`validation_window_days: 28`は直近確定28日のrolling証拠であり、28日ごとのモデル交換ではありません。
 
 性能低下Championの復旧昇格は[モデル昇格および性能低下Championポリシー](model-promotion-policy.md)に従います。temporal recovery gate、補助window、drift、shadow証拠、明示承認をすべて要求するfail-closed経路です。
 
@@ -114,13 +114,13 @@ TEPCOは学習・補正targetには使用しません。`forecast_accuracy.json`
 
 ### 5.3 強制再学習
 
-`TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1`は次の場合に限ります。
+`TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1`はv14 Champion保持型builderではなく汎用trainerを実行します。通常のv14運用では設定せず、次の統制された場合に限ります。
 
 - 学習特徴量またはモデル構造を変更した
 - Champion artifactが欠落・破損した
 - promotion経路を統制された実験で検証する
 
-当日の誤差が大きいだけでは強制再学習しません。
+当日の誤差が大きいだけでは強制再学習せず、別のcontract replayなしにその出力をv14へ昇格しません。
 
 ## 6. Operational Replayの読み方
 
