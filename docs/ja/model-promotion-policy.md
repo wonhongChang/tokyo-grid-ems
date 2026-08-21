@@ -153,20 +153,21 @@ Championが`champion_degraded`の場合、Challengerは絶対上限を一部超�
 
 基本実装はこの証拠を`metrics/model_shadow_evaluation.json`から読み取る。`artifactSha256`は保持shadow artifact、metadata、以前の昇格reportとすべて一致しなければならない。欠落・古い証拠、72時間未満、または確定2日未満では`shadow_required`で停止し、通常の承認環境変数だけでは迂回できない。承認時は新規再学習候補ではなく、検証済みの同一shadow artifactを昇格する。
 
-### Operator承認による緊急復旧
+### Fixed-Origin性能低下Champion復旧
 
-旧Championを継続すること自体が、別途確認された整合性・性能リスクである場合にのみ緊急復旧を許可する。この経路は自動ではなく、`python/eval/promote_recovery_candidate.py`と明示的復旧承認を使う。
+旧Championが別の根拠でdegradedと判定された場合、`python/eval/promote_fixed_origin_candidate.py`で手動復旧できる。自動経路ではなく、正確な候補artifactと4件の証拠reportが必要である。
 
-- 旧Championがすでにdegradedで、学習cutoff欠落やconfig fingerprint不一致などのartifact整合性欠陥を持つこと。
-- 正確なv14 artifactが28日MAE/WAPEをv11比でそれぞれ8%以上改善し、文書化された弱点segmentを一つ以上10%以上改善すること。
-- v13は未配備の参考候補であるため、28日・56日・84日のすべてでv13 MAE/WAPEを悪化させないこと。別途5%の追加改善は要求しない。
-- 56日・84日補助windowでv11全体MAE/WAPEを悪化させないこと。
-- artifact保存・再読込互換性と今日/翌日48時間の有限値smoke testを通過すること。
-- 自動drift上限を超える場合は別途`--allow-large-drift`判断が必要で、数値と理由を昇格reportへ記録すること。
+- D0とD-1はそれぞれdevelopment reportと、より後の未使用holdout reportを要求する。
+- 全reportで対象日需要と模擬capture時点で利用できなかったactualをmaskする。
+- holdoutは正確な配備Champion artifact SHAと比較する。
+- 候補SHA、contract、origin lead、phase、report期間が昇格要求とすべて一致すること。
+- 両holdoutがsegment、shape、最大誤差、日付単位bootstrap gateを通過すること。
+- 大規模driftは一般overrideではない。両holdoutが`strict_mae_recovery`で、D0 8%、D-1 20%以上のMAE改善を示すこと。
+- 保存・再読込と今日・明日48時間の有限値smoke testを通過すること。
 - atomic置換前に旧Champion artifactとmetadataをrollback pathへコピーすること。
-- 昇格前shadowを省略する代わりに72時間の安定化監視を必須とし、最低48確定時間で明確な退行があればrollback reviewを開始すること。
+- 昇格後は確定運用3日でreviewし、整合性または重大な性能failureではそれ以前にrollbackを開始できる。
 
-この経路は欠陥Championが無期限に残る政策上の失敗を解消するものであり、運用品質やTEPCO parityを認証するものではない。
+この経路は実証された旧Champion欠陥を復旧する。TEPCO parityを認証したり、holdoutを見てfeatureを選ぶ手段ではない。
 
 ## Prediction Driftの扱い
 
@@ -202,15 +203,15 @@ Prediction driftは変化リスク指標であり、精度指標ではない。
 
 ## 現在プロジェクトへの適用判断
 
-- v14 `q025_q50_q975_p95_v14_daily_level_calibration`を学習cutoff 2026-08-19で生成し、2026-08-21 JSTに隔離stagingで復旧昇格した。remote data配備は別のoperator作業である。
-- 最終artifactはv11の時間別booster 4つをbyte単位で保持し、非営業日q50と日次level補助modelだけを追加する。棄却した全体再学習候補と独立D+1 modelは含まない。
-- 同一cutoff v14 MAEは28日1142.5MW、56日972.0MW、84日871.5MWで、v11比8.29%、3.36%、3.27%改善し、未配備v13参考contractも悪化させなかった。
-- 最新`origin/data` cache基準の今日・翌日prediction driftは平均104.4MW、最大208.8MWでoverrideは不要だった。今日は前日の確定実績23時間と最後の1時間fallbackを使い、coverage不足の翌日はv11と完全に一致した。
-- staging artifact SHA-256は`77a35437305d60de841d2277bc2ed636878f0170a2386d727312397ba1b8a3d3`、v11 rollback SHA-256は`28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`である。
+- v14-r2 `q025_q50_q975_p95_v14_source_robust_day_ahead`を2026-08-21 JSTに復旧昇格した。contractは`v14-r2-source-robust-day-ahead`、学習cutoffは2026-08-01、artifact SHA-256は`c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3`である。
+- 昇格には漏洩防止fixed-origin report 4件を要求した。D0 development、D0 exact-Champion holdout、D-1 development、D-1 exact-Champion holdoutで、holdout baselineは現行codeで再構築せず正確な配備v11 SHAを読み込んだ。
+- D0 holdout MAEは18.76%、D-1 holdout MAEは39.82%改善した。両holdoutで最大誤差とshape誤差も改善し、segment退行はなかった。
+- 今日・明日のdriftは平均2,493.5MW、最大9,654.8MWだった。v11のD-1欠損lag経路が構造的に低かったためである。overrideは両exact-Champion holdoutが`strict_mae_recovery`を通過し、独立したD0 8%・D-1 20% MAE基準を超えた場合だけ承認した。
+- rollback artifactは正確な旧v11 SHA `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`である。確定運用3日後に安定化をreviewし、今回の昇格はv11からの復旧であってTEPCO同等性の宣言ではない。
 
 ## 実装状態
 
-- 実装済み: 同一cutoff v11/v13/v14 replay、絶対/recovery gate、degraded health、28/56/84日検査、drift分岐、`lastEvaluation`、shadow/rollback artifact保持、fail-closedな通常shadow承認、明示的緊急復旧承認。
+- 実装済み: 同一cutoff v11/v13/v14 replay、漏洩防止D0/D-1 fixed-origin replay、exact-artifact holdout、4 report復旧承認、degraded health、drift分岐、`lastEvaluation`、Champion/rollback artifactのatomic保存。
 - 実装済み: append-only matched-vintage capture、120秒以内の過去同一実行import、lead bucket指標、日付block bootstrap。
 - 収集中: 28/84日matched-vintage履歴。完了前の`forecast_accuracy.json`は最新値ベースの運用参考に限定する。
-- operator公開前の残作業: 隔離stagingの正確なartifactとreportをdata branchへ公開する。公開後に72時間安定化、旧Champion shadow比較、最低48確定時間で明確な退行が確認された場合のrollback reviewを開始する。
+- 進行中: 正確に昇格したartifactとreportをdata branchへ公開し、保存済みv11 rollback artifactと比較しながら確定運用3日を監視する。

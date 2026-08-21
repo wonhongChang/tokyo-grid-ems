@@ -499,15 +499,31 @@ def build_forecast_json(
         interval_floor_profile=interval_floor_profile,
     )
     cfg_fc = config.get("forecast", {})
+    model_metadata = {}
+    if out_dir is not None:
+        metadata_path = out_dir / _LGBM_MODEL_METADATA_NAME
+        if metadata_path.exists():
+            try:
+                model_metadata = json.loads(
+                    metadata_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError):
+                model_metadata = {}
+    model = {
+        "name": model_name,
+        "version": "mvp-1",
+        "nWeeks": cfg_fc.get("n_weeks", 12),
+    }
+    if model_name.startswith("lgbm_"):
+        if cfg_fc.get("model_contract"):
+            model["contract"] = str(cfg_fc["model_contract"])
+        if model_metadata.get("artifactSha256"):
+            model["artifactSha256"] = str(model_metadata["artifactSha256"])
     payload = {
         "date": d.isoformat(),
         "timezone": "Asia/Tokyo",
         "availability": "ok",
-        "model": {
-            "name": model_name,
-            "version": "mvp-1",
-            "nWeeks": cfg_fc.get("n_weeks", 12),
-        },
+        "model": model,
         "peak": peak_of_forecasts(fc_list),
         "series": [forecast_to_dict(f) for f in fc_list],
     }
@@ -2107,6 +2123,22 @@ def _make_localized_shape_spike_guard(config: dict):
         return None
 
 
+def _make_same_regime_calibrator(config: dict, out_dir: Path):
+    """Instantiate the artifact-scoped day-level residual calibrator."""
+    try:
+        from python.forecast.same_regime_calibration import (
+            SameRegimeDayLevelCalibrator,
+        )
+        calibrator = SameRegimeDayLevelCalibrator(config, out_dir)
+        return calibrator if calibrator.enabled else None
+    except Exception as e:
+        print(
+            f"[WARN] Same-regime day-level calibrator init failed: {e}",
+            file=sys.stderr,
+        )
+        return None
+
+
 def _build_forecast_pipeline(
     forecaster,
     cache: pd.DataFrame,
@@ -2118,10 +2150,12 @@ def _build_forecast_pipeline(
     guard=None,
     midday_guard=None,
     localized_shape_guard=None,
+    same_regime_calibrator=None,
 ) -> ForecastBuildResult:
     """Return forecast output plus intermediate stages.
 
-    Pipeline: LightGBM → AnalogousDayAdjuster → PostHolidayTimeBandGuard → output.
+    Pipeline: LightGBM → same-regime level calibration → analogous-day
+    adjustment → time-band/midday/local shape guards → output.
     Falls back to baseline when LightGBM is unavailable or fails.
     """
     if forecaster is not None:
@@ -2134,19 +2168,30 @@ def _build_forecast_pipeline(
                 include_context=True,
             )
             raw_lgbm_forecasts = forecaster.predict(target_date, cache)
+            level_calibrated_forecasts = raw_lgbm_forecasts
+            if same_regime_calibrator is not None:
+                level_calibrated_forecasts = same_regime_calibrator.apply(
+                    raw_lgbm_forecasts,
+                    target_date,
+                    inference_features,
+                ).forecasts
             analog_adjusted_forecasts = (
                 adjuster.adjust(
                     forecaster,
-                    raw_lgbm_forecasts,
+                    level_calibrated_forecasts,
                     cache,
                     target_date,
                     inference_features,
                 )
                 if adjuster
-                else raw_lgbm_forecasts
+                else level_calibrated_forecasts
             )
             guarded_forecasts = (
-                guard.apply(raw_lgbm_forecasts, analog_adjusted_forecasts, inference_features)
+                guard.apply(
+                    level_calibrated_forecasts,
+                    analog_adjusted_forecasts,
+                    inference_features,
+                )
                 if guard
                 else analog_adjusted_forecasts
             )
@@ -2165,6 +2210,7 @@ def _build_forecast_pipeline(
                 model_name="lgbm_quantile_q50",
                 stages={
                     "raw_lgbm": raw_lgbm_forecasts,
+                    "same_regime_level_calibrated": level_calibrated_forecasts,
                     "analog_adjusted": analog_adjusted_forecasts,
                     "post_holiday_guarded": guarded_forecasts,
                     "midday_guarded": midday_guarded_forecasts,
@@ -2196,6 +2242,7 @@ def _build_forecast_with_fallback(
     guard=None,
     midday_guard=None,
     localized_shape_guard=None,
+    same_regime_calibrator=None,
 ) -> tuple[list, str]:
     """Return (forecasts, model_name), preserving the historical helper API."""
     result = _build_forecast_pipeline(
@@ -2209,6 +2256,7 @@ def _build_forecast_with_fallback(
         guard,
         midday_guard,
         localized_shape_guard,
+        same_regime_calibrator,
     )
     return result.forecasts, result.model_name
 
@@ -3511,6 +3559,7 @@ def _run_status_only(
     guard      = _make_guard(config)
     midday_guard = _make_midday_guard(config)
     localized_shape_guard = _make_localized_shape_spike_guard(config)
+    same_regime_calibrator = _make_same_regime_calibrator(config, out_dir)
 
     extended_with_actuals = extended_cache
     tomorrow_with_lag_fallbacks = _inject_today_actuals(
@@ -3531,7 +3580,8 @@ def _run_status_only(
     # Today's forecast: uses injected cache so lag_24h (yesterday) is populated
     today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,
-        config, adjuster, guard, midday_guard, localized_shape_guard
+        config, adjuster, guard, midday_guard, localized_shape_guard,
+        same_regime_calibrator,
     )
     today_fc, today_model = today_build.forecasts, today_build.model_name
     today_fc, today_model = _apply_intraday_residual_correction(
@@ -3550,7 +3600,8 @@ def _run_status_only(
     # Tomorrow's forecast: same injected cache gives lag_24h (today) when available
     tomorrow_build = _build_forecast_pipeline(
         forecaster, tomorrow_with_lag_fallbacks, tomorrow, n_weeks, min_samples,
-        config, adjuster, guard, midday_guard, localized_shape_guard
+        config, adjuster, guard, midday_guard, localized_shape_guard,
+        same_regime_calibrator,
     )
     tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
 
@@ -3795,6 +3846,7 @@ def main() -> None:
     guard      = _make_guard(config)
     midday_guard = _make_midday_guard(config)
     localized_shape_guard = _make_localized_shape_spike_guard(config)
+    same_regime_calibrator = _make_same_regime_calibrator(config, out_dir)
 
     # Re-generate backfilled forecasts using LightGBM only when no operational
     # forecast JSON already existed for that date.
@@ -3826,7 +3878,8 @@ def main() -> None:
     save_hourly_cache(out_dir, forecast_weather_cache)
     today_build = _build_forecast_pipeline(
         forecaster, extended_with_actuals, today, n_weeks, min_samples,
-        config, adjuster, guard, midday_guard, localized_shape_guard
+        config, adjuster, guard, midday_guard, localized_shape_guard,
+        same_regime_calibrator,
     )
     today_fc, today_model = today_build.forecasts, today_build.model_name
     today_fc, today_model = _apply_intraday_residual_correction(
@@ -3844,7 +3897,8 @@ def main() -> None:
     )
     tomorrow_build = _build_forecast_pipeline(
         forecaster, tomorrow_with_lag_fallbacks, tomorrow, n_weeks, min_samples,
-        config, adjuster, guard, midday_guard, localized_shape_guard
+        config, adjuster, guard, midday_guard, localized_shape_guard,
+        same_regime_calibrator,
     )
     tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
 

@@ -8,7 +8,8 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-08
 
-- [2026-08-21 v14 Champion保持型キャリブレーション](model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
+- [2026-08-21 v14-r2 データソース耐性型D-1予測 Champion](model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
+- [2026-08-21 過去v14-r1 Champion保持型staging](model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 - [2026-08-18 同一vintage TEPCO評価とモデル昇格ガバナンス](model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
 - [2026-08-13 AMeDAS-JMA 境界の整合性補正](model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 営業日復帰補正の実績過大予測 veto](model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)

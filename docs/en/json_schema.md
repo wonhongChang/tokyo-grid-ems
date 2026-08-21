@@ -242,6 +242,8 @@ Provides **hourly demand forecast for a specific date** (today or tomorrow).
 ## Field Descriptions
 - `model.name`: `baseline_dow_hour_mean` — mean of same weekday/hour over rolling N weeks
 - `model.nWeeks`: number of rolling weeks used for training
+- `model.contract`: production inference contract; included for LightGBM output
+- `model.artifactSha256`: exact serving model artifact; included when model metadata is available
 - `series[]`: 24-point forecast + prediction intervals (95/99%)
 - When data is insufficient: `availability: "not_yet_available"`, `series: []`
 
@@ -637,7 +639,9 @@ Qualification requires 80% paired-hour coverage per lead bucket and time band, M
 
 # Model Promotion Contracts
 
-`metrics/model_promotion.json` records Champion health, same-cutoff 28/56/84-day validation, recovery and drift failures, preserved shadow/rollback artifacts, and `shadowEvidence`. Recovery cannot advance beyond `shadow_required` until `metrics/model_shadow_evaluation.json` reports `passed: true`, the matching `artifactSha256`, at least 72 `hours`, and at least two `finalizedDays`; explicit approval is still required afterward.
+`metrics/model_promotion.json` records Champion health, validation, recovery and drift decisions, and preserved rollback identity. The normal shadow route remains fail-closed. The v14-r2 fixed-origin recovery route instead records four artifact-bound gates under `validation`: D0 development/holdout and D-1 development/holdout. `champion.sha256`, `rollback.sha256`, `driftOverrideBasis`, and `postPromotionMonitoring.reviewAfterFinalizedDays` make the deployed decision auditable.
+
+Rolling interval metadata uses schema `1.1.0`. `preScaleMaxP95HalfWidthMw` is the sanity cap, `p95HalfWidthScale` is the coverage multiplier, and `maxP95HalfWidthMw` is the effective final cap after scaling.
 
 ---
 

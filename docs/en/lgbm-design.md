@@ -23,7 +23,7 @@ The statistical baseline (`baseline_dow_hour_mean`) remains as a fallback when L
 
 ## Model
 
-The staged v14 candidate artifact contains three absolute-demand quantile regressors plus q50 auxiliary models for lag-24 residuals, non-business regimes, and whole-day level.
+The production v14-r2 artifact contains three absolute-demand quantile regressors plus q50 auxiliary models for lag-24 residuals, non-business regimes, source-robust feature views, and lag-unavailable D-1 inference.
 
 | Model | Purpose |
 |---|---|
@@ -32,13 +32,15 @@ The staged v14 candidate artifact contains three absolute-demand quantile regres
 | q975 | upper p95 interval estimate |
 | q50 lag24 residual | median of `actual_mw - lag_24h` |
 | q50 non-business | auxiliary center estimate for Saturdays, Sundays, and holidays |
-| q50 daily-level | daily mean estimate used for a capped common 24-hour level shift |
+| q50 source views | parallel estimates that exclude historical humidity deltas or other source-fragile fields |
+| q50 lag-unavailable | D-1 estimate without unfinalized demand-lag inputs |
+| q50 lag-unavailable non-business | weekend/holiday specialist for the same D-1 information set |
 
-The staged artifact preserves the deployed v11 q025, q50, q975, and lag-24 residual boosters exactly. On business days, its hourly q50 remains a 50:50 blend of absolute-demand q50 and `lag_24h + predicted residual`. Non-business days blend that unified q50 with a newly fitted dedicated non-business q50 50:50. The v13 transition-cooling model remains a rejected historical experiment and is not part of the staged v14 hourly backbone.
+On a normal D0 row, q50 keeps the absolute-demand, `lag_24h + predicted residual`, and non-business structure. Two parallel source views reduce reliance on historically sparse humidity and short-horizon weather fields; their combined change is limited to 500MW from the legacy center line.
 
-The v14 contract then applies a conservative hierarchical level calibration. A daily model trained on up to 730 complete recent days contributes 20% of the difference between its predicted daily mean and the hourly q50 mean, capped at a common +/-750MW shift. The auxiliaries run only when the preceding day has either 24 confirmed hours or confirmed hours 00:00-22:00 plus the known 23:00 TEPCO forecast fallback; every other incomplete pattern falls back to v11 q50. There is no independent D+1 estimator. q025/q975 interval half-widths are preserved and recentered around final q50.
+At a D-1 origin, target-day `lag_24h` and last-business-type demand can be unavailable by definition. v14-r2 detects those rows and uses dedicated models trained without six unfinalized demand-lag features and without weather inputs that cannot be reconstructed consistently at issuance time. The non-business specialist receives full weight. A separate same-regime calibrator applies 25% of the recent three-finalized-day residual with a +/-1,000MW cap. It is artifact-scoped and excludes the target day.
 
-The dashboard uses the resulting q50 as the main forecast line. q025/q975 are normalized into the displayed p95 forecast band, and a wider p99-style band is derived heuristically from the q025/q975 spread. When one side of the quantile interval collapses near q50, the pipeline keeps only a minimum width on that side instead of mirroring the opposite side's larger uncertainty. When an independent quantile model produces a rare one-sided tail explosion after a weather-regime shift, interval sanity calibration caps the maximum p95 half-width and the upper/lower asymmetry ratio without changing q50.
+The dashboard uses the resulting q50 as the main forecast line. q025/q975 are normalized into the displayed p95 band, sanity-calibrated, and then widened by a fixed 1.25 coverage scale. The pre-scale p95 half-width cap is 3,000MW and the final cap is 3,750MW. A wider p99-style band is derived heuristically; none of these interval steps changes q50.
 
 Minimum training data:
 
@@ -146,7 +148,7 @@ See [Regime-Aware Non-Business q50 Ensemble](model-improvements/model-improvemen
 
 See [Transition Cooling Attenuation and Weather Continuity](model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md) for the v13 business-transition contract, weather-source continuity replay, and promotion status at that time.
 
-See [v14 Champion-Preserving Calibration](model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md) for the final contract, rejected alternatives, data-coverage audit, same-cutoff evidence, and staging promotion record.
+The rejected v14-r1 path is documented in [v14 Champion-Preserving Calibration](model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md). The production contract and fixed-origin evidence are documented in [v14-r2 Source-Robust Day-Ahead Champion](model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md).
 
 ---
 
@@ -154,7 +156,7 @@ See [v14 Champion-Preserving Calibration](model-improvements/model-improvement-2
 
 1. ETL loads confirmed historical TEPCO data from monthly ZIP files.
 2. Weather enrichment fills JMA AMeDAS observed weather, JMA official forecast temperatures, and humidity fallback fields.
-3. Full ETL keeps the current Champion. Generic scheduled Challenger training is disabled during v14 stabilization; the exact Champion-preserving candidate is built and approved through the explicit degraded-Champion recovery path.
+3. Full ETL keeps the current Champion. Generic scheduled Challenger training is disabled during v14-r2 stabilization; a new artifact requires explicit leakage-safe D0/D-1 replay and promotion.
 4. The promoted model is saved to `web/public/.lgbm_model.pkl`; status/intraday workflows only reload this Champion.
 5. Recent actual JSON files are injected into the cache and persisted to fill gaps before the monthly ZIP is updated.
 6. Today's forecast is generated and adjusted with intraday residual correction.

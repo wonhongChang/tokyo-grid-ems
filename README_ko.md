@@ -190,8 +190,8 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 | `metrics/forecast_accuracy.json` | TEPCO 최신 게시값 기준 운영 참고치. 공식 동일 vintage 비교에는 사용하지 않음 |
 | `metrics/forecast_vintage_accuracy.json` | 같은 캡처 시점과 lead-time으로 맞춘 모델/TEPCO 비교 및 28/84일 자격 판정 |
 | `metrics/model_backtest.json` | 베이스라인 대비 LightGBM 백테스트 |
-| `metrics/model_promotion.json` | Champion/Challenger 28/56/84일 검증, drift, 복구 승격 판단 |
-| `metrics/model_contract_comparison.json` | 승격 artifact에 연결된 동일 cutoff v11/v13/v14 복구 비교 |
+| `metrics/model_promotion.json` | artifact-bound D0·D-1 검증, drift 결정, Champion/rollback 식별자와 복구 상태 |
+| `metrics/model_contract_comparison.json` | 실제 배포 v11과 승격 v14-r2의 고정 시점 비교 |
 | `metrics/model_shadow_evaluation.json` | 기본 성능 저하 Champion 복구 경로의 artifact 결합 shadow 근거 |
 | `metrics/operational_replay.json` | 실제 게시 예측, 단계별 shadow, TEPCO 참고치, 밴드 coverage replay |
 | `reports/daily/*.json` | 검증 탭에 표시하는 전날 운영 리포트 |
@@ -234,7 +234,8 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
-- [2026-08-21 v14 Champion 보존형 보정](docs/ko/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
+- [2026-08-21 v14-r2 출처 강건형 다음날 예측 Champion](docs/ko/model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
+- [2026-08-21 과거 v14-r1 Champion 보존형 staging](docs/ko/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 - [2026-08-18 동일 시점 TEPCO 평가와 모델 승격 거버넌스](docs/ko/model-improvements/model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
 - [2026-08-13 AMeDAS-JMA 경계 일관성 보정](docs/ko/model-improvements/model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 영업일 복귀 보정의 실측 과대예측 veto](docs/ko/model-improvements/model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)

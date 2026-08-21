@@ -2,6 +2,8 @@
 
 언어: [English](../../en/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md) / [日本語](../../ja/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 
+> 과거 staging 기록: 이 v14-r1 계약은 원격 배포 전에 교체됐다. 현재 Champion은 [v14-r2 출처 강건형 다음날 예측](model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)이다.
+
 ## 결정
 
 첫 v14 초안은 시간별 모델 전체를 재학습하고 독립 D+1 모델을 추가했다. 이 후보는 배포 전에 폐기했다. 운영 v11과 비교하면 현재 영업일 11~15시를 평균 약 2.34GW 올리고, 다음 비영업일은 평균 약 3.25GW 내렸다. 의도한 일간 레벨 보정만으로 설명하기에는 변화가 너무 컸다.

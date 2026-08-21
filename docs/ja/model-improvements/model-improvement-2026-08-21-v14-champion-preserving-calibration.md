@@ -2,6 +2,8 @@
 
 言語: [English](../../en/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md) / [한국어](../../ko/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 
+> 過去のstaging記録: このv14-r1 contractはremote配備前に置き換えられました。現在のChampionは[v14-r2 データソース耐性型D-1予測](model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)です。
+
 ## 判断
 
 最初のv14案は時間別モデル全体を再学習し、独立D+1モデルを追加していました。この候補は配備前に棄却しました。運用v11比で当日営業日の11〜15時を平均約2.34GW引き上げ、翌非営業日を平均約3.25GW引き下げたため、意図した日次レベル補正だけでは説明できない大きな変化でした。

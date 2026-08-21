@@ -23,7 +23,7 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 
 ## 모델 구조
 
-격리 staging의 v14 후보 artifact는 절대수요 quantile 모델 3개와 lag-24 잔차, 비영업일 레짐, 하루 전체 레벨을 위한 q50 보조 모델을 포함합니다.
+운영 v14-r2 artifact는 절대수요 quantile 모델 3개와 lag-24 잔차, 비영업일 레짐, source-robust feature view, lag가 없는 D-1 추론을 위한 q50 보조 모델을 포함합니다.
 
 | 모델 | 역할 |
 |---|---|
@@ -32,13 +32,15 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 | q975 | p95 상단 구간 추정 |
 | q50 lag24 residual | `actual_mw - lag_24h`의 중앙값 추정 |
 | q50 non-business | 토요일·일요일·공휴일 중심선의 보조 추정 |
-| q50 daily-level | 24시간 공통 레벨 이동에 사용하는 일평균 추정 |
+| q50 source views | 과거 습도 delta 등 출처가 불안정한 필드를 제외한 병렬 추정 |
+| q50 lag-unavailable | 아직 확정되지 않은 수요 lag 없이 생성하는 D-1 추정 |
+| q50 lag-unavailable non-business | 같은 D-1 정보 집합을 쓰는 주말·공휴일 전용 추정 |
 
-staging artifact는 운영 v11의 q025, q50, q975, lag-24 residual booster를 정확히 보존합니다. 영업일 q50은 절대수요 q50과 `lag_24h + 예측 잔차`의 50:50 혼합을 유지합니다. 비영업일에는 이 통합 q50과 새로 학습한 전용 비영업일 q50을 50:50으로 혼합합니다. v13 transition-cooling 모델은 폐기된 과거 실험이며 staging v14 시간별 backbone에 포함되지 않습니다.
+일반 D0 행의 q50은 절대수요, `lag_24h + 예측 잔차`, 비영업일 전용 구조를 유지합니다. 두 개의 source view가 과거에 희소한 습도와 단기 기상 필드 의존도를 낮추며, 최종 변화량은 기존 중심선에서 최대 500MW로 제한됩니다.
 
-v14는 그 위에 보수적인 계층형 레벨 보정을 적용합니다. 최근 최대 730개 완전 일자를 학습한 일간 모델이 예측 일평균과 시간별 q50 평균 차이의 20%만 반영하며, 24시간 공통 이동량은 +/-750MW로 제한됩니다. 보조 경로는 전날 24시간이 모두 확정됐거나 00~22시가 확정되고 23시만 TEPCO 예측 fallback인 경우에만 작동합니다. 그 밖의 불완전한 패턴에서는 q50이 v11과 정확히 같아집니다. 독립 D+1 모델은 없습니다. q025/q975 half-width는 최종 q50 주위로 보존됩니다.
+D-1 시점에는 대상일의 `lag_24h`와 최근 영업 타입 수요가 정의상 아직 없을 수 있습니다. v14-r2는 이런 행을 감지해 확정되지 않은 수요 lag 피처 6개와 발행 시점에 일관되게 재구성할 수 없는 기상 입력을 제외한 전용 모델을 사용합니다. 비영업일 specialist는 가중치 1.0을 사용합니다. 별도의 same-regime calibrator는 최근 확정 3일 잔차의 25%를 +/-1,000MW 안에서 반영하고 대상일은 학습에서 제외합니다.
 
-대시보드는 최종 q50을 예측선으로 사용합니다. q025/q975는 p95 예측 밴드로 표시하고, p99 스타일의 더 넓은 구간은 q025/q975 폭을 바탕으로 확장합니다. 한쪽 quantile 구간이 q50 근처로 붙는 경우에는 반대쪽의 큰 불확실성을 그대로 복사하지 않고, 해당 방향의 최소 폭만 유지합니다. 독립 quantile 모델이 날씨 regime 변화 이후 한쪽 tail만 드물게 과도하게 넓히는 경우에는 interval sanity calibration이 p95 최대 half-width와 상단/하단 비대칭 비율을 제한하며, q50 예측선은 변경하지 않습니다.
+대시보드는 최종 q50을 예측선으로 사용합니다. q025/q975를 p95 밴드로 정규화하고 sanity 보정한 뒤, coverage 보정을 위해 폭을 1.25배 확대합니다. 확대 전 p95 half-width 상한은 3,000MW, 최종 상한은 3,750MW입니다. p99 스타일 구간도 파생하지만 이 interval 단계들은 q50을 바꾸지 않습니다.
 
 최소 학습 데이터:
 
@@ -148,7 +150,7 @@ residual = actualMw - modelForecastMw
 
 v13 영업 전환 계약, 기상 출처 연속성 replay와 당시 승격 상태는 [2026-08-04 영업 전환일 냉방 감쇠와 기상 연속성 보강](model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)에 정리했습니다.
 
-최종 v14 계약, 폐기한 대안, 데이터 coverage 감사, 동일 cutoff 검증과 staging 승격 기록은 [2026-08-21 v14 Champion 보존형 보정](model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)에 정리했습니다.
+폐기한 v14-r1 경로는 [2026-08-21 v14 Champion 보존형 보정](model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)에, 운영 계약과 고정 시점 근거는 [2026-08-21 v14-r2 출처 강건형 다음날 예측 Champion](model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)에 정리했습니다.
 
 ---
 
@@ -156,7 +158,7 @@ v13 영업 전환 계약, 기상 출처 연속성 replay와 당시 승격 상태
 
 1. ETL이 TEPCO 월별 ZIP에서 확정 이력 데이터를 읽습니다.
 2. JMA AMeDAS 실측 기상, JMA 공식 예보 기온, 습도 fallback 필드를 붙입니다.
-3. 전체 ETL은 현재 Champion을 유지합니다. v14 안정화 중에는 일반 정기 Challenger 학습을 끄고, 정확한 Champion 보존형 후보만 명시적 degraded-Champion 복구 경로로 생성·승인합니다.
+3. 전체 ETL은 현재 Champion을 유지합니다. v14-r2 안정화 중에는 일반 정기 Challenger 학습을 끄며, 새 artifact는 누수 방지 D0·D-1 replay와 명시적 승격을 거쳐야 합니다.
 4. 승격된 모델만 `web/public/.lgbm_model.pkl`로 저장하며 status/intraday workflow는 이 Champion을 다시 로드합니다.
 5. 월별 ZIP이 아직 갱신되지 않은 구간은 최근 actual JSON으로 cache를 보강하고 저장해 다음 실행의 lag 연속성을 유지합니다.
 6. 오늘 예측을 만들고 intraday residual correction을 적용합니다.

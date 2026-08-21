@@ -109,4 +109,10 @@ def calibrate_p95_half_widths(
             else:
                 capped_lo, capped_hi = target_smaller, target_larger
 
+    width_scale = _positive_float(
+        interval_config.get("p95_half_width_scale")
+    ) or 1.0
+    capped_lo *= width_scale
+    capped_hi *= width_scale
+
     return capped_lo, capped_hi

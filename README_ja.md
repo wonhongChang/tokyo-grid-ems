@@ -167,8 +167,8 @@ ETLが `web/public/` 以下に生成するファイルです。
 | `metrics/forecast_accuracy.json` | TEPCO最新公開値による運用参考値。正式な同一vintage比較には使用しない |
 | `metrics/forecast_vintage_accuracy.json` | 同一capture・lead-timeで揃えたモデル/TEPCO比較と28/84日資格判定 |
 | `metrics/model_backtest.json` | ベースラインに対するLightGBMバックテスト |
-| `metrics/model_promotion.json` | Champion/Challengerの28/56/84日検証、drift、復旧昇格判断 |
-| `metrics/model_contract_comparison.json` | 昇格artifactに紐付く同一cutoff v11/v13/v14復旧比較 |
+| `metrics/model_promotion.json` | artifact-bound D0・D-1検証、drift判断、Champion/rollback識別子、復旧状態 |
+| `metrics/model_contract_comparison.json` | 実配備v11と昇格v14-r2のfixed-origin比較 |
 | `metrics/model_shadow_evaluation.json` | 通常の性能低下Champion復旧経路に使うartifact紐付きshadow証拠 |
 | `metrics/operational_replay.json` | 実配信予測、stage shadow、TEPCO参考値、band coverage replay |
 | `reports/daily/*.json` | 検証タブに表示する前日運用サマリー |
@@ -211,7 +211,8 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
-- [2026-08-21 v14 Champion保持型キャリブレーション](docs/ja/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
+- [2026-08-21 v14-r2 データソース耐性型D-1予測 Champion](docs/ja/model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
+- [2026-08-21 過去v14-r1 Champion保持型staging](docs/ja/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 - [2026-08-18 同一vintage TEPCO評価とモデル昇格ガバナンス](docs/ja/model-improvements/model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
 - [2026-08-13 AMeDAS-JMA 境界の整合性補正](docs/ja/model-improvements/model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 営業日復帰補正の実績過大予測 veto](docs/ja/model-improvements/model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)

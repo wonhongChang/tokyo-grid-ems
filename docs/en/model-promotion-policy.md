@@ -153,20 +153,21 @@ Recovery promotion is not automatic. Record `recovery_candidate_ready`, require 
 
 The default implementation reads this evidence from `metrics/model_shadow_evaluation.json`. Its `artifactSha256` must match the preserved shadow artifact, metadata, and prior promotion report. Missing or stale evidence, fewer than 72 hours, or fewer than two finalized days produces `shadow_required`; the normal approval environment flag cannot bypass those failures. Approval promotes that exact preserved artifact rather than a newly retrained candidate.
 
-### Expedited Operator Recovery
+### Fixed-Origin Degraded-Champion Recovery
 
-An expedited recovery is allowed only when continuing the incumbent presents an independently documented integrity and performance risk. It is never automatic and must use `python/eval/promote_recovery_candidate.py` with explicit recovery approval.
+When the incumbent is independently classified as degraded, `python/eval/promote_fixed_origin_candidate.py` can perform a manual recovery. It is never automatic and requires the exact candidate artifact plus four evidence reports.
 
-- The incumbent must already be classified as degraded and have an artifact-integrity defect such as a missing training cutoff or incompatible config fingerprint.
-- The exact v14 artifact must improve v11 MAE and WAPE by at least 8% over 28 days and improve at least one documented weak segment by at least 10%.
-- It must not regress v13 MAE or WAPE over 28, 56, or 84 days. v13 was never deployed, so it is a non-regression reference rather than a second material-gain gate.
-- It must not regress v11 overall MAE or WAPE over the supporting 56-day and 84-day windows.
-- Save/reload compatibility and finite today/tomorrow 48-hour smoke tests must pass.
-- Drift must remain within automatic limits unless a separate `--allow-large-drift` decision records the values and reason. The staged v14 required no override.
-- The previous Champion artifact and metadata must be copied to rollback paths before the atomic replacement.
-- The absence of pre-promotion shadow becomes a mandatory 72-hour stabilization period, with rollback review after 48 finalized hours on material regression.
+- D0 and D-1 each require a development report and a later untouched holdout report.
+- Every report must mask target-day demand and actuals unavailable at the simulated capture time.
+- Holdout reports must compare against the exact deployed Champion artifact SHA.
+- Candidate artifact SHA, contract, origin lead, phase, and report period must all match the promotion request.
+- Both holdouts must pass segment, shape, maximum-error, and paired-date bootstrap gates.
+- Large drift is not a generic override: both holdouts must be `strict_mae_recovery`, with at least 8% D0 and 20% D-1 MAE improvement.
+- Save/reload and 48-hour finite-value smoke tests must pass.
+- The previous Champion artifact and metadata are copied to rollback paths before atomic replacement.
+- Post-promotion review begins after three finalized operating days; integrity or material performance failure can trigger earlier rollback.
 
-This path resolves the policy failure where a broken incumbent could otherwise remain forever, but it does not certify production quality or TEPCO parity.
+This route repairs a demonstrably broken incumbent path. It does not certify TEPCO parity or permit holdout-driven feature selection.
 
 ## Prediction Drift
 
@@ -202,15 +203,15 @@ A non-scheduled ETL result must not overwrite the detailed result of the latest 
 
 ## Current Project Decision
 
-- v14 `q025_q50_q975_p95_v14_daily_level_calibration` was recovery-promoted in isolated staging on 2026-08-21 JST with training cutoff 2026-08-19. Remote data deployment remains a separate operator action.
-- The artifact preserves the four v11 hourly boosters exactly and adds only non-business and daily-level auxiliary estimators. The rejected full-retrain and independent D+1 models are not included.
-- Same-cutoff v14 MAE was 1142.5MW over 28 days, 972.0MW over 56 days, and 871.5MW over 84 days. This improved v11 by 8.29%, 3.36%, and 3.27%, respectively, and did not regress the unpromoted v13 reference.
-- Against the latest `origin/data` cache, current/tomorrow prediction drift was 104.4MW on average and 208.8MW at maximum, so no drift override was used. The current day had 23 confirmed preceding-day hours plus one final-hour fallback; the next day had insufficient coverage and therefore matched v11 exactly.
-- Staged artifact SHA-256 is `77a35437305d60de841d2277bc2ed636878f0170a2386d727312397ba1b8a3d3`; v11 rollback SHA-256 is `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`.
+- v14-r2 `q025_q50_q975_p95_v14_source_robust_day_ahead` was recovery-promoted on 2026-08-21 JST. Its contract is `v14-r2-source-robust-day-ahead`, training cutoff is 2026-08-01, and artifact SHA-256 is `c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3`.
+- Promotion required four leakage-safe fixed-origin reports: D0 development, D0 exact-Champion holdout, D-1 development, and D-1 exact-Champion holdout. Holdout baselines were loaded from the exact deployed v11 SHA, not reconstructed by current code.
+- D0 holdout MAE improved 18.76% and D-1 holdout MAE improved 39.82%; maximum error and shape error also improved in both holdouts, with no segment regression.
+- Current/tomorrow drift was 2,493.5MW on average and 9,654.8MW at maximum because v11's D-1 missing-lag path was structurally low. The override was allowed only because both exact-Champion holdouts used `strict_mae_recovery` and exceeded independent 8% D0 and 20% D-1 MAE thresholds.
+- The rollback artifact is the exact prior v11 SHA `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`. Review stabilization after three finalized operating days; this is a recovery from v11, not a claim of TEPCO parity.
 
 ## Implementation State
 
-- Implemented: same-cutoff v11/v13/v14 replay, absolute and recovery gates, degraded health, 28/56/84-day checks, drift routing, `lastEvaluation`, shadow/rollback artifact preservation, fail-closed normal shadow approval, and explicit expedited recovery approval.
+- Implemented: same-cutoff v11/v13/v14 replay, leakage-safe D0/D-1 fixed-origin replay, exact-artifact holdout, four-report recovery approval, degraded health, drift routing, `lastEvaluation`, and atomic Champion/rollback artifact preservation.
 - Implemented: append-only matched-vintage capture, 120-second legacy same-run import, lead-bucket metrics, and paired date-block bootstrap.
 - Collecting: 28/84-day matched-vintage history. Until complete, `forecast_accuracy.json` remains an operational latest-value reference only.
-- Pending operator publication: copy the exact staged artifact and reports to the data branch. After publication, begin 72-hour stabilization, previous-Champion shadow comparison, and rollback review after 48 finalized hours if material regression appears.
+- Active: publish the exact promoted artifact and reports to the data branch, then monitor three finalized operating days against the preserved v11 rollback artifact.

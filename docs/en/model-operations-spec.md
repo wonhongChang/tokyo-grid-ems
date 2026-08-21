@@ -25,14 +25,16 @@ Operational rules:
 | Implementation | `python/forecast/lgbm_model.py` |
 | Feature builder | `python/forecast/feature_builder.py` |
 | Post-processing | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| Staged candidate contract | `q025_q50_q975_p95_v14_daily_level_calibration` |
-| Remote Champion | `q025_q50_q975_p95_v11_lag24_residual_ensemble`; v14 was approved only in isolated staging on 2026-08-21 JST |
+| Production contract | `v14-r2-source-robust-day-ahead` |
+| Interval contract | `q025_q50_q975_p95_v14_source_robust_day_ahead` |
+| Champion artifact | SHA-256 `c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3` |
+| Rollback artifact | v11 SHA-256 `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640` |
 | Minimum training rows | `90 * 24 = 2160` hourly rows |
 | Fallback | `baseline_dow_hour_mean` |
 
 The model forecasts hourly Tokyo-area electricity demand and produces today's forecast, tomorrow's forecast, p95/p99 forecast bands, and expected demand values for anomaly detection.
 
-The staged v14 artifact contains three absolute-demand quantile regressors and three q50 auxiliary regressors:
+The production v14-r2 artifact contains three absolute-demand quantile regressors and several q50 auxiliary paths:
 
 | Model | alpha | Role |
 |---|---:|---|
@@ -41,9 +43,11 @@ The staged v14 artifact contains three absolute-demand quantile regressors and t
 | `q975` | 0.975 | upper p95 estimate |
 | `q50_lag24_residual` | 0.50 | median of `actual_mw - lag_24h` |
 | `q50_non_business` | 0.50 | auxiliary center estimate for weekends and holidays |
-| `q50_daily_level` | 0.50 | daily mean estimate for a capped common 24-hour level shift |
+| `q50_feature_views` | 0.50 | source-robust parallel estimates with reduced fragile-weather input sets |
+| `q50_lag_unavailable` | 0.50 | D-1 estimate without unfinalized demand-lag features |
+| `q50_lag_unavailable_non_business` | 0.50 | weekend/holiday D-1 specialist |
 
-The staged artifact preserves the deployed v11 hourly boosters. Business-day q50 remains a 50:50 blend of absolute q50 and `lag_24h + residual q50`. Non-business days combine unified q50 with the dedicated non-business q50 50:50. v14 then applies 20% of the daily-level disagreement, capped at a common +/-750MW shift. The auxiliaries run only after either 24 confirmed preceding-day hours or confirmed 00:00-22:00 hours plus a 23:00 TEPCO forecast fallback; all other incomplete patterns use v11 q50. There is no independent D+1 estimator. The dashboard uses the resulting q50 as the main line, with `q025/q975` half-widths preserved around it.
+Normal D0 inference retains the absolute q50, lag-24 residual, and non-business structure. Source views are constrained to a 500MW trust region. When D-1 rows lack `lag_24h` or last-business-type demand, the lag-unavailable models use a reduced information set instead of relying on LightGBM missing-value branches. The non-business specialist receives full weight. Artifact-scoped same-regime calibration then applies 25% of the recent three-finalized-day residual with a +/-1,000MW cap. The final p95 half-width uses a 1.25 coverage scale with a 3,750MW final cap.
 
 ---
 
@@ -271,11 +275,11 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | Area | Config Key | Current value | Operational guide |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | Higher values trust the day-over-day residual model more; lower values retain more absolute-level behavior. Retune only with version-aware rolling and frozen-origin holdouts. |
-| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | disabled | Retained only for v13 research replay. The staged v14 preserves v11 residual blending, so enabling this changes the inference contract and requires a new candidate version and replay. |
+| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | enabled | Attenuates lag-24 residual influence on sharp cooling transitions. Any threshold change alters the production contract and requires a new fixed-origin replay. |
 | forecast | `q50_regime_model.weight` | 0.5 | Controls the dedicated non-business q50 contribution. Higher values strengthen weekend specialization; lower values preserve more unified-q50 shape. Validate both non-business MAE and shape. |
-| forecast | `daily_level_model.training_window_days` | 730 | Uses recent complete days for the hierarchical level estimate while the hourly models retain their configured history. Shorter windows adapt faster but can chase seasonal noise. |
-| forecast | `daily_level_model.weight`, `max_abs_adjustment_mw` | 0.20, 750MW | Moves the complete 24-hour curve toward the predicted daily mean without changing shape. Raising either value corrects level bias faster but increases whole-day overcorrection risk. |
-| forecast | `partial_lag_q50_fallback.min_observed_lag24_hours` | 23 | Disables v14 auxiliaries when the preceding day lacks enough confirmed actuals. Keep at 23 to allow only the known final-hour fallback; lowering it trusts increasingly incomplete D+1 lag context. |
+| forecast | `q50_feature_view_ensemble` | enabled, 0.50 humidity-reduced share, 0.40 non-business full share, 500MW cap | Reduces dependence on source-fragile history without allowing a feature view to rewrite the center line. Raise the cap only after fixed-origin max-error evidence improves. |
+| forecast | `partial_lag_q50_fallback.lag_unavailable_models_enabled` | true, non-business weight 1.0 | Routes D-1 rows with unavailable demand lags to models trained on the same reduced information set. Disabling it restores the structurally weak v11 missing-value path. |
+| forecast | `same_regime_day_level_calibration` | 3 days, 0.25 shrinkage, 1000MW cap | Corrects persistent day-level bias from finalized same-regime days only. More history is smoother; higher shrinkage reacts faster but increases regime-change lag. |
 | promotion | `scheduled_challenger_training_enabled`, `retrain_weekday` | false, 0 (Monday) | Scheduled candidate training is locked during v14 stabilization because the generic trainer would replace the preserved hourly boosters. Only an explicit candidate build may run; re-enable scheduling after a matching Champion-preserving validation path exists. |
 | promotion | `validation_window_days` | 28 | Uses the latest 28 complete days at every evaluation. This is a rolling evidence window, not a 28-day retraining interval. |
 | promotion | absolute quality limits | MAE 1000, WAPE 3.0%, shape 750, max error 6500 MW | Rejects a challenger even when it beats a weak baseline but remains operationally poor. Segment limits are MAE 1500 and shape 1100 MW. |
@@ -283,14 +287,14 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | promotion | Champion-relative gate | MAE improvement 5%, critical-segment regression at most 5% | Prevents a candidate from passing only because the incumbent is weak or the absolute ceiling is loose. Both contracts are replayed at the same cutoff. |
 | promotion | degraded-Champion recovery | 28-day MAE/WAPE improvement 8%, 56/84-day non-regression | The lower primary threshold is valid only with segment, max-error, shape, exact-artifact, smoke, and drift gates. It does not itself authorize deployment. |
 | promotion | recovery shadow evidence | 72 forecast-hours, 2 finalized days | Missing or insufficient `metrics/model_shadow_evaluation.json` evidence fails closed. Explicit approval remains mandatory after this gate. |
-| promotion | expedited operator recovery | 28d v11 MAE/WAPE +8%, v13 non-regression, 56/84d non-regression | Reserved for an integrity-degraded Champion. It requires an exact artifact, bounded drift, rollback preservation, and 72-hour post-deployment monitoring. |
+| promotion | fixed-origin recovery | four D0/D-1 development/holdout reports; exact v11 holdout SHA | Large drift can be approved only when both exact-Champion holdouts use strict recovery and exceed 8% D0 / 20% D-1 MAE improvement. Rollback preservation and explicit approval remain mandatory. |
 | benchmark | `forecast_vintages` qualification | 28/84 days, 80% coverage, MAE/WAPE 1.10 | Uses same-capture TEPCO/model values. RMSE ratio is capped at 1.15, maximum-error and segment ratios at 1.25, and the paired bootstrap MAE-ratio upper bound at 1.10. |
 | weather | `cooling_base_temp_c` | 22.0 | Lower values activate cooling sensitivity earlier; higher values reduce early-summer overreaction. Validate across the full warm season. |
 | weather | `heating_base_temp_c` | 18.0 | Higher values strengthen heating signals; lower values reduce winter over-sensitivity. |
 | weather bias | `min_abs_bias_c` | 1.5 | Lower values apply AMeDAS-to-JMA continuity correction more often; too low may chase source-boundary noise. |
 | weather bias | `max_abs_bias_c`, `shrinkage`, `decay_per_hour` | 2.5, 0.7, 0.6 | Caps, partially applies, and fades the source-boundary gap. Higher values react faster but may distort a valid JMA regime change. |
 | interval | `min_p95_half_width_mw` | 500 | Prevents narrow bands. Raising it improves visual stability but may reduce alert sensitivity. |
-| interval | `max_p95_half_width_mw` | 3000 | Caps rare one-sided quantile-tail explosions. Lower values make the band easier to read but can understate real uncertainty on unstable days. |
+| interval | `max_p95_half_width_mw`, `p95_half_width_scale` | 3000, 1.25 | Caps the sanity-calibrated half-width before applying the coverage scale; the final cap is 3,750MW. Lower scale narrows coverage, while a larger value can hide center-line error behind a wide band. |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | Limits upper/lower tail imbalance. Lower values make bands more symmetric; higher values preserve more model-estimated skew. |
 | interval | `rolling_conformal_floor` | enabled, 28 days, 95%, 24 samples | Uses finalized actual-versus-served-q50 errors from the same business regime and time band as a minimum p95 half-width. It never narrows a band or exceeds the 3,000 MW cap. A shorter window reacts faster but is noisier; a higher sample floor fails closed more often. |
 | intraday | `lookback_hours` | 3 | Shorter windows react faster; longer windows are smoother but slower. |
@@ -324,17 +328,17 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 
 ### Promotion and replay semantics
 
-- Generic weekly candidate training is currently disabled. v14 is built and promoted only through the exact-artifact recovery tools so the preserved v11 hourly boosters cannot be silently retrained.
+- Generic weekly candidate training is currently disabled. v14-r2 is built and promoted only through explicit fixed-origin recovery tools so the production artifact cannot be silently replaced.
 - When scheduled training is re-enabled for a compatible future contract, each run evaluates the latest rolling 28 complete days; it does not wait 28 days between evaluations.
 - Challenger training excludes partial target-day observations and uses only rows before `target_date`.
 - Validation requires duplicate-free coverage of exactly `window_days × 24` hours.
 - Today/tomorrow drift requires 48 finite values on production-equivalent weather and lag inputs; missing, `NaN`, or infinite values reject promotion.
-- Temporal validation uses target-day weather with target demand removed. It evaluates the model contract without operational post-processing.
+- Fixed-origin validation removes target-day demand and masks every actual unavailable at the simulated capture time. Development and untouched holdout windows are evaluated separately for D0 and D-1.
 - `metrics/operational_replay.json` evaluates forecasts that were actually served and reports TEPCO only as an external reference.
 - `metrics/forecast_accuracy.json` uses the latest TEPCO value left in the data and is therefore a reference scorecard, not formal parity evidence.
 - `metrics/forecast_vintage_accuracy.json` is the formal same-capture benchmark. It remains `collecting` until 28/84-day lead-bucket coverage and risk/confidence gates are complete.
 - Stage replay uses the latest available calibration snapshot per date. It is diagnostic shadow evidence, not an exact reconstruction of every intraday publication.
-- The default recovery path cannot advance beyond `shadow_required` without 72 shadow hours, two finalized days, and explicit approval. The separately documented expedited operator path requires v11/v13 non-regression evidence, rollback preservation, and 72-hour post-deployment monitoring.
+- The default recovery path cannot advance beyond `shadow_required` without 72 shadow hours, two finalized days, and explicit approval. The v14-r2 degraded-Champion path instead requires four fixed-origin reports, exact v11 holdout identity, strict drift-override thresholds, rollback preservation, and a three-finalized-day review.
 - TEPCO forecast fallback can support lag continuity, but it is excluded from training targets and all validation actuals.
 
 ### Metrics

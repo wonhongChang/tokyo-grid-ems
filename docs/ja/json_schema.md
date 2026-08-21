@@ -242,6 +242,8 @@ ETL/バッチパイプラインはこのスキーマに従い `web/public/` 以�
 ## フィールド説明
 - `model.name`: `baseline_dow_hour_mean` — 直近N週の同曜日・同時刻平均
 - `model.nWeeks`: 訓練に使用したローリングウィンドウの週数
+- `model.contract`: 運用inference contract。LightGBM出力に含まれる
+- `model.artifactSha256`: 実際のserving model artifact。metadataがある場合に含まれる
 - `series[]`: 24ポイントの予測値 + 区間（95/99%）
 - データ不足時は `availability: "not_yet_available"`, `series: []` で生成
 
@@ -637,7 +639,9 @@ intraday実行ごとの運用補正状態を限定的に保存します。最新
 
 # モデル昇格契約
 
-`metrics/model_promotion.json`はChampion health、同一cutoff 28/56/84日検証、recovery・drift失敗、保持されたshadow/rollback artifact、`shadowEvidence`を記録します。`metrics/model_shadow_evaluation.json`が`passed: true`、一致する`artifactSha256`、`hours` 72以上、`finalizedDays` 2以上を確認するまでは復旧候補は`shadow_required`を超えず、その後も明示的承認が必要です。
+`metrics/model_promotion.json`はChampion health、検証、recovery・drift判断、rollback識別子を記録します。通常shadow経路は引き続きfail-closedです。v14-r2 fixed-origin復旧経路は`validation`配下にartifact-bound gate 4件、D0 development/holdoutとD-1 development/holdoutを記録します。`champion.sha256`、`rollback.sha256`、`driftOverrideBasis`、`postPromotionMonitoring.reviewAfterFinalizedDays`により配備判断を監査できます。
+
+rolling interval metadataはschema `1.1.0`を使います。`preScaleMaxP95HalfWidthMw`はsanity上限、`p95HalfWidthScale`はcoverage倍率、`maxP95HalfWidthMw`は倍率適用後の最終上限です。
 
 ---
 

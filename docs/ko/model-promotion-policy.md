@@ -153,20 +153,21 @@ Champion이 `champion_degraded`일 때 Challenger는 절대 상한을 일부 넘
 
 기본 구현은 이 근거를 `metrics/model_shadow_evaluation.json`에서 읽는다. `artifactSha256`은 보존된 shadow artifact, metadata, 이전 승격 보고서와 모두 일치해야 한다. 파일 누락·오래된 근거, 72시간 미만 또는 확정 2일 미만이면 `shadow_required`로 멈추며 일반 승인 환경변수만으로 우회할 수 없다. 승인은 새로 재학습한 후보가 아니라 검증된 바로 그 shadow artifact를 승격한다.
 
-### 운영자 승인 긴급 복구
+### 고정 시점 성능 저하 Champion 복구
 
-기존 Champion을 계속 유지하는 것 자체가 별도로 확인된 무결성·성능 위험일 때만 긴급 복구를 허용한다. 이 경로는 자동이 아니며 `python/eval/promote_recovery_candidate.py`와 명시적 복구 승인을 사용한다.
+기존 Champion이 별도 근거로 degraded 판정을 받은 경우 `python/eval/promote_fixed_origin_candidate.py`로 수동 복구할 수 있다. 자동 경로가 아니며 정확한 후보 artifact와 근거 보고서 4개가 필요하다.
 
-- 기존 Champion은 이미 degraded 상태이고 학습 cutoff 누락, config fingerprint 불일치 같은 artifact 무결성 결함이 있어야 한다.
-- 정확한 v14 artifact가 28일 MAE와 WAPE를 v11 대비 각각 8% 이상 개선하고, 문서화된 취약 구간 중 하나 이상을 10% 이상 개선해야 한다.
-- v13은 배포된 적 없는 참고 후보이므로, 28일·56일·84일 모두에서 v13 MAE와 WAPE를 악화시키지 않아야 한다. 별도의 5% 추가 개선 기준은 요구하지 않는다.
-- 56일·84일 보조 창에서 v11 전체 MAE와 WAPE를 악화시키지 않아야 한다.
-- artifact 저장·재로드 호환성과 오늘/내일 48시간 유한값 smoke test를 통과해야 한다.
-- 자동 drift 한도를 넘으면 별도 `--allow-large-drift` 결정이 필요하며 수치와 이유를 승격 리포트에 기록해야 한다.
-- 원자적 교체 전에 이전 Champion artifact와 metadata를 rollback 경로로 복사해야 한다.
-- 승격 전 shadow를 생략한 대신 72시간 안정화 감시를 강제하고, 최소 48시간 확정 실적에서 유의한 퇴행이 보이면 rollback 검토를 시작한다.
+- D0와 D-1은 각각 개발 보고서와 더 뒤의 미사용 holdout 보고서를 요구한다.
+- 모든 보고서는 대상일 수요와 모의 capture 시점에 알 수 없던 actual을 마스킹해야 한다.
+- holdout은 정확한 배포 Champion artifact SHA와 비교해야 한다.
+- 후보 SHA, 계약, origin lead, phase, 보고 기간이 승격 요청과 모두 일치해야 한다.
+- 두 holdout 모두 구간, shape, 최대오차, 날짜 단위 bootstrap gate를 통과해야 한다.
+- 대규모 drift는 일반 override가 아니다. 두 holdout이 모두 `strict_mae_recovery`이고 D0 8%, D-1 20% 이상의 MAE 개선을 보여야 한다.
+- 저장·재로드와 오늘·내일 48시간 유한값 smoke test를 통과해야 한다.
+- 원자적 교체 전에 이전 Champion artifact와 metadata를 rollback 경로로 복사한다.
+- 승격 후 확정 운영 3일에 검토하며, 무결성 또는 중대한 성능 실패는 그보다 앞서 rollback을 시작할 수 있다.
 
-이 경로는 결함 있는 Champion이 무기한 남는 정책 실패를 해소할 뿐, 운영 품질이나 TEPCO 동등성을 인증하지 않는다.
+이 경로는 입증된 기존 Champion 결함을 복구한다. TEPCO 동등성을 인증하거나 holdout을 보고 피처를 선택하는 수단이 아니다.
 
 ## Prediction Drift 처리
 
@@ -202,15 +203,15 @@ Prediction drift는 변화량 위험 지표이며 정확도 지표가 아니다.
 
 ## 현재 프로젝트에 대한 적용 판단
 
-- v14 `q025_q50_q975_p95_v14_daily_level_calibration`을 학습 cutoff 2026-08-19로 생성해 2026-08-21 JST에 격리 staging에서 복구 승격했다. 원격 data 배포는 별도 운영자 작업이다.
-- 최종 artifact는 v11 시간별 booster 4개를 바이트 수준으로 그대로 보존하고 비영업일 q50과 일간 레벨 보조 모델만 추가한다. 폐기한 전체 재학습 후보와 독립 D+1 모델은 포함하지 않는다.
-- 동일 cutoff v14 MAE는 28일 1142.5MW, 56일 972.0MW, 84일 871.5MW였다. v11 대비 각각 8.29%, 3.36%, 3.27% 개선했고 미배포 v13 참고 계약도 악화시키지 않았다.
-- 최신 `origin/data` 캐시 기준 오늘·내일 prediction drift는 평균 104.4MW, 최대 208.8MW여서 override가 필요하지 않았다. 오늘은 전날 확정 실측 23시간과 마지막 한 시간 fallback을 사용했고, coverage가 부족한 다음날은 v11과 정확히 같았다.
-- staging artifact SHA-256은 `77a35437305d60de841d2277bc2ed636878f0170a2386d727312397ba1b8a3d3`, v11 rollback SHA-256은 `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`이다.
+- v14-r2 `q025_q50_q975_p95_v14_source_robust_day_ahead`를 2026-08-21 JST에 복구 승격했다. 계약은 `v14-r2-source-robust-day-ahead`, 학습 cutoff는 2026-08-01, artifact SHA-256은 `c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3`이다.
+- 승격에는 누수 방지 고정 시점 보고서 4개를 요구했다. D0 개발, D0 실제 Champion holdout, D-1 개발, D-1 실제 Champion holdout이며, holdout baseline은 현재 코드로 재구성하지 않고 정확한 배포 v11 SHA를 로드했다.
+- D0 holdout MAE는 18.76%, D-1 holdout MAE는 39.82% 개선됐다. 두 holdout 모두 최대오차와 shape 오차가 개선됐고 구간 퇴행이 없었다.
+- 오늘·내일 drift는 평균 2,493.5MW, 최대 9,654.8MW였다. v11의 D-1 결측 lag 경로가 구조적으로 낮았기 때문이다. override는 두 실제 Champion holdout이 모두 `strict_mae_recovery`를 통과하고 D0 8%, D-1 20%의 별도 MAE 기준을 넘은 경우에만 승인했다.
+- rollback artifact는 정확한 이전 v11 SHA `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640`이다. 확정 운영 3일 뒤 안정화를 검토하며, 이번 승격은 v11 복구이지 TEPCO 동등성 선언이 아니다.
 
 ## 구현 상태
 
-- 구현 완료: 동일 cutoff v11/v13/v14 replay, 절대/recovery gate, degraded health, 28/56/84일 검사, drift 분기, `lastEvaluation`, shadow/rollback artifact 보존, fail-closed 기본 shadow 승인, 명시적 긴급 복구 승인.
+- 구현 완료: 동일 cutoff v11/v13/v14 replay, 누수 방지 D0/D-1 고정 시점 replay, 정확한 artifact holdout, 4개 보고서 복구 승인, degraded health, drift 분기, `lastEvaluation`, Champion/rollback artifact의 원자적 보존.
 - 구현 완료: append-only matched-vintage 캡처, 120초 이내 과거 동일 실행 가져오기, lead bucket 지표, 날짜 block bootstrap.
 - 수집 중: 28/84일 matched-vintage 이력. 완료 전 `forecast_accuracy.json`은 최신값 기반 운영 참고치로만 사용한다.
-- 운영자 게시 전 남은 작업: 격리 staging의 정확한 artifact와 report를 data branch에 게시한다. 게시 후 72시간 안정화, 이전 Champion shadow 비교, 최소 48시간 확정 실적에서 유의한 퇴행이 확인될 때 rollback 검토를 시작한다.
+- 진행 중: 정확히 승격된 artifact와 report를 data branch에 게시한 뒤, 보존된 v11 rollback artifact와 비교해 확정 운영 3일을 감시한다.

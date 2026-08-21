@@ -1,4 +1,5 @@
 forecast:
+  model_contract: v14-r2-source-robust-day-ahead
   n_weeks: 12          # same-weekday lookback window
   min_samples_per_slot: 4  # minimum data points per (dow, hour) slot to generate forecast
   lag24_residual_ensemble:
@@ -7,7 +8,7 @@ forecast:
     same_business_type_only: false # validation supports residual blending across business-day transitions
     weight: 0.5              # blend absolute demand and (demand - lag_24h) q50 estimates
     transition_cooling_attenuation:
-      enabled: false # retained for v13 research replay; staged v14 preserves v11 blending
+      enabled: true  # attenuate lag24 residuals on sharp post-holiday cooling transitions
       zero_weight_delta_c: -4.0 # disable the residual blend after a sharp cooling transition
       full_weight_delta_c: 0.0  # retain the normal blend when cooling demand did not fall
   q50_regime_model:
@@ -21,8 +22,20 @@ forecast:
       - discomfort_delta_24h
       - business_morning_x_humidity_delta_24h
       - business_morning_x_discomfort_delta_24h
-  daily_level_model:
+  q50_feature_view_ensemble:
     enabled: true
+    no_humidity_delta_share: 0.50 # selected on the July fixed-origin development period
+    non_business_full_share: 0.40 # retain a material full-feature weekend/holiday anchor
+    max_abs_delta_from_legacy_mw: 500 # conservative trust region against rare source-view divergence
+  same_regime_day_level_calibration:
+    enabled: true
+    min_history_days: 3
+    history_window_days: 3
+    shrinkage: 0.25
+    max_abs_adjustment_mw: 1000
+    state_path: metrics/same_regime_day_level_calibration.json
+  daily_level_model:
+    enabled: false # v14-r1's uniform whole-day shift was rejected by fixed-origin replay
     training_window_days: 730 # recent two-year level regimes; hourly shape still uses the full training set
     weight: 0.20              # conservative whole-day correction; preserves more of the v11 level
     max_abs_adjustment_mw: 750 # preserve the v11 hourly shape and cap whole-day movement
@@ -37,7 +50,9 @@ forecast:
   partial_lag_q50_fallback:
     enabled: true
     min_valid_lag24_hours: 24 # fallback when provenance is unavailable
-    min_observed_lag24_hours: 23 # allow only the final 23:00 TEPCO fallback
+    min_observed_lag24_hours: 23 # tolerate only the final-hour TEPCO lag fallback
+    lag_unavailable_models_enabled: true # source-robust q50 without unfinalized demand inputs
+    lag_unavailable_non_business_weight: 1.00 # July-selected specialist for weekend/holiday D-1 rows
 model_promotion:
   enabled: true
   scheduled_challenger_training_enabled: false # v14 uses explicit, exact-artifact recovery while stabilizing
@@ -63,6 +78,15 @@ model_promotion:
     critical_operational_wape_pct: 3.0
     min_failed_performance_conditions: 2
   recovery_min_improvement_pct: 8.0 # paired with 56/84d and segment risk gates
+  recovery_balanced_min_mae_improvement_pct: 7.0 # alternative multi-risk gate, never MAE alone
+  recovery_balanced_min_rmse_improvement_pct: 8.0
+  recovery_balanced_min_max_error_improvement_pct: 10.0
+  recovery_balanced_max_segment_regression_pct: 1.0
+  recovery_conservative_min_mae_improvement_pct: 5.0 # broad non-regression path for low-drift recovery
+  recovery_conservative_min_rmse_improvement_pct: 5.0
+  recovery_conservative_min_max_error_improvement_pct: 5.0
+  recovery_conservative_min_shape_improvement_pct: 2.0
+  recovery_conservative_max_segment_regression_pct: 0.0
   recovery_max_risk_regression_pct: 5.0
   recovery_min_weak_segment_improvement_pct: 10.0
   recovery_shadow_hours: 72
@@ -88,7 +112,8 @@ weather_forecast_bias_correction:
 
 interval_calibration:
   min_p95_half_width_mw: 500 # prevent unrealistically narrow LightGBM bands
-  max_p95_half_width_mw: 3000 # cap rare quantile-tail explosions after weather-regime shifts
+  max_p95_half_width_mw: 3000 # pre-scale cap for rare quantile-tail explosions
+  p95_half_width_scale: 1.25 # fixed-origin coverage calibration; final half-width remains <= 3750 MW
   max_p95_asymmetry_ratio: 2.5 # limit one-sided p95 tails relative to the opposite side
   asymmetry_reference_half_width_mw: 900 # avoid over-tight caps when one side collapses to the floor
   rebalance_extreme_asymmetry: true # keep final bands visually centered when one quantile side collapses

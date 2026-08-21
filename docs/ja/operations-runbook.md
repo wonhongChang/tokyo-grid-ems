@@ -83,7 +83,7 @@ GitHubのscheduleは遅延・欠落する場合があります。1回の欠落�
 
 ## 5. モデル候補運用
 
-v14安定化中は`scheduled_challenger_training_enabled: false`により、月曜日ETLが保持済み時間別stackを再学習しないようにします。v14候補は`python/eval/build_v14_candidate.py`とexact-artifact復旧経路だけで作成します。`validation_window_days: 28`は直近確定28日のrolling証拠であり、28日ごとのモデル交換ではありません。
+v14-r2安定化中は`scheduled_challenger_training_enabled: false`により、月曜日ETLが昇格artifactを置き換えないようにします。新候補は明示的builderとfixed-origin復旧経路だけで作成します。`validation_window_days: 28`は直近確定28日のrolling証拠であり、28日ごとのモデル交換ではありません。
 
 性能低下Championの復旧昇格は[モデル昇格および性能低下Championポリシー](model-promotion-policy.md)に従います。temporal recovery gate、補助window、drift、shadow証拠、明示承認をすべて要求するfail-closed経路です。
 
@@ -109,18 +109,22 @@ v14安定化中は`scheduled_challenger_training_enabled: false`により、月�
 - MAE、WAPE、shape delta MAE、最大誤差の絶対上限
 - 時間帯、営業日・非営業日segmentの退行
 - Championに対する今日・明日予測の平均・最大drift
+- 対象日actualを除去したD0・D-1 development/holdout report 4件
+- 両holdout baselineの正確な配備Champion artifact識別子
+
+運用中のv14-r2復旧昇格は確定運用3日後にreviewします。それまでは`.lgbm_model.rollback.pkl`とmetadataを保持します。データソース整合性の失敗、非有限・不完全予測、またはv11 shadowに対する有意な退行は直ちにrollback reviewの対象です。
 
 TEPCOは学習・補正targetには使用しません。`forecast_accuracy.json`は最新値の参考であり、完成した`forecast_vintage_accuracy.json`だけがparity資格根拠になります。
 
 ### 5.3 強制再学習
 
-`TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1`はv14 Champion保持型builderではなく汎用trainerを実行します。通常のv14運用では設定せず、次の統制された場合に限ります。
+`TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1`はv14-r2 fixed-origin昇格経路ではなく汎用trainerを実行します。通常運用では設定せず、次の統制された場合に限ります。
 
 - 学習特徴量またはモデル構造を変更した
 - Champion artifactが欠落・破損した
 - promotion経路を統制された実験で検証する
 
-当日の誤差が大きいだけでは強制再学習せず、別のcontract replayなしにその出力をv14へ昇格しません。
+当日の誤差が大きいだけでは強制再学習せず、漏洩防止D0・D-1 contract replayなしにその出力を昇格しません。
 
 ## 6. Operational Replayの読み方
 

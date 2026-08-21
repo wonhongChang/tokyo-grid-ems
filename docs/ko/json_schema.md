@@ -243,6 +243,8 @@ ETL/배치 파이프라인은 이 스키마에 맞춰 `web/public/` 아래 파�
 ## 필드 설명
 - `model.name`: `baseline_dow_hour_mean` — 최근 N주 동일 요일/시간 평균
 - `model.nWeeks`: 훈련에 사용한 롤링 윈도우 주 수
+- `model.contract`: 운영 inference 계약. LightGBM 산출물에 포함
+- `model.artifactSha256`: 실제 서빙 모델 artifact. metadata가 있으면 포함
 - `series[]`: 24포인트 예측값 + 구간(95/99%)
 - 데이터 부족 시 `availability: "not_yet_available"`, `series: []`로 생성됨
 
@@ -638,7 +640,9 @@ intraday 실행별 운영 보정 상태를 제한적으로 보관합니다. 최�
 
 # 모델 승격 계약
 
-`metrics/model_promotion.json`은 Champion health, 동일 cutoff 28/56/84일 검증, recovery·drift 실패, 보존된 shadow/rollback artifact와 `shadowEvidence`를 기록합니다. `metrics/model_shadow_evaluation.json`이 `passed: true`, 일치하는 `artifactSha256`, `hours` 72 이상, `finalizedDays` 2 이상을 확인하기 전에는 복구 후보가 `shadow_required`를 넘지 못하며, 그 뒤에도 명시적 승인이 필요합니다.
+`metrics/model_promotion.json`은 Champion health, 검증, recovery·drift 결정과 rollback 식별자를 기록합니다. 일반 shadow 경로는 계속 fail-closed입니다. v14-r2 고정 시점 복구 경로는 `validation` 아래에 artifact-bound gate 4개, 즉 D0 개발/holdout과 D-1 개발/holdout을 기록합니다. `champion.sha256`, `rollback.sha256`, `driftOverrideBasis`, `postPromotionMonitoring.reviewAfterFinalizedDays`로 실제 배포 결정을 감사할 수 있습니다.
+
+rolling interval metadata는 schema `1.1.0`을 사용합니다. `preScaleMaxP95HalfWidthMw`는 sanity 상한, `p95HalfWidthScale`은 coverage 배율, `maxP95HalfWidthMw`는 배율 적용 후 최종 상한입니다.
 
 ---
 

@@ -125,6 +125,220 @@ def test_fit_rejects_unknown_non_business_feature_exclusion():
         f.fit(_make_cache(105))
 
 
+def test_fit_builds_source_robust_q50_feature_views():
+    f = LGBMForecaster(
+        n_estimators=10,
+        learning_rate=0.1,
+        config={
+            "forecast": {
+                "q50_regime_model": {
+                    "enabled": True,
+                    "min_non_business_training_rows": 336,
+                    "excluded_features": ["humidity_delta_24h"],
+                },
+                "q50_feature_view_ensemble": {"enabled": True},
+            }
+        },
+    )
+
+    f.fit(_make_cache(105))
+
+    assert set(f.q50_feature_views) == {
+        "no_humidity_delta",
+        "source_robust",
+    }
+    assert "humidity_delta_24h" not in (
+        f.q50_feature_views["no_humidity_delta"]["feature_columns"]
+    )
+    assert "temp_delta_1h" not in (
+        f.q50_feature_views["source_robust"]["feature_columns"]
+    )
+    assert f.is_compatible()
+
+
+def test_fit_builds_lag_unavailable_q50_without_unfinalized_inputs():
+    f = LGBMForecaster(
+        n_estimators=10,
+        learning_rate=0.1,
+        config={
+            "forecast": {
+                "q50_regime_model": {
+                    "min_non_business_training_rows": 336,
+                },
+                "partial_lag_q50_fallback": {
+                    "lag_unavailable_models_enabled": True,
+                    "lag_unavailable_non_business_weight": 0.5,
+                },
+            }
+        },
+    )
+
+    f.fit(_make_cache(105))
+
+    assert f.model_q50_lag_unavailable is not None
+    assert f.model_q50_lag_unavailable_non_business is not None
+    assert {
+        "lag_24h",
+        "lag_last_biz_hour",
+        "lag_last_nonhol_hour",
+        "lag_24h_to_last_biz_gap",
+        "lag_24h_to_same_business_type_gap",
+        "lag_24h_gap_x_business_hour",
+    }.isdisjoint(f.lag_unavailable_feature_columns)
+    assert {
+        "humidity_pct",
+        "discomfort_index",
+        "apparent_temp_c",
+        "temp_delta_1h",
+        "cooling_degree_3h_mean",
+    }.isdisjoint(f.lag_unavailable_feature_columns)
+    assert f.is_compatible()
+
+
+def test_lag_unavailable_q50_replaces_only_rows_with_missing_context():
+    class FakeModel:
+        def __init__(self, values):
+            self.values = np.asarray(values, dtype=float)
+
+        def predict(self, _features):
+            return self.values
+
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "forecast": {
+            "partial_lag_q50_fallback": {
+                "lag_unavailable_models_enabled": True,
+                "lag_unavailable_non_business_weight": 0.5,
+            }
+        }
+    }
+    f.model_q50_lag_unavailable = FakeModel([100.0, 200.0, 300.0])
+    f.model_q50_lag_unavailable_non_business = FakeModel(
+        [110.0, 240.0, 360.0]
+    )
+    f.lag_unavailable_feature_columns = ["hour", "is_non_business_day"]
+    features = pd.DataFrame({
+        "hour": [0, 1, 2],
+        "is_non_business_day": [0.0, 1.0, 1.0],
+        "lag_24h": [30_000.0, np.nan, 31_000.0],
+        "lag_last_biz_hour": [30_000.0, 30_000.0, np.nan],
+        "lag_last_nonhol_hour": [30_000.0, 30_000.0, 30_000.0],
+    })
+
+    unavailable, values = f._lag_unavailable_q50(features)
+
+    assert unavailable.tolist() == [False, True, True]
+    assert values == pytest.approx([100.0, 220.0, 330.0])
+
+
+def test_feature_view_q50_uses_business_and_non_business_weights(monkeypatch):
+    f = LGBMForecaster(
+        config={
+            "forecast": {
+                "q50_feature_view_ensemble": {
+                    "enabled": True,
+                    "no_humidity_delta_share": 0.35,
+                    "non_business_full_share": 0.40,
+                }
+            }
+        }
+    )
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    first = {"name": "a"}
+    second = {"name": "c"}
+    f.q50_feature_views = {
+        "no_humidity_delta": first,
+        "source_robust": second,
+    }
+    monkeypatch.setattr(
+        f,
+        "_predict_q50_feature_view",
+        lambda view, _features, *, use_lag_residual: np.full(
+            2,
+            200.0 if view is first else 300.0,
+        ),
+    )
+    features = pd.DataFrame({"is_non_business_day": [0.0, 1.0]})
+
+    result = f._feature_view_q50(
+        features,
+        np.full(2, 100.0),
+        partial_lag_fallback=False,
+    )
+
+    assert result == pytest.approx([265.0, 199.0])
+
+
+def test_feature_view_q50_uses_direct_views_on_partial_lag(monkeypatch):
+    f = LGBMForecaster(
+        config={
+            "forecast": {
+                "q50_feature_view_ensemble": {
+                    "enabled": True,
+                    "no_humidity_delta_share": 0.25,
+                    "non_business_full_share": 0.50,
+                },
+            }
+        }
+    )
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    first = {"name": "a"}
+    second = {"name": "c"}
+    f.q50_feature_views = {
+        "no_humidity_delta": first,
+        "source_robust": second,
+    }
+    calls = []
+
+    def _predict(view, _features, *, use_lag_residual):
+        calls.append(use_lag_residual)
+        return np.full(2, 200.0 if view is first else 300.0)
+
+    monkeypatch.setattr(f, "_predict_q50_feature_view", _predict)
+
+    result = f._feature_view_q50(
+        pd.DataFrame({"is_non_business_day": [0.0, 1.0]}),
+        np.asarray([123.0, 456.0]),
+        partial_lag_fallback=True,
+    )
+
+    assert result == pytest.approx([275.0, 365.5])
+    assert calls == [False, False]
+
+
+def test_feature_view_q50_caps_divergence_from_legacy_anchor(monkeypatch):
+    f = LGBMForecaster(
+        config={
+            "forecast": {
+                "q50_feature_view_ensemble": {
+                    "enabled": True,
+                    "no_humidity_delta_share": 0.5,
+                    "non_business_full_share": 0.5,
+                    "max_abs_delta_from_legacy_mw": 50.0,
+                }
+            }
+        }
+    )
+    f.interval_version = LGBMForecaster.INTERVAL_VERSION
+    f.q50_feature_views = {
+        "no_humidity_delta": {"name": "a"},
+        "source_robust": {"name": "c"},
+    }
+    monkeypatch.setattr(
+        f,
+        "_predict_q50_feature_view",
+        lambda _view, _features, *, use_lag_residual: np.full(2, 300.0),
+    )
+
+    result = f._feature_view_q50(
+        pd.DataFrame({"is_non_business_day": [0.0, 1.0]}),
+        np.asarray([100.0, 100.0]),
+        partial_lag_fallback=False,
+    )
+
+    assert result == pytest.approx([150.0, 125.0])
+
+
 def test_fit_builds_v14_daily_level_model_when_enabled():
     f = LGBMForecaster(
         n_estimators=10,
@@ -270,6 +484,22 @@ def test_predict_applies_minimum_interval_half_width(monkeypatch):
         assert point.p95_upper_mw == 32_500.0
         assert point.p99_lower_mw == 31_000.0
         assert point.p99_upper_mw == 33_000.0
+
+
+def test_interval_half_width_scale_applies_after_sanity_calibration():
+    f = LGBMForecaster.__new__(LGBMForecaster)
+    f.config = {
+        "interval_calibration": {
+            "min_p95_half_width_mw": 500.0,
+            "max_p95_half_width_mw": 3_000.0,
+            "p95_half_width_scale": 1.25,
+        }
+    }
+
+    assert f._calibrate_interval_half_widths(100.0, 4_000.0) == (
+        625.0,
+        3_750.0,
+    )
 
 
 def test_predict_does_not_mirror_one_sided_interval_by_default(monkeypatch):

@@ -25,14 +25,16 @@
 | 実装 | `python/forecast/lgbm_model.py` |
 | 特徴量生成 | `python/forecast/feature_builder.py` |
 | 後処理 | `python/forecast/adjustment.py`, `python/forecast/intraday_correction.py` |
-| staging候補contract | `q025_q50_q975_p95_v14_daily_level_calibration` |
-| remote Champion | `q025_q50_q975_p95_v11_lag24_residual_ensemble`。v14は2026-08-21 JSTの隔離stagingでのみ承認済み |
+| 運用contract | `v14-r2-source-robust-day-ahead` |
+| Interval contract | `q025_q50_q975_p95_v14_source_robust_day_ahead` |
+| Champion artifact | SHA-256 `c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3` |
+| Rollback artifact | v11 SHA-256 `28b75352b8b13713aba04880111dd11b3450864a3580f355081072af4266a640` |
 | 最小学習量 | `90 * 24 = 2160` hourly rows |
 | fallback | `baseline_dow_hour_mean` |
 
 モデルは時間別の電力需要を予測し、今日/明日の予測線、p95/p99予測バンド、異常検知用のexpected demandを生成します。
 
-staging v14 artifactは絶対需要quantile regressor 3つとq50補助regressor 3つを含みます。
+運用v14-r2 artifactは絶対需要quantile regressor 3つと複数のq50補助経路を含みます。
 
 | モデル | alpha | 役割 |
 |---|---:|---|
@@ -41,9 +43,11 @@ staging v14 artifactは絶対需要quantile regressor 3つとq50補助regressor 
 | `q975` | 0.975 | p95上側推定 |
 | `q50_lag24_residual` | 0.50 | `actual_mw - lag_24h`の中央値推定 |
 | `q50_non_business` | 0.50 | 土日祝日の中心線を補助する推定 |
-| `q50_daily_level` | 0.50 | 24時間共通レベルshift用の日平均推定 |
+| `q50_feature_views` | 0.50 | 不安定な気象入力を減らしたsource-robust並列推定 |
+| `q50_lag_unavailable` | 0.50 | 未確定需要lag特徴量を除外したD-1推定 |
+| `q50_lag_unavailable_non_business` | 0.50 | 土日祝日D-1 specialist |
 
-staging artifactは運用v11の時間別boosterを保持します。営業日q50は絶対需要q50と`lag_24h + 残差q50`の50:50合成を維持します。非営業日は統合q50と専用非営業日q50を50:50で合成します。v14は日次レベル差の20%を反映し、24時間共通shiftを+/-750MWに制限します。補助経路は前日24時間がすべて確定しているか、00〜22時が確定し23時だけがTEPCO予測fallbackの場合に限って作動し、それ以外の不完全なパターンではv11 q50を使います。独立D+1モデルはありません。ダッシュボードは最終q50を中心線に使い、`q025/q975` half-widthを維持します。
+通常のD0推論は絶対q50、lag-24残差、非営業日構造を維持します。source viewは500MW trust regionに制限されます。D-1行で`lag_24h`または直近営業type需要がない場合、LightGBM欠損分岐ではなく縮小情報集合の専用モデルを使います。非営業日specialistはweight 1.0です。artifact-scoped same-regime補正は直近3確定日の残差の25%を+/-1,000MW以内で反映します。最終p95 half-widthは1.25 coverage scaleと3,750MW最終上限を使います。
 
 ---
 
@@ -269,11 +273,11 @@ Raw LightGBM Forecast
 | 領域 | Config Key | 現在値 | 運用ガイド |
 |---|---|---:|---|
 | forecast | `lag24_residual_ensemble.weight` | 0.5 | 上げるほど前日差残差モデルを重視し、下げるほど絶対需要モデルの性質を維持します。version-aware rolling replayとfrozen-origin holdoutを両方通過した場合のみ調整します。 |
-| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | 無効 | v13研究replayのためだけに残した設定です。staging v14はv11残差合成を保持するため、有効化するとinference契約が変わり、新versionとreplayが必要です。 |
+| forecast | `lag24_residual_ensemble.transition_cooling_attenuation` | 有効 | 急な冷房需要低下遷移でlag-24残差影響を減衰します。閾値変更は運用contractを変えるため、新しいfixed-origin replayが必要です。 |
 | forecast | `q50_regime_model.weight` | 0.5 | 非営業日専用q50の反映比率です。上げると週末特化が強くなり、下げると統合q50のshapeをより維持します。非営業日MAEとshapeを同時に検証します。 |
-| forecast | `daily_level_model.training_window_days` | 730 | 階層型レベル推定には直近の完全な日だけを使い、時間別モデルは設定済み履歴を維持します。短くすると適応は速くなりますが季節noiseを追う危険が増えます。 |
-| forecast | `daily_level_model.weight`, `max_abs_adjustment_mw` | 0.20, 750MW | shapeを変えずに24時間曲線を予測日平均へ寄せます。上げるとlevel biasを速く補正しますが、日全体の過補正リスクが増えます。 |
-| forecast | `partial_lag_q50_fallback.min_observed_lag24_hours` | 23 | 前日の確定実績が不足すればv14補助モデルを停止します。最後の1時間fallbackだけを許容するには23を維持し、下げるほど不完全なD+1 lagを信頼します。 |
+| forecast | `q50_feature_view_ensemble` | 有効、湿度縮小share 0.50、非営業日full share 0.40、500MW cap | ソースが不安定な履歴fieldへの依存を減らしつつ、並列viewが中心線を書き換えないようにします。fixed-origin最大誤差が改善した場合だけcap引上げを検討します。 |
+| forecast | `partial_lag_q50_fallback.lag_unavailable_models_enabled` | true、非営業日weight 1.0 | 需要lagがないD-1行を同じ縮小情報集合で学習したモデルへ送ります。無効化すると構造的に弱いv11欠損分岐へ戻ります。 |
+| forecast | `same_regime_day_level_calibration` | 3日、shrinkage 0.25、1000MW cap | 確定した同レジーム日の持続的な日次biasだけを補正します。期間を延ばすと安定し、shrinkageを上げると速い一方regime遷移遅延が増えます。 |
 | promotion | `scheduled_challenger_training_enabled`, `retrain_weekday` | false、0（月曜） | 汎用trainerが保持済み時間別boosterを置換しないよう、v14安定化中は定期候補学習をロックします。明示的candidate buildだけを許可し、同じChampion保持型validation経路が整ってから再開します。 |
 | promotion | `validation_window_days` | 28 | 評価ごとに直近の確定28日を使います。28日ごとに一度だけ再学習する意味ではありません。 |
 | promotion | 絶対品質上限 | MAE 1000、WAPE 3.0%、shape 750、最大誤差6500 MW | 弱いbaselineを上回っても運用品質が低いモデルを拒否します。segment上限はMAE 1500、shape 1100 MWです。 |
@@ -281,14 +285,14 @@ Raw LightGBM Forecast
 | promotion | Champion相対gate | MAE改善5%、重要segment退行最大5% | 現行モデルが弱い、または絶対上限が緩いという理由だけで候補を通さないため、同一cutoffで両契約を再現します。 |
 | promotion | 性能低下Champion復旧 | 28日MAE/WAPE 8%改善、56/84日非退行 | 8%基準はsegment、最大誤差、shape、正確なartifact、smoke、drift gateをすべて通過した場合だけ有効で、この条件だけでは配備を承認しません。 |
 | promotion | 復旧shadow証拠 | 72 forecast-hour、確定2日 | `metrics/model_shadow_evaluation.json`が欠落または不足ならfail-closedです。通過後も明示的承認が必要です。 |
-| promotion | operator承認緊急復旧 | 28日v11 MAE/WAPE +8%、v13非退行、56/84日非退行 | 整合性が劣化したChampionに限定します。正確なartifact、限定drift、rollback保持、配備後72時間監視が必要です。 |
+| promotion | fixed-origin復旧 | D0・D-1 development/holdout 4件、正確なv11 holdout SHA | 両exact-Champion holdoutがstrict recoveryを通過しD0 8%、D-1 20% MAE改善を超えた場合だけ大規模driftを承認します。rollback保持と明示承認は必須です。 |
 | benchmark | `forecast_vintages`資格 | 28/84日、coverage 80%、MAE/WAPE 1.10 | 同一captureのTEPCO/モデル値を使います。RMSE比率1.15、最大誤差・segment比率1.25、paired bootstrap MAE比率上限1.10も要求します。 |
 | weather | `cooling_base_temp_c` | 22.0 | 下げると冷房感度が早く立ち上がり、上げると初夏の過反応を抑えます。暖候期全体で検証します。 |
 | weather | `heating_base_temp_c` | 18.0 | 上げると暖房信号が強くなり、下げると冬の過敏反応を抑えます。 |
 | weather bias | `min_abs_bias_c` | 1.5 | 下げるとAMeDAS-JMA連続性補正が頻繁に作動し、上げると小さなsource境界noiseを無視します。低すぎると気象noiseを追います。 |
 | weather bias | `max_abs_bias_c`, `shrinkage`, `decay_per_hour` | 2.5, 0.7, 0.6 | source境界差をcapし、一部だけ反映して減衰します。値を上げると反応は速くなりますが、妥当なJMA regime変化まで歪める可能性があります。 |
 | interval | `min_p95_half_width_mw` | 500 | 狭すぎるbandを防ぎます。上げると安定しますがalert感度が下がる場合があります。 |
-| interval | `max_p95_half_width_mw` | 3000 | まれな片側quantile tailの過大化を制限します。下げるとbandは読みやすくなりますが、不安定日の実際の不確実性を小さく見せる場合があります。 |
+| interval | `max_p95_half_width_mw`, `p95_half_width_scale` | 3000、1.25 | sanity補正half-widthを先に制限してcoverage scaleを適用し、最終上限は3,750MWです。scaleを下げるとcoverageが減り、上げると中心線誤差を広いbandで隠す場合があります。 |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | 上側/下側tailの非対称を制限します。下げるとbandはより対称的になり、上げるとモデルが推定したskewをより保持します。 |
 | interval | `rolling_conformal_floor` | 有効、28日、95%、24標本 | 同じ営業レジーム・時間帯の確定実績と当時公開q50の誤差をp95最小半幅として使います。既存bandを狭めず、3,000MW上限も超えません。windowを短くすると反応は速くなりますがnoiseが増え、最小標本を上げるとfail-closedが増えます。 |
 | intraday | `lookback_hours` | 3 | 短いほど反応が速く、長いほど滑らかですが遅れます。 |
@@ -322,17 +326,17 @@ Raw LightGBM Forecast
 
 ### 昇格とreplayの解釈
 
-- 汎用の週次候補学習は現在無効です。v14は保持済みv11時間別boosterが暗黙に再学習されないよう、正確なartifact復旧toolだけで生成・昇格します。
+- 汎用の週次候補学習は現在無効です。v14-r2は運用artifactが暗黙に置換されないよう、明示的fixed-origin復旧toolだけで生成・昇格します。
 - 互換性のある将来contractで定期学習を再開する場合、各実行は直近の確定28日rolling windowを評価し、評価間隔が28日という意味ではありません。
 - Challenger学習は評価当日の部分実績を除外し、`target_date`より前のデータだけを使用します。
 - 検証はtimestamp重複を除いた正確な`window_days × 24`時間のcoverageを要求します。
 - 今日・明日のdriftは実配信相当のweather/lag入力で48個の有限値を要求し、欠落・`NaN`・無限値は昇格を拒否します。
-- 時系列検証はtarget日の需要を隠し、最終気象文脈を利用して、運用後処理を除くモデル契約を評価します。
+- fixed-origin検証は対象日需要を除去し、模擬capture時点で利用できなかった全actualをmaskします。D0とD-1のdevelopment・未使用holdoutを分離評価します。
 - `metrics/operational_replay.json`は実際に配信した予測を評価し、TEPCOは外部参考指標としてのみ表示します。
 - `metrics/forecast_accuracy.json`はデータに最後に残ったTEPCO値を使うため参考scorecardであり、正式parity証拠ではありません。
 - `metrics/forecast_vintage_accuracy.json`が正式な同一capture benchmarkです。28/84日lead bucket coverageとrisk・信頼区間gateが完了するまでは`collecting`です。
 - Stage replayは日付別の最新calibration snapshotを利用するため、全Intraday公開履歴の完全な再現ではありません。
-- 通常の復旧経路はshadow 72時間、確定2日、明示的承認がなければ`shadow_required`を超えません。別の緊急operator経路は、より強いv11/v13 replay、rollback保持、昇格後72時間監視を要求します。
+- 通常の復旧経路はshadow 72時間、確定2日、明示承認がなければ`shadow_required`を超えません。v14-r2性能低下Champion経路は代わりにfixed-origin report 4件、正確なv11 holdout識別子、厳格なdrift override基準、rollback保持と確定3日reviewを要求します。
 - TEPCO forecast fallbackはlag連続性には使えますが、学習targetと検証actualから除外します。
 
 ### 指標

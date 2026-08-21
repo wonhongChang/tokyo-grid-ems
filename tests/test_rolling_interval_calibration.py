@@ -15,11 +15,17 @@ from python.forecast.rolling_interval_calibration import (
 )
 
 
-def _config(*, min_samples: int = 24, max_half_width: float = 3_000.0) -> dict:
+def _config(
+    *,
+    min_samples: int = 24,
+    max_half_width: float = 3_000.0,
+    width_scale: float = 1.0,
+) -> dict:
     return {
         "interval_calibration": {
             "min_p95_half_width_mw": 500.0,
             "max_p95_half_width_mw": max_half_width,
+            "p95_half_width_scale": width_scale,
             "max_p95_asymmetry_ratio": 2.5,
             "asymmetry_reference_half_width_mw": 900.0,
             "rolling_conformal_floor": {
@@ -187,3 +193,18 @@ def test_rolling_floor_never_exceeds_operational_width_cap(tmp_path):
 
     assert profile is not None
     assert profile["floorsMwByTimeBand"]["morning"] == pytest.approx(3_000.0)
+
+
+def test_profile_reports_pre_scale_and_final_width_caps(tmp_path):
+    _history(tmp_path, date(2024, 1, 4), 28)
+
+    profile = build_rolling_conformal_floor_profile(
+        tmp_path,
+        date(2024, 2, 1),
+        _config(max_half_width=3_000.0, width_scale=1.25),
+    )
+
+    assert profile is not None
+    assert profile["preScaleMaxP95HalfWidthMw"] == 3_000.0
+    assert profile["p95HalfWidthScale"] == 1.25
+    assert profile["maxP95HalfWidthMw"] == 3_750.0

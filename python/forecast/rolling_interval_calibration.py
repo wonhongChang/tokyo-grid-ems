@@ -145,6 +145,9 @@ def build_rolling_conformal_floor_profile(
         float(interval_config.get("min_p95_half_width_mw", 500.0)),
     )
     configured_max = _finite_float(interval_config.get("max_p95_half_width_mw"))
+    width_scale = _finite_float(interval_config.get("p95_half_width_scale"))
+    if width_scale is None or width_scale <= 0.0:
+        width_scale = 1.0
 
     target_is_non_business = _is_non_business_day(target_date)
     eligible_dates: list[date] = []
@@ -203,7 +206,7 @@ def build_rolling_conformal_floor_profile(
 
     availability = "ok" if floors_by_band else "insufficient_history"
     return {
-        "schemaVersion": "1.0.0",
+        "schemaVersion": "1.1.0",
         "availability": availability,
         "method": "rolling_conformal_minimum_floor",
         "source": "finalized_actual_vs_served_forecast",
@@ -216,7 +219,13 @@ def build_rolling_conformal_floor_profile(
         "contributingDates": len(contributing_dates),
         "sampleHoursByTimeBand": sample_hours_by_band,
         "floorsMwByTimeBand": floors_by_band,
-        "maxP95HalfWidthMw": (
+        "preScaleMaxP95HalfWidthMw": (
             round(configured_max, 1) if configured_max is not None else None
+        ),
+        "p95HalfWidthScale": round(width_scale, 4),
+        "maxP95HalfWidthMw": (
+            round(configured_max * width_scale, 1)
+            if configured_max is not None
+            else None
         ),
     }

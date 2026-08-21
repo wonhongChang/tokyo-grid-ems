@@ -2,6 +2,8 @@
 
 Languages: [한국어](../../ko/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md) / [日本語](../../ja/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 
+> Historical staging record: this v14-r1 contract was superseded before remote deployment. The active Champion is [v14-r2 source-robust day-ahead](model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md).
+
 ## Decision
 
 The first v14 draft retrained the complete hourly stack and added an independent D+1 model. It was rejected before deployment. Against the deployed v11 artifact, it lifted the current business-day 11:00-15:00 band by about 2.34GW and lowered the next non-business day by about 3.25GW on average. Those changes were too large to attribute safely to the intended daily-level correction.

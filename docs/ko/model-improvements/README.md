@@ -8,7 +8,8 @@
 
 ## 2026-08
 
-- [2026-08-21 v14 Champion 보존형 보정](model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
+- [2026-08-21 v14-r2 출처 강건형 다음날 예측 Champion](model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
+- [2026-08-21 과거 v14-r1 Champion 보존형 staging](model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 - [2026-08-18 동일 시점 TEPCO 평가와 모델 승격 거버넌스](model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
 - [2026-08-13 AMeDAS-JMA 경계 일관성 보정](model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
 - [2026-08-12 영업일 복귀 보정의 실측 과대예측 veto](model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)

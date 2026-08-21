@@ -83,7 +83,7 @@ GitHub scheduled runs can be delayed or skipped. Do not classify one missed run 
 
 ## 5. Model Candidate Operations
 
-During v14 stabilization, `scheduled_challenger_training_enabled: false` prevents Monday ETL from rebuilding the preserved hourly stack. v14 candidates must use `python/eval/build_v14_candidate.py` and the exact-artifact recovery path. `validation_window_days: 28` remains a rolling evidence window; it does not mean the model is replaced every 28 days.
+During v14-r2 stabilization, `scheduled_challenger_training_enabled: false` prevents Monday ETL from replacing the promoted artifact. New candidates must use an explicit builder and the fixed-origin recovery path. `validation_window_days: 28` remains a rolling evidence window; it does not mean the model is replaced every 28 days.
 
 Degraded-Champion recovery criteria are defined in the [Model Promotion and Degraded Champion Policy](model-promotion-policy.md). Recovery is fail-closed: a candidate must pass temporal recovery gates, auxiliary windows, drift, shadow evidence, and explicit approval.
 
@@ -109,18 +109,22 @@ The current gate combines:
 - absolute limits for MAE, WAPE, shape-delta MAE, and maximum error;
 - segment regressions across time bands and business-day types;
 - mean and maximum today/tomorrow prediction drift versus the champion.
+- separate D0 and D-1 development/holdout reports with target-day actuals removed;
+- exact deployed-Champion artifact identity for both holdout baselines.
+
+The active v14-r2 recovery is reviewed after three finalized operating days. Keep `.lgbm_model.rollback.pkl` and its metadata until this review is complete. Trigger rollback review immediately for data-source integrity failure, non-finite or incomplete forecasts, or material regression against the v11 shadow.
 
 TEPCO is not a training or calibration target. `forecast_accuracy.json` is a latest-value reference; only the complete same-capture `forecast_vintage_accuracy.json` can support parity qualification.
 
 ### 5.3 Forced Retraining
 
-`TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1` invokes the generic trainer, not the v14 Champion-preserving builder. Keep it unset in normal v14 operation and use it only when:
+`TOKYO_GRID_EMS_FORCE_MODEL_TRAIN=1` invokes the generic trainer, not the v14-r2 fixed-origin promotion path. Keep it unset in normal operation and use it only when:
 
 - training features or model structure changed;
 - the champion artifact is missing or corrupted; or
 - the promotion path is being tested in a controlled experiment.
 
-Do not force retraining merely because today's error is large, and do not promote its output as v14 without a separate contract replay.
+Do not force retraining merely because today's error is large, and do not promote its output without separate leakage-safe D0/D-1 contract replays.
 
 ## 6. Reading Operational Replay
 

@@ -36,9 +36,51 @@ _LGBM_PARAMS = {
     "verbose": -1,
 }
 
+_HUMIDITY_DELTA_FEATURES = {
+    "humidity_delta_24h",
+    "discomfort_delta_24h",
+    "business_morning_x_humidity_delta_24h",
+    "business_morning_x_discomfort_delta_24h",
+}
+_SHORT_HORIZON_WEATHER_FEATURES = {
+    "temp_delta_1h",
+    "temp_delta_2h",
+    "apparent_temp_delta_1h",
+    "cooling_delta_1h",
+    "cooling_degree_3h_mean",
+    "cooling_degree_6h_mean",
+    "heating_degree_3h_mean",
+    "heating_degree_6h_mean",
+    "business_late_afternoon_x_temp_delta_1h",
+    "business_late_afternoon_x_cooling_delta_1h",
+}
+_HUMIDITY_FAMILY_FEATURES = _HUMIDITY_DELTA_FEATURES | {
+    "humidity_pct",
+    "discomfort_index",
+    "apparent_temp_c",
+    "apparent_cooling_degree",
+    "business_daytime_x_discomfort_index",
+}
+_LAG_UNAVAILABLE_FEATURES = {
+    "lag_24h",
+    "lag_last_biz_hour",
+    "lag_last_nonhol_hour",
+    "lag_24h_to_last_biz_gap",
+    "lag_24h_to_same_business_type_gap",
+    "lag_24h_gap_x_business_hour",
+}
+_LAG_UNAVAILABLE_MODEL_EXCLUSIONS = (
+    _LAG_UNAVAILABLE_FEATURES
+    | _HUMIDITY_FAMILY_FEATURES
+    | _SHORT_HORIZON_WEATHER_FEATURES
+)
+
 class LGBMForecaster:
     MIN_TRAIN_ROWS = 90 * 24
-    INTERVAL_VERSION = "q025_q50_q975_p95_v14_daily_level_calibration"
+    INTERVAL_VERSION = "q025_q50_q975_p95_v14_source_robust_day_ahead"
+    V14_DAILY_LEVEL_INTERVAL_VERSION = (
+        "q025_q50_q975_p95_v14_daily_level_calibration"
+    )
     REGIME_Q50_INTERVAL_VERSIONS = {
         INTERVAL_VERSION,
         "q025_q50_q975_p95_v13_transition_cooling_blend",
@@ -49,6 +91,7 @@ class LGBMForecaster:
         "q025_q50_q975_p95_v13_transition_cooling_blend",
     }
     LEGACY_INTERVAL_VERSIONS = {
+        V14_DAILY_LEVEL_INTERVAL_VERSION,
         "q025_q50_q975_p95_v11_lag24_residual_ensemble",
         "q025_q50_q975_p95_v12_regime_q50",
         "q025_q50_q975_p95_v13_transition_cooling_blend",
@@ -72,8 +115,12 @@ class LGBMForecaster:
         self.model_q50_lag24_residual: "LGBMRegressor | None" = None
         self.model_q50_non_business: "LGBMRegressor | None" = None
         self.model_q50_daily_level: "LGBMRegressor | None" = None
+        self.model_q50_lag_unavailable: "LGBMRegressor | None" = None
+        self.model_q50_lag_unavailable_non_business: "LGBMRegressor | None" = None
+        self.q50_feature_views: dict[str, dict] | None = None
         self.q50_non_business_feature_columns: list[str] | None = None
         self.q50_daily_level_feature_columns: list[str] | None = None
+        self.lag_unavailable_feature_columns: list[str] | None = None
         self.daily_level_training_days: int | None = None
         self.training_window_days: int | None = None
         self.training_window_start: str | None = None
@@ -202,6 +249,107 @@ class LGBMForecaster:
         ).sum())
         return enabled and valid_hours < minimum
 
+    def _lag_unavailable_model_config(self) -> tuple[bool, float]:
+        forecast_config = (getattr(self, "config", {}) or {}).get("forecast", {})
+        fallback_config = forecast_config.get("partial_lag_q50_fallback", {})
+        enabled = bool(
+            fallback_config.get("lag_unavailable_models_enabled", False)
+        )
+        non_business_weight = min(
+            1.0,
+            max(
+                0.0,
+                float(
+                    fallback_config.get(
+                        "lag_unavailable_non_business_weight",
+                        0.5,
+                    )
+                ),
+            ),
+        )
+        return enabled, non_business_weight
+
+    def _fit_lag_unavailable_q50_models(
+        self,
+        hourly_features: pd.DataFrame,
+        hourly_target: pd.Series,
+    ) -> None:
+        self.model_q50_lag_unavailable = None
+        self.model_q50_lag_unavailable_non_business = None
+        self.lag_unavailable_feature_columns = None
+        enabled, _ = self._lag_unavailable_model_config()
+        if not enabled:
+            return
+        unknown = sorted(
+            _LAG_UNAVAILABLE_MODEL_EXCLUSIONS.difference(hourly_features)
+        )
+        if unknown:
+            raise ValueError(
+                "LGBMForecaster: unknown lag-unavailable exclusions: "
+                + ", ".join(unknown)
+            )
+        columns = [
+            column
+            for column in hourly_features.columns
+            if column not in _LAG_UNAVAILABLE_MODEL_EXCLUSIONS
+        ]
+        non_business = hourly_features["is_non_business_day"] == 1
+        _, _, min_non_business_rows, _ = self._q50_regime_config()
+        if int(non_business.sum()) < min_non_business_rows:
+            raise ValueError(
+                "LGBMForecaster: insufficient non-business rows for "
+                "lag-unavailable q50."
+            )
+        direct = self._make_model(0.50)
+        direct.fit(hourly_features[columns], hourly_target)
+        specialist = self._make_model(0.50)
+        specialist.fit(
+            hourly_features.loc[non_business, columns],
+            hourly_target.loc[non_business],
+        )
+        self.model_q50_lag_unavailable = direct
+        self.model_q50_lag_unavailable_non_business = specialist
+        self.lag_unavailable_feature_columns = columns
+
+    def _lag_unavailable_q50(
+        self,
+        features: pd.DataFrame,
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        enabled, non_business_weight = self._lag_unavailable_model_config()
+        if not enabled:
+            return None
+        columns = list(getattr(self, "lag_unavailable_feature_columns", None) or [])
+        direct = getattr(self, "model_q50_lag_unavailable", None)
+        specialist = getattr(
+            self,
+            "model_q50_lag_unavailable_non_business",
+            None,
+        )
+        if not columns or direct is None or specialist is None:
+            raise RuntimeError("Lag-unavailable q50 models are missing.")
+        missing = [column for column in columns if column not in features.columns]
+        if missing:
+            raise RuntimeError(
+                "Lag-unavailable q50 feature contract is incomplete: "
+                + ", ".join(missing)
+            )
+        unavailable = features[
+            ["lag_24h", "lag_last_biz_hour", "lag_last_nonhol_hour"]
+        ].isna().any(axis=1).to_numpy(dtype=bool)
+        values = np.asarray(direct.predict(features[columns]), dtype=float)
+        non_business = (
+            features["is_non_business_day"].to_numpy(dtype=float) == 1.0
+        )
+        specialist_values = np.asarray(
+            specialist.predict(features[columns]),
+            dtype=float,
+        )
+        values[non_business] = (
+            (1.0 - non_business_weight) * values[non_business]
+            + non_business_weight * specialist_values[non_business]
+        )
+        return unavailable, values
+
     def _fit_daily_level_from_hourly(
         self,
         hourly_features: pd.DataFrame,
@@ -285,7 +433,7 @@ class LGBMForecaster:
             self.config,
         )
         self._fit_daily_level_from_hourly(hourly_features, hourly_target)
-        self.interval_version = self.INTERVAL_VERSION
+        self.interval_version = self.V14_DAILY_LEVEL_INTERVAL_VERSION
         if not self.is_compatible():
             raise RuntimeError(
                 "Daily-level candidate is incompatible with its hourly contract."
@@ -303,6 +451,11 @@ class LGBMForecaster:
             self.config,
         )
         self._fit_non_business_q50_from_hourly(
+            hourly_features,
+            hourly_target,
+        )
+        self._fit_q50_feature_views(hourly_features, hourly_target)
+        self._fit_lag_unavailable_q50_models(
             hourly_features,
             hourly_target,
         )
@@ -381,6 +534,94 @@ class LGBMForecaster:
         weight = min(1.0, max(0.0, float(regime_config.get("weight", 0.5))))
         return enabled, excluded_features, min_non_business_rows, weight
 
+    def _q50_feature_view_config(self) -> tuple[bool, float, float, float]:
+        forecast_config = (getattr(self, "config", {}) or {}).get("forecast", {})
+        view_config = forecast_config.get("q50_feature_view_ensemble", {})
+        enabled = bool(view_config.get("enabled", False))
+        no_humidity_delta_share = min(
+            1.0,
+            max(0.0, float(view_config.get("no_humidity_delta_share", 0.35))),
+        )
+        non_business_full_share = min(
+            1.0,
+            max(0.0, float(view_config.get("non_business_full_share", 0.40))),
+        )
+        max_abs_delta_mw = max(
+            0.0,
+            float(view_config.get("max_abs_delta_from_legacy_mw", 0.0)),
+        )
+        return (
+            enabled,
+            no_humidity_delta_share,
+            non_business_full_share,
+            max_abs_delta_mw,
+        )
+
+    def _fit_q50_feature_views(
+        self,
+        hourly_features: pd.DataFrame,
+        hourly_target: pd.Series,
+    ) -> None:
+        self.q50_feature_views = None
+        enabled, _, _, _ = self._q50_feature_view_config()
+        if not enabled:
+            return
+
+        _, regime_exclusions, min_non_business_rows, _ = self._q50_regime_config()
+        non_business_mask = (
+            hourly_features["is_non_business_day"].to_numpy(dtype=float) == 1.0
+        )
+        if int(non_business_mask.sum()) < min_non_business_rows:
+            raise ValueError(
+                "LGBMForecaster: insufficient non-business rows for q50 views."
+            )
+
+        view_exclusions = {
+            "no_humidity_delta": _HUMIDITY_DELTA_FEATURES,
+            "source_robust": (
+                _HUMIDITY_FAMILY_FEATURES
+                | _SHORT_HORIZON_WEATHER_FEATURES
+            ),
+        }
+        views: dict[str, dict] = {}
+        for name, exclusions in view_exclusions.items():
+            unknown = sorted(set(exclusions).difference(hourly_features.columns))
+            if unknown:
+                raise ValueError(
+                    f"LGBMForecaster: {name} q50 view has unknown exclusions: "
+                    + ", ".join(unknown)
+                )
+            columns = [
+                column
+                for column in hourly_features.columns
+                if column not in exclusions
+            ]
+            non_business_columns = [
+                column
+                for column in columns
+                if column not in set(regime_exclusions)
+            ]
+            direct = self._make_model(0.50)
+            direct.fit(hourly_features[columns], hourly_target)
+            residual = self._make_model(0.50)
+            residual.fit(
+                hourly_features[columns],
+                hourly_target - hourly_features["lag_24h"],
+            )
+            non_business = self._make_model(0.50)
+            non_business.fit(
+                hourly_features.loc[non_business_mask, non_business_columns],
+                hourly_target.loc[non_business_mask],
+            )
+            views[name] = {
+                "direct": direct,
+                "lag24_residual": residual,
+                "non_business": non_business,
+                "feature_columns": columns,
+                "non_business_columns": non_business_columns,
+            }
+        self.q50_feature_views = views
+
     def _transition_cooling_attenuation_config(
         self,
     ) -> tuple[bool, float, float]:
@@ -458,6 +699,113 @@ class LGBMForecaster:
                 + ", ".join(missing)
             )
         return features[columns]
+
+    def _predict_q50_feature_view(
+        self,
+        view: dict,
+        features: pd.DataFrame,
+        *,
+        use_lag_residual: bool = True,
+    ) -> np.ndarray:
+        columns = list(view.get("feature_columns") or [])
+        non_business_columns = list(view.get("non_business_columns") or [])
+        missing = [column for column in columns if column not in features.columns]
+        missing.extend(
+            column
+            for column in non_business_columns
+            if column not in features.columns and column not in missing
+        )
+        if missing:
+            raise RuntimeError(
+                "LightGBM q50 feature-view contract is incomplete: "
+                + ", ".join(missing)
+            )
+
+        direct = np.asarray(view["direct"].predict(features[columns]), dtype=float)
+        business = (
+            features["is_non_business_day"].to_numpy(dtype=float) == 0.0
+        )
+        prediction = direct.copy()
+        if use_lag_residual:
+            residual = np.asarray(
+                view["lag24_residual"].predict(features[columns]),
+                dtype=float,
+            )
+            lag24 = features["lag_24h"].to_numpy(dtype=float)
+            _, _, _, configured_weight = self._lag24_residual_ensemble_config()
+            weights = self._lag24_residual_weights(features, configured_weight)
+            lag_prediction = lag24 + residual
+            blend_available = business & np.isfinite(lag_prediction)
+            prediction[blend_available] = (
+                (1.0 - weights[blend_available]) * direct[blend_available]
+                + weights[blend_available] * lag_prediction[blend_available]
+            )
+
+        non_business = ~business
+        specialist = np.asarray(
+            view["non_business"].predict(features[non_business_columns]),
+            dtype=float,
+        )
+        prediction[non_business] = (
+            0.5 * direct[non_business]
+            + 0.5 * specialist[non_business]
+        )
+        return prediction
+
+    def _feature_view_q50(
+        self,
+        features: pd.DataFrame,
+        full_q50: np.ndarray,
+        *,
+        partial_lag_fallback: bool,
+    ) -> np.ndarray | None:
+        (
+            enabled,
+            no_humidity_share,
+            non_business_full_share,
+            max_abs_delta_mw,
+        ) = (
+            self._q50_feature_view_config()
+        )
+        if (
+            not enabled
+            or getattr(self, "interval_version", None)
+            not in {self.INTERVAL_VERSION, self.V14_DAILY_LEVEL_INTERVAL_VERSION}
+        ):
+            return None
+        views = getattr(self, "q50_feature_views", None) or {}
+        if set(views) != {"no_humidity_delta", "source_robust"}:
+            raise RuntimeError("LightGBM q50 feature-view models are missing.")
+        no_humidity = self._predict_q50_feature_view(
+            views["no_humidity_delta"],
+            features,
+            use_lag_residual=not partial_lag_fallback,
+        )
+        source_robust = self._predict_q50_feature_view(
+            views["source_robust"],
+            features,
+            use_lag_residual=not partial_lag_fallback,
+        )
+        robust_blend = (
+            no_humidity_share * no_humidity
+            + (1.0 - no_humidity_share) * source_robust
+        )
+        if max_abs_delta_mw > 0.0:
+            anchor = np.asarray(full_q50, dtype=float)
+            robust_blend = anchor + np.clip(
+                robust_blend - anchor,
+                -max_abs_delta_mw,
+                max_abs_delta_mw,
+            )
+        non_business = (
+            features["is_non_business_day"].to_numpy(dtype=float) == 1.0
+        )
+        return np.where(
+            non_business,
+            non_business_full_share * np.asarray(full_q50, dtype=float)
+            + (1.0 - non_business_full_share) * robust_blend,
+            robust_blend,
+        )
 
     def _daily_level_q50_adjustment(
         self,
@@ -555,6 +903,10 @@ class LGBMForecaster:
 
         self._fit_non_business_q50_from_hourly(X, y)
 
+        self._fit_q50_feature_views(X, y)
+
+        self._fit_lag_unavailable_q50_models(X, y)
+
         self._fit_daily_level_from_hourly(X, y)
 
         self.interval_version = self.INTERVAL_VERSION
@@ -590,8 +942,49 @@ class LGBMForecaster:
             if not compatible:
                 return False
 
+        view_enabled, _, _, _ = self._q50_feature_view_config()
+        if interval_version == self.INTERVAL_VERSION and view_enabled:
+            views = getattr(self, "q50_feature_views", None) or {}
+            if set(views) != {"no_humidity_delta", "source_robust"}:
+                return False
+            required = {
+                "direct",
+                "lag24_residual",
+                "non_business",
+                "feature_columns",
+                "non_business_columns",
+            }
+            if any(
+                not required.issubset(view)
+                or view["direct"] is None
+                or view["lag24_residual"] is None
+                or view["non_business"] is None
+                or not view["feature_columns"]
+                or not view["non_business_columns"]
+                for view in views.values()
+            ):
+                return False
+
+        lag_unavailable_enabled, _ = self._lag_unavailable_model_config()
+        if interval_version == self.INTERVAL_VERSION and lag_unavailable_enabled:
+            if not (
+                bool(getattr(self, "lag_unavailable_feature_columns", None))
+                and getattr(self, "model_q50_lag_unavailable", None) is not None
+                and getattr(
+                    self,
+                    "model_q50_lag_unavailable_non_business",
+                    None,
+                )
+                is not None
+            ):
+                return False
+
         daily_enabled, _, _, _ = self._daily_level_config()
-        if interval_version == self.INTERVAL_VERSION and daily_enabled:
+        if (
+            interval_version
+            in {self.INTERVAL_VERSION, self.V14_DAILY_LEVEL_INTERVAL_VERSION}
+            and daily_enabled
+        ):
             if not (
                 bool(getattr(self, "q50_daily_level_feature_columns", None))
                 and getattr(self, "model_q50_daily_level", None) is not None
@@ -609,6 +1002,7 @@ class LGBMForecaster:
         q975 = self.model_q975.predict(X)
 
         q50 = np.asarray(q50_base, dtype=float).copy()
+        legacy_q50 = np.asarray(q50_base, dtype=float).copy()
         partial_lag_fallback = self._partial_lag_fallback_active(
             X,
             cache=cache,
@@ -652,6 +1046,15 @@ class LGBMForecaster:
             )
             lag24 = X["lag_24h"].to_numpy(dtype=float)
             lag24_q50 = lag24 + residual_q50
+            legacy_blended_q50 = (
+                (1.0 - weight) * np.asarray(q50_base, dtype=float)
+                + weight * lag24_q50
+            )
+            legacy_available = (
+                np.isfinite(lag24)
+                & np.isfinite(residual_q50)
+                & np.isfinite(legacy_blended_q50)
+            )
             blend_weights = self._lag24_residual_weights(X, weight)
             if partial_lag_fallback:
                 blend_weights = np.full(len(X), weight, dtype=float)
@@ -667,13 +1070,33 @@ class LGBMForecaster:
             if business_day_only:
                 business_mask = X["is_non_business_day"].to_numpy(dtype=float) == 0.0
                 blend_available &= business_mask
+                legacy_available &= business_mask
             if same_business_type_only:
                 same_business_type_mask = (
                     X["lag_24h_business_type_mismatch"].to_numpy(dtype=float)
                     == 0.0
                 )
                 blend_available &= same_business_type_mask
+                legacy_available &= same_business_type_mask
             q50 = np.where(blend_available, blended_q50, q50)
+            legacy_q50 = np.where(
+                legacy_available,
+                legacy_blended_q50,
+                legacy_q50,
+            )
+
+        feature_view_q50 = self._feature_view_q50(
+            X,
+            legacy_q50,
+            partial_lag_fallback=partial_lag_fallback,
+        )
+        if feature_view_q50 is not None:
+            q50 = feature_view_q50
+
+        lag_unavailable = self._lag_unavailable_q50(X)
+        if lag_unavailable is not None:
+            unavailable_rows, fallback_q50 = lag_unavailable
+            q50 = np.where(unavailable_rows, fallback_q50, q50)
 
         daily_level_adjustment = (
             0.0

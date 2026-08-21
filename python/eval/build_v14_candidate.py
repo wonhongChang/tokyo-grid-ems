@@ -1,14 +1,18 @@
-"""Build v14 auxiliary calibrators without replacing champion hourly models."""
+"""Build the source-robust v14-r2 hourly model candidate."""
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
 import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from python.eval.model_validation import artifact_sha256
 from python.forecast.lgbm_model import LGBMForecaster
@@ -19,6 +23,8 @@ HOURLY_ESTIMATOR_ATTRIBUTES = (
     "model_q50",
     "model_q975",
     "model_q50_lag24_residual",
+    "model_q50_lag_unavailable",
+    "model_q50_lag_unavailable_non_business",
 )
 
 
@@ -34,22 +40,45 @@ def hourly_estimator_fingerprints(
             raise ValueError(f"Champion hourly estimator is missing: {attribute}")
         payload = booster.model_to_string().encode("utf-8")
         fingerprints[attribute] = hashlib.sha256(payload).hexdigest()
+    for view_name, view in sorted(
+        (getattr(forecaster, "q50_feature_views", None) or {}).items()
+    ):
+        for model_name in ("direct", "lag24_residual", "non_business"):
+            estimator = view.get(model_name)
+            booster = getattr(estimator, "booster_", None)
+            if booster is None:
+                raise ValueError(
+                    f"Candidate q50 view estimator is missing: {view_name}.{model_name}"
+                )
+            payload = booster.model_to_string().encode("utf-8")
+            fingerprints[f"q50_feature_views.{view_name}.{model_name}"] = (
+                hashlib.sha256(payload).hexdigest()
+            )
     return fingerprints
 
 
 def candidate_config(champion_config: dict, project_config: dict) -> dict:
-    """Copy only v14 calibrator settings onto the champion model contract."""
-    result = copy.deepcopy(champion_config)
-    result.setdefault("forecast", {})
-    source = project_config.get("forecast", {})
-    for key in (
+    """Return the complete project contract used by the rebuilt candidate."""
+    del champion_config
+    result = json.loads(json.dumps(project_config))
+    forecast = result.get("forecast", {})
+    required = {
+        "lag24_residual_ensemble",
         "q50_regime_model",
+        "q50_feature_view_ensemble",
+        "same_regime_day_level_calibration",
         "daily_level_model",
         "partial_lag_q50_fallback",
-    ):
-        if key not in source:
-            raise ValueError(f"Project config is missing forecast.{key}.")
-        result["forecast"][key] = copy.deepcopy(source[key])
+    }
+    missing = sorted(required.difference(forecast))
+    if missing:
+        raise ValueError(
+            "Project config is missing forecast blocks: " + ", ".join(missing)
+        )
+    if forecast["daily_level_model"].get("enabled", False):
+        raise ValueError("v14-r2 requires forecast.daily_level_model.enabled=false.")
+    if not forecast["q50_feature_view_ensemble"].get("enabled", False):
+        raise ValueError("v14-r2 q50 feature-view ensemble must be enabled.")
     return result
 
 
@@ -58,13 +87,17 @@ def build_candidate(
     training_cache: pd.DataFrame,
     project_config: dict,
 ) -> LGBMForecaster:
-    """Return a v14 candidate that preserves the champion hourly estimators."""
-    source_fingerprints = hourly_estimator_fingerprints(champion)
-    candidate = copy.deepcopy(champion)
-    candidate.config = candidate_config(champion.config, project_config)
-    candidate.fit_v14_calibrators(training_cache)
-    if hourly_estimator_fingerprints(candidate) != source_fingerprints:
-        raise RuntimeError("v14 calibration changed a champion hourly estimator.")
+    """Return a fully retrained v14-r2 candidate under the project contract."""
+    candidate = LGBMForecaster(
+        n_estimators=int(getattr(champion, "n_estimators", 500)),
+        learning_rate=float(getattr(champion, "learning_rate", 0.05)),
+        config=candidate_config(champion.config, project_config),
+    )
+    candidate.fit(training_cache)
+    if candidate.interval_version != LGBMForecaster.INTERVAL_VERSION:
+        raise RuntimeError("v14-r2 candidate did not activate the current contract.")
+    if not candidate.is_compatible():
+        raise RuntimeError("v14-r2 candidate is incompatible after training.")
     return candidate
 
 
@@ -102,13 +135,13 @@ def main() -> None:
     metadata = {
         "schemaVersion": "1.0.0",
         "strategy": (
-            "preserve_champion_hourly_add_non_business_and_daily_calibrators"
+            "retrain_source_robust_q50_with_lag_unavailable_day_ahead"
         ),
         "sourceChampionSha256": artifact_sha256(args.champion),
         "artifactSha256": artifact_sha256(args.output),
         "sourceIntervalVersion": champion.interval_version,
         "candidateIntervalVersion": candidate.interval_version,
-        "hourlyEstimatorSha256": hourly_estimator_fingerprints(candidate),
+        "estimatorSha256": hourly_estimator_fingerprints(candidate),
         "dailyLevelTrainingDays": candidate.daily_level_training_days,
         "trainingCutoffExclusive": args.cutoff,
     }
