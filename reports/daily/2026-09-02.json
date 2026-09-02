@@ -1,0 +1,172 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-09-03T00:26:01+09:00",
+  "date": "2026-09-02",
+  "availability": "ok",
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "family": "lgbm_quantile_q50"
+  },
+  "summary": {
+    "comparableHours": 23,
+    "modelMaeMw": 406.2,
+    "tepcoMaeMw": 320.9,
+    "modelWapePct": 1.13,
+    "tepcoWapePct": 0.89,
+    "modelRmseMw": 552.1,
+    "tepcoRmseMw": 446.6,
+    "modelMaxErrorMw": 1490.0,
+    "tepcoMaxErrorMw": 1240.0,
+    "modelMaxErrorHour": 9,
+    "tepcoMaxErrorHour": 9,
+    "maeGapMw": 85.3,
+    "wapeGapPct": 0.24,
+    "verdict": "tepco_better",
+    "modelWins": 7,
+    "tepcoWins": 16,
+    "ties": 0,
+    "modelAdvantageHours": 7,
+    "tepcoAdvantageHours": 16,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.304
+  },
+  "peak": {
+    "actual": {
+      "hour": 13,
+      "actualMw": 45090.0
+    },
+    "model": {
+      "hour": 14,
+      "forecastMw": 45604.4,
+      "errorAtActualPeakMw": 110.0,
+      "timeErrorHours": 1
+    },
+    "tepco": {
+      "hour": 14,
+      "forecastMw": 45120.0,
+      "errorAtActualPeakMw": -690.0,
+      "timeErrorHours": 1
+    }
+  },
+  "timeBands": [
+    {
+      "code": "overnight",
+      "label": "00-05",
+      "hours": 6,
+      "modelMaeMw": 110.8,
+      "tepcoMaeMw": 125.0,
+      "modelBiasMw": -52.8,
+      "verdict": "close"
+    },
+    {
+      "code": "morning_ramp",
+      "label": "06-10",
+      "hours": 5,
+      "modelMaeMw": 595.4,
+      "tepcoMaeMw": 674.0,
+      "modelBiasMw": -325.2,
+      "verdict": "model_better"
+    },
+    {
+      "code": "daytime",
+      "label": "11-15",
+      "hours": 5,
+      "modelMaeMw": 522.0,
+      "tepcoMaeMw": 328.0,
+      "modelBiasMw": -88.2,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "late_afternoon",
+      "label": "16-18",
+      "hours": 3,
+      "modelMaeMw": 385.7,
+      "tepcoMaeMw": 340.0,
+      "modelBiasMw": 178.7,
+      "verdict": "close"
+    },
+    {
+      "code": "evening",
+      "label": "19-23",
+      "hours": 4,
+      "modelMaeMw": 483.6,
+      "tepcoMaeMw": 150.0,
+      "modelBiasMw": -315.8,
+      "verdict": "tepco_better"
+    }
+  ],
+  "shape": {
+    "transitionHours": 22,
+    "modelDeltaMaeMw": 632.5,
+    "tepcoDeltaMaeMw": 280.0,
+    "maxActualRiseMw": 4440.0,
+    "maxActualDropMw": -2250.0,
+    "maxModelRiseMw": 3882.3,
+    "maxModelDropMw": -2480.0,
+    "largestDeltaMiss": {
+      "fromHour": 14,
+      "toHour": 15,
+      "actualDeltaMw": -90.0,
+      "modelDeltaMw": -1539.4,
+      "tepcoDeltaMw": 0.0,
+      "modelDeltaErrorMw": -1449.4,
+      "tepcoDeltaErrorMw": 90.0,
+      "modelAbsDeltaErrorMw": 1449.4,
+      "tepcoAbsDeltaErrorMw": 90.0
+    },
+    "largeShapeBreaks": []
+  },
+  "topMisses": [
+    {
+      "hour": 9,
+      "actualMw": 39190.0,
+      "modelForecastMw": 37700.0,
+      "tepcoForecastMw": 40430.0,
+      "modelErrorMw": -1490.0,
+      "tepcoErrorMw": 1240.0,
+      "modelAbsErrorMw": 1490.0,
+      "tepcoAbsErrorMw": 1240.0
+    },
+    {
+      "hour": 19,
+      "actualMw": 39750.0,
+      "modelForecastMw": 38830.0,
+      "tepcoForecastMw": 39450.0,
+      "modelErrorMw": -920.0,
+      "tepcoErrorMw": -300.0,
+      "modelAbsErrorMw": 920.0,
+      "tepcoAbsErrorMw": 300.0
+    },
+    {
+      "hour": 17,
+      "actualMw": 42170.0,
+      "modelForecastMw": 43016.7,
+      "tepcoForecastMw": 42810.0,
+      "modelErrorMw": 846.7,
+      "tepcoErrorMw": 640.0,
+      "modelAbsErrorMw": 846.7,
+      "tepcoAbsErrorMw": 640.0
+    }
+  ],
+  "insights": [
+    {
+      "code": "tepco_closer_overall",
+      "severity": "warning",
+      "title": "TEPCO was closer overall.",
+      "evidence": {
+        "maeGapMw": 85.3,
+        "wapeGapPct": 0.24
+      }
+    },
+    {
+      "code": "large_single_hour_miss",
+      "severity": "warning",
+      "title": "One or more hours had a large model error.",
+      "evidence": {
+        "hour": 9,
+        "modelAbsErrorMw": 1490.0
+      }
+    }
+  ]
+}
