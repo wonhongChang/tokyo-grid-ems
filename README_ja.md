@@ -211,6 +211,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-09-04 運用証跡の整合性と補正状態のFail-Closed化](docs/ja/model-improvements/model-improvement-2026-09-04-operational-evidence-integrity.md)
 - [2026-08-21 v14-r2 データソース耐性型D-1予測 Champion](docs/ja/model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
 - [2026-08-21 過去v14-r1 Champion保持型staging](docs/ja/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 - [2026-08-18 同一vintage TEPCO評価とモデル昇格ガバナンス](docs/ja/model-improvements/model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
@@ -218,7 +219,6 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [2026-08-12 営業日復帰補正の実績過大予測 veto](docs/ja/model-improvements/model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
 - [2026-08-11 rolling conformal予測バンド最小幅補正](docs/ja/model-improvements/model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
 - [2026-08-11 非営業日朝の実績anchor拡張](docs/ja/model-improvements/model-improvement-2026-08-11-non-business-morning-anchor-extension.md)
-- [2026-08-04 営業日遷移の冷房減衰と気象連続性](docs/ja/model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)
 
 全体の時系列ログ: [docs/ja/model-improvements/README.md](docs/ja/model-improvements/README.md)
 

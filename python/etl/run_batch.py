@@ -29,7 +29,7 @@ import json
 import os
 import shutil
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -68,6 +68,7 @@ _MODEL_PROMOTION_REPORT = "metrics/model_promotion.json"
 _LGBM_MIN_ROWS   = 90 * 24
 _TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
 _FORECAST_SNAPSHOT_PATH_NAME = "forecast_snapshots"
+_FORECAST_ORIGIN_PATH_NAME = "forecast_origins"
 _OPERATIONAL_CALIBRATION_SNAPSHOT_PATH_NAME = (
     "reports/internal/operational-calibration/snapshots"
 )
@@ -78,6 +79,7 @@ class ForecastBuildResult:
     forecasts: list[HourlyForecast]
     model_name: str
     stages: dict[str, list[HourlyForecast]]
+    metadata: dict = field(default_factory=dict)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -1112,7 +1114,98 @@ def _champion_health(out_dir: Path, champion, config: dict) -> dict:
     replay = _read_json_payload(
         out_dir / "metrics" / "operational_replay.json"
     ) or {}
-    operational = (replay.get("served") or {}).get("overall") or {}
+    expected_contract = str(
+        config.get("forecast", {}).get("model_contract") or ""
+    )
+    expected_artifact = str(metadata.get("artifactSha256") or "")
+    champion_scope = replay.get("championScope") or {}
+    scope_matches = bool(
+        expected_contract
+        and expected_artifact
+        and champion_scope.get("status") == "ok"
+        and champion_scope.get("modelContract") == expected_contract
+        and champion_scope.get("artifactSha256") == expected_artifact
+    )
+    if replay and expected_contract and expected_artifact:
+        if scope_matches:
+            operational = (
+                (champion_scope.get("served") or {}).get("overall") or {}
+            )
+        else:
+            operational = {}
+            integrity_failures.append(
+                "contract_scoped_operational_metrics_missing"
+            )
+    else:
+        operational = (replay.get("served") or {}).get("overall") or {}
+
+    calibration_health = {"status": "disabled"}
+    calibration_config = config.get("forecast", {}).get(
+        "same_regime_day_level_calibration",
+        {},
+    )
+    if calibration_config.get("enabled", False):
+        max_state_lag_days = max(
+            1,
+            int(calibration_config.get("max_state_lag_days", 2)),
+        )
+        state_path = out_dir / str(
+            calibration_config.get(
+                "state_path",
+                "metrics/same_regime_day_level_calibration.json",
+            )
+        )
+        state = _read_json_payload(state_path) or {}
+        entries = state.get("entries") or []
+        entry_dates = []
+        for entry in entries:
+            try:
+                entry_dates.append(date.fromisoformat(str(entry.get("date"))))
+            except ValueError:
+                continue
+        latest_residual_date = max(entry_dates) if entry_dates else None
+        replay_end_raw = (
+            (champion_scope.get("period") or {}).get("end")
+            if scope_matches
+            else (replay.get("period") or {}).get("end")
+        )
+        try:
+            replay_end = date.fromisoformat(str(replay_end_raw))
+        except ValueError:
+            replay_end = None
+        lag_days = (
+            (replay_end - latest_residual_date).days
+            if replay_end is not None and latest_residual_date is not None
+            else None
+        )
+        state_matches = bool(
+            state
+            and state.get("modelContract") == expected_contract
+            and state.get("artifactSha256") == expected_artifact
+        )
+        if not state_matches:
+            calibration_status = "missing_or_incompatible"
+            integrity_failures.append("same_regime_calibration_state_invalid")
+        elif lag_days is not None and lag_days > max_state_lag_days:
+            calibration_status = "stale"
+            integrity_failures.append("same_regime_calibration_state_stale")
+        elif latest_residual_date is None:
+            calibration_status = "insufficient_data"
+            integrity_failures.append("same_regime_calibration_state_empty")
+        else:
+            calibration_status = "fresh"
+        calibration_health = {
+            "status": calibration_status,
+            "latestResidualDate": (
+                latest_residual_date.isoformat()
+                if latest_residual_date is not None
+                else None
+            ),
+            "referenceDate": replay_end.isoformat() if replay_end else None,
+            "lagDays": lag_days,
+            "modelContract": state.get("modelContract"),
+            "artifactSha256": state.get("artifactSha256"),
+        }
     degraded_config = config.get("model_promotion", {}).get(
         "degraded_champion",
         {},
@@ -1162,6 +1255,8 @@ def _champion_health(out_dir: Path, champion, config: dict) -> dict:
             "wapePct": wape,
             "hours": operational.get("hours"),
         },
+        "contractCoverage": champion_scope.get("coverage") or {},
+        "sameRegimeCalibration": calibration_health,
         "artifact": {
             "intervalVersion": getattr(champion, "interval_version", None),
             "trainingCutoff": metadata.get("trainingCutoff"),
@@ -2169,12 +2264,17 @@ def _build_forecast_pipeline(
             )
             raw_lgbm_forecasts = forecaster.predict(target_date, cache)
             level_calibrated_forecasts = raw_lgbm_forecasts
+            build_metadata: dict = {}
             if same_regime_calibrator is not None:
-                level_calibrated_forecasts = same_regime_calibrator.apply(
+                same_regime_result = same_regime_calibrator.apply(
                     raw_lgbm_forecasts,
                     target_date,
                     inference_features,
-                ).forecasts
+                )
+                level_calibrated_forecasts = same_regime_result.forecasts
+                build_metadata["sameRegimeDayLevelCalibration"] = (
+                    same_regime_result.to_metadata()
+                )
             analog_adjusted_forecasts = (
                 adjuster.adjust(
                     forecaster,
@@ -2217,6 +2317,7 @@ def _build_forecast_pipeline(
                     "localized_shape_guarded": localized_shape_guarded_forecasts,
                     "pre_calibration": localized_shape_guarded_forecasts,
                 },
+                metadata=build_metadata,
             )
         except Exception as e:
             print(f"[WARN] LightGBM predict failed for {target_date}: {e}", file=sys.stderr)
@@ -2279,6 +2380,21 @@ def _forecast_snapshot_config(config: dict) -> dict:
         "enabled": bool(snapshot_config.get("enabled", True)),
         "retention_days": max(int(snapshot_config.get("retention_days", 21)), 1),
         "max_per_day": max(int(snapshot_config.get("max_per_day", 16)), 1),
+    }
+
+
+def _forecast_origin_config(config: dict) -> dict:
+    origin_config = config.get("forecast_origins", {})
+    default_retention = config.get("forecast_vintages", {}).get(
+        "retention_days",
+        120,
+    )
+    return {
+        "enabled": bool(origin_config.get("enabled", True)),
+        "retention_days": max(
+            int(origin_config.get("retention_days", default_retention)),
+            1,
+        ),
     }
 
 
@@ -2393,6 +2509,134 @@ def _snapshot_index_entry(path: Path, out_dir: Path) -> dict | None:
     }
 
 
+def _prune_forecast_origins(
+    out_dir: Path,
+    current_date: date,
+    retention_days: int,
+) -> None:
+    origin_root = out_dir / _FORECAST_ORIGIN_PATH_NAME
+    if not origin_root.exists():
+        return
+    cutoff_date = current_date - timedelta(days=retention_days - 1)
+    for date_dir in origin_root.iterdir():
+        if not date_dir.is_dir():
+            continue
+        try:
+            target_date = date.fromisoformat(date_dir.name)
+        except ValueError:
+            continue
+        if target_date < cutoff_date:
+            shutil.rmtree(date_dir)
+
+
+def _write_forecast_origin_indexes(
+    out_dir: Path,
+    generated_at: str,
+    config: dict,
+) -> None:
+    origin_root = out_dir / _FORECAST_ORIGIN_PATH_NAME
+    if not origin_root.exists():
+        return
+    dates: list[dict] = []
+    for date_dir in sorted(path for path in origin_root.iterdir() if path.is_dir()):
+        entries = []
+        for path in sorted(
+            item for item in date_dir.glob("*.json") if item.name != "index.json"
+        ):
+            entry = _snapshot_index_entry(path, out_dir)
+            if entry is None:
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            origin = payload.get("origin") or {}
+            entry["originType"] = origin.get("type")
+            entry["immutable"] = bool(origin.get("immutable"))
+            entries.append(entry)
+        if not entries:
+            continue
+        date_index = {
+            "schemaVersion": "1.0.0",
+            "timezone": "Asia/Tokyo",
+            "generatedAt": generated_at,
+            "targetDate": date_dir.name,
+            "origins": entries,
+        }
+        write_json(date_dir / "index.json", date_index)
+        dates.append({
+            "date": date_dir.name,
+            "path": (date_dir / "index.json").relative_to(out_dir).as_posix(),
+            "originCount": len(entries),
+        })
+    settings = _forecast_origin_config(config)
+    write_json(origin_root / "index.json", {
+        "schemaVersion": "1.0.0",
+        "timezone": "Asia/Tokyo",
+        "generatedAt": generated_at,
+        "retentionDays": settings["retention_days"],
+        "dates": dates,
+    })
+
+
+def _write_forecast_origin_snapshot(
+    out_dir: Path,
+    target_date: date,
+    snapshot: dict,
+    config: dict,
+) -> Path | None:
+    settings = _forecast_origin_config(config)
+    if not settings["enabled"]:
+        return None
+    generated_at = str(snapshot.get("generatedAt") or "")
+    try:
+        generated_date = datetime.fromisoformat(generated_at).date()
+    except ValueError:
+        return None
+    # The fixed origin contract is the first forecast published before the
+    # target date. A same-day refresh must never become a day-ahead origin.
+    if generated_date >= target_date:
+        return None
+    model = snapshot.get("model") or {}
+    artifact_hash = str(model.get("artifactSha256") or "")
+    if not artifact_hash:
+        return None
+    raw_rows = [
+        row
+        for row in (snapshot.get("forecastBuild") or {}).get("series", [])
+        if (row.get("forecastMwByStage") or {}).get("raw_lgbm") is not None
+    ]
+    if len(raw_rows) != 24:
+        return None
+
+    _prune_forecast_origins(
+        out_dir,
+        generated_date,
+        settings["retention_days"],
+    )
+    origin_dir = out_dir / _FORECAST_ORIGIN_PATH_NAME / target_date.isoformat()
+    origin_dir.mkdir(parents=True, exist_ok=True)
+    safe_artifact = "".join(
+        ch for ch in artifact_hash if ch.isalnum() or ch in {"-", "_"}
+    )
+    if not safe_artifact:
+        return None
+    origin_path = origin_dir / f"{safe_artifact}.json"
+    if origin_path.exists():
+        return None
+
+    origin_payload = dict(snapshot)
+    origin_payload["schemaVersion"] = "1.1.0"
+    origin_payload["origin"] = {
+        "type": "day_ahead_first_publish",
+        "immutable": True,
+        "capturedAt": generated_at,
+    }
+    write_json(origin_path, origin_payload)
+    _write_forecast_origin_indexes(out_dir, generated_at, config)
+    return origin_path
+
+
 def _prune_forecast_snapshots(
     out_dir: Path,
     current_date: date,
@@ -2486,6 +2730,7 @@ def _write_forecast_snapshot(
     run_type: str,
     preserve_observed_forecast_hours: bool,
     stage_forecasts: dict[str, list[HourlyForecast]] | None = None,
+    build_metadata: dict | None = None,
 ) -> Path | None:
     snapshot_config = _forecast_snapshot_config(config)
     if not snapshot_config["enabled"] or not forecasts:
@@ -2561,6 +2806,20 @@ def _write_forecast_snapshot(
             "stageSummary": _forecast_stage_summary(stage_forecasts),
             "series": _forecast_stage_rows(stage_forecasts),
         }
+        if build_metadata:
+            snapshot["forecastBuild"]["metadata"] = build_metadata
+
+    origin_path = _write_forecast_origin_snapshot(
+        out_dir,
+        target_date,
+        snapshot,
+        config,
+    )
+    if origin_path is not None:
+        print(
+            "[SNAPSHOT] Immutable day-ahead origin "
+            f"{target_date.isoformat()} -> {origin_path.relative_to(out_dir)}"
+        )
 
     snapshot_dir = out_dir / _FORECAST_SNAPSHOT_PATH_NAME / target_date.isoformat()
     snapshot_dir.mkdir(parents=True, exist_ok=True)
@@ -3270,6 +3529,9 @@ def _write_operational_replay_report(
             out_dir,
             window_days=window_days,
             generated_at=ts_now(),
+            model_contract=str(
+                config.get("forecast", {}).get("model_contract") or ""
+            ) or None,
         )
         write_json(out_dir / "metrics" / "operational_replay.json", report)
         print(
@@ -3625,6 +3887,7 @@ def _run_status_only(
         snapshot_run_type,
         preserve_observed_forecast_hours,
         today_build.stages,
+        today_build.metadata,
     )
     _write_forecast_snapshot(
         out_dir,
@@ -3636,6 +3899,7 @@ def _run_status_only(
         snapshot_run_type,
         preserve_observed_forecast_hours,
         tomorrow_build.stages,
+        tomorrow_build.metadata,
     )
 
     # Rebuild recent actual alerts with the current config. This keeps yesterday's
@@ -3918,6 +4182,7 @@ def main() -> None:
         snapshot_run_type,
         True,
         today_build.stages,
+        today_build.metadata,
     )
     _write_forecast_snapshot(
         out_dir,
@@ -3929,6 +4194,7 @@ def main() -> None:
         snapshot_run_type,
         True,
         tomorrow_build.stages,
+        tomorrow_build.metadata,
     )
 
     # Keep recent alert files aligned with the current anomaly thresholds, even

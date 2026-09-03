@@ -33,6 +33,7 @@ forecast:
     history_window_days: 3
     shrinkage: 0.25
     max_abs_adjustment_mw: 1000
+    max_state_lag_days: 2   # allow the normal morning delay for finalized TEPCO actuals
     state_path: metrics/same_regime_day_level_calibration.json
   daily_level_model:
     enabled: false # v14-r1's uniform whole-day shift was rejected by fixed-origin replay
@@ -522,6 +523,10 @@ forecast_snapshots:
   enabled: true
   retention_days: 21         # bounded public history for operational review
   max_per_day: 16            # enough for scheduled intraday + ETL refreshes
+
+forecast_origins:
+  enabled: true
+  retention_days: 120        # immutable D-1 first-publish evidence, outside the rolling snapshot cap
 
 forecast_vintages:
   enabled: true

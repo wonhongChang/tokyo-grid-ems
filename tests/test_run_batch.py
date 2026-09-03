@@ -958,6 +958,142 @@ def test_champion_health_detects_artifact_config_fingerprint_mismatch(tmp_path):
     ]
 
 
+def test_champion_health_uses_contract_scoped_metrics_and_calibration_freshness(
+    tmp_path,
+):
+    from python.eval.model_validation import config_fingerprint
+
+    class Champion:
+        interval_version = "test"
+        config = {}
+
+        @staticmethod
+        def is_compatible():
+            return True
+
+    project_config = {
+        "forecast": {
+            "model_contract": "v14-r2-source-robust-day-ahead",
+            "same_regime_day_level_calibration": {
+                "enabled": True,
+                "state_path": "metrics/day-level.json",
+            },
+        },
+        "model_promotion": {},
+    }
+    metadata = {
+        "trainingCutoff": "2026-08-01",
+        "configFingerprint": config_fingerprint(project_config),
+        "artifactSha256": "artifact-v14",
+    }
+    (tmp_path / ".lgbm_model_meta.json").write_text(
+        json.dumps(metadata),
+        encoding="utf-8",
+    )
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    (metrics_dir / "operational_replay.json").write_text(
+        json.dumps({
+            "period": {"end": "2026-09-01"},
+            "served": {"overall": {"maeMw": 2_000.0, "wapePct": 8.0, "hours": 672}},
+            "championScope": {
+                "status": "ok",
+                "modelContract": "v14-r2-source-robust-day-ahead",
+                "artifactSha256": "artifact-v14",
+                "period": {"end": "2026-09-01"},
+                "served": {
+                    "overall": {"maeMw": 700.0, "wapePct": 2.0, "hours": 240},
+                },
+                "coverage": {"matchingDays": 10, "hours": 240},
+            },
+        }),
+        encoding="utf-8",
+    )
+    (metrics_dir / "day-level.json").write_text(
+        json.dumps({
+            "modelContract": "v14-r2-source-robust-day-ahead",
+            "artifactSha256": "artifact-v14",
+            "entries": [{"date": "2026-08-31"}],
+        }),
+        encoding="utf-8",
+    )
+
+    result = _champion_health(tmp_path, Champion(), project_config)
+
+    assert result["status"] == "healthy"
+    assert result["operationalMetrics"] == {
+        "maeMw": 700.0,
+        "wapePct": 2.0,
+        "hours": 240,
+    }
+    assert result["contractCoverage"] == {"matchingDays": 10, "hours": 240}
+    assert result["sameRegimeCalibration"]["status"] == "fresh"
+
+
+def test_champion_health_marks_stale_same_regime_state_for_review(tmp_path):
+    from python.eval.model_validation import config_fingerprint
+
+    class Champion:
+        interval_version = "test"
+        config = {}
+
+        @staticmethod
+        def is_compatible():
+            return True
+
+    project_config = {
+        "forecast": {
+            "model_contract": "v14-r2-source-robust-day-ahead",
+            "same_regime_day_level_calibration": {
+                "enabled": True,
+                "state_path": "metrics/day-level.json",
+            },
+        },
+        "model_promotion": {},
+    }
+    (tmp_path / ".lgbm_model_meta.json").write_text(
+        json.dumps({
+            "trainingCutoff": "2026-08-01",
+            "configFingerprint": config_fingerprint(project_config),
+            "artifactSha256": "artifact-v14",
+        }),
+        encoding="utf-8",
+    )
+    metrics_dir = tmp_path / "metrics"
+    metrics_dir.mkdir()
+    (metrics_dir / "operational_replay.json").write_text(
+        json.dumps({
+            "period": {"end": "2026-09-01"},
+            "championScope": {
+                "status": "ok",
+                "modelContract": "v14-r2-source-robust-day-ahead",
+                "artifactSha256": "artifact-v14",
+                "period": {"end": "2026-09-01"},
+                "served": {
+                    "overall": {"maeMw": 700.0, "wapePct": 2.0, "hours": 240},
+                },
+                "coverage": {},
+            },
+        }),
+        encoding="utf-8",
+    )
+    (metrics_dir / "day-level.json").write_text(
+        json.dumps({
+            "modelContract": "v14-r2-source-robust-day-ahead",
+            "artifactSha256": "artifact-v14",
+            "entries": [{"date": "2026-08-20"}],
+        }),
+        encoding="utf-8",
+    )
+
+    result = _champion_health(tmp_path, Champion(), project_config)
+
+    assert result["status"] == "review_required"
+    assert "same_regime_calibration_state_stale" in result["integrityFailures"]
+    assert result["sameRegimeCalibration"]["status"] == "stale"
+    assert result["sameRegimeCalibration"]["lagDays"] == 12
+
+
 def test_recovery_shadow_evidence_fails_closed_when_missing(tmp_path):
     result = _recovery_shadow_evidence(tmp_path, {"model_promotion": {}})
 
@@ -1620,6 +1756,91 @@ def test_write_forecast_snapshot_can_include_build_stage_diagnostics(tmp_path):
     assert snapshot["forecastBuild"]["stageSummary"]["raw_lgbm"]["hours"] == 2
     assert snapshot["forecastBuild"]["series"][0]["forecastMwByStage"]["raw_lgbm"] == 29_500.0
     assert snapshot["forecastBuild"]["series"][0]["forecastMwByStage"]["pre_calibration"] == 30_000.0
+
+
+def test_write_forecast_snapshot_preserves_first_day_ahead_origin(tmp_path):
+    target = date(2024, 1, 3)
+    forecasts = [
+        _forecast_point_at(target, hour, 30_000.0 + hour)
+        for hour in range(24)
+    ]
+    first_raw = [
+        _forecast_point_at(target, hour, 29_500.0 + hour)
+        for hour in range(24)
+    ]
+    later_raw = [
+        _forecast_point_at(target, hour, 31_000.0 + hour)
+        for hour in range(24)
+    ]
+    (tmp_path / ".lgbm_model_meta.json").write_text(
+        json.dumps({"artifactSha256": "artifact-a"}),
+        encoding="utf-8",
+    )
+    config = {
+        "forecast": {
+            "n_weeks": 12,
+            "model_contract": "test-day-ahead-contract",
+        },
+        "forecast_snapshots": {
+            "enabled": True,
+            "retention_days": 2,
+            "max_per_day": 1,
+        },
+        "forecast_origins": {
+            "enabled": True,
+            "retention_days": 10,
+        },
+    }
+
+    _write_forecast_snapshot(
+        tmp_path,
+        target,
+        forecasts,
+        config,
+        "lgbm_quantile_q50",
+        "2024-01-02T20:00:00+09:00",
+        "intraday",
+        True,
+        {"raw_lgbm": first_raw, "pre_calibration": forecasts},
+    )
+    _write_forecast_snapshot(
+        tmp_path,
+        target,
+        forecasts,
+        config,
+        "lgbm_quantile_q50",
+        "2024-01-02T21:00:00+09:00",
+        "intraday",
+        True,
+        {"raw_lgbm": later_raw, "pre_calibration": forecasts},
+    )
+
+    origin_path = (
+        tmp_path
+        / "forecast_origins"
+        / target.isoformat()
+        / "artifact-a.json"
+    )
+    origin = json.loads(origin_path.read_text(encoding="utf-8"))
+    assert origin["origin"] == {
+        "type": "day_ahead_first_publish",
+        "immutable": True,
+        "capturedAt": "2024-01-02T20:00:00+09:00",
+    }
+    assert (
+        origin["forecastBuild"]["series"][0]["forecastMwByStage"]["raw_lgbm"]
+        == 29_500.0
+    )
+    retained = [
+        path
+        for path in (tmp_path / "forecast_snapshots" / target.isoformat()).glob("*.json")
+        if path.name != "index.json"
+    ]
+    assert len(retained) == 1
+    origin_index = json.loads(
+        (tmp_path / "forecast_origins" / "index.json").read_text(encoding="utf-8")
+    )
+    assert origin_index["dates"][0]["originCount"] == 1
 
 
 def test_write_operational_calibration_snapshot_indexes_intraday_history(tmp_path):

@@ -6,6 +6,10 @@
 
 ---
 
+## 2026-09
+
+- [2026-09-04 운영 증거 무결성과 보정 상태 Fail-Closed](model-improvement-2026-09-04-operational-evidence-integrity.md)
+
 ## 2026-08
 
 - [2026-08-21 v14-r2 출처 강건형 다음날 예측 Champion](model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)

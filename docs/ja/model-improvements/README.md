@@ -6,6 +6,10 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ---
 
+## 2026-09
+
+- [2026-09-04 運用証跡の整合性と補正状態のFail-Closed化](model-improvement-2026-09-04-operational-evidence-integrity.md)
+
 ## 2026-08
 
 - [2026-08-21 v14-r2 データソース耐性型D-1予測 Champion](model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -52,8 +52,14 @@ def _actual_by_hour(out_dir: Path, target: date) -> dict[int, float]:
     }
 
 
+def _forecast_payload(out_dir: Path, target: date) -> dict:
+    return _read_json(
+        out_dir / "forecast" / f"{target.isoformat()}.json"
+    ) or {}
+
+
 def _forecast_by_hour(out_dir: Path, target: date) -> dict[int, dict]:
-    payload = _read_json(out_dir / "forecast" / f"{target.isoformat()}.json")
+    payload = _forecast_payload(out_dir, target)
     if not payload:
         return {}
     return {
@@ -223,7 +229,23 @@ def build_operational_replay_report(
     *,
     window_days: int = 28,
     generated_at: str | None = None,
+    model_contract: str | None = None,
+    artifact_sha256: str | None = None,
+    promoted_at: str | None = None,
 ) -> dict:
+    metadata = _read_json(out_dir / ".lgbm_model_meta.json") or {}
+    artifact_sha256 = artifact_sha256 or metadata.get("artifactSha256")
+    promoted_at = promoted_at or metadata.get("promotedAt")
+    scope_requested = bool(model_contract and artifact_sha256)
+    scope_start: date | None = None
+    if promoted_at:
+        try:
+            # A promotion made during a day can leave earlier frozen hours from
+            # the previous artifact. Start contract health on the next full day.
+            scope_start = pd.Timestamp(promoted_at).date() + timedelta(days=1)
+        except (TypeError, ValueError):
+            scope_start = None
+
     actual_files = sorted((out_dir / "actual").glob("*.json"))
     complete_dates: list[date] = []
     for path in actual_files:
@@ -236,11 +258,15 @@ def build_operational_replay_report(
     evaluation_dates = complete_dates[-max(1, int(window_days)):]
 
     served_rows: list[dict] = []
+    champion_served_rows: list[dict] = []
     tepco_rows: list[dict] = []
     interval_rows: list[dict] = []
     stage_metric_rows: dict[str, list[dict]] = {}
     missing_snapshots: list[str] = []
     daily: list[dict] = []
+    champion_dates: list[date] = []
+    eligible_champion_dates: list[date] = []
+    excluded_champion_dates: list[dict] = []
 
     for target in evaluation_dates:
         actual_context = _actual_context_by_hour(out_dir, target)
@@ -248,7 +274,30 @@ def build_operational_replay_report(
             hour: row["actual"]
             for hour, row in actual_context.items()
         }
-        forecast = _forecast_by_hour(out_dir, target)
+        forecast_payload = _forecast_payload(out_dir, target)
+        forecast = {
+            pd.Timestamp(point["ts"]).hour: point
+            for point in forecast_payload.get("series", [])
+            if point.get("forecastMw") is not None
+        }
+        forecast_model = forecast_payload.get("model") or {}
+        after_promotion = scope_start is None or target >= scope_start
+        if scope_requested and after_promotion:
+            eligible_champion_dates.append(target)
+        in_champion_scope = bool(
+            scope_requested
+            and after_promotion
+            and forecast_model.get("contract") == model_contract
+            and forecast_model.get("artifactSha256") == artifact_sha256
+        )
+        if in_champion_scope:
+            champion_dates.append(target)
+        elif scope_requested and after_promotion:
+            excluded_champion_dates.append({
+                "date": target.isoformat(),
+                "modelContract": forecast_model.get("contract"),
+                "artifactSha256": forecast_model.get("artifactSha256"),
+            })
         is_non_business = _is_non_business_day(target)
         day_served: list[dict] = []
         for hour, actual_mw in actual.items():
@@ -264,6 +313,8 @@ def build_operational_replay_report(
             }
             served_rows.append(row)
             day_served.append(row)
+            if in_champion_scope:
+                champion_served_rows.append(row)
             tepco_forecast = actual_context[hour]["tepcoForecast"]
             if tepco_forecast is not None:
                 tepco_rows.append({
@@ -299,6 +350,9 @@ def build_operational_replay_report(
             "date": target.isoformat(),
             "served": _metric_rows(day_served),
             "stageSnapshotAvailable": bool(stages),
+            "modelContract": forecast_model.get("contract"),
+            "artifactSha256": forecast_model.get("artifactSha256"),
+            "inChampionScope": in_champion_scope,
         })
 
     stage_metrics = {
@@ -333,6 +387,30 @@ def build_operational_replay_report(
         ),
     )
     interval_bundle = _interval_bundle(interval_rows)
+    champion_period = {
+        "start": min(champion_dates).isoformat() if champion_dates else None,
+        "end": max(champion_dates).isoformat() if champion_dates else None,
+        "days": len(set(champion_dates)),
+    }
+    champion_scope = {
+        "status": (
+            "ok" if scope_requested and champion_served_rows
+            else "insufficient_data" if scope_requested
+            else "not_configured"
+        ),
+        "modelContract": model_contract,
+        "artifactSha256": artifact_sha256,
+        "promotedAt": promoted_at,
+        "fullDayEvaluationStart": scope_start.isoformat() if scope_start else None,
+        "period": champion_period,
+        "served": _metric_bundle(champion_served_rows),
+        "coverage": {
+            "eligibleFinalizedDays": len(set(eligible_champion_dates)),
+            "matchingDays": len(set(champion_dates)),
+            "hours": len(champion_served_rows),
+            "excludedDates": excluded_champion_dates,
+        },
+    }
 
     return {
         "schemaVersion": "1.0.0",
@@ -350,6 +428,7 @@ def build_operational_replay_report(
             "days": len(evaluation_dates),
         },
         "served": _metric_bundle(served_rows),
+        "championScope": champion_scope,
         "reference": {
             "tepco": _metric_bundle(tepco_rows),
             "maeDeltaVsTepcoMw": (

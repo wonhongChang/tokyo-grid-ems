@@ -6,6 +6,10 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ---
 
+## 2026-09
+
+- [2026-09-04 operational evidence integrity and fail-closed calibration state](model-improvement-2026-09-04-operational-evidence-integrity.md)
+
 ## 2026-08
 
 - [2026-08-21 v14-r2 source-robust day-ahead Champion](model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)

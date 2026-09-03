@@ -234,6 +234,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-09-04 운영 증거 무결성과 보정 상태 Fail-Closed](docs/ko/model-improvements/model-improvement-2026-09-04-operational-evidence-integrity.md)
 - [2026-08-21 v14-r2 출처 강건형 다음날 예측 Champion](docs/ko/model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
 - [2026-08-21 과거 v14-r1 Champion 보존형 staging](docs/ko/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
 - [2026-08-18 동일 시점 TEPCO 평가와 모델 승격 거버넌스](docs/ko/model-improvements/model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
@@ -241,7 +242,6 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 - [2026-08-12 영업일 복귀 보정의 실측 과대예측 veto](docs/ko/model-improvements/model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
 - [2026-08-11 rolling conformal 예측 밴드 최소 폭 보정](docs/ko/model-improvements/model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
 - [2026-08-11 비영업일 오전 실측 anchor 확장](docs/ko/model-improvements/model-improvement-2026-08-11-non-business-morning-anchor-extension.md)
-- [2026-08-04 영업 전환일 냉방 감쇠와 기상 연속성 보강](docs/ko/model-improvements/model-improvement-2026-08-04-transition-cooling-and-weather-continuity.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 
