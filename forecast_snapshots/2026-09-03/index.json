@@ -1,33 +1,9 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-09-03T13:34:25+09:00",
+  "generatedAt": "2026-09-03T14:26:31+09:00",
   "targetDate": "2026-09-03",
   "snapshots": [
-    {
-      "targetDate": "2026-09-03",
-      "generatedAt": "2026-09-02T17:37:03+09:00",
-      "runType": "intraday",
-      "path": "forecast_snapshots/2026-09-03/2026-09-02T17-37-03-09-00.json",
-      "model": {
-        "name": "lgbm_quantile_q50",
-        "version": "mvp-1",
-        "nWeeks": 12,
-        "contract": "v14-r2-source-robust-day-ahead",
-        "artifactSha256": "c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3"
-      },
-      "peak": {
-        "forecastMw": 47033.4,
-        "at": "2026-09-03T13:00:00+09:00",
-        "interval": {
-          "p95Lower": 43283.4,
-          "p95Upper": 50783.4
-        }
-      },
-      "observedActualHoursAtGeneration": 0,
-      "fallbackActualHoursAtGeneration": 0,
-      "lastObservedActualHour": null
-    },
     {
       "targetDate": "2026-09-03",
       "generatedAt": "2026-09-02T19:30:32+09:00",
@@ -387,6 +363,30 @@
       "observedActualHoursAtGeneration": 13,
       "fallbackActualHoursAtGeneration": 0,
       "lastObservedActualHour": 12
+    },
+    {
+      "targetDate": "2026-09-03",
+      "generatedAt": "2026-09-03T14:26:31+09:00",
+      "runType": "intraday",
+      "path": "forecast_snapshots/2026-09-03/2026-09-03T14-26-31-09-00.json",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "version": "mvp-1",
+        "nWeeks": 12,
+        "contract": "v14-r2-source-robust-day-ahead",
+        "artifactSha256": "c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3"
+      },
+      "peak": {
+        "forecastMw": 44615.0,
+        "at": "2026-09-03T11:00:00+09:00",
+        "interval": {
+          "p95Lower": 40865.0,
+          "p95Upper": 48365.0
+        }
+      },
+      "observedActualHoursAtGeneration": 14,
+      "fallbackActualHoursAtGeneration": 0,
+      "lastObservedActualHour": 13
     }
   ]
 }
