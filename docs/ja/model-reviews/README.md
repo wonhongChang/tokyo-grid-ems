@@ -8,5 +8,6 @@
 
 ## レビュー一覧
 
+- [2026-09-03 v14-r2 運用モデルレビュー](model-review-2026-09-03.md) - 完了。v14-r2を`review_required`として暫定維持し、calibration整合性、contract別health、v15 Challenger実験を優先課題としました。
 - [2026-08-18 モデル運用レビュー](model-review-2026-08-18.md) - 完了。8月14〜18日のstage復元に基づきv11を暫定維持し、raw q50・朝guard・残差符号反転候補のreplayを即時開始します。
 - [2026-08-11 モデル運用レビュー](model-review-2026-08-11.md) - 完了。v11維持、v13昇格却下、replayを通過した非営業日朝guardのみ採用しました。
