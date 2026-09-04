@@ -65,9 +65,18 @@ class SameRegimeDayLevelCalibrator:
         # The previous finalized day is unavailable before the morning monthly
         # CSV refresh, so one publication-day gap is expected. A larger gap
         # means the rolling state is no longer trustworthy for serving.
+        serving_policy = config.get("serving_calibration", {}).get(
+            "same_regime_day_level",
+            {},
+        )
         self.max_state_lag_days = max(
             1,
-            int(calibration.get("max_state_lag_days", 2)),
+            int(
+                serving_policy.get(
+                    "max_state_lag_days",
+                    calibration.get("max_state_lag_days", 2),
+                )
+            ),
         )
         self.state_path = out_dir / str(
             calibration.get(

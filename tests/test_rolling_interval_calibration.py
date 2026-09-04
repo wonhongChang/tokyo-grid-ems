@@ -20,8 +20,9 @@ def _config(
     min_samples: int = 24,
     max_half_width: float = 3_000.0,
     width_scale: float = 1.0,
+    served_target: bool = False,
 ) -> dict:
-    return {
+    config = {
         "interval_calibration": {
             "min_p95_half_width_mw": 500.0,
             "max_p95_half_width_mw": max_half_width,
@@ -36,6 +37,16 @@ def _config(
             },
         }
     }
+    if served_target:
+        config["served_interval_calibration"] = {
+            "enabled": True,
+            "mode": "rolling_conformal_target_width",
+            "recent_all_regime_window_days": 10,
+            "recent_min_samples_per_band": 24,
+            "safety_scale": 1.05,
+            "max_p95_half_width_mw": 3_750.0,
+        }
+    return config
 
 
 def _write_operating_day(
@@ -170,6 +181,68 @@ def test_build_forecast_json_applies_floor_and_records_provenance(tmp_path):
     assert payload["intervalCalibration"]["source"] == (
         "finalized_actual_vs_served_forecast"
     )
+
+
+def test_served_target_replaces_saturated_width_with_drift_safe_profile(tmp_path):
+    finalized_dates = _history(tmp_path, date(2024, 1, 4), 28)
+    target = date(2024, 2, 1)  # Thursday
+
+    # The latest weekend does not belong to the target's business regime, but
+    # it does belong to the short drift window. Its larger error must protect
+    # the target width from a stale same-regime estimate.
+    for historical_date in (date(2024, 1, 27), date(2024, 1, 28)):
+        _write_operating_day(
+            tmp_path,
+            historical_date,
+            morning_error_mw=2_500.0,
+        )
+    _write_state(tmp_path, finalized_dates)
+
+    forecast = HourlyForecast(
+        ts=f"{target.isoformat()}T09:00:00+09:00",
+        forecast_mw=31_000.0,
+        p95_lower_mw=28_000.0,
+        p95_upper_mw=34_000.0,
+        p99_lower_mw=25_000.0,
+        p99_upper_mw=37_000.0,
+    )
+    payload = build_forecast_json(
+        target,
+        [forecast],
+        _config(served_target=True),
+        out_dir=tmp_path,
+    )
+
+    point = payload["series"][0]
+    target_profile = payload["intervalCalibration"]["servedTarget"]
+    assert target_profile["availability"] == "ok"
+    assert target_profile["recentWidthsMwByTimeBand"]["morning"] == 2_500.0
+    assert target_profile["targetWidthsMwByTimeBand"]["morning"] == 2_625.0
+    assert point["p95LowerMw"] == 28_375.0
+    assert point["p95UpperMw"] == 33_625.0
+
+
+def test_served_target_fails_closed_to_existing_floor(tmp_path):
+    _history(tmp_path, date(2024, 1, 4), 28)
+    target = date(2024, 2, 1)
+    config = _config(served_target=True)
+    config["served_interval_calibration"]["recent_min_samples_per_band"] = 1_000
+    forecast = HourlyForecast(
+        ts=f"{target.isoformat()}T09:00:00+09:00",
+        forecast_mw=31_000.0,
+        p95_lower_mw=30_500.0,
+        p95_upper_mw=31_500.0,
+        p99_lower_mw=30_000.0,
+        p99_upper_mw=32_000.0,
+    )
+
+    payload = build_forecast_json(target, [forecast], config, out_dir=tmp_path)
+
+    assert payload["intervalCalibration"]["servedTarget"]["availability"] == (
+        "insufficient_history"
+    )
+    assert payload["series"][0]["p95LowerMw"] == 29_200.0
+    assert payload["series"][0]["p95UpperMw"] == 32_800.0
 
 
 def test_rolling_floor_never_exceeds_operational_width_cap(tmp_path):

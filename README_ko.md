@@ -234,6 +234,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-09-04 rolling conformal target 예측 밴드](docs/ko/model-improvements/model-improvement-2026-09-04-rolling-conformal-target-interval.md)
 - [2026-09-04 운영 증거 무결성과 보정 상태 Fail-Closed](docs/ko/model-improvements/model-improvement-2026-09-04-operational-evidence-integrity.md)
 - [2026-08-21 v14-r2 출처 강건형 다음날 예측 Champion](docs/ko/model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
 - [2026-08-21 과거 v14-r1 Champion 보존형 staging](docs/ko/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)

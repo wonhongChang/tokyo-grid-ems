@@ -8,6 +8,7 @@
 
 ## 2026-09
 
+- [2026-09-04 rolling conformal target 예측 밴드](model-improvement-2026-09-04-rolling-conformal-target-interval.md)
 - [2026-09-04 운영 증거 무결성과 보정 상태 Fail-Closed](model-improvement-2026-09-04-operational-evidence-integrity.md)
 
 ## 2026-08

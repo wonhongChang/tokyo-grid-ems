@@ -199,3 +199,22 @@ def test_same_regime_calibration_fails_closed_for_stale_state(tmp_path):
     assert result.state_status == "stale_state"
     assert result.latest_residual_date == "2026-01-07"
     assert result.state_lag_days == 13
+
+
+def test_same_regime_calibration_uses_serving_freshness_policy(tmp_path):
+    _write_state(tmp_path)
+    config = _config()
+    config["serving_calibration"] = {
+        "same_regime_day_level": {"max_state_lag_days": 1},
+    }
+    calibrator = SameRegimeDayLevelCalibrator(config, tmp_path)
+
+    result = calibrator.apply(
+        _forecast(),
+        date(2026, 1, 9),
+        pd.DataFrame({"is_non_business_day": [0.0]}),
+    )
+
+    assert result.applied is False
+    assert result.state_status == "stale_state"
+    assert result.state_lag_days == 2

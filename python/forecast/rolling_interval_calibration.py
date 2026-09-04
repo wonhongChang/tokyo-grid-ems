@@ -204,9 +204,96 @@ def build_rolling_conformal_floor_profile(
             floor = min(floor, configured_max)
         floors_by_band[band] = round(float(floor), 1)
 
+    # The model artifact owns native quantile generation. This optional layer
+    # is a serving-only calibration policy, so it intentionally lives outside
+    # interval_calibration (and therefore outside the artifact fingerprint).
+    # It replaces saturated native widths only when both a same-regime profile
+    # and a short all-regime drift profile are available.
+    served_config = (config or {}).get("served_interval_calibration", {})
+    target_enabled = bool(served_config.get("enabled", False)) and str(
+        served_config.get("mode", "")
+    ) == "rolling_conformal_target_width"
+    target_widths_by_band: dict[str, float] = {}
+    recent_widths_by_band: dict[str, float] = {}
+    recent_sample_hours_by_band: dict[str, int] = {}
+    recent_dates: list[date] = []
+    target_availability = "disabled"
+    target_safety_scale = 1.0
+    target_max_half_width = None
+
+    if target_enabled:
+        recent_window_days = max(
+            1,
+            int(served_config.get("recent_all_regime_window_days", 10)),
+        )
+        recent_min_samples = max(
+            1,
+            int(served_config.get("recent_min_samples_per_band", min_samples)),
+        )
+        target_safety_scale = _finite_float(
+            served_config.get("safety_scale", 1.05)
+        ) or 1.0
+        if target_safety_scale <= 0.0:
+            target_safety_scale = 1.0
+        target_max_half_width = _finite_float(
+            served_config.get("max_p95_half_width_mw")
+        )
+        if target_max_half_width is not None and target_max_half_width <= 0.0:
+            target_max_half_width = None
+        if target_max_half_width is None and configured_max is not None:
+            target_max_half_width = configured_max * width_scale
+
+        recent_dates = eligible_dates[-recent_window_days:]
+        recent_rows_by_band: dict[str, list[float]] = {
+            name: [] for name, _, _ in _TIME_BANDS
+        }
+        for historical_date in recent_dates:
+            actual_by_hour = _actual_by_hour(
+                _read_json(
+                    out_dir / "actual" / f"{historical_date.isoformat()}.json"
+                )
+            )
+            forecast_by_hour = _forecast_by_hour(
+                _read_json(
+                    out_dir / "forecast" / f"{historical_date.isoformat()}.json"
+                )
+            )
+            if len(actual_by_hour) != 24 or len(forecast_by_hour) != 24:
+                continue
+            for hour in range(24):
+                band = interval_time_band(hour)
+                if band is None:
+                    continue
+                recent_rows_by_band[band].append(
+                    abs(forecast_by_hour[hour] - actual_by_hour[hour])
+                )
+
+        for band, residuals in recent_rows_by_band.items():
+            recent_sample_hours_by_band[band] = len(residuals)
+            if len(residuals) < recent_min_samples:
+                continue
+            width = finite_sample_upper_quantile(residuals, target_coverage)
+            if width is not None:
+                recent_widths_by_band[band] = round(float(width), 1)
+
+        for band, same_regime_width in floors_by_band.items():
+            recent_width = recent_widths_by_band.get(band)
+            if recent_width is None:
+                continue
+            target_width = max(same_regime_width, recent_width, configured_min)
+            target_width *= target_safety_scale
+            if target_max_half_width is not None:
+                target_width = min(target_width, target_max_half_width)
+            target_widths_by_band[band] = round(float(target_width), 1)
+        target_availability = (
+            "ok"
+            if len(target_widths_by_band) == len(_TIME_BANDS)
+            else "insufficient_history"
+        )
+
     availability = "ok" if floors_by_band else "insufficient_history"
     return {
-        "schemaVersion": "1.1.0",
+        "schemaVersion": "1.2.0",
         "availability": availability,
         "method": "rolling_conformal_minimum_floor",
         "source": "finalized_actual_vs_served_forecast",
@@ -219,6 +306,27 @@ def build_rolling_conformal_floor_profile(
         "contributingDates": len(contributing_dates),
         "sampleHoursByTimeBand": sample_hours_by_band,
         "floorsMwByTimeBand": floors_by_band,
+        "servedTarget": {
+            "availability": target_availability,
+            "method": "rolling_conformal_target_width",
+            "application": "replace_symmetric_p95_half_width",
+            "recentAllRegimeWindowDays": len(recent_dates),
+            "recentAllRegimeHistoryStart": (
+                recent_dates[0].isoformat() if recent_dates else None
+            ),
+            "recentAllRegimeHistoryEnd": (
+                recent_dates[-1].isoformat() if recent_dates else None
+            ),
+            "recentSampleHoursByTimeBand": recent_sample_hours_by_band,
+            "recentWidthsMwByTimeBand": recent_widths_by_band,
+            "safetyScale": round(target_safety_scale, 4),
+            "maxP95HalfWidthMw": (
+                round(target_max_half_width, 1)
+                if target_max_half_width is not None
+                else None
+            ),
+            "targetWidthsMwByTimeBand": target_widths_by_band,
+        },
         "preScaleMaxP95HalfWidthMw": (
             round(configured_max, 1) if configured_max is not None else None
         ),

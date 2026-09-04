@@ -47,7 +47,7 @@
 | `q50_lag_unavailable` | 0.50 | 미확정 수요 lag 피처를 제외한 D-1 추정 |
 | `q50_lag_unavailable_non_business` | 0.50 | 주말·공휴일 D-1 specialist |
 
-일반 D0 추론은 절대 q50, lag-24 잔차, 비영업일 구조를 유지합니다. source view는 500MW trust region으로 제한됩니다. D-1 행에서 `lag_24h`나 최근 영업 타입 수요가 없으면 LightGBM 결측 분기에 의존하지 않고 축소된 정보 집합의 전용 모델을 사용합니다. 비영업일 specialist는 가중치 1.0입니다. artifact-scoped same-regime 보정은 최근 확정 3일 잔차의 25%를 +/-1,000MW 안에서 반영합니다. 최종 p95 half-width는 1.25 coverage scale과 3,750MW 최종 상한을 사용합니다.
+일반 D0 추론은 절대 q50, lag-24 잔차, 비영업일 구조를 유지합니다. source view는 500MW trust region으로 제한됩니다. D-1 행에서 `lag_24h`나 최근 영업 타입 수요가 없으면 LightGBM 결측 분기에 의존하지 않고 축소된 정보 집합의 전용 모델을 사용합니다. 비영업일 specialist는 가중치 1.0입니다. artifact-scoped same-regime 보정은 최근 확정 3일 잔차의 25%를 +/-1,000MW 안에서 반영합니다. 최종 p95는 같은 영업 레짐 28일과 최근 전체 레짐 10일의 시간대별 served residual q95 중 큰 값에 1.05 안전계수를 적용합니다. 이 target을 만들 수 없을 때만 native quantile에 1.25 coverage scale과 3,750MW 상한을 적용한 기존 밴드로 fail closed합니다.
 
 ---
 
@@ -293,6 +293,7 @@ Raw LightGBM Forecast
 | forecast | `q50_feature_view_ensemble` | 활성, 습도 축소 share 0.50, 비영업일 full share 0.40, 500MW cap | 출처가 불안정한 과거 필드 의존도를 줄이되 병렬 view가 중심선을 다시 쓰지 못하게 합니다. 고정 시점 최대오차가 개선될 때만 cap 상향을 검토합니다. |
 | forecast | `partial_lag_q50_fallback.lag_unavailable_models_enabled` | true, 비영업일 weight 1.0 | 수요 lag가 없는 D-1 행을 같은 축소 정보 집합으로 학습한 모델에 전달합니다. 끄면 구조적으로 약한 v11 결측 분기로 돌아갑니다. |
 | forecast | `same_regime_day_level_calibration` | 3일, shrinkage 0.25, 1000MW cap | 확정된 같은 레짐 일자의 지속적인 일간 bias만 보정합니다. 기간을 늘리면 안정적이고, shrinkage를 높이면 빠르지만 레짐 전환 지연 위험이 커집니다. |
+| serving calibration | `same_regime_day_level.max_state_lag_days` | 2일 | 최신 확정 잔차가 이보다 오래되면 same-regime 보정을 fail closed합니다. 이 값은 학습 artifact가 아닌 운영 freshness 정책입니다. |
 | promotion | `scheduled_challenger_training_enabled`, `retrain_weekday` | false, 0 (월요일) | 일반 trainer가 보존된 시간별 booster를 교체하지 못하도록 v14 안정화 중 정기 후보 학습을 잠급니다. 명시적 candidate build만 허용하며, 동일한 Champion 보존형 검증 경로가 마련된 뒤에만 정기 학습을 다시 켭니다. |
 | promotion | `validation_window_days` | 28 | 평가할 때마다 최근 확정 28일을 사용합니다. 28일마다 한 번 재학습한다는 뜻이 아닙니다. |
 | promotion | 절대 품질 상한 | MAE 1000, WAPE 3.0%, shape 750, 최대 오차 6500 MW | 약한 baseline만 이겼지만 운영 품질이 나쁜 모델을 거부합니다. 구간별 상한은 MAE 1500, shape 1100 MW입니다. |
@@ -310,6 +311,7 @@ Raw LightGBM Forecast
 | interval | `max_p95_half_width_mw`, `p95_half_width_scale` | 3000, 1.25 | sanity 보정 half-width를 먼저 제한한 뒤 coverage scale을 적용하며 최종 상한은 3,750MW입니다. scale을 낮추면 coverage가 줄고, 높이면 중심선 오차를 넓은 밴드로 가릴 수 있습니다. |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | 상단/하단 tail 비대칭을 제한합니다. 낮추면 밴드가 더 대칭적이고, 높이면 모델이 추정한 skew를 더 보존합니다. |
 | interval | `rolling_conformal_floor` | 활성, 28일, 95%, 24표본 | 같은 영업 레짐·시간대의 확정 실측 대비 당시 공개 q50 오차를 p95 최소 반폭으로 사용합니다. 기존 밴드를 좁히지 않고 3,000MW 상한도 넘지 않습니다. window를 줄이면 반응은 빨라지지만 noise가 커지고, 최소 표본을 올리면 fail-closed 빈도가 늘어납니다. |
+| served interval | `served_interval_calibration` | 활성, 최근 전체 레짐 10일, safety 1.05, 상한 3,750MW | 같은 레짐 floor와 최근 전체 레짐 q95 중 큰 값을 최종 대칭 p95 target으로 사용합니다. safety를 낮추면 폭은 줄지만 급격한 레짐 전환의 미포함 위험이 커지고, 최근 window를 줄이면 반응성 대신 변동성이 커집니다. 모델 artifact fingerprint에는 포함하지 않는 서빙 후처리 설정입니다. |
 | intraday | `lookback_hours` | 3 | 짧게 잡으면 최근 변화에 민감하고, 길게 잡으면 안정적이지만 반응이 늦습니다. |
 | intraday | `decay_per_hour` | 0.92 | 높이면 residual 영향이 먼 미래까지 남고, 낮추면 근거리 보정 중심이 됩니다. shape 오염이 있으면 낮추는 쪽을 검토합니다. |
 | intraday | `max_abs_adjustment_mw` | 1200 | 당일 residual 보정의 하드 상한입니다. 올리면 큰 오차를 빠르게 따라가지만 폭주 위험이 커집니다. |

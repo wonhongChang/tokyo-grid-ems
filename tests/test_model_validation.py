@@ -233,6 +233,13 @@ def test_config_fingerprint_ignores_non_artifact_operating_settings():
         **base,
         "forecast_snapshots": {"retention_days": 120},
         "model_promotion": {"validation_window_days": 84},
+        "served_interval_calibration": {
+            "enabled": True,
+            "mode": "rolling_conformal_target_width",
+        },
+        "serving_calibration": {
+            "same_regime_day_level": {"max_state_lag_days": 2},
+        },
     }
 
     assert config_fingerprint(base) == config_fingerprint(changed)

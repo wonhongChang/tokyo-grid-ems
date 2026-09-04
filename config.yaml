@@ -33,7 +33,6 @@ forecast:
     history_window_days: 3
     shrinkage: 0.25
     max_abs_adjustment_mw: 1000
-    max_state_lag_days: 2   # allow the normal morning delay for finalized TEPCO actuals
     state_path: metrics/same_regime_day_level_calibration.json
   daily_level_model:
     enabled: false # v14-r1's uniform whole-day shift was rejected by fixed-origin replay
@@ -125,6 +124,23 @@ interval_calibration:
     window_days: 28            # use only finalized days before the target date
     target_coverage: 0.95      # finite-sample p95 absolute-error quantile
     min_samples_per_band: 24   # fail closed when a regime/time-band has too little evidence
+
+# Serving-only interval policy. This does not alter the trained LightGBM
+# artifact: it converts finalized served residuals into a calibrated symmetric
+# p95 target, while a short all-regime window protects against regime drift.
+served_interval_calibration:
+  enabled: true
+  mode: rolling_conformal_target_width
+  recent_all_regime_window_days: 10
+  recent_min_samples_per_band: 24
+  safety_scale: 1.05
+  max_p95_half_width_mw: 3750
+
+# Serving-state freshness is operational policy, not part of the trained
+# LightGBM artifact contract.
+serving_calibration:
+  same_regime_day_level:
+    max_state_lag_days: 2   # allow the normal morning delay for finalized TEPCO actuals
 
 intraday_correction:
   enabled: true

@@ -437,6 +437,19 @@ def _normalize_forecast_bands(
         and interval_floor_profile.get("availability") == "ok"
         else {}
     )
+    served_target = (
+        interval_floor_profile.get("servedTarget", {})
+        if interval_floor_profile
+        and interval_floor_profile.get("availability") == "ok"
+        else {}
+    )
+    target_by_band = (
+        served_target.get("targetWidthsMwByTimeBand", {})
+        if served_target.get("availability") == "ok"
+        and served_target.get("application")
+        == "replace_symmetric_p95_half_width"
+        else {}
+    )
     for forecast in fc_list:
         point_forecast_mw = round(float(forecast.forecast_mw), 1)
         ordered_p95_lower = round(
@@ -452,13 +465,17 @@ def _normalize_forecast_bands(
         except (TypeError, ValueError):
             forecast_hour = -1
         time_band = interval_time_band(forecast_hour)
-        minimum_half_width = floor_by_band.get(time_band)
-        half_lo, half_hi = calibrate_p95_half_widths(
-            point_forecast_mw - ordered_p95_lower,
-            ordered_p95_upper - point_forecast_mw,
-            config,
-            minimum_half_width_mw=minimum_half_width,
-        )
+        target_half_width = target_by_band.get(time_band)
+        if target_half_width is not None:
+            half_lo = half_hi = max(0.0, float(target_half_width))
+        else:
+            minimum_half_width = floor_by_band.get(time_band)
+            half_lo, half_hi = calibrate_p95_half_widths(
+                point_forecast_mw - ordered_p95_lower,
+                ordered_p95_upper - point_forecast_mw,
+                config,
+                minimum_half_width_mw=minimum_half_width,
+            )
         p95_lower = round(point_forecast_mw - half_lo, 1)
         p95_upper = round(point_forecast_mw + half_hi, 1)
         p99_lower = round(p95_lower - half_lo, 1)
@@ -1145,9 +1162,18 @@ def _champion_health(out_dir: Path, champion, config: dict) -> dict:
         {},
     )
     if calibration_config.get("enabled", False):
+        serving_policy = config.get("serving_calibration", {}).get(
+            "same_regime_day_level",
+            {},
+        )
         max_state_lag_days = max(
             1,
-            int(calibration_config.get("max_state_lag_days", 2)),
+            int(
+                serving_policy.get(
+                    "max_state_lag_days",
+                    calibration_config.get("max_state_lag_days", 2),
+                )
+            ),
         )
         state_path = out_dir / str(
             calibration_config.get(
