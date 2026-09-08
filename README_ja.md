@@ -211,6 +211,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-09-09 リード別区間・D-1補正範囲・終段ガード追跡](docs/ja/model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)
 - [2026-09-04 rolling conformal target予測区間](docs/ja/model-improvements/model-improvement-2026-09-04-rolling-conformal-target-interval.md)
 - [2026-09-04 運用証跡の整合性と補正状態のFail-Closed化](docs/ja/model-improvements/model-improvement-2026-09-04-operational-evidence-integrity.md)
 - [2026-08-21 v14-r2 データソース耐性型D-1予測 Champion](docs/ja/model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)

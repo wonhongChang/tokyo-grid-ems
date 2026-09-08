@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 
 _TEPCO_FORECAST_FALLBACK_SOURCE = "tepco_forecast_fallback"
@@ -16,6 +18,142 @@ _TIME_BANDS: tuple[tuple[str, int, int], ...] = (
     ("late_afternoon", 16, 18),
     ("evening", 19, 23),
 )
+_JST = ZoneInfo("Asia/Tokyo")
+_LEAD_BANDS = (("0_2h", 0, 2), ("2_4h", 2, 4), ("4_8h", 4, 8),
+               ("8_24h", 8, 24), ("24_48h", 24, 48))
+
+
+def serving_policy_fingerprint(config: dict) -> str:
+    """Identify q50 serving semantics independently of interval width settings."""
+    payload = {key: config.get(key, {}) for key in (
+        "forecast", "weather_features", "weather_forecast_bias_correction",
+        "adjustment", "intraday_correction", "serving_calibration",
+    )}
+    payload["servingSemanticsVersion"] = 1
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=True).encode()).hexdigest()
+
+
+def forecast_lead_band(hours: float) -> str | None:
+    return next((name for name, low, high in _LEAD_BANDS if low < hours <= high), None)
+
+
+def _aware_timestamp(value: Any) -> datetime | None:
+    try:
+        timestamp = datetime.fromisoformat(str(value))
+        return timestamp.astimezone(_JST) if timestamp.tzinfo is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def build_lead_conformal_profile(
+    out_dir: Path, target_date: date, config: dict,
+    issued_at: str, artifact_hash: str | None,
+) -> dict:
+    """Calibrate only with compatible forecasts actually issued before targets.
+
+    Finalized records lack historical publication timestamps. Exclude the
+    immediately preceding day as well as the issue day to avoid assuming its
+    morning CSV was available in an earlier replay run.
+    """
+    cfg = config.get("served_interval_calibration", {})
+    interval = config.get("interval_calibration", {})
+    issued = _aware_timestamp(issued_at)
+    policy = serving_policy_fingerprint(config)
+    profile = {
+        "schemaVersion": "2.0.0", "availability": "insufficient_history",
+        "method": "lead_aware_conformal_target_width",
+        "source": "finalized_actual_vs_issued_forecast",
+        "issuedAt": issued_at, "artifactSha256": artifact_hash,
+        "servingPolicyFingerprint": policy,
+        "floorsMwByTimeBand": {},
+        "servedTarget": {"availability": "insufficient_history",
+            "application": "replace_symmetric_p95_half_width",
+            "targetWidthsMwByHour": {}, "detailsByHour": {}},
+    }
+    if issued is None or not artifact_hash:
+        profile["availability"] = "missing_issue_or_artifact"
+        return profile
+    coverage = float(interval.get("rolling_conformal_floor", {}).get("target_coverage", .95))
+    min_samples = max(1, int(cfg.get("minimum_samples_per_lead_band", 24)))
+    min_days = max(2, int(cfg.get("minimum_history_days", 4)))
+    window = max(min_days, int(cfg.get("window_days", 28)))
+    safety = max(1.0, _finite_float(cfg.get("safety_scale")) or 1.05)
+    minimum = max(0.0, _finite_float(interval.get("min_p95_half_width_mw")) or 500.0)
+    cap = _finite_float(cfg.get("max_p95_half_width_mw"))
+    eligible = _finalized_dates(out_dir, min(target_date, issued.date() - timedelta(days=1)))
+    eligible = [day for day in eligible if (issued.date() - day).days <= window]
+    selected = {}
+    excluded = {"artifact": 0, "policy": 0, "timestamp": 0, "incomplete_actual": 0}
+    for day in eligible:
+        actuals = _actual_by_hour(_read_json(out_dir / "actual" / f"{day}.json"), day)
+        if len(actuals) != 24:
+            excluded["incomplete_actual"] += 1
+            continue
+        paths = list((out_dir / "forecast_snapshots" / str(day)).glob("*.json"))
+        paths += list((out_dir / "forecast_origins" / str(day)).glob("*.json"))
+        for path in sorted(paths):
+            snapshot = _read_json(path) or {}
+            if not snapshot.get("series"):
+                continue
+            if (snapshot.get("model") or {}).get("artifactSha256") != artifact_hash:
+                excluded["artifact"] += 1
+                continue
+            if snapshot.get("servingPolicyFingerprint") != policy:
+                excluded["policy"] += 1
+                continue
+            captured = _aware_timestamp(snapshot.get("generatedAt"))
+            if captured is None or captured >= issued:
+                excluded["timestamp"] += 1
+                continue
+            for row in snapshot["series"]:
+                ts = _aware_timestamp(row.get("ts"))
+                value = _finite_float(row.get("forecastMw"))
+                if ts is None or ts.date() != day or value is None:
+                    continue
+                lead = forecast_lead_band((ts - captured).total_seconds() / 3600)
+                if lead is None:
+                    continue
+                key = (day, ts.hour, lead)
+                if key not in selected or captured > selected[key][0]:
+                    selected[key] = (captured, abs(value - actuals[ts.hour]))
+    target_non_business = _is_non_business_day(target_date)
+    widths = profile["servedTarget"]["targetWidthsMwByHour"]
+    details = profile["servedTarget"]["detailsByHour"]
+    for hour in range(24):
+        ts = datetime.combine(target_date, datetime.min.time(), _JST).replace(hour=hour)
+        lead = forecast_lead_band((ts - issued).total_seconds() / 3600)
+        band = interval_time_band(hour)
+        groups = {}
+        for scope in ("same_regime", "all_regime"):
+            values = [(day, value[1]) for (day, h, bucket), value in selected.items()
+                      if bucket == lead and interval_time_band(h) == band
+                      and (scope == "all_regime" or _is_non_business_day(day) == target_non_business)]
+            days = {day for day, _ in values}
+            q = finite_sample_upper_quantile((error for _, error in values), coverage)
+            groups[scope] = {"samples": len(values), "days": len(days),
+                             "quantileMw": round(q, 1) if q is not None else None}
+        valid = [g["quantileMw"] for g in groups.values()
+                 if g["samples"] >= min_samples and g["days"] >= min_days and g["quantileMw"] is not None]
+        detail = {"leadBand": lead, "timeBand": band, "groups": groups,
+                  "application": "native_fallback"}
+        if lead is not None and valid:
+            requested = max(minimum, max(valid) * safety)
+            # A safety cap cannot be advertised as a conformal target when it
+            # clips the required quantile. Keep native width and expose risk.
+            if cap is not None and requested > cap:
+                detail.update(application="native_fallback_cap_exceeded", requiredHalfWidthMw=round(requested, 1))
+            else:
+                widths[str(hour)] = round(requested, 1)
+                detail["application"] = "lead_target"
+        details[str(hour)] = detail
+    target_status = "ok" if widths else "insufficient_history"
+    profile.update(availability=target_status, targetCoveragePct=coverage * 100,
+                   minimumSamples=min_samples, minimumHistoryDays=min_days,
+                   historyCutoffExclusive=min(target_date, issued.date() - timedelta(days=1)).isoformat(),
+                   excludedSnapshots=excluded, selectedSamples=len(selected))
+    profile["servedTarget"]["availability"] = target_status
+    return profile
 
 
 def _read_json(path: Path) -> dict | None:
@@ -73,7 +211,7 @@ def finite_sample_upper_quantile(
     return clean_values[rank - 1]
 
 
-def _actual_by_hour(payload: dict | None) -> dict[int, float]:
+def _actual_by_hour(payload: dict | None, target_date: date | None = None) -> dict[int, float]:
     result: dict[int, float] = {}
     for point in (payload or {}).get("series", []):
         if point.get("actualSource") == _TEPCO_FORECAST_FALLBACK_SOURCE:
@@ -82,10 +220,16 @@ def _actual_by_hour(payload: dict | None) -> dict[int, float]:
         timestamp = point.get("ts")
         if actual is None or not timestamp:
             continue
-        try:
-            hour = int(str(timestamp)[11:13])
-        except (TypeError, ValueError):
-            continue
+        if target_date is not None:
+            parsed = _aware_timestamp(timestamp)
+            if parsed is None or parsed.date() != target_date:
+                continue
+            hour = parsed.hour
+        else:
+            try:
+                hour = int(str(timestamp)[11:13])
+            except (TypeError, ValueError):
+                continue
         if 0 <= hour <= 23:
             result[hour] = actual
     return result

@@ -97,6 +97,9 @@ def test_intraday_correction_waits_for_minimum_observed_hours():
 
     assert result.applied is False
     assert result.forecasts == forecasts
+    trace = result.metadata()["terminalAdjustmentsByHour"]
+    assert len(trace) == 24
+    assert all(row["totalAdjustmentMw"] == 0 for row in trace)
 
 
 def test_intraday_correction_ignores_tepco_forecast_fallback_for_residuals():
@@ -5030,6 +5033,12 @@ def test_intraday_shape_guard_caps_afternoon_drop():
     assert result.forecasts[14].forecast_mw == pytest.approx(35_000.0)
     assert result.forecasts[15].forecast_mw == pytest.approx(34_000.0)
     assert result.forecasts[16].forecast_mw == pytest.approx(33_000.0)
+    trace = result.metadata()["terminalAdjustmentsByHour"]
+    assert any(row["shapeGuardDeltaMw"] > 0 for row in trace)
+    for row in trace:
+        total = (row["preTerminalAdjustmentMw"] + row["shapeGuardDeltaMw"]
+                 + row["rampGuardDeltaMw"])
+        assert total == pytest.approx(row["totalAdjustmentMw"], abs=.2)
 
 
 def test_intraday_shape_guard_waits_for_reference_hour():
@@ -5409,6 +5418,10 @@ def test_intraday_ramp_guard_still_caps_extreme_observed_drop():
     assert result.ramp_guard_applied is True
     assert result.observed_drop_relaxation_active is True
     assert result.forecasts[20].forecast_mw == pytest.approx(26_980.0)
+    trace = {row["hour"]: row for row in result.metadata()["terminalAdjustmentsByHour"]}
+    assert trace[20]["rampGuardDeltaMw"] == 1980.0
+    for row in trace.values():
+        assert row["preCalibrationMw"] + row["preTerminalAdjustmentMw"] + row["shapeGuardDeltaMw"] + row["rampGuardDeltaMw"] == pytest.approx(row["postCalibrationMw"], abs=.2)
 
 
 def test_intraday_ramp_guard_relaxes_drop_cap_when_target_shape_supports_decline():

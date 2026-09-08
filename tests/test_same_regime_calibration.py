@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
+import pytest
 
 from python.forecast.baseline import HourlyForecast
 from python.forecast.same_regime_calibration import SameRegimeDayLevelCalibrator
@@ -60,6 +61,11 @@ def _write_state(tmp_path, *, artifact_hash: str = "candidate") -> None:
         }),
         encoding="utf-8",
     )
+    state = json.loads(path.read_text(encoding="utf-8"))
+    for entry in state["entries"]:
+        entry["source"] = "immutable_day_ahead_origin"
+        entry["originGeneratedAt"] = f"{date.fromisoformat(entry['date']) - timedelta(days=1)}T00:20:00+09:00"
+    path.write_text(json.dumps(state), encoding="utf-8")
 
 
 def test_same_regime_calibration_uses_three_day_median(tmp_path):
@@ -113,6 +119,9 @@ def test_same_regime_calibration_rejects_another_artifact_state(tmp_path):
 
 
 def test_same_regime_calibration_refreshes_from_canonical_origin_series(tmp_path):
+    (tmp_path / ".etl_state.json").write_text(
+        json.dumps({"okDates": ["2026-01-07"]}), encoding="utf-8",
+    )
     (tmp_path / ".lgbm_model_meta.json").write_text(
         json.dumps({"artifactSha256": "candidate"}),
         encoding="utf-8",
@@ -218,3 +227,98 @@ def test_same_regime_calibration_uses_serving_freshness_policy(tmp_path):
     assert result.applied is False
     assert result.state_status == "stale_state"
     assert result.state_lag_days == 2
+
+
+def _replace_entries(tmp_path, values):
+    path = tmp_path / "metrics/day-level.json"
+    state = json.loads(path.read_text(encoding="utf-8"))
+    state["entries"] = [{
+        "date": day, "isNonBusinessDay": non_business, "meanResidualMw": residual,
+        "originGeneratedAt": f"{date.fromisoformat(day) - timedelta(days=1)}T00:20:00+09:00",
+        "source": "immutable_day_ahead_origin",
+    } for day, non_business, residual in values]
+    path.write_text(json.dumps(state), encoding="utf-8")
+
+
+def test_fresh_weekend_does_not_validate_old_business_cohort(tmp_path):
+    _write_state(tmp_path)
+    _replace_entries(tmp_path, [
+        ("2026-08-19", False, 400), ("2026-08-20", False, 800),
+        ("2026-08-28", False, 1200), ("2026-09-06", True, -1000),
+    ])
+    result = SameRegimeDayLevelCalibrator(_config(), tmp_path).apply(
+        _forecast(), date(2026, 9, 7), pd.DataFrame({"is_non_business_day": [0]}),
+    )
+    assert not result.applied
+    assert result.state_status == "stale_same_regime_history"
+    assert result.expected_history_dates == ("2026-09-02", "2026-09-03", "2026-09-04")
+
+
+def test_recent_weekend_cohort_survives_normal_weekday_gap(tmp_path):
+    _write_state(tmp_path)
+    _replace_entries(tmp_path, [
+        ("2026-08-23", True, 400), ("2026-08-29", True, 800),
+        ("2026-08-30", True, 1200), ("2026-09-04", False, -1000),
+    ])
+    result = SameRegimeDayLevelCalibrator(_config(), tmp_path).apply(
+        _forecast(), date(2026, 9, 5), pd.DataFrame({"is_non_business_day": [1]}),
+    )
+    assert result.applied
+    assert result.adjustment_mw == 200
+    assert result.history_dates == result.expected_history_dates
+
+
+def test_d0_seed_is_not_mixed_with_d1_history(tmp_path):
+    _write_state(tmp_path)
+    path = tmp_path / "metrics/day-level.json"
+    state = json.loads(path.read_text(encoding="utf-8"))
+    state["entries"][0]["source"] = "fixed_origin_holdout_seed"
+    path.write_text(json.dumps(state), encoding="utf-8")
+    result = SameRegimeDayLevelCalibrator(_config(), tmp_path).apply(
+        _forecast(), date(2026, 1, 8), pd.DataFrame({"is_non_business_day": [0]}),
+    )
+    assert not result.applied
+    assert result.rejected_origin_entries == 1
+    assert len(result.history_dates) == 2
+
+
+@pytest.mark.parametrize("timestamp,valid", [
+    ("2026-01-06T15:30:00+00:00", False),
+    ("2026-01-06T14:30:00+00:00", True),
+    ("2026-01-06T20:00:00", False),
+    ("2026-01-05T20:00:00+09:00", False),
+])
+def test_origin_date_uses_jst_and_exact_d1(timestamp, valid):
+    assert SameRegimeDayLevelCalibrator._is_day_ahead_origin(timestamp, date(2026, 1, 7)) is valid
+
+
+def test_complete_actuals_without_etl_finalization_are_not_training_truth(tmp_path):
+    _write_state(tmp_path)
+    path = tmp_path / "actual/2026-01-07.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"series": [
+        {"ts": point.ts, "actualMw": 31000} for point in _forecast()
+    ]}), encoding="utf-8")
+    assert SameRegimeDayLevelCalibrator(_config(), tmp_path)._final_actuals(date(2026, 1, 7)) is None
+
+
+def test_d1_residual_prior_does_not_adjust_same_day_forecast(tmp_path):
+    _write_state(tmp_path)
+    _replace_entries(tmp_path, [
+        ("2026-01-02", False, 400), ("2026-01-05", False, 800),
+        ("2026-01-06", False, 1200), ("2026-01-07", False, -9000),
+    ])
+    cfg = _config()
+    cfg["serving_calibration"] = {"same_regime_day_level": {"application": "day_ahead_only"}}
+    calibrator = SameRegimeDayLevelCalibrator(cfg, tmp_path)
+    forecasts = _forecast()
+    features = pd.DataFrame({"is_non_business_day": [0]})
+    d0 = calibrator.apply(forecasts, date(2026, 1, 8), features,
+                          issued_at="2026-01-08T08:30:00+09:00")
+    assert d0.state_status == "origin_horizon_mismatch"
+    assert d0.forecasts == forecasts
+    d1 = calibrator.apply(forecasts, date(2026, 1, 8), features,
+                          issued_at="2026-01-07T21:00:00+09:00")
+    assert d1.applied
+    assert d1.history_dates == ("2026-01-02", "2026-01-05", "2026-01-06")
+    assert d1.adjustment_mw == 200

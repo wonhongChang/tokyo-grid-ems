@@ -126,13 +126,14 @@ interval_calibration:
     min_samples_per_band: 24   # fail closed when a regime/time-band has too little evidence
 
 # Serving-only interval policy. This does not alter the trained LightGBM
-# artifact: it converts finalized served residuals into a calibrated symmetric
-# p95 target, while a short all-regime window protects against regime drift.
+# artifact. Only compatible, pre-target issuance snapshots can calibrate a
+# lead-specific target. Insufficient evidence retains the native interval.
 served_interval_calibration:
   enabled: true
-  mode: rolling_conformal_target_width
-  recent_all_regime_window_days: 10
-  recent_min_samples_per_band: 24
+  mode: lead_aware_conformal_target_width
+  window_days: 28
+  minimum_samples_per_lead_band: 24
+  minimum_history_days: 4
   safety_scale: 1.05
   max_p95_half_width_mw: 3750
 
@@ -141,6 +142,8 @@ served_interval_calibration:
 serving_calibration:
   same_regime_day_level:
     max_state_lag_days: 2   # allow the normal morning delay for finalized TEPCO actuals
+    require_day_ahead_origin: true # do not mix D0 seed errors with immutable D-1 origins
+    application: day_ahead_only # D-1 residuals must not shift an updated D0 forecast
 
 intraday_correction:
   enabled: true

@@ -47,7 +47,11 @@ The production v14-r2 artifact contains three absolute-demand quantile regressor
 | `q50_lag_unavailable` | 0.50 | D-1 estimate without unfinalized demand-lag features |
 | `q50_lag_unavailable_non_business` | 0.50 | weekend/holiday D-1 specialist |
 
-Normal D0 inference retains the absolute q50, lag-24 residual, and non-business structure. Source views are constrained to a 500MW trust region. When D-1 rows lack `lag_24h` or last-business-type demand, the lag-unavailable models use a reduced information set instead of relying on LightGBM missing-value branches. The non-business specialist receives full weight. Artifact-scoped same-regime calibration then applies 25% of the recent three-finalized-day residual with a +/-1,000MW cap. Final p95 uses the larger time-band served-residual q95 from a 28-day same-business-regime profile and a ten-day all-regime drift profile, followed by a 1.05 safety factor. When that target is unavailable, serving fails closed to the native interval calibrated with the 1.25 coverage scale and 3,750MW cap.
+Normal D0 inference retains the absolute q50, lag-24 residual, and non-business structure. Source views are constrained to a 500MW trust region. When D-1 rows lack `lag_24h` or last-business-type demand, the lag-unavailable models use a reduced information set instead of relying on LightGBM missing-value branches. The non-business specialist receives full weight.
+
+Same-regime calibration applies only to forecasts issued on the preceding JST date (D-1): 25% of the median daily residual from three recent finalized same-regime days, capped at +/-1,000MW. Evidence must have immutable D-1 origins. D0 seeds and stale matching cohorts are excluded; another regime's fresh entry cannot validate them. D0 retains ordinary intraday correction without this D-1 prior.
+
+Final p95 targets use compatible pre-target issuance snapshots, grouped by lead bucket and target time band within 28 calendar days. Each eligible group needs 24 samples across four dates. The larger eligible same-regime/all-regime error q95 receives a 1.05 safety factor. Missing evidence, incompatible artifacts/policies, or targets exceeding 3,750MW retain native normalized/capped intervals. Old snapshots without policy fingerprints cannot initialize the new profile, so rollout can initially widen bands. Neither fallback nor the p95 label guarantees measured 95% coverage. See the [serving calibration contract update](model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md).
 
 ---
 
@@ -236,6 +240,7 @@ Post-processing is a sequential pipeline. Each stage consumes the previous stage
 
 ```text
 Raw LightGBM Forecast
+  -> Same-Regime D-1 Level Calibration (D-1 only)
   -> Analogous Day Adjustment
   -> Post-holiday / Timeband Guard
   -> Midday Transition Guard
@@ -244,7 +249,7 @@ Raw LightGBM Forecast
   -> Forecast Snapshots / Operational Calibration / Reports
 ```
 
-The current `run_batch.py` stage names are `raw_lgbm`, `analog_adjusted`, `post_holiday_guarded`, `midday_guarded`, `localized_shape_guarded`, and `pre_calibration`. Intraday residual correction runs after `pre_calibration` and applies same-day actual feedback.
+The current `run_batch.py` stage names are `raw_lgbm`, `same_regime_level_calibrated`, `analog_adjusted`, `post_holiday_guarded`, `midday_guarded`, `localized_shape_guarded`, and `pre_calibration`. Intraday correction follows `pre_calibration`. Its terminal shape/ramp guards report separate `shapeGuardDeltaMw` and `rampGuardDeltaMw` values, which must not be attributed to residual carryover alone.
 
 | Layer | Implementation | Purpose |
 |---|---|---|
@@ -280,7 +285,8 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | forecast | `q50_feature_view_ensemble` | enabled, 0.50 humidity-reduced share, 0.40 non-business full share, 500MW cap | Reduces dependence on source-fragile history without allowing a feature view to rewrite the center line. Raise the cap only after fixed-origin max-error evidence improves. |
 | forecast | `partial_lag_q50_fallback.lag_unavailable_models_enabled` | true, non-business weight 1.0 | Routes D-1 rows with unavailable demand lags to models trained on the same reduced information set. Disabling it restores the structurally weak v11 missing-value path. |
 | forecast | `same_regime_day_level_calibration` | 3 days, 0.25 shrinkage, 1000MW cap | Corrects persistent day-level bias from finalized same-regime days only. More history is smoother; higher shrinkage reacts faster but increases regime-change lag. |
-| serving calibration | `same_regime_day_level.max_state_lag_days` | 2 days | Fails closed when the latest finalized residual is older than this threshold. It is an operational freshness policy, not part of the trained artifact. |
+| serving calibration | `same_regime_day_level.max_state_lag_days` | 2 days | Check global freshness relative to issue date and the actual matching cohort against recent Japanese business/holiday dates. Missing cohort dates skip the prior; increasing the limit permits older evidence. |
+| serving calibration | `same_regime_day_level.application`, `require_day_ahead_origin` | `day_ahead_only`, true | Use immutable D-1 residuals only for D-1 forecasts. Do not restore D0 application or D0 seeds without horizon-matched validation. |
 | promotion | `scheduled_challenger_training_enabled`, `retrain_weekday` | false, 0 (Monday) | Scheduled candidate training is locked during v14 stabilization because the generic trainer would replace the preserved hourly boosters. Only an explicit candidate build may run; re-enable scheduling after a matching Champion-preserving validation path exists. |
 | promotion | `validation_window_days` | 28 | Uses the latest 28 complete days at every evaluation. This is a rolling evidence window, not a 28-day retraining interval. |
 | promotion | absolute quality limits | MAE 1000, WAPE 3.0%, shape 750, max error 6500 MW | Rejects a challenger even when it beats a weak baseline but remains operationally poor. Segment limits are MAE 1500 and shape 1100 MW. |
@@ -297,8 +303,8 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | interval | `min_p95_half_width_mw` | 500 | Prevents narrow bands. Raising it improves visual stability but may reduce alert sensitivity. |
 | interval | `max_p95_half_width_mw`, `p95_half_width_scale` | 3000, 1.25 | Caps the sanity-calibrated half-width before applying the coverage scale; the final cap is 3,750MW. Lower scale narrows coverage, while a larger value can hide center-line error behind a wide band. |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | Limits upper/lower tail imbalance. Lower values make bands more symmetric; higher values preserve more model-estimated skew. |
-| interval | `rolling_conformal_floor` | enabled, 28 days, 95%, 24 samples | Uses finalized actual-versus-served-q50 errors from the same business regime and time band as a minimum p95 half-width. It never narrows a band or exceeds the 3,000 MW cap. A shorter window reacts faster but is noisier; a higher sample floor fails closed more often. |
-| served interval | `served_interval_calibration` | enabled, ten recent all-regime days, safety 1.05, 3,750MW cap | Uses the larger same-regime floor and recent all-regime q95 as the final symmetric p95 target. Lower safety narrows intervals but increases regime-shift misses; a shorter recent window reacts faster but is more volatile. This serving post-process is intentionally outside the model artifact fingerprint. |
+| interval | `rolling_conformal_floor` | legacy configuration retained; target coverage 95% | The lead-aware branch takes precedence over the old final-served profile. Retrospective final-served coverage is not fixed-origin coverage; do not restore the old mode as a rollback shortcut. |
+| served interval | `served_interval_calibration` | `lead_aware_conformal_target_width`, 28 days, 24 samples, 4 dates, safety 1.05, 3,750MW cap | Match artifact, q50 policy, lead bucket and time band. More evidence delays activation; lower safety narrows bands but increases misses. Insufficient evidence or cap-exceeding targets retain native width with explicit status. Outside the trained artifact fingerprint. |
 | intraday | `lookback_hours` | 3 | Shorter windows react faster; longer windows are smoother but slower. |
 | intraday | `decay_per_hour` | 0.92 | Higher values carry residuals farther into the day; lower values keep corrections near-term. Lower it when carryover contaminates shape. |
 | intraday | `max_abs_adjustment_mw` | 1200 | Hard cap for same-day residual correction. Raising it follows large misses faster but increases overshoot risk. |

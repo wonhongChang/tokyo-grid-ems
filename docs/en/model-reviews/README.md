@@ -8,6 +8,7 @@ Languages: [한국어](../../ko/model-reviews/README.md) / [日本語](../../ja/
 
 ## Reviews
 
+- [2026-09-08 operational forecast review](model-review-2026-09-08.md) - completed; recent displayed errors are lower, but advance upward bias, lead-specific interval undercoverage, stale calibration cohorts, and incomplete terminal-guard logs remain actionable.
 - [2026-09-04 v15 candidate screening review](model-review-2026-09-04-v15-candidate-screening.md) - completed; retraining, configuration ablations, rolling windows, and origin-specific models produced no candidate that passed both development and holdout evidence, so v14-r2 remains deployed.
 - [2026-09-03 v14-r2 operational model review](model-review-2026-09-03.md) - completed; v14-r2 remains temporary under `review_required`, with calibration correctness, contract-scoped health, and v15 challenger work prioritized.
 - [2026-08-18 operational model review](model-review-2026-08-18.md) - completed; the August 14-18 stage reconstruction retains v11 only temporarily and starts immediate replay work on raw q50, the morning guard, and residual sign reversal.

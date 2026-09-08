@@ -47,8 +47,10 @@ from python.forecast.baseline import (
 )
 from python.forecast.interval_calibration import calibrate_p95_half_widths
 from python.forecast.rolling_interval_calibration import (
+    build_lead_conformal_profile,
     build_rolling_conformal_floor_profile,
     interval_time_band,
+    serving_policy_fingerprint,
 )
 from python.anomaly.detector import (
     DEFAULT_RESERVE_CRITICAL_PCT,
@@ -429,6 +431,7 @@ def _normalize_forecast_bands(
     fc_list: list[HourlyForecast],
     config: dict | None = None,
     interval_floor_profile: dict | None = None,
+    preserved_timestamps: set[str] | None = None,
 ) -> list[HourlyForecast]:
     result: list[HourlyForecast] = []
     floor_by_band = (
@@ -450,7 +453,11 @@ def _normalize_forecast_bands(
         == "replace_symmetric_p95_half_width"
         else {}
     )
+    preserved_timestamps = preserved_timestamps or set()
     for forecast in fc_list:
+        if forecast.ts in preserved_timestamps:
+            result.append(forecast)
+            continue
         point_forecast_mw = round(float(forecast.forecast_mw), 1)
         ordered_p95_lower = round(
             min(float(forecast.p95_lower_mw), float(forecast.p95_upper_mw), point_forecast_mw),
@@ -465,7 +472,9 @@ def _normalize_forecast_bands(
         except (TypeError, ValueError):
             forecast_hour = -1
         time_band = interval_time_band(forecast_hour)
-        target_half_width = target_by_band.get(time_band)
+        target_half_width = served_target.get("targetWidthsMwByHour", {}).get(
+            str(forecast_hour), target_by_band.get(time_band)
+        )
         if target_half_width is not None:
             half_lo = half_hi = max(0.0, float(target_half_width))
         else:
@@ -498,6 +507,8 @@ def build_forecast_json(
     model_name: str = "baseline_dow_hour_mean",
     *,
     out_dir: Path | None = None,
+    generated_at: str | None = None,
+    preserve_observed_bands: bool = False,
 ) -> dict:
     if not fc_list:
         return {
@@ -507,16 +518,6 @@ def build_forecast_json(
             "series": [],
             "message": "Insufficient historical data for this date.",
         }
-    interval_floor_profile = (
-        build_rolling_conformal_floor_profile(out_dir, d, config)
-        if out_dir is not None
-        else None
-    )
-    fc_list = _normalize_forecast_bands(
-        fc_list,
-        config,
-        interval_floor_profile=interval_floor_profile,
-    )
     cfg_fc = config.get("forecast", {})
     model_metadata = {}
     if out_dir is not None:
@@ -528,6 +529,35 @@ def build_forecast_json(
                 )
             except (OSError, json.JSONDecodeError):
                 model_metadata = {}
+    lead_policy = config.get("served_interval_calibration", {})
+    if (
+        out_dir is not None
+        and lead_policy.get("enabled")
+        and lead_policy.get("mode") == "lead_aware_conformal_target_width"
+    ):
+        interval_floor_profile = build_lead_conformal_profile(
+            out_dir, d, config, generated_at or ts_now(),
+            model_metadata.get("artifactSha256") if model_name.startswith("lgbm_") else None,
+        )
+    else:
+        interval_floor_profile = (
+            build_rolling_conformal_floor_profile(out_dir, d, config)
+            if out_dir is not None else None
+        )
+    observed_hours = (
+        _load_observed_actual_hours(out_dir, d)
+        if out_dir and preserve_observed_bands else set()
+    )
+    preserved = {
+        point.ts for point in fc_list
+        if pd.Timestamp(point.ts).hour in observed_hours
+    }
+    fc_list = _normalize_forecast_bands(
+        fc_list, config, interval_floor_profile=interval_floor_profile,
+        preserved_timestamps=preserved,
+    )
+    if interval_floor_profile is not None:
+        interval_floor_profile["preservedObservedHours"] = sorted(observed_hours)
     model = {
         "name": model_name,
         "version": "mvp-1",
@@ -543,6 +573,7 @@ def build_forecast_json(
         "timezone": "Asia/Tokyo",
         "availability": "ok",
         "model": model,
+        "servingPolicyFingerprint": serving_policy_fingerprint(config),
         "peak": peak_of_forecasts(fc_list),
         "series": [forecast_to_dict(f) for f in fc_list],
     }
@@ -2272,6 +2303,8 @@ def _build_forecast_pipeline(
     midday_guard=None,
     localized_shape_guard=None,
     same_regime_calibrator=None,
+    *,
+    issued_at: str | None = None,
 ) -> ForecastBuildResult:
     """Return forecast output plus intermediate stages.
 
@@ -2296,6 +2329,7 @@ def _build_forecast_pipeline(
                     raw_lgbm_forecasts,
                     target_date,
                     inference_features,
+                    issued_at=issued_at or ts_now(),
                 )
                 level_calibrated_forecasts = same_regime_result.forecasts
                 build_metadata["sameRegimeDayLevelCalibration"] = (
@@ -2768,6 +2802,8 @@ def _write_forecast_snapshot(
         config,
         model_name,
         out_dir=out_dir,
+        generated_at=generated_at,
+        preserve_observed_bands=preserve_observed_forecast_hours,
     )
     if forecast_json.get("availability") != "ok":
         return None
@@ -2821,6 +2857,7 @@ def _write_forecast_snapshot(
         "runType": run_type,
         "preserveObservedForecastHours": preserve_observed_forecast_hours,
         "model": forecast_json.get("model"),
+        "servingPolicyFingerprint": forecast_json.get("servingPolicyFingerprint"),
         "peak": forecast_json.get("peak"),
         "observationSummary": _actual_observation_summary(actual_series),
         "series": forecast_json.get("series", []),
@@ -2899,6 +2936,7 @@ def _operational_calibration_rows(
     post_calibration_forecasts: list[HourlyForecast],
     residual_adjustments_by_hour: list[dict] | None = None,
     inference_features: pd.DataFrame | None = None,
+    terminal_adjustments_by_hour: list[dict] | None = None,
 ) -> list[dict]:
     actual_by_hour = _actual_series_by_hour(actual_series)
     stage_maps = {
@@ -2910,6 +2948,10 @@ def _operational_calibration_rows(
     residual_adjustment_map = {
         int(item["hour"]): item
         for item in (residual_adjustments_by_hour or [])
+        if item.get("hour") is not None
+    }
+    terminal_adjustment_map = {
+        int(item["hour"]): item for item in (terminal_adjustments_by_hour or [])
         if item.get("hour") is not None
     }
     feature_map: dict[int, pd.Series] = {}
@@ -3055,6 +3097,7 @@ def _operational_calibration_rows(
                 else None
             ),
             "residualCarryover": residual_carryover,
+            "terminalAdjustments": terminal_adjustment_map.get(hour),
         }
         rows.append(row)
     return rows
@@ -3382,6 +3425,7 @@ def _apply_intraday_residual_correction(
             correction.forecasts,
             calibration_metadata.get("residualCarryoverByHour"),
             inference_features,
+            calibration_metadata.get("terminalAdjustmentsByHour"),
         ),
     }
     write_json(
@@ -3900,9 +3944,12 @@ def _run_status_only(
         else "intraday"
     )
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
-               build_forecast_json(today, today_fc, config, today_model, out_dir=out_dir))
+               build_forecast_json(today, today_fc, config, today_model, out_dir=out_dir,
+                                   generated_at=snapshot_generated_at,
+                                   preserve_observed_bands=preserve_observed_forecast_hours))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
-               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model, out_dir=out_dir))
+               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model, out_dir=out_dir,
+                                   generated_at=snapshot_generated_at))
     _write_forecast_snapshot(
         out_dir,
         today,
@@ -4195,9 +4242,11 @@ def main() -> None:
     snapshot_generated_at = ts_now()
     snapshot_run_type = "etl"
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
-               build_forecast_json(today, today_fc, config, today_model, out_dir=out_dir))
+               build_forecast_json(today, today_fc, config, today_model, out_dir=out_dir,
+                                   generated_at=snapshot_generated_at, preserve_observed_bands=True))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
-               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model, out_dir=out_dir))
+               build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model, out_dir=out_dir,
+                                   generated_at=snapshot_generated_at))
     _write_forecast_snapshot(
         out_dir,
         today,

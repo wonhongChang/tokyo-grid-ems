@@ -47,7 +47,11 @@
 | `q50_lag_unavailable` | 0.50 | 未確定需要lag特徴量を除外したD-1推定 |
 | `q50_lag_unavailable_non_business` | 0.50 | 土日祝日D-1 specialist |
 
-通常のD0推論は絶対q50、lag-24残差、非営業日構造を維持します。source viewは500MW trust regionに制限されます。D-1行で`lag_24h`または直近営業type需要がない場合、LightGBM欠損分岐ではなく縮小情報集合の専用モデルを使います。非営業日specialistはweight 1.0です。artifact-scoped same-regime補正は直近3確定日の残差の25%を+/-1,000MW以内で反映します。最終p95は同一営業レジーム28日と直近全レジーム10日の時間帯別served residual q95の大きい方に1.05の安全係数を適用します。このtargetを作れない場合のみ、native quantileに1.25 coverage scaleと3,750MW上限を適用した従来bandへfail closedします。
+通常のD0推論は絶対q50、lag-24残差、非営業日構造を維持します。source viewは500MW trust regionに制限されます。D-1行で`lag_24h`または直近営業type需要がない場合、LightGBM欠損分岐ではなく縮小情報集合の専用モデルを使います。非営業日specialistはweight 1.0です。
+
+Same-regime補正はJSTで前日に発行するD-1予測にのみ適用します。同一レジームの直近3確定日の日平均残差の中央値に25%を掛け、+/-1,000MWに制限します。不変のD-1発行本がある残差のみを使用し、D0 seedと古い同一レジーム標本を除外します。別レジームの新しい記録では代替しません。当日D0ではこのD-1補正を再利用せず、従来のintraday補正を維持します。
+
+最終p95 targetは直近28日の事前発行本をリード区分と対象時間帯で集計します。互換性のある各集計には24標本・4日以上が必要で、有効な同一レジーム/全レジーム誤差q95の大きい方に1.05を掛けます。証跡不足、artifact・政策不一致、必要半幅3,750MW超過の場合はnative区間の正規化・上限制御を維持します。政策fingerprintのない過去発行本は新集計を初期化できず、導入直後は区間が広がる可能性があります。代替区間やp95という名称だけでは実測包含率95%を保証できません。[配信補正契約の改善](model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)に詳細を記載しています。
 
 ---
 
@@ -234,6 +238,7 @@ Challenger実験では、`forecast.training_window_days`、`forecast.n_estimator
 
 ```text
 Raw LightGBM Forecast
+  -> Same-Regime D-1 Level Calibration (D-1 only)
   -> Analogous Day Adjustment
   -> Post-holiday / Timeband Guard
   -> Midday Transition Guard
@@ -242,7 +247,7 @@ Raw LightGBM Forecast
   -> Forecast Snapshots / Operational Calibration / Reports
 ```
 
-現在の`run_batch.py`のstage名は`raw_lgbm`、`analog_adjusted`、`post_holiday_guarded`、`midday_guarded`、`localized_shape_guarded`、`pre_calibration`です。Intraday residual correctionは`pre_calibration`の後に当日実績を反映する運用補正段階です。
+現在の`run_batch.py`のstage名は`raw_lgbm`、`same_regime_level_calibrated`、`analog_adjusted`、`post_holiday_guarded`、`midday_guarded`、`localized_shape_guarded`、`pre_calibration`です。Intraday補正は`pre_calibration`の後に実行します。その内部の終段shape/ramp guardは`shapeGuardDeltaMw`、`rampGuardDeltaMw`として別記録するため、この変動を残差伝播だけに帰属させてはいけません。
 
 | レイヤー | 実装 | 目的 |
 |---|---|---|
@@ -278,7 +283,8 @@ Raw LightGBM Forecast
 | forecast | `q50_feature_view_ensemble` | 有効、湿度縮小share 0.50、非営業日full share 0.40、500MW cap | ソースが不安定な履歴fieldへの依存を減らしつつ、並列viewが中心線を書き換えないようにします。fixed-origin最大誤差が改善した場合だけcap引上げを検討します。 |
 | forecast | `partial_lag_q50_fallback.lag_unavailable_models_enabled` | true、非営業日weight 1.0 | 需要lagがないD-1行を同じ縮小情報集合で学習したモデルへ送ります。無効化すると構造的に弱いv11欠損分岐へ戻ります。 |
 | forecast | `same_regime_day_level_calibration` | 3日、shrinkage 0.25、1000MW cap | 確定した同レジーム日の持続的な日次biasだけを補正します。期間を延ばすと安定し、shrinkageを上げると速い一方regime遷移遅延が増えます。 |
-| serving calibration | `same_regime_day_level.max_state_lag_days` | 2日 | 最新確定残差がこの閾値より古い場合、same-regime補正をfail closedします。学習artifactではなく運用freshness政策です。 |
+| serving calibration | `same_regime_day_level.max_state_lag_days` | 2日 | 発行日基準の全体freshnessと、日本の営業日・休日暦に照らした同一レジーム標本の新しさを確認します。該当日が欠ければ補正を省略し、上限を上げると古い証跡を許容します。 |
+| serving calibration | `same_regime_day_level.application`, `require_day_ahead_origin` | `day_ahead_only`, true | 不変D-1残差をD-1予測にのみ使用します。リード一致検証なしにD0適用やD0 seedを復活させません。 |
 | promotion | `scheduled_challenger_training_enabled`, `retrain_weekday` | false、0（月曜） | 汎用trainerが保持済み時間別boosterを置換しないよう、v14安定化中は定期候補学習をロックします。明示的candidate buildだけを許可し、同じChampion保持型validation経路が整ってから再開します。 |
 | promotion | `validation_window_days` | 28 | 評価ごとに直近の確定28日を使います。28日ごとに一度だけ再学習する意味ではありません。 |
 | promotion | 絶対品質上限 | MAE 1000、WAPE 3.0%、shape 750、最大誤差6500 MW | 弱いbaselineを上回っても運用品質が低いモデルを拒否します。segment上限はMAE 1500、shape 1100 MWです。 |
@@ -295,8 +301,8 @@ Raw LightGBM Forecast
 | interval | `min_p95_half_width_mw` | 500 | 狭すぎるbandを防ぎます。上げると安定しますがalert感度が下がる場合があります。 |
 | interval | `max_p95_half_width_mw`, `p95_half_width_scale` | 3000、1.25 | sanity補正half-widthを先に制限してcoverage scaleを適用し、最終上限は3,750MWです。scaleを下げるとcoverageが減り、上げると中心線誤差を広いbandで隠す場合があります。 |
 | interval | `max_p95_asymmetry_ratio` | 2.5 | 上側/下側tailの非対称を制限します。下げるとbandはより対称的になり、上げるとモデルが推定したskewをより保持します。 |
-| interval | `rolling_conformal_floor` | 有効、28日、95%、24標本 | 同じ営業レジーム・時間帯の確定実績と当時公開q50の誤差をp95最小半幅として使います。既存bandを狭めず、3,000MW上限も超えません。windowを短くすると反応は速くなりますがnoiseが増え、最小標本を上げるとfail-closedが増えます。 |
-| served interval | `served_interval_calibration` | 有効、直近全レジーム10日、safety 1.05、上限3,750MW | 同一レジームfloorと直近全レジームq95の大きい方を最終対称p95 targetにします。safetyを下げると幅は狭まりますがレジーム転換時の未包含リスクが増え、直近windowを短くすると反応性と引き換えに変動性が増えます。モデルartifact fingerprint外の配信後処理設定です。 |
+| interval | `rolling_conformal_floor` | 旧設定維持、目標包含率95% | 運用ではlead-aware分岐が旧final-served集計に優先します。事後公開線の包含率を固定発行本の包含率と解釈したり、旧モードを簡易rollbackとして復活させたりしません。 |
+| served interval | `served_interval_calibration` | `lead_aware_conformal_target_width`、28日、24標本、4日、safety 1.05、上限3,750MW | artifact・q50政策・リード区分・時間帯を一致させます。必要標本の増加は起動を遅らせ、safety低下は区間と包含率を下げる可能性があります。証跡不足や上限超過はnative幅維持として明記します。学習artifact fingerprintとは別の政策です。 |
 | intraday | `lookback_hours` | 3 | 短いほど反応が速く、長いほど滑らかですが遅れます。 |
 | intraday | `decay_per_hour` | 0.92 | 高いほどresidualが遠い時間まで残り、低いほど近距離中心になります。shape汚染時は引き下げを検討します。 |
 | intraday | `max_abs_adjustment_mw` | 1200 | 当日residual補正のhard capです。上げると大きなmissに追従しやすい一方、overshootリスクが増えます。 |

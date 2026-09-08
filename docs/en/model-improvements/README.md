@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-09
 
+- [2026-09-09 lead-aware intervals, D-1 calibration scope and terminal guard attribution](model-improvement-2026-09-09-serving-calibration-contracts.md)
 - [2026-09-04 rolling conformal target interval](model-improvement-2026-09-04-rolling-conformal-target-interval.md)
 - [2026-09-04 operational evidence integrity and fail-closed calibration state](model-improvement-2026-09-04-operational-evidence-integrity.md)
 

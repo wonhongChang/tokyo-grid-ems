@@ -1410,6 +1410,12 @@ def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, t
                     "preCalibrationForecastMw": 33_049.2,
                     "postCalibrationForecastMw": 33_314.0,
                     "calibrationDeltaMw": 264.8,
+                    "terminalAdjustments": {
+                        "preTerminalAdjustmentMw": 364.8,
+                        "shapeGuardDeltaMw": 0.0,
+                        "rampGuardDeltaMw": -100.0,
+                        "totalAdjustmentMw": 264.8,
+                    },
                     "actualVsPostCalibrationResidualMw": -914.0,
                     "residualCarryover": {
                         "hour": 15,
@@ -1430,6 +1436,7 @@ def test_openai_fact_packet_adds_focused_rows_and_control_context(monkeypatch, t
         focused_by_hour = {row["hour"]: row for row in focused_rows}
         assert len(focused_rows) <= 12
         assert focused_by_hour[15]["publishedVsLatestRecalculatedGapMw"] == 609.0
+        assert focused_by_hour[15]["terminalAdjustments"]["rampGuardDeltaMw"] == -100.0
         assert fact_packet["freezeContext"]["largestGaps"][0]["freezeGapMw"] == 609.0
         assert fact_packet["freezeImpact"]["largestGaps"][0]["freezeGapMw"] == 609.0
         damping = fact_packet["controlContext"]["positiveResidualSlopeDamping"]

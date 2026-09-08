@@ -25,6 +25,8 @@ class SameRegimeCalibrationResult:
     state_status: str = "not_evaluated"
     latest_residual_date: str | None = None
     state_lag_days: int | None = None
+    expected_history_dates: tuple[str, ...] = ()
+    rejected_origin_entries: int = 0
 
     def to_metadata(self) -> dict:
         return {
@@ -34,6 +36,8 @@ class SameRegimeCalibrationResult:
             "stateStatus": self.state_status,
             "latestResidualDate": self.latest_residual_date,
             "stateLagDays": self.state_lag_days,
+            "expectedHistoryDates": list(self.expected_history_dates),
+            "rejectedOriginEntries": self.rejected_origin_entries,
         }
 
 
@@ -78,6 +82,10 @@ class SameRegimeDayLevelCalibrator:
                 )
             ),
         )
+        self.require_day_ahead_origin = bool(
+            serving_policy.get("require_day_ahead_origin", True)
+        )
+        self.day_ahead_only = serving_policy.get("application") == "day_ahead_only"
         self.state_path = out_dir / str(
             calibration.get(
                 "state_path",
@@ -122,6 +130,14 @@ class SameRegimeDayLevelCalibrator:
         )
 
     def _final_actuals(self, target_date: date) -> dict[int, float] | None:
+        try:
+            finalized = json.loads(
+                (self.out_dir / ".etl_state.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            return None
+        if target_date.isoformat() not in finalized.get("okDates", []):
+            return None
         path = self.out_dir / "actual" / f"{target_date.isoformat()}.json"
         if not path.exists():
             return None
@@ -137,8 +153,16 @@ class SameRegimeDayLevelCalibrator:
             ):
                 continue
             try:
-                hour = pd.Timestamp(point["ts"]).hour
+                timestamp = pd.Timestamp(point["ts"])
+                if timestamp.tzinfo is None:
+                    return None
+                timestamp = timestamp.tz_convert("Asia/Tokyo")
+                if timestamp.date() != target_date:
+                    return None
+                hour = timestamp.hour
                 values[int(hour)] = float(point["actualMw"])
+                if not np.isfinite(values[int(hour)]):
+                    return None
             except (KeyError, TypeError, ValueError):
                 return None
         return values if set(values) == set(range(24)) else None
@@ -156,14 +180,20 @@ class SameRegimeDayLevelCalibrator:
                 continue
             try:
                 values[int(row["hour"])] = float(raw_value)
+                if not np.isfinite(values[int(row["hour"])]):
+                    return None
             except (KeyError, TypeError, ValueError):
                 return None
         return values if set(values) == set(range(24)) else None
 
     @staticmethod
-    def _is_day_ahead_origin(generated_at: str, target_date: date) -> bool:
+    def _is_day_ahead_origin(generated_at: str | None, target_date: date) -> bool:
         try:
-            return pd.Timestamp(generated_at).date() < target_date
+            timestamp = pd.Timestamp(generated_at)
+            return (
+                timestamp.tzinfo is not None
+                and timestamp.tz_convert("Asia/Tokyo").date() == target_date - timedelta(days=1)
+            )
         except (TypeError, ValueError):
             return False
 
@@ -250,6 +280,45 @@ class SameRegimeDayLevelCalibrator:
                 return values, generated_at, "legacy_retained_day_ahead_snapshot"
         return None
 
+    def _matching_history(
+        self, state: dict, target_date: date, non_business: bool,
+    ) -> tuple[list[dict], int]:
+        matching = {}
+        rejected = 0
+        for entry in state.get("entries", []):
+            try:
+                day = date.fromisoformat(str(entry.get("date")))
+                residual = float(entry.get("meanResidualMw"))
+            except (TypeError, ValueError):
+                continue
+            if (
+                day >= target_date
+                or bool(_is_nonworking(day)) != non_business
+                or not np.isfinite(residual)
+            ):
+                continue
+            if self.require_day_ahead_origin and (
+                entry.get("source") != "immutable_day_ahead_origin"
+                or not self._is_day_ahead_origin(str(entry.get("originGeneratedAt", "")), day)
+            ):
+                rejected += 1
+                continue
+            matching[day] = entry
+        return [matching[day] for day in sorted(matching)], rejected
+
+    def _expected_history_dates(
+        self, target_date: date, latest: date, non_business: bool,
+    ) -> tuple[str, ...]:
+        # Allow the regular pre-ETL publication gap, but do not treat a fresh
+        # different-regime entry as evidence that the selected cohort is fresh.
+        current = max(target_date - timedelta(days=self.max_state_lag_days), latest)
+        expected = []
+        while len(expected) < self.history_window_days:
+            if bool(_is_nonworking(current)) == non_business:
+                expected.append(current.isoformat())
+            current -= timedelta(days=1)
+        return tuple(reversed(expected))
+
     @staticmethod
     def _latest_residual_date(state: dict, target_date: date) -> date | None:
         candidates: list[date] = []
@@ -329,6 +398,8 @@ class SameRegimeDayLevelCalibrator:
         forecasts: list[HourlyForecast],
         target_date: date,
         inference_features: pd.DataFrame,
+        *,
+        issued_at: str | None = None,
     ) -> SameRegimeCalibrationResult:
         if not self.enabled or not forecasts or inference_features.empty:
             return SameRegimeCalibrationResult(
@@ -338,7 +409,15 @@ class SameRegimeDayLevelCalibrator:
                 False,
                 "disabled_or_unavailable",
             )
-        state = self.refresh(target_date)
+        if self.day_ahead_only and not self._is_day_ahead_origin(issued_at, target_date):
+            return SameRegimeCalibrationResult(
+                forecasts, 0.0, (), False, "origin_horizon_mismatch",
+            )
+        evidence_date = (
+            pd.Timestamp(issued_at).tz_convert("Asia/Tokyo").date()
+            if self.day_ahead_only else target_date
+        )
+        state = self.refresh(evidence_date)
         if state is None:
             return SameRegimeCalibrationResult(
                 forecasts,
@@ -347,9 +426,9 @@ class SameRegimeDayLevelCalibrator:
                 False,
                 "missing_or_incompatible_state",
             )
-        latest_residual_date = self._latest_residual_date(state, target_date)
+        latest_residual_date = self._latest_residual_date(state, evidence_date)
         state_lag_days = (
-            (target_date - latest_residual_date).days
+            (evidence_date - latest_residual_date).days
             if latest_residual_date is not None
             else None
         )
@@ -371,15 +450,9 @@ class SameRegimeDayLevelCalibrator:
         is_non_business = bool(
             float(inference_features.iloc[0]["is_non_business_day"]) != 0.0
         )
-        matching = [
-            entry
-            for entry in state.get("entries", [])
-            if bool(entry.get("isNonBusinessDay")) == is_non_business
-            and str(entry.get("date")) < target_date.isoformat()
-            and np.isfinite(float(entry.get("meanResidualMw", np.nan)))
-        ]
-        matching.sort(key=lambda entry: entry["date"])
+        matching, rejected = self._matching_history(state, evidence_date, is_non_business)
         history = matching[-self.history_window_days:]
+        expected = self._expected_history_dates(evidence_date, latest_residual_date, is_non_business)
         if len(history) < self.min_history_days:
             return SameRegimeCalibrationResult(
                 forecasts,
@@ -389,6 +462,14 @@ class SameRegimeDayLevelCalibrator:
                 "insufficient_same_regime_history",
                 latest_residual_iso,
                 state_lag_days,
+                expected,
+                rejected,
+            )
+        if any(entry["date"] not in expected for entry in history):
+            return SameRegimeCalibrationResult(
+                forecasts, 0.0, tuple(entry["date"] for entry in history), False,
+                "stale_same_regime_history", latest_residual_iso, state_lag_days,
+                expected, rejected,
             )
         adjustment = float(np.clip(
             self.shrinkage * np.median([
@@ -407,6 +488,8 @@ class SameRegimeDayLevelCalibrator:
                 "no_material_adjustment",
                 latest_residual_iso,
                 state_lag_days,
+                expected,
+                rejected,
             )
         return SameRegimeCalibrationResult(
             self._shift(forecasts, adjustment),
@@ -416,4 +499,6 @@ class SameRegimeDayLevelCalibrator:
             "fresh",
             latest_residual_iso,
             state_lag_days,
+            expected,
+            rejected,
         )

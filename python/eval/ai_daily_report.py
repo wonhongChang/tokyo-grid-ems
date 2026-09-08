@@ -3518,6 +3518,13 @@ def _build_focused_rows(
             "residualCarryover": _compact_residual_carryover_item(
                 calibration_row.get("residualCarryover")
             ),
+            "terminalAdjustments": _drop_none_values({
+                key: _round_number((calibration_row.get("terminalAdjustments") or {}).get(key))
+                for key in (
+                    "preTerminalAdjustmentMw", "shapeGuardDeltaMw",
+                    "rampGuardDeltaMw", "totalAdjustmentMw",
+                )
+            }) or None,
         })
         _annotate_error_direction(row, "modelErrorMw", "modelErrorDirection")
         _annotate_error_direction(row, "tepcoErrorMw", "tepcoErrorDirection")

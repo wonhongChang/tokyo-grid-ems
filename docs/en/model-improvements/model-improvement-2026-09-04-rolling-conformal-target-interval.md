@@ -2,9 +2,11 @@
 
 Languages: [한국어](../../ko/model-improvements/model-improvement-2026-09-04-rolling-conformal-target-interval.md) / [日本語](../../ja/model-improvements/model-improvement-2026-09-04-rolling-conformal-target-interval.md)
 
+2026-09-08 correction: the interval experiment below used final published forecasts retrospectively. The previous "fixed-origin" wording was incorrect. Saved longer-lead forecasts show undercoverage; the [September 8 review](../model-reviews/model-review-2026-09-08.md) records the corrective work.
+
 ## Problem
 
-The previous rolling conformal policy was only a **minimum-width floor**. It could widen an interval but could not reduce an already oversized native quantile band. On the twelve-day v14-r2 fixed-origin holdout, P95 coverage was 100% while mean half-width reached 3,700.2MW and most hours saturated at the 3,750MW cap. The interval no longer distinguished risk by time band.
+The previous rolling conformal policy was only a **minimum-width floor**. It could widen an interval but could not reduce an already oversized native quantile band. On twelve days of final published v14-r2 forecasts, P95 coverage was 100% while mean half-width reached 3,700.2MW and most hours saturated at the 3,750MW cap. The interval no longer distinguished risk by time band.
 
 ## Change
 
@@ -21,11 +23,11 @@ The policy is configured under `served_interval_calibration`. It does not change
 
 ## Validation
 
-All results use causal walk-forward reconstruction that excludes the target date from calibration history.
+These retrospective walk-forward results exclude the target date from calibration history but evaluate final published forecasts. They do not fully reconstruct issuance-time inputs or establish independent lead-specific holdout performance. The same historical material also informed policy selection, so it is not an untouched test set.
 
 | Period | Previous P95 coverage | New coverage | Previous mean half-width | New mean half-width | Change |
 |---|---:|---:|---:|---:|---:|
-| twelve-day v14-r2 fixed origin | 100.00% | 98.61% | 3,700.2MW | 2,455.5MW | 33.6% narrower |
+| twelve days of final published v14-r2 forecasts | 100.00% | 98.61% | 3,700.2MW | 2,455.5MW | 33.6% narrower |
 | latest 28 days | 97.92% | 97.17% | 3,200.0MW | 2,675.6MW | 16.4% narrower |
 | latest 84 days | 95.19% | 96.08% | 2,373.0MW | 2,139.6MW | 9.8% narrower |
 | 106 days, 2026-05-20 to 09-02 | 94.73% | 96.78% | 2,168.6MW | 2,199.0MW | 1.4% wider |
@@ -43,6 +45,7 @@ Each forecast JSON records the following under `intervalCalibration.servedTarget
 
 ## Limits
 
+- Applying final-line residual widths to every lead is not qualified. Longer-lead undercoverage found on September 8 requires separate correction.
 - P95 is a long-run marginal coverage target, not a promise that every individual day covers 95% of its hours. Abrupt regime shifts can still produce low daily coverage.
 - P99 continues to extend one additional final P95 half-width.
 - This change does not improve q50. The v15 q50 candidates were rejected in a separate review.

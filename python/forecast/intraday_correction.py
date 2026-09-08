@@ -80,9 +80,11 @@ class IntradayCorrectionResult:
     pre_observation_prior_stack_cap_max_restore_mw: float = 0.0
     post_lunch_decline_continuity_guard_applied: bool = False
     post_lunch_decline_continuity_max_reduction_mw: float = 0.0
+    terminal_adjustments_by_hour: tuple[dict, ...] = ()
 
     def metadata(self) -> dict:
         return {
+            "terminalAdjustmentsByHour": list(self.terminal_adjustments_by_hour),
             "applied": self.applied,
             "observedHours": self.observed_hours,
             "lastObservedHour": self.last_observed_hour,
@@ -4648,6 +4650,31 @@ class IntradayResidualCorrector:
             "recentSameBusinessDeltaMw": round(float(same_business_delta_mw), 1),
         }
 
+    @staticmethod
+    def _terminal_stage_rows(
+        original: list[HourlyForecast],
+        before_terminal: list[HourlyForecast],
+        after_shape: list[HourlyForecast],
+        after_ramp: list[HourlyForecast],
+    ) -> tuple[dict, ...]:
+        maps = [{point.ts: point.forecast_mw for point in points}
+                for points in (original, before_terminal, after_shape, after_ramp)]
+        rows = []
+        for ts in maps[0].keys() & maps[1].keys() & maps[2].keys() & maps[3].keys():
+            pre, before, shape, post = (values[ts] for values in maps)
+            rows.append({
+                "hour": pd.Timestamp(ts).hour,
+                "preCalibrationMw": round(pre, 1),
+                "beforeTerminalGuardsMw": round(before, 1),
+                "afterShapeGuardMw": round(shape, 1),
+                "postCalibrationMw": round(post, 1),
+                "preTerminalAdjustmentMw": round(before - pre, 1),
+                "shapeGuardDeltaMw": round(shape - before, 1),
+                "rampGuardDeltaMw": round(post - shape, 1),
+                "totalAdjustmentMw": round(post - pre, 1),
+            })
+        return tuple(sorted(rows, key=lambda row: row["hour"]))
+
     def _apply_shape_guard(
         self,
         forecasts: list[HourlyForecast],
@@ -4984,6 +5011,10 @@ class IntradayResidualCorrector:
                 ),
                 ramp_guard_decline_support_relaxation_max_extra_drop_mw=(
                     ramp_decline_support_max_extra_drop_mw
+                ),
+                terminal_adjustments_by_hour=self._terminal_stage_rows(
+                    forecasts, calibrated_forecasts,
+                    shape_guarded_forecasts, ramp_guarded_forecasts,
                 ),
             )
 
@@ -6349,7 +6380,8 @@ class IntradayResidualCorrector:
         if evening_decline_guard_applied:
             applied_reasons.append("evening_decline_continuity_guard")
 
-        adjusted_forecasts, shape_guard_applied = self._apply_shape_guard(
+        before_terminal_forecasts = adjusted_forecasts
+        shape_guarded_forecasts, shape_guard_applied = self._apply_shape_guard(
             adjusted_forecasts,
             last_observed_hour,
             observed_drop_relaxation_active,
@@ -6361,7 +6393,7 @@ class IntradayResidualCorrector:
             ramp_decline_support_applied,
             ramp_decline_support_max_extra_drop_mw,
         ) = self._apply_ramp_guard(
-            adjusted_forecasts,
+            shape_guarded_forecasts,
             last_observed_hour,
             last_observed_mw,
             observed_drop_relaxation_active,
@@ -6465,5 +6497,9 @@ class IntradayResidualCorrector:
             post_lunch_decline_continuity_max_reduction_mw=round(
                 max(post_lunch_decline_reduced_values or [0.0]),
                 1,
+            ),
+            terminal_adjustments_by_hour=self._terminal_stage_rows(
+                forecasts, before_terminal_forecasts,
+                shape_guarded_forecasts, adjusted_forecasts,
             ),
         )
