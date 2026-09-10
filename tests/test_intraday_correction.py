@@ -4777,6 +4777,166 @@ def test_intraday_near_term_floor_protects_first_future_hour_from_stale_negative
     assert hour_16["negativeResidualNearTermRestoreMw"] == pytest.approx(523.7, abs=0.1)
 
 
+@pytest.mark.parametrize(
+    (
+        "actual_values", "target_forecast_mw", "anchor_features", "support_delta_mw",
+        "expected_restore_mw", "expected_floor_mw",
+    ),
+    [
+        pytest.param(
+            [32_630.0, 33_320.0, 33_400.0], 35_672.1,
+            {"recent_same_business_type_mean": 39_706.2}, -558.8,
+            0.0, None, id="cold_plateau_rejects_high_historical_anchor",
+        ),
+        pytest.param(
+            [32_630.0, 33_320.0, 33_400.0], 34_000.0,
+            {"recent_same_business_type_mean": 39_706.2}, -558.8,
+            600.0, 33_400.0, id="high_history_still_protects_observed_level",
+        ),
+        pytest.param(
+            [32_630.0, 33_320.0, 33_400.0], 34_000.0,
+            {}, -558.8,
+            450.0, 33_250.0, id="missing_history_retains_actual_floor",
+        ),
+        pytest.param(
+            [32_630.0, 33_320.0, 33_400.0], 34_000.0,
+            {"recent_same_business_type_mean": None}, -558.8,
+            450.0, 33_250.0, id="null_history_retains_actual_floor",
+        ),
+        pytest.param(
+            [32_630.0, 33_320.0, 33_400.0], 34_000.0,
+            {"recent_same_business_type_mean": float("nan")}, -558.8,
+            450.0, 33_250.0, id="nan_history_retains_actual_floor",
+        ),
+        pytest.param(
+            [31_000.0, 32_400.0, 33_400.0], 34_000.0,
+            {"recent_same_business_type_mean": 34_600.0}, 1_200.0,
+            600.0, 33_400.0, id="supported_actual_ramp_retains_restore",
+        ),
+        pytest.param(
+            [34_600.0, 34_100.0, 33_400.0], 34_000.0,
+            {"recent_same_business_type_mean": 39_706.2}, -700.0,
+            425.0, 33_225.0, id="historical_bound_respects_observed_drop_allowance",
+        ),
+        pytest.param(
+            [32_630.0, 33_320.0, 33_400.0], 33_700.0,
+            {"recent_same_business_type_mean": 39_706.2}, -558.8,
+            700.0, 33_400.0, id="actual_floor_restore_remains_capped",
+        ),
+    ],
+)
+def test_intraday_near_term_floor_bounds_history_by_observed_demand(
+    actual_values,
+    target_forecast_mw,
+    anchor_features,
+    support_delta_mw,
+    expected_restore_mw,
+    expected_floor_mw,
+):
+    target = date(2026, 9, 10)
+    forecasts = _make_forecasts(target, 30_000.0)
+    actual_series = [
+        _actual_point(target, hour, value)
+        for hour, value in zip(range(12, 15), actual_values)
+    ]
+    forecast_values = {
+        **{hour: value + 2_000.0 for hour, value in zip(range(12, 15), actual_values)},
+        15: target_forecast_mw,
+    }
+    for hour, value in forecast_values.items():
+        forecasts[hour] = HourlyForecast(
+            ts=f"{target.isoformat()}T{hour:02d}:00:00+09:00",
+            forecast_mw=value,
+            p95_lower_mw=value - 500.0,
+            p95_upper_mw=value + 500.0,
+            p99_lower_mw=value - 800.0,
+            p99_upper_mw=value + 800.0,
+        )
+    original_values = [vars(point).copy() for point in forecasts]
+    inference_features = pd.DataFrame([{
+        "hour": 15,
+        "is_non_business_day": 0,
+        "temp_delta_24h": -5.7,
+        "lag_24h_hourly_delta": support_delta_mw,
+        "recent_same_business_type_delta_mean": support_delta_mw,
+        **anchor_features,
+    }])
+    corrector = IntradayResidualCorrector({
+        "intraday_correction": {
+            "lookback_hours": 3,
+            "min_observed_hours": 3,
+            "shrinkage": 1.0,
+            "max_abs_adjustment_mw": 1_200.0,
+            "decay_per_hour": 1.0,
+            "negative_residual_near_term_floor": {
+                "enabled": True,
+                "target_hours": [15],
+                "min_reference_hour": 10,
+                "max_lead_hours": 2,
+                "min_adjustment_mw": 500.0,
+                "actual_reference_slack_mw": 150.0,
+                "anchor_slack_mw": 1_200.0,
+                "drop_slope_allowance_fraction": 0.25,
+                "max_drop_slope_allowance_mw": 400.0,
+                "max_restore_mw": 700.0,
+                "min_restore_mw": 100.0,
+                "decline_support_damping": {"enabled": False},
+            },
+            "negative_residual_recovery_damping": {"enabled": False},
+            "negative_residual_continuity_floor": {"enabled": False},
+            "morning_observed_ramp_floor": {"enabled": False},
+            "daytime_sustained_underforecast_lift": {"enabled": False},
+            "morning_observed_anchor_cap": {"enabled": False},
+            "afternoon_observed_anchor_cap": {"enabled": False},
+            "post_lunch_decline_continuity_guard": {"enabled": False},
+            "evening_decline_continuity_guard": {"enabled": False},
+            "shape_guard": {"enabled": False},
+            "ramp_guard": {"enabled": False},
+        },
+    })
+
+    result = corrector.apply(
+        forecasts,
+        actual_series,
+        inference_features=inference_features,
+    )
+
+    expected_adjustment_mw = -1_200.0 + expected_restore_mw
+    assert result.base_adjustment_mw == pytest.approx(-1_200.0)
+    assert result.negative_residual_near_term_floor_applied is (expected_restore_mw > 0.0)
+    assert [vars(point) for point in forecasts] == original_values
+    assert result.forecasts[:15] == forecasts[:15]
+    target_forecast = result.forecasts[15]
+    assert target_forecast.forecast_mw == pytest.approx(
+        target_forecast_mw + expected_adjustment_mw,
+    )
+    for field in ("p95_lower_mw", "p95_upper_mw", "p99_lower_mw", "p99_upper_mw"):
+        assert getattr(target_forecast, field) == pytest.approx(
+            getattr(forecasts[15], field) + expected_adjustment_mw,
+        )
+    residual_log = next(
+        row for row in result.residual_adjustments_by_hour if row["hour"] == 15
+    )
+    assert residual_log["negativeResidualNearTermRestoreMw"] == pytest.approx(
+        expected_restore_mw,
+    )
+    if expected_floor_mw is None:
+        assert residual_log["negativeResidualNearTermFloorMw"] is None
+    else:
+        assert residual_log["negativeResidualNearTermFloorMw"] == pytest.approx(
+            expected_floor_mw,
+        )
+    terminal_log = next(
+        row for row in result.terminal_adjustments_by_hour if row["hour"] == 15
+    )
+    assert terminal_log["totalAdjustmentMw"] == pytest.approx(expected_adjustment_mw)
+    assert terminal_log["shapeGuardDeltaMw"] == 0.0
+    assert terminal_log["rampGuardDeltaMw"] == 0.0
+    assert terminal_log["preCalibrationMw"] + terminal_log[
+        "preTerminalAdjustmentMw"
+    ] == pytest.approx(terminal_log["postCalibrationMw"])
+
+
 def test_intraday_correction_keeps_evening_rebound_when_shape_supports_it():
     target = date(2026, 5, 27)
     forecasts = _make_forecasts(target, 30_000.0)

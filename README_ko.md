@@ -234,6 +234,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-09-10 실측 지지 범위에 따른 음수 잔차 하한](docs/ko/model-improvements/model-improvement-2026-09-10-observed-support-floor.md)
 - [2026-09-09 리드별 밴드·D-1 보정 범위·최종 가드 추적](docs/ko/model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)
 - [2026-09-04 rolling conformal target 예측 밴드](docs/ko/model-improvements/model-improvement-2026-09-04-rolling-conformal-target-interval.md)
 - [2026-09-04 운영 증거 무결성과 보정 상태 Fail-Closed](docs/ko/model-improvements/model-improvement-2026-09-04-operational-evidence-integrity.md)

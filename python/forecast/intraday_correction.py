@@ -4365,10 +4365,17 @@ class IntradayResidualCorrector:
                 - actual_mw_by_hour[previous_hour]
             )
 
+        previous_slope_mw = None
+        if previous_hour in actual_mw_by_hour and previous_hour - 1 in actual_mw_by_hour:
+            previous_slope_mw = (
+                actual_mw_by_hour[previous_hour] - actual_mw_by_hour[previous_hour - 1]
+            )
+
         return {
             "lastObservedHour": last_observed_hour,
             "lastActualMw": round(actual_mw_by_hour[last_observed_hour], 1),
             "latestSlopeMw": round(float(latest_slope_mw), 1),
+            "previousSlopeMw": previous_slope_mw,
         }
 
     def _negative_residual_near_term_floor_restore(
@@ -4396,20 +4403,16 @@ class IntradayResidualCorrector:
             max(0.0, -latest_slope_mw) * self._near_negative_floor_drop_fraction,
             self._near_negative_floor_max_drop_allowance_mw,
         )
+        observed_ceiling_mw = float(context["lastActualMw"]) - drop_allowance_mw
         floor_candidates = [
-            float(context["lastActualMw"])
-            - self._near_negative_floor_actual_slack_mw
-            - drop_allowance_mw,
+            observed_ceiling_mw - self._near_negative_floor_actual_slack_mw,
         ]
 
         row = self._feature_row_for_hour(inference_features, forecast_hour)
         support_delta_mw = None
+        ramp_allowance_mw = 0.0
         if row is not None:
             recent_mean = self._finite_float(row.get("recent_same_business_type_mean"))
-            if recent_mean is not None:
-                floor_candidates.append(
-                    recent_mean - self._near_negative_floor_anchor_slack_mw
-                )
             support_candidates = [
                 value
                 for value in (
@@ -4422,6 +4425,26 @@ class IntradayResidualCorrector:
             ]
             if support_candidates:
                 support_delta_mw = max(support_candidates)
+            previous_slope_mw = self._finite_float(context.get("previousSlopeMw"))
+            if (
+                latest_slope_mw > 0.0
+                and previous_slope_mw is not None
+                and previous_slope_mw > 0.0
+                and len(support_candidates) == 2
+                and min(support_candidates) > 0.0
+            ):
+                # Only sustained observed growth with agreeing target shape can
+                # support a higher historical floor; never invent demand from history.
+                ramp_allowance_mw = min(
+                    latest_slope_mw,
+                    (latest_slope_mw + previous_slope_mw) / 2.0,
+                    min(support_candidates),
+                ) * lead_hours
+            if recent_mean is not None:
+                floor_candidates.append(min(
+                    recent_mean - self._near_negative_floor_anchor_slack_mw,
+                    observed_ceiling_mw + ramp_allowance_mw,
+                ))
 
         floor_mw = max(floor_candidates)
         if final_before_floor_mw >= floor_mw:
@@ -4452,6 +4475,7 @@ class IntradayResidualCorrector:
             "restoreMw": restore_mw,
             "latestSlopeMw": round(float(latest_slope_mw), 1),
             "dropAllowanceMw": round(float(drop_allowance_mw), 1),
+            "rampAllowanceMw": round(float(ramp_allowance_mw), 1),
             "preCalibrationMw": round(float(pre_calibration_mw), 1),
             "supportDeltaMw": (
                 round(float(support_delta_mw), 1)
@@ -5347,6 +5371,7 @@ class IntradayResidualCorrector:
             near_negative_floor_restore_mw = 0.0
             near_negative_floor_mw = None
             near_negative_floor_drop_allowance_mw = None
+            near_negative_floor_ramp_allowance_mw = None
             near_negative_floor_support_delta_mw = None
             near_negative_floor_decline_damping_factor = 1.0
             morning_warm_cap_mw = None
@@ -5649,6 +5674,9 @@ class IntradayResidualCorrector:
                     near_negative_floor_mw = near_negative_floor_restore["floorMw"]
                     near_negative_floor_drop_allowance_mw = (
                         near_negative_floor_restore["dropAllowanceMw"]
+                    )
+                    near_negative_floor_ramp_allowance_mw = (
+                        near_negative_floor_restore["rampAllowanceMw"]
                     )
                     near_negative_floor_support_delta_mw = (
                         near_negative_floor_restore["supportDeltaMw"]
@@ -6222,6 +6250,11 @@ class IntradayResidualCorrector:
                 "negativeResidualNearTermSupportDeltaMw": (
                     round(float(near_negative_floor_support_delta_mw), 1)
                     if near_negative_floor_support_delta_mw is not None
+                    else None
+                ),
+                "negativeResidualNearTermRampAllowanceMw": (
+                    round(float(near_negative_floor_ramp_allowance_mw), 1)
+                    if near_negative_floor_ramp_allowance_mw is not None
                     else None
                 ),
                 "negativeResidualNearTermDeclineDampingFactor": round(

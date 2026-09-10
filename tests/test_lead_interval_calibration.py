@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -115,6 +116,19 @@ def test_policy_fingerprint_changes_for_controls_not_band_widths():
     assert serving_policy_fingerprint(cfg) == before
     cfg["intraday_correction"] = {"shrinkage": .2}
     assert serving_policy_fingerprint(cfg) != before
+
+
+def test_observed_bound_floor_invalidates_unbounded_floor_policy_history():
+    cfg = _config()
+    old_payload = {key: cfg.get(key, {}) for key in (
+        "forecast", "weather_features", "weather_forecast_bias_correction",
+        "adjustment", "intraday_correction", "serving_calibration",
+    )}
+    old_payload["servingSemanticsVersion"] = 1
+    old_policy = hashlib.sha256(json.dumps(
+        old_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    ).encode()).hexdigest()
+    assert serving_policy_fingerprint(cfg) != old_policy
 
 
 def test_serving_preserves_observed_band_and_calibrates_future_band(tmp_path):

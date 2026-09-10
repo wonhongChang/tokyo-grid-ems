@@ -29,7 +29,7 @@ def serving_policy_fingerprint(config: dict) -> str:
         "forecast", "weather_features", "weather_forecast_bias_correction",
         "adjustment", "intraday_correction", "serving_calibration",
     )}
-    payload["servingSemanticsVersion"] = 1
+    payload["servingSemanticsVersion"] = 2
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
                                      ensure_ascii=True).encode()).hexdigest()
 

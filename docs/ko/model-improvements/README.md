@@ -8,6 +8,7 @@
 
 ## 2026-09
 
+- [2026-09-10 실측 지지 범위에 따른 음수 잔차 하한](model-improvement-2026-09-10-observed-support-floor.md)
 - [2026-09-09 리드별 밴드·D-1 보정 범위·최종 가드 추적](model-improvement-2026-09-09-serving-calibration-contracts.md)
 - [2026-09-04 rolling conformal target 예측 밴드](model-improvement-2026-09-04-rolling-conformal-target-interval.md)
 - [2026-09-04 운영 증거 무결성과 보정 상태 Fail-Closed](model-improvement-2026-09-04-operational-evidence-integrity.md)

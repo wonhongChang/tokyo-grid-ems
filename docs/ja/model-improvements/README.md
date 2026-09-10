@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-09
 
+- [2026-09-10 実測支持範囲に基づく負の残差下限](model-improvement-2026-09-10-observed-support-floor.md)
 - [2026-09-09 リード別区間・D-1補正範囲・終段ガード追跡](model-improvement-2026-09-09-serving-calibration-contracts.md)
 - [2026-09-04 rolling conformal target予測区間](model-improvement-2026-09-04-rolling-conformal-target-interval.md)
 - [2026-09-04 運用証跡の整合性と補正状態のFail-Closed化](model-improvement-2026-09-04-operational-evidence-integrity.md)
