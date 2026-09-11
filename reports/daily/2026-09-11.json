@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-09-12T00:22:22+09:00",
+  "date": "2026-09-11",
+  "availability": "ok",
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "family": "lgbm_quantile_q50"
+  },
+  "summary": {
+    "comparableHours": 23,
+    "modelMaeMw": 381.2,
+    "tepcoMaeMw": 313.0,
+    "modelWapePct": 1.33,
+    "tepcoWapePct": 1.09,
+    "modelRmseMw": 480.5,
+    "tepcoRmseMw": 463.3,
+    "modelMaxErrorMw": 1104.5,
+    "tepcoMaxErrorMw": 1120.0,
+    "modelMaxErrorHour": 11,
+    "tepcoMaxErrorHour": 7,
+    "maeGapMw": 68.2,
+    "wapeGapPct": 0.24,
+    "verdict": "tepco_better",
+    "modelWins": 8,
+    "tepcoWins": 15,
+    "ties": 0,
+    "modelAdvantageHours": 8,
+    "tepcoAdvantageHours": 15,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.348
+  },
+  "peak": {
+    "actual": {
+      "hour": 11,
+      "actualMw": 32840.0
+    },
+    "model": {
+      "hour": 11,
+      "forecastMw": 33944.5,
+      "errorAtActualPeakMw": 1104.5,
+      "timeErrorHours": 0
+    },
+    "tepco": {
+      "hour": 14,
+      "forecastMw": 32740.0,
+      "errorAtActualPeakMw": -1090.0,
+      "timeErrorHours": 3
+    }
+  },
+  "timeBands": [
+    {
+      "code": "overnight",
+      "label": "00-05",
+      "hours": 6,
+      "modelMaeMw": 85.9,
+      "tepcoMaeMw": 61.7,
+      "modelBiasMw": 33.8,
+      "verdict": "close"
+    },
+    {
+      "code": "morning_ramp",
+      "label": "06-10",
+      "hours": 5,
+      "modelMaeMw": 572.9,
+      "tepcoMaeMw": 578.0,
+      "modelBiasMw": -264.2,
+      "verdict": "close"
+    },
+    {
+      "code": "daytime",
+      "label": "11-15",
+      "hours": 5,
+      "modelMaeMw": 623.3,
+      "tepcoMaeMw": 620.0,
+      "modelBiasMw": 623.3,
+      "verdict": "close"
+    },
+    {
+      "code": "late_afternoon",
+      "label": "16-18",
+      "hours": 3,
+      "modelMaeMw": 429.6,
+      "tepcoMaeMw": 86.7,
+      "modelBiasMw": -429.6,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "evening",
+      "label": "19-23",
+      "hours": 4,
+      "modelMaeMw": 245.9,
+      "tepcoMaeMw": 145.0,
+      "modelBiasMw": 245.9,
+      "verdict": "tepco_better"
+    }
+  ],
+  "shape": {
+    "transitionHours": 22,
+    "modelDeltaMaeMw": 341.7,
+    "tepcoDeltaMaeMw": 311.8,
+    "maxActualRiseMw": 2440.0,
+    "maxActualDropMw": -1440.0,
+    "maxModelRiseMw": 3005.2,
+    "maxModelDropMw": -1455.4,
+    "largestDeltaMiss": {
+      "fromHour": 8,
+      "toHour": 9,
+      "actualDeltaMw": 1910.0,
+      "modelDeltaMw": 3005.2,
+      "tepcoDeltaMw": 2380.0,
+      "modelDeltaErrorMw": 1095.2,
+      "tepcoDeltaErrorMw": 470.0,
+      "modelAbsDeltaErrorMw": 1095.2,
+      "tepcoAbsDeltaErrorMw": 470.0
+    },
+    "largeShapeBreaks": []
+  },
+  "topMisses": [
+    {
+      "hour": 11,
+      "actualMw": 32840.0,
+      "modelForecastMw": 33944.5,
+      "tepcoForecastMw": 31750.0,
+      "modelErrorMw": 1104.5,
+      "tepcoErrorMw": -1090.0,
+      "modelAbsErrorMw": 1104.5,
+      "tepcoAbsErrorMw": 1090.0
+    },
+    {
+      "hour": 8,
+      "actualMw": 30000.0,
+      "modelForecastMw": 29158.0,
+      "tepcoForecastMw": 29700.0,
+      "modelErrorMw": -842.0,
+      "tepcoErrorMw": -300.0,
+      "modelAbsErrorMw": 842.0,
+      "tepcoAbsErrorMw": 300.0
+    },
+    {
+      "hour": 13,
+      "actualMw": 32120.0,
+      "modelForecastMw": 32896.2,
+      "tepcoForecastMw": 32360.0,
+      "modelErrorMw": 776.2,
+      "tepcoErrorMw": 240.0,
+      "modelAbsErrorMw": 776.2,
+      "tepcoAbsErrorMw": 240.0
+    }
+  ],
+  "insights": [
+    {
+      "code": "tepco_closer_overall",
+      "severity": "warning",
+      "title": "TEPCO was closer overall.",
+      "evidence": {
+        "maeGapMw": 68.2,
+        "wapeGapPct": 0.24
+      }
+    },
+    {
+      "code": "peak_level_overestimated",
+      "severity": "info",
+      "title": "The actual peak level was lower than the model expected.",
+      "evidence": {
+        "errorAtActualPeakMw": 1104.5
+      }
+    }
+  ]
+}
