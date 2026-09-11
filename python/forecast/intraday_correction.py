@@ -4378,6 +4378,36 @@ class IntradayResidualCorrector:
             "previousSlopeMw": previous_slope_mw,
         }
 
+    def _near_term_sustained_decline_supported(
+        self,
+        context: dict,
+        inference_features: pd.DataFrame | None,
+        forecast_hour: int,
+        lead_hours: int,
+    ) -> bool:
+        latest = self._finite_float(context.get("latestSlopeMw"))
+        previous = self._finite_float(context.get("previousSlopeMw"))
+        last_hour = context.get("lastObservedHour")
+        if (
+            latest is None or previous is None or last_hour is None
+            or latest >= 0.0 or previous >= 0.0
+            or latest + previous > self._near_negative_floor_decline_latest_slope_max_mw
+            or forecast_hour - last_hour != lead_hours
+        ):
+            return False
+
+        # A target-only negative delta can hide a rebound in between. Require
+        # both historical shapes to support every unobserved interval in the path.
+        for hour in range(last_hour + 1, forecast_hour + 1):
+            row = self._feature_row_for_hour(inference_features, hour)
+            if row is None:
+                return False
+            for feature in ("lag_24h_hourly_delta", "recent_same_business_type_delta_mean"):
+                value = self._finite_float(row.get(feature))
+                if value is None or value > self._near_negative_floor_decline_max_support_delta_mw:
+                    return False
+        return True
+
     def _negative_residual_near_term_floor_restore(
         self,
         context: dict | None,
@@ -4456,16 +4486,21 @@ class IntradayResidualCorrector:
             -decayed_adjustment_mw,
         )
         damping_factor = 1.0
-        if (
-            self._near_negative_floor_decline_damping_enabled
-            and latest_slope_mw
-            <= self._near_negative_floor_decline_latest_slope_max_mw
-            and support_delta_mw is not None
-            and support_delta_mw
-            <= self._near_negative_floor_decline_max_support_delta_mw
-        ):
-            damping_factor = self._near_negative_floor_decline_restore_factor
-            restore_mw *= damping_factor
+        decline_evidence_basis = None
+        if self._near_negative_floor_decline_damping_enabled:
+            if (
+                latest_slope_mw <= self._near_negative_floor_decline_latest_slope_max_mw
+                and support_delta_mw is not None
+                and support_delta_mw <= self._near_negative_floor_decline_max_support_delta_mw
+            ):
+                decline_evidence_basis = "latest_interval"
+            elif self._near_term_sustained_decline_supported(
+                context, inference_features, forecast_hour, lead_hours,
+            ):
+                decline_evidence_basis = "two_interval_decline_with_supported_path"
+            if decline_evidence_basis is not None:
+                damping_factor = self._near_negative_floor_decline_restore_factor
+                restore_mw *= damping_factor
         restore_mw = round(float(restore_mw), 1)
         if restore_mw < self._near_negative_floor_min_restore_mw:
             return None
@@ -4483,6 +4518,7 @@ class IntradayResidualCorrector:
                 else None
             ),
             "declineDampingFactor": round(float(damping_factor), 3),
+            "declineEvidenceBasis": decline_evidence_basis,
         }
 
     def _evening_decline_continuity_context(
@@ -5374,6 +5410,7 @@ class IntradayResidualCorrector:
             near_negative_floor_ramp_allowance_mw = None
             near_negative_floor_support_delta_mw = None
             near_negative_floor_decline_damping_factor = 1.0
+            near_negative_floor_decline_evidence_basis = None
             morning_warm_cap_mw = None
             morning_warm_reduction_mw = 0.0
             morning_warm_temp_delta_24h_c = None
@@ -5683,6 +5720,9 @@ class IntradayResidualCorrector:
                     )
                     near_negative_floor_decline_damping_factor = float(
                         near_negative_floor_restore["declineDampingFactor"]
+                    )
+                    near_negative_floor_decline_evidence_basis = (
+                        near_negative_floor_restore["declineEvidenceBasis"]
                     )
                     near_negative_floor_applied = True
                     near_negative_floor_restored_values.append(restore_mw)
@@ -6260,6 +6300,9 @@ class IntradayResidualCorrector:
                 "negativeResidualNearTermDeclineDampingFactor": round(
                     near_negative_floor_decline_damping_factor,
                     3,
+                ),
+                "negativeResidualNearTermDeclineEvidenceBasis": (
+                    near_negative_floor_decline_evidence_basis
                 ),
                 "morningWarmLagOverreactionCapMw": (
                     round(float(morning_warm_cap_mw), 1)

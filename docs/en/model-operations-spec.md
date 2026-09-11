@@ -265,6 +265,7 @@ The current `run_batch.py` stage names are `raw_lgbm`, `same_regime_level_calibr
 | Negative residual recovery damping | intraday calibration | avoids over-propagating negative residuals during non-business recovery |
 | Negative residual continuity floor | intraday calibration | prevents early negative residuals from pulling a stable non-business-day plateau too far below observed demand |
 | Near-term negative residual floor | intraday calibration | bounds historical support by actual demand plus a magnitude-limited, corroborated ramp allowance; retains negative-only restoration capped at 700MW ([September 10 contract](model-improvements/model-improvement-2026-09-10-observed-support-floor.md)) |
+| Sustained-decline restoration damping | same near-term floor | retains 25% of restoration after two genuine negative slopes totaling at least a 500MW fall, only when both historical deltas support every future interval; no new target hours ([September 11 review](model-improvements/model-improvement-2026-09-11-review-and-sustained-decline.md)) |
 | Positive residual slope damping | intraday calibration | damps positive residuals when actual slope rolls over |
 | Morning ramp continuity guard | intraday calibration | avoids near-term dips during confirmed business morning ramps |
 | Morning observed ramp floor | intraday calibration | supports the next one or two business-morning buckets when same-day actuals have already proven a strong ramp |

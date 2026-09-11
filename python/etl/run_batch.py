@@ -1626,7 +1626,10 @@ def _load_or_promote_lgbm(
                 promotion_config.get("retrain_weekday", 0)
             ),
         })
-        print("[LGBM] Champion retained; weekly retraining is not due")
+        if reason == "scheduled_challenger_training_disabled":
+            print("[LGBM] Champion retained; scheduled candidate training is disabled")
+        else:
+            print("[LGBM] Champion retained; weekly retraining is not due")
         return champion
 
     try:

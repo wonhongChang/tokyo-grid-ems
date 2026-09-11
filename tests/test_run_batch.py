@@ -926,6 +926,37 @@ def test_model_retrain_due_can_disable_scheduled_candidate_training(monkeypatch)
     )
 
 
+@pytest.mark.parametrize("scheduled,expected", [
+    (False, "scheduled candidate training is disabled"),
+    (True, "weekly retraining is not due"),
+])
+def test_retained_champion_log_distinguishes_disabled_training(
+    tmp_path, monkeypatch, capsys, scheduled, expected,
+):
+    from python.etl import run_batch
+    from python.eval import model_validation
+
+    champion = object()
+    monkeypatch.delenv("TOKYO_GRID_EMS_FORCE_MODEL_TRAIN", raising=False)
+    monkeypatch.delenv("TOKYO_GRID_EMS_APPROVE_RECOVERY_PROMOTION", raising=False)
+    monkeypatch.setattr(run_batch, "_try_load_lgbm", lambda *_: champion)
+    monkeypatch.setattr(run_batch, "_champion_health", lambda *_: {})
+    monkeypatch.setattr(run_batch, "_recovery_shadow_candidate_state", lambda *_: {"available": False})
+    monkeypatch.setattr(run_batch, "_last_model_evaluation", lambda *_: None)
+    monkeypatch.setattr(model_validation, "artifact_sha256", lambda *_: "test-artifact")
+    config = {"model_promotion": {
+        "enabled": True, "scheduled_challenger_training_enabled": scheduled,
+        "retrain_weekday": 0,
+    }}
+
+    result = run_batch._load_or_promote_lgbm(pd.DataFrame(), tmp_path, config, date(2026, 9, 11))
+
+    assert result is champion
+    assert expected in capsys.readouterr().out
+    report = json.loads((tmp_path / run_batch._MODEL_PROMOTION_REPORT).read_text(encoding="utf-8"))
+    assert report["reason"] == ("not_scheduled" if scheduled else "scheduled_challenger_training_disabled")
+
+
 def test_champion_health_detects_artifact_config_fingerprint_mismatch(tmp_path):
     from python.eval.model_validation import config_fingerprint
 

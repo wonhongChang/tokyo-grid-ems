@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import date
+import os
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -10,8 +13,38 @@ from python.eval.fixed_origin_model_replay import (
     _gate,
     _interval_metrics,
     _origin_inference_cache,
+    _origin_commit,
     _paired_daily_mae_bootstrap,
 )
+
+
+def test_origin_commit_includes_snapshot_rotation_detected_as_rename(tmp_path):
+    def git(*args, timestamp=None):
+        env = os.environ.copy()
+        if timestamp:
+            env.update(GIT_AUTHOR_DATE=timestamp, GIT_COMMITTER_DATE=timestamp)
+        return subprocess.check_output(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
+            cwd=tmp_path, env=env, text=True,
+        ).strip()
+
+    git("init", "--quiet")
+    folder = tmp_path / "forecast_snapshots" / "2026-09-10"
+    folder.mkdir(parents=True)
+    before = folder / "2026-09-09.json"
+    before.write_text('{"series": [1, 2, 3]}\n', encoding="utf-8")
+    git("add", ".")
+    git("commit", "--quiet", "-m", "day ahead", timestamp="2026-09-09T00:25:00+09:00")
+    before.rename(folder / "2026-09-10.json")
+    git("add", ".")
+    git("commit", "--quiet", "-m", "rotate snapshot", timestamp="2026-09-10T00:25:00+09:00")
+    expected = git("rev-parse", "HEAD")
+    git("update-ref", "refs/remotes/origin/data", expected)
+
+    commit, captured = _origin_commit(tmp_path, date(2026, 9, 10))
+
+    assert commit == expected
+    assert captured == "2026-09-10T00:25:00+09:00"
 
 
 def _metrics(mae: float, rmse: float, max_error: float) -> dict:

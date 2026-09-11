@@ -211,6 +211,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 
 選定した最近の運用改善:
 
+- [2026-09-11 モデル点検・継続低下時の復元緩和・replay origin修正](docs/ja/model-improvements/model-improvement-2026-09-11-review-and-sustained-decline.md)
 - [2026-09-10 実測支持範囲に基づく負の残差下限](docs/ja/model-improvements/model-improvement-2026-09-10-observed-support-floor.md)
 - [2026-09-09 リード別区間・D-1補正範囲・終段ガード追跡](docs/ja/model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)
 - [2026-09-04 rolling conformal target予測区間](docs/ja/model-improvements/model-improvement-2026-09-04-rolling-conformal-target-interval.md)

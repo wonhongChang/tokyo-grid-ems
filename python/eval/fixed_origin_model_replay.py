@@ -46,6 +46,7 @@ def _origin_commit(
         repo,
         "log",
         "origin/data",
+        "--no-renames",
         "--diff-filter=A",
         "--reverse",
         "--format=%H%x09%cI",

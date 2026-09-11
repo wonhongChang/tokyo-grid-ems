@@ -118,13 +118,14 @@ def test_policy_fingerprint_changes_for_controls_not_band_widths():
     assert serving_policy_fingerprint(cfg) != before
 
 
-def test_observed_bound_floor_invalidates_unbounded_floor_policy_history():
+@pytest.mark.parametrize("old_version", [1, 2])
+def test_decline_floor_invalidates_previous_serving_policy_history(old_version):
     cfg = _config()
     old_payload = {key: cfg.get(key, {}) for key in (
         "forecast", "weather_features", "weather_forecast_bias_correction",
         "adjustment", "intraday_correction", "serving_calibration",
     )}
-    old_payload["servingSemanticsVersion"] = 1
+    old_payload["servingSemanticsVersion"] = old_version
     old_policy = hashlib.sha256(json.dumps(
         old_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
     ).encode()).hexdigest()

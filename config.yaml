@@ -240,7 +240,7 @@ intraday_correction:
     min_restore_mw: 100
     decline_support_damping:
       enabled: true
-      latest_slope_max_mw: -500   # if actual demand is already falling hard...
+      latest_slope_max_mw: -500   # latest fall, or cumulative fall over two consecutive declining intervals
       max_support_delta_mw: -500  # ...and lag/recent also point down, do not fight the decline
       restore_factor: 0.25
   positive_residual_slope_damping:
