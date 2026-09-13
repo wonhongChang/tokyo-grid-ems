@@ -1,7 +1,10 @@
 {
-  "date": "2026-09-15",
+  "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "availability": "ok",
+  "targetDate": "2026-09-15",
+  "generatedAt": "2026-09-14T07:30:39+09:00",
+  "runType": "etl",
+  "preserveObservedForecastHours": true,
   "model": {
     "name": "lgbm_quantile_q50",
     "version": "mvp-1",
@@ -17,6 +20,14 @@
       "p95Lower": 37234.4,
       "p95Upper": 44429.9
     }
+  },
+  "observationSummary": {
+    "actualHoursAtGeneration": 0,
+    "observedActualHoursAtGeneration": 0,
+    "fallbackActualHoursAtGeneration": 0,
+    "lastActualHour": null,
+    "lastObservedActualHour": null,
+    "lastFallbackActualHour": null
   },
   "series": [
     {
@@ -648,5 +659,420 @@
     },
     "selectedSamples": 0,
     "preservedObservedHours": []
+  },
+  "forecastBuild": {
+    "stageSummary": {
+      "raw_lgbm": {
+        "hours": 24,
+        "peak": {
+          "forecastMw": 41276.9,
+          "at": "2026-09-15T13:00:00+09:00",
+          "interval": {
+            "p95Lower": 37526.9,
+            "p95Upper": 44033.3
+          }
+        }
+      },
+      "same_regime_level_calibrated": {
+        "hours": 24,
+        "peak": {
+          "forecastMw": 40984.4,
+          "at": "2026-09-15T13:00:00+09:00",
+          "interval": {
+            "p95Lower": 37234.4,
+            "p95Upper": 43740.8
+          }
+        }
+      },
+      "analog_adjusted": {
+        "hours": 24,
+        "peak": {
+          "forecastMw": 40984.4,
+          "at": "2026-09-15T13:00:00+09:00",
+          "interval": {
+            "p95Lower": 37234.4,
+            "p95Upper": 43740.8
+          }
+        }
+      },
+      "post_holiday_guarded": {
+        "hours": 24,
+        "peak": {
+          "forecastMw": 40984.4,
+          "at": "2026-09-15T13:00:00+09:00",
+          "interval": {
+            "p95Lower": 37234.4,
+            "p95Upper": 43740.8
+          }
+        }
+      },
+      "midday_guarded": {
+        "hours": 24,
+        "peak": {
+          "forecastMw": 40984.4,
+          "at": "2026-09-15T13:00:00+09:00",
+          "interval": {
+            "p95Lower": 37234.4,
+            "p95Upper": 43740.8
+          }
+        }
+      },
+      "localized_shape_guarded": {
+        "hours": 24,
+        "peak": {
+          "forecastMw": 40984.4,
+          "at": "2026-09-15T13:00:00+09:00",
+          "interval": {
+            "p95Lower": 37234.4,
+            "p95Upper": 43740.8
+          }
+        }
+      },
+      "pre_calibration": {
+        "hours": 24,
+        "peak": {
+          "forecastMw": 40984.4,
+          "at": "2026-09-15T13:00:00+09:00",
+          "interval": {
+            "p95Lower": 37234.4,
+            "p95Upper": 43740.8
+          }
+        }
+      }
+    },
+    "series": [
+      {
+        "hour": 0,
+        "ts": "2026-09-15T00:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 27665.0,
+          "same_regime_level_calibrated": 27372.5,
+          "analog_adjusted": 27372.5,
+          "post_holiday_guarded": 27372.5,
+          "midday_guarded": 27372.5,
+          "localized_shape_guarded": 27372.5,
+          "pre_calibration": 27372.5
+        }
+      },
+      {
+        "hour": 1,
+        "ts": "2026-09-15T01:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 26080.3,
+          "same_regime_level_calibrated": 25787.8,
+          "analog_adjusted": 25787.8,
+          "post_holiday_guarded": 25787.8,
+          "midday_guarded": 25787.8,
+          "localized_shape_guarded": 25787.8,
+          "pre_calibration": 25787.8
+        }
+      },
+      {
+        "hour": 2,
+        "ts": "2026-09-15T02:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 25698.6,
+          "same_regime_level_calibrated": 25406.1,
+          "analog_adjusted": 25406.1,
+          "post_holiday_guarded": 25406.1,
+          "midday_guarded": 25406.1,
+          "localized_shape_guarded": 25406.1,
+          "pre_calibration": 25406.1
+        }
+      },
+      {
+        "hour": 3,
+        "ts": "2026-09-15T03:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 25553.4,
+          "same_regime_level_calibrated": 25260.9,
+          "analog_adjusted": 25260.9,
+          "post_holiday_guarded": 25260.9,
+          "midday_guarded": 25260.9,
+          "localized_shape_guarded": 25260.9,
+          "pre_calibration": 25260.9
+        }
+      },
+      {
+        "hour": 4,
+        "ts": "2026-09-15T04:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 25677.1,
+          "same_regime_level_calibrated": 25384.6,
+          "analog_adjusted": 25384.6,
+          "post_holiday_guarded": 25384.6,
+          "midday_guarded": 25384.6,
+          "localized_shape_guarded": 25384.6,
+          "pre_calibration": 25384.6
+        }
+      },
+      {
+        "hour": 5,
+        "ts": "2026-09-15T05:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 26215.6,
+          "same_regime_level_calibrated": 25923.1,
+          "analog_adjusted": 25923.1,
+          "post_holiday_guarded": 25923.1,
+          "midday_guarded": 25923.1,
+          "localized_shape_guarded": 25923.1,
+          "pre_calibration": 25923.1
+        }
+      },
+      {
+        "hour": 6,
+        "ts": "2026-09-15T06:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 27915.6,
+          "same_regime_level_calibrated": 27623.1,
+          "analog_adjusted": 27623.1,
+          "post_holiday_guarded": 27623.1,
+          "midday_guarded": 27623.1,
+          "localized_shape_guarded": 27623.1,
+          "pre_calibration": 27623.1
+        }
+      },
+      {
+        "hour": 7,
+        "ts": "2026-09-15T07:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 31555.1,
+          "same_regime_level_calibrated": 31262.6,
+          "analog_adjusted": 31262.6,
+          "post_holiday_guarded": 31262.6,
+          "midday_guarded": 31262.6,
+          "localized_shape_guarded": 31262.6,
+          "pre_calibration": 31262.6
+        }
+      },
+      {
+        "hour": 8,
+        "ts": "2026-09-15T08:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 35914.4,
+          "same_regime_level_calibrated": 35621.9,
+          "analog_adjusted": 35621.9,
+          "post_holiday_guarded": 35621.9,
+          "midday_guarded": 35621.9,
+          "localized_shape_guarded": 35621.9,
+          "pre_calibration": 35621.9
+        }
+      },
+      {
+        "hour": 9,
+        "ts": "2026-09-15T09:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 39057.4,
+          "same_regime_level_calibrated": 38764.9,
+          "analog_adjusted": 38764.9,
+          "post_holiday_guarded": 38764.9,
+          "midday_guarded": 38764.9,
+          "localized_shape_guarded": 38764.9,
+          "pre_calibration": 38764.9
+        }
+      },
+      {
+        "hour": 10,
+        "ts": "2026-09-15T10:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 40239.2,
+          "same_regime_level_calibrated": 39946.7,
+          "analog_adjusted": 39946.7,
+          "post_holiday_guarded": 39946.7,
+          "midday_guarded": 39946.7,
+          "localized_shape_guarded": 39946.7,
+          "pre_calibration": 39946.7
+        }
+      },
+      {
+        "hour": 11,
+        "ts": "2026-09-15T11:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 41046.4,
+          "same_regime_level_calibrated": 40753.9,
+          "analog_adjusted": 40753.9,
+          "post_holiday_guarded": 40753.9,
+          "midday_guarded": 40753.9,
+          "localized_shape_guarded": 40753.9,
+          "pre_calibration": 40753.9
+        }
+      },
+      {
+        "hour": 12,
+        "ts": "2026-09-15T12:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 40457.8,
+          "same_regime_level_calibrated": 40165.3,
+          "analog_adjusted": 40165.3,
+          "post_holiday_guarded": 40165.3,
+          "midday_guarded": 40165.3,
+          "localized_shape_guarded": 40165.3,
+          "pre_calibration": 40165.3
+        }
+      },
+      {
+        "hour": 13,
+        "ts": "2026-09-15T13:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 41276.9,
+          "same_regime_level_calibrated": 40984.4,
+          "analog_adjusted": 40984.4,
+          "post_holiday_guarded": 40984.4,
+          "midday_guarded": 40984.4,
+          "localized_shape_guarded": 40984.4,
+          "pre_calibration": 40984.4
+        }
+      },
+      {
+        "hour": 14,
+        "ts": "2026-09-15T14:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 40553.5,
+          "same_regime_level_calibrated": 40261.0,
+          "analog_adjusted": 40261.0,
+          "post_holiday_guarded": 40261.0,
+          "midday_guarded": 40261.0,
+          "localized_shape_guarded": 40261.0,
+          "pre_calibration": 40261.0
+        }
+      },
+      {
+        "hour": 15,
+        "ts": "2026-09-15T15:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 39580.9,
+          "same_regime_level_calibrated": 39288.4,
+          "analog_adjusted": 39288.4,
+          "post_holiday_guarded": 39288.4,
+          "midday_guarded": 39288.4,
+          "localized_shape_guarded": 39288.4,
+          "pre_calibration": 39288.4
+        }
+      },
+      {
+        "hour": 16,
+        "ts": "2026-09-15T16:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 39038.8,
+          "same_regime_level_calibrated": 38746.3,
+          "analog_adjusted": 38746.3,
+          "post_holiday_guarded": 38746.3,
+          "midday_guarded": 38746.3,
+          "localized_shape_guarded": 38746.3,
+          "pre_calibration": 38746.3
+        }
+      },
+      {
+        "hour": 17,
+        "ts": "2026-09-15T17:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 38143.9,
+          "same_regime_level_calibrated": 37851.4,
+          "analog_adjusted": 37851.4,
+          "post_holiday_guarded": 37851.4,
+          "midday_guarded": 37851.4,
+          "localized_shape_guarded": 37851.4,
+          "pre_calibration": 37851.4
+        }
+      },
+      {
+        "hour": 18,
+        "ts": "2026-09-15T18:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 37995.4,
+          "same_regime_level_calibrated": 37702.9,
+          "analog_adjusted": 37702.9,
+          "post_holiday_guarded": 37702.9,
+          "midday_guarded": 37702.9,
+          "localized_shape_guarded": 37702.9,
+          "pre_calibration": 37702.9
+        }
+      },
+      {
+        "hour": 19,
+        "ts": "2026-09-15T19:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 35612.6,
+          "same_regime_level_calibrated": 35320.1,
+          "analog_adjusted": 35320.1,
+          "post_holiday_guarded": 35320.1,
+          "midday_guarded": 35320.1,
+          "localized_shape_guarded": 35320.1,
+          "pre_calibration": 35320.1
+        }
+      },
+      {
+        "hour": 20,
+        "ts": "2026-09-15T20:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 33815.4,
+          "same_regime_level_calibrated": 33522.9,
+          "analog_adjusted": 33522.9,
+          "post_holiday_guarded": 33522.9,
+          "midday_guarded": 33522.9,
+          "localized_shape_guarded": 33522.9,
+          "pre_calibration": 33522.9
+        }
+      },
+      {
+        "hour": 21,
+        "ts": "2026-09-15T21:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 31896.8,
+          "same_regime_level_calibrated": 31604.3,
+          "analog_adjusted": 31604.3,
+          "post_holiday_guarded": 31604.3,
+          "midday_guarded": 31604.3,
+          "localized_shape_guarded": 31604.3,
+          "pre_calibration": 31604.3
+        }
+      },
+      {
+        "hour": 22,
+        "ts": "2026-09-15T22:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 30395.4,
+          "same_regime_level_calibrated": 30102.9,
+          "analog_adjusted": 30102.9,
+          "post_holiday_guarded": 30102.9,
+          "midday_guarded": 30102.9,
+          "localized_shape_guarded": 30102.9,
+          "pre_calibration": 30102.9
+        }
+      },
+      {
+        "hour": 23,
+        "ts": "2026-09-15T23:00:00+09:00",
+        "forecastMwByStage": {
+          "raw_lgbm": 29145.7,
+          "same_regime_level_calibrated": 28853.2,
+          "analog_adjusted": 28853.2,
+          "post_holiday_guarded": 28853.2,
+          "midday_guarded": 28853.2,
+          "localized_shape_guarded": 28853.2,
+          "pre_calibration": 28853.2
+        }
+      }
+    ],
+    "metadata": {
+      "sameRegimeDayLevelCalibration": {
+        "applied": true,
+        "adjustmentMw": -292.5,
+        "historyDates": [
+          "2026-09-09",
+          "2026-09-10",
+          "2026-09-11"
+        ],
+        "stateStatus": "fresh",
+        "latestResidualDate": "2026-09-13",
+        "stateLagDays": 1,
+        "expectedHistoryDates": [
+          "2026-09-09",
+          "2026-09-10",
+          "2026-09-11"
+        ],
+        "rejectedOriginEntries": 14
+      }
+    }
   }
 }
