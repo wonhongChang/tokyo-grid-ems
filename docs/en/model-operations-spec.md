@@ -255,6 +255,7 @@ The current `run_batch.py` stage names are `raw_lgbm`, `same_regime_level_calibr
 |---|---|---|
 | Analogous day | `AnalogousDayAdjuster` | currently bypassed (`analogous_day.enabled: false`) after recent replay degradation; stage remains observable for shadow review |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | blocks analogous-day shifts in the wrong direction |
+| Observed weekend morning shape support | `PostHolidayTimeBandGuard` | On a business-type mismatch, use matching-type slope only when two consecutive pre-guard actuals support the forecast level within the existing 250MW slack; otherwise retain the floor ([September 13 contract](model-improvements/model-improvement-2026-09-13-observed-weekend-shape-support.md)) |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | protects Monday/business-return morning ramps from non-business lag drag only when the forecast shape is also short |
 | Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | limits positive analog shifts on ordinary business afternoons when lag/recent shape and weather all fail to support an uplift |
 | Midday transition guard | `MiddayTransitionGuard` | restores business-day 12:00 lunch dip shape |

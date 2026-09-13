@@ -234,6 +234,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 
 선별된 최근 운영 개선:
 
+- [2026-09-13 관측 근거 기반 주말 아침 shape floor·AI 리포트 근거 수정](docs/ko/model-improvements/model-improvement-2026-09-13-observed-weekend-shape-support.md)
 - [2026-09-11 모델 점검·연속 하락 복원 완화·replay origin 수정](docs/ko/model-improvements/model-improvement-2026-09-11-review-and-sustained-decline.md)
 - [2026-09-10 실측 지지 범위에 따른 음수 잔차 하한](docs/ko/model-improvements/model-improvement-2026-09-10-observed-support-floor.md)
 - [2026-09-09 리드별 밴드·D-1 보정 범위·최종 가드 추적](docs/ko/model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)

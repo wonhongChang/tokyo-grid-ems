@@ -263,6 +263,7 @@ Raw LightGBM Forecast
 |---|---|---|
 | Analogous day | `AnalogousDayAdjuster` | 최근 replay 악화로 현재 우회(`analogous_day.enabled: false`)하며, shadow 검토를 위해 stage 측정은 유지 |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 유사일 보정이 잘못된 방향으로 밀리는 것을 제한 |
+| 관측 기반 주말 아침 shape floor | `PostHolidayTimeBandGuard` | 영업유형 mismatch에서 가드 전 연속 두 실측이 예측 수준을 기존 250MW slack 이내로 지지할 때만 동유형 기울기 우선. 그 외 기존 방어 유지 ([9월 13일 계약](model-improvements/model-improvement-2026-09-13-observed-weekend-shape-support.md)) |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | 예측 shape도 부족할 때만 휴일/주말 lag가 영업일 오전을 과도하게 낮추는 문제 완화 |
 | Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | 일반 영업일 오후에 lag/recent shape와 기상이 모두 상방을 지지하지 않을 때 유사일 양수 shift를 제한 |
 | Midday transition guard | `MiddayTransitionGuard` | 영업일 12시 lunch dip이 지나치게 평활화되는 문제 완화 |

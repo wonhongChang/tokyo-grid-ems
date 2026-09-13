@@ -875,6 +875,25 @@ def test_inference_midday_context_includes_same_day_softening():
     assert hour_12["business_midday_x_same_day_recent_delta_mean"] < 0.0
 
 
+def test_morning_observation_context_excludes_fallback_and_later_target_hours():
+    timestamps = pd.date_range("2026-08-01", periods=43 * 24, freq="h", tz=JST)
+    target = date(2026, 9, 12)
+    df = pd.DataFrame({
+        "ts": timestamps, "actual_mw": 23_000.0, "temp_c": 24.0,
+        "actual_source": "observed",
+    })
+    today = df["ts"].dt.date == target
+    df.loc[today & (df["ts"].dt.hour >= 5), "actual_mw"] = np.nan
+    df.loc[today & (df["ts"].dt.hour == 4), "actual_source"] = "tepco_forecast_fallback"
+    out = build_inference_features(df, target, include_context=True)
+    assert out.loc[6, "same_day_latest_actual_hour"] == 3.0
+    assert out.loc[6, "same_day_latest_actual_mw"] == 23_000.0
+    df.loc[today & (df["ts"].dt.hour >= 6), "actual_mw"] = 50_000.0
+    later = build_inference_features(df, target, include_context=True)
+    pd.testing.assert_frame_equal(out.iloc[:7], later.iloc[:7])
+    assert "same_day_latest_actual_mw" not in FEATURE_COLS
+
+
 def test_inference_lag_gap_positive_on_monday_after_low_weekend():
     start = pd.Timestamp("2025-01-01", tz=JST)
     n = 30 * 24

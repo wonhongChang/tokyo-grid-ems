@@ -3672,6 +3672,12 @@ def _recommended_ticket_for_event(event: dict) -> dict | None:
     hour = _hour_from_point(event)
     event_id = str(event.get("id") or "")
     direction = str(event.get("modelErrorDirection") or "")
+    # A later recalculation gap is not an actual-demand error or a tuning signal.
+    if (
+        event.get("eventType") == "published_recalculated_gap"
+        or event_id.startswith("freeze_gap_h")
+    ):
+        return None
     if hour is None:
         return None
     if 6 <= hour <= 10:
@@ -5776,17 +5782,30 @@ def _event_hypotheses_from_fact_packet(language: str, fact_packet: dict | None) 
 def _ticket_recommendations_from_fact_packet(
     language: str,
     fact_packet: dict | None,
-    source_event_ids: set[str],
+    hypotheses: list[dict],
 ) -> list[dict]:
     if not isinstance(fact_packet, dict):
         return []
+    hypothesis_ids_by_event: dict[str, list[str]] = {}
+    for hypothesis in hypotheses:
+        if not isinstance(hypothesis, dict) or _hypothesis_is_freeze_only(hypothesis):
+            continue
+        hypothesis_id = _meaningful_text(hypothesis.get("id"))
+        if not hypothesis_id:
+            continue
+        for event_id in _as_string_list(hypothesis.get("sourceEventIds")):
+            linked = hypothesis_ids_by_event.setdefault(event_id, [])
+            if hypothesis_id not in linked:
+                linked.append(hypothesis_id)
     result: list[dict] = []
     for index, ticket in enumerate(fact_packet.get("recommendationTicketCandidates") or [], start=1):
         if not isinstance(ticket, dict):
             continue
         event_id = _meaningful_text(ticket.get("eventId"))
         target = _normalize_feature_name(_meaningful_text(ticket.get("target")))
-        if not event_id or event_id not in source_event_ids:
+        linked_hypotheses = hypothesis_ids_by_event.get(event_id, [])
+        # Revalidate saved fact packets as well as newly generated candidates.
+        if not linked_hypotheses or event_id.startswith("freeze_gap_h"):
             continue
         if target not in ALLOWED_RECOMMENDATION_TARGETS:
             continue
@@ -5804,7 +5823,7 @@ def _ticket_recommendations_from_fact_packet(
             "validationPlan": copy.get("validationPlan") or (
                 "Compare the linked time-band MAE/WAPE, max error, and same-hour TEPCO gap."
             ),
-            "linkedHypotheses": [f"event.{event_id}"],
+            "linkedHypotheses": linked_hypotheses,
             "autoApply": False,
         })
     return result
@@ -6251,16 +6270,10 @@ def _merge_openai_analysis(
         _recommendations(report["rootCauseHypotheses"], messages),
         _hypotheses_by_id(report["rootCauseHypotheses"]),
     )
-    source_event_ids = {
-        source_event_id
-        for hypothesis in report["rootCauseHypotheses"]
-        if isinstance(hypothesis, dict)
-        for source_event_id in _as_string_list(hypothesis.get("sourceEventIds"))
-    }
     ticket_recommendations = _ticket_recommendations_from_fact_packet(
         report.get("language", "ko"),
         fact_packet,
-        source_event_ids,
+        report["rootCauseHypotheses"],
     )
     if ticket_recommendations:
         report["featureRecommendations"] = [

@@ -253,6 +253,7 @@ Raw LightGBM Forecast
 |---|---|---|
 | Analogous day | `AnalogousDayAdjuster` | 直近replayの悪化により現在は迂回（`analogous_day.enabled: false`）。shadow確認用のstage計測は維持 |
 | Post-holiday timeband | `PostHolidayTimeBandGuard` | 類似日補正の誤方向shiftを制限 |
+| 観測に基づく週末朝shape floor | `PostHolidayTimeBandGuard` | 営業区分mismatchで、guard前の連続二観測が既存250MW slack以内で予測水準を支持するときのみ同区分傾きを優先。それ以外は既存防御を維持 ([9月13日契約](model-improvements/model-improvement-2026-09-13-observed-weekend-shape-support.md)) |
 | Business return anchor shortfall | `PostHolidayTimeBandGuard` | 予測shapeも不足している場合のみ、非営業日lagが営業日朝を下げすぎる問題を緩和 |
 | Declining-shape analog uplift cap | `PostHolidayTimeBandGuard` | 通常営業日の午後にlag/recent shapeと気象が上方を支持しない場合、正の類似日shiftを制限 |
 | Midday transition guard | `MiddayTransitionGuard` | 営業日12時のlunch dip形状を復元 |

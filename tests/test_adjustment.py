@@ -1465,8 +1465,106 @@ def test_guard_lifts_non_business_morning_shape_floor_when_drop_is_unsupported()
 
 
 # ---------------------------------------------------------------------------
+# Observed support for non-business morning shape
+# ---------------------------------------------------------------------------
+
+
+def _observed_morning_floor_case(enabled=True):
+    cfg = _guard_config()
+    cfg["adjustment"]["post_holiday_timeband_guard"]["non_business_morning_shape_floor_guard"] = {
+        "prefer_matching_support_when_observed": enabled,
+    }
+    forecasts = _make_raw_forecasts(date(2026, 9, 12), 22_800.0)
+    forecasts[6] = PostHolidayTimeBandGuard._shift_forecast(forecasts[6], 274.8)
+    inf = _make_post_holiday_inf(consec=0, dsh=8, is_non_business_day=1)
+    inf["lag_24h_business_type_mismatch"] = 1
+    inf.loc[6, "lag_24h_hourly_delta"] = 1_550.0
+    inf.loc[6, "recent_same_business_type_delta_mean"] = 287.5
+    inf["same_day_latest_actual_hour"] = np.nan
+    inf["same_day_latest_actual_mw"] = np.nan
+    inf.loc[4, ["same_day_latest_actual_hour", "same_day_latest_actual_mw"]] = [3, 22_710]
+    inf.loc[5:6, ["same_day_latest_actual_hour", "same_day_latest_actual_mw"]] = [4, 22_910]
+    return cfg, forecasts, inf
+
+
+def test_morning_floor_uses_matching_shape_when_early_actuals_support_level():
+    cfg, forecasts, inf = _observed_morning_floor_case()
+    before = inf.copy(deep=True)
+    old = PostHolidayTimeBandGuard(_observed_morning_floor_case(False)[0])
+    guard = PostHolidayTimeBandGuard(cfg)
+    baseline = old.apply(forecasts, forecasts, inf)
+    result = guard.apply(forecasts, forecasts, inf)
+    assert baseline[6].forecast_mw == pytest.approx(23_843.7)
+    assert result[6] is forecasts[6]
+    assert forecasts[6].forecast_mw == pytest.approx(23_074.8)
+    pd.testing.assert_frame_equal(inf, before)
+
+
+@pytest.mark.parametrize("case", [
+    "off", "same_business", "unknown_mismatch", "missing_matching_shape",
+    "missing_context", "one_observation", "nonconsecutive", "positive_level_gap",
+    "invalid_actual", "nonfinite_reference", "future_context_only",
+])
+def test_morning_floor_preserves_existing_behavior_without_independent_evidence(case):
+    cfg, forecasts, inf = _observed_morning_floor_case()
+    if case == "off":
+        cfg = _observed_morning_floor_case(False)[0]
+    elif case == "same_business":
+        inf["lag_24h_business_type_mismatch"] = 0
+    elif case == "unknown_mismatch":
+        inf["lag_24h_business_type_mismatch"] = np.nan
+    elif case == "missing_matching_shape":
+        inf.loc[6, "recent_same_business_type_delta_mean"] = np.nan
+    elif case == "missing_context":
+        inf = inf.drop(columns=["same_day_latest_actual_hour", "same_day_latest_actual_mw"])
+    elif case == "one_observation":
+        inf.loc[4, "same_day_latest_actual_hour"] = np.nan
+    elif case == "nonconsecutive":
+        inf.loc[4, "same_day_latest_actual_hour"] = 2
+    elif case == "positive_level_gap":
+        inf.loc[5:6, "same_day_latest_actual_mw"] = 23_051.0
+    elif case == "invalid_actual":
+        inf.loc[4, "same_day_latest_actual_mw"] = np.inf
+    elif case == "nonfinite_reference":
+        forecasts[3] = PostHolidayTimeBandGuard._shift_forecast(forecasts[3], float("nan"))
+    elif case == "future_context_only":
+        inf["same_day_latest_actual_hour"] = np.nan
+        inf.loc[7, ["same_day_latest_actual_hour", "same_day_latest_actual_mw"]] = [3, 22_710]
+        inf.loc[8, ["same_day_latest_actual_hour", "same_day_latest_actual_mw"]] = [4, 22_910]
+    guard = PostHolidayTimeBandGuard(cfg)
+    result = guard._apply_non_business_morning_shape_floor_guard(forecasts, inf)
+    assert result[6].forecast_mw == pytest.approx(23_843.7)
+
+
+def test_morning_floor_retains_real_matching_type_dip_support_and_band_width():
+    cfg, forecasts, inf = _observed_morning_floor_case()
+    forecasts[6] = PostHolidayTimeBandGuard._shift_forecast(forecasts[6], -1_074.8)
+    guard = PostHolidayTimeBandGuard(cfg)
+    result = guard._apply_non_business_morning_shape_floor_guard(forecasts, inf)
+    assert result[6].forecast_mw == pytest.approx(22_628.1)
+    assert result[6].p95_upper_mw - result[6].forecast_mw == pytest.approx(1_000.0)
+    assert result[6].forecast_mw - result[6].p99_lower_mw == pytest.approx(1_500.0)
+
+
+def test_morning_floor_does_not_use_actuals_inside_or_after_guarded_hours():
+    cfg, forecasts, inf = _observed_morning_floor_case()
+    guard = PostHolidayTimeBandGuard(cfg)
+    expected = guard._apply_non_business_morning_shape_floor_guard(forecasts, inf)
+    inf.loc[7:, "same_day_latest_actual_hour"] = list(range(6, 23))
+    inf.loc[7:, "same_day_latest_actual_mw"] = 50_000.0
+    assert guard._apply_non_business_morning_shape_floor_guard(forecasts, inf) == expected
+
+
+def test_morning_support_switch_changes_serving_policy_identity():
+    from python.forecast.rolling_interval_calibration import serving_policy_fingerprint
+    assert serving_policy_fingerprint(_observed_morning_floor_case(True)[0]) != (
+        serving_policy_fingerprint(_observed_morning_floor_case(False)[0])
+    )
+
+# ---------------------------------------------------------------------------
 # Midday transition guard
 # ---------------------------------------------------------------------------
+
 
 def _midday_guard_config(**overrides) -> dict:
     guard_config = {

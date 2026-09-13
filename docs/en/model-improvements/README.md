@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-09
 
+- [2026-09-13 observed weekend morning shape support and AI evidence repair](model-improvement-2026-09-13-observed-weekend-shape-support.md)
 - [2026-09-11 model review, sustained-decline restoration and replay-origin repair](model-improvement-2026-09-11-review-and-sustained-decline.md)
 - [2026-09-10 observed-supported negative residual floor](model-improvement-2026-09-10-observed-support-floor.md)
 - [2026-09-09 lead-aware intervals, D-1 calibration scope and terminal guard attribution](model-improvement-2026-09-09-serving-calibration-contracts.md)

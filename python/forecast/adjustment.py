@@ -644,6 +644,9 @@ class PostHolidayTimeBandGuard:
         self._non_business_morning_shape_enabled = bool(
             morning_shape_config.get("enabled", True)
         )
+        self._non_business_morning_shape_observed_support = bool(
+            morning_shape_config.get("prefer_matching_support_when_observed", False)
+        )
         self._non_business_morning_shape_hours: set[int] = set()
         for hour in morning_shape_config.get("target_hours", [6, 7]):
             try:
@@ -1518,6 +1521,38 @@ class PostHolidayTimeBandGuard:
 
         return result if changed else adjusted_forecasts
 
+    def _pre_ramp_observations_support_forecast(
+        self, forecasts_by_hour: dict, rows_by_hour: dict,
+    ) -> bool:
+        if not self._non_business_morning_shape_observed_support:
+            return False
+        first_target_hour = min(self._non_business_morning_shape_hours)
+        observations = {}
+        # Do not use guarded or later hours to justify changing the ramp floor.
+        for row_hour, row in rows_by_hour.items():
+            if row_hour > first_target_hour:
+                continue
+            observed_hour = self._finite_float(row.get("same_day_latest_actual_hour"))
+            observed_mw = self._finite_float(row.get("same_day_latest_actual_mw"))
+            if (
+                observed_hour is not None and observed_hour.is_integer()
+                and 0 <= observed_hour < row_hour and observed_mw is not None
+            ):
+                observations[int(observed_hour)] = observed_mw
+        hours = sorted(observations)[-2:]
+        if len(hours) != 2 or hours[1] - hours[0] != 1:
+            return False
+        for hour in hours:
+            forecast = forecasts_by_hour.get(hour)
+            reference = self._finite_float(forecast.forecast_mw) if forecast else None
+            if (
+                reference is None
+                or observations[hour] - reference
+                > self._non_business_morning_shape_support_slack_mw
+            ):
+                return False
+        return True
+
     def _apply_non_business_morning_shape_floor_guard(
         self,
         forecasts: list,
@@ -1536,6 +1571,9 @@ class PostHolidayTimeBandGuard:
             pd.Timestamp(forecast.ts).hour: forecast
             for forecast in forecasts
         }
+        observed_support = self._pre_ramp_observations_support_forecast(
+            forecasts_by_hour, rows_by_hour,
+        )
         result = []
         changed = False
         for forecast in forecasts:
@@ -1555,12 +1593,14 @@ class PostHolidayTimeBandGuard:
                 result.append(forecast)
                 continue
 
+            lag_delta = self._finite_float(row.get("lag_24h_hourly_delta"))
+            matching_delta = self._finite_float(row.get("recent_same_business_type_delta_mean"))
+            mismatch = self._finite_float(row.get("lag_24h_business_type_mismatch"))
+            if observed_support and mismatch == 1.0 and matching_delta is not None:
+                lag_delta = None
             support_candidates = [
                 value
-                for value in (
-                    self._finite_float(row.get("lag_24h_hourly_delta")),
-                    self._finite_float(row.get("recent_same_business_type_delta_mean")),
-                )
+                for value in (lag_delta, matching_delta)
                 if value is not None
             ]
             if not support_candidates:
