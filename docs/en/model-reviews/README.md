@@ -8,6 +8,7 @@ Languages: [한국어](../../ko/model-reviews/README.md) / [日本語](../../ja/
 
 ## Reviews
 
+- [2026-09-14 business-return forecast review](model-review-2026-09-14.md) - investigation complete; model unchanged. ETL succeeded, 09:00 over-suppression and 13:00-14:00 raw underprediction were separated and reproduced; interval cohort and AI recommendation issues remain.
 - [2026-09-13 weekend forecast review](model-review-2026-09-13.md) - completed; unconditional lag exclusion rejected, observation-supported matching-type morning floor implemented with replay checks, and AI ticket evidence links repaired. Trained artifact unchanged.
 - [2026-09-08 operational forecast review](model-review-2026-09-08.md) - completed; recent displayed errors are lower, but advance upward bias, lead-specific interval undercoverage, stale calibration cohorts, and incomplete terminal-guard logs remain actionable.
 - [2026-09-04 v15 candidate screening review](model-review-2026-09-04-v15-candidate-screening.md) - completed; retraining, configuration ablations, rolling windows, and origin-specific models produced no candidate that passed both development and holdout evidence, so v14-r2 remains deployed.
