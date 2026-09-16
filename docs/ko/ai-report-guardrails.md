@@ -137,6 +137,16 @@ py -3 python\eval\ai_daily_report.py --public-dir web\public --out-dir tmp_ai_re
 
 ## 운영상 trade-off
 
+### 사건 문맥과 추천 근거 (2026-09-16)
+
+- 오전이라는 이유만으로 영업일 전환을 원인으로 지정하지 않습니다. 기본 조사 후보는 `lag_24h_hourly_delta`이며 동유형 anchor, 기상, 원형 예측과 보정값을 비교합니다. 전환 전용 설명에는 `lag24BusinessTypeMismatch == 1` 근거가 필요하고, 이 값도 인과관계의 증명은 아닙니다.
+- 저녁 하락 cap의 자동 후보는 양수 예측오차, `sameDayActualSlopeMw <= -500`, `postCalibrationForecastDeltaMw > 0`가 함께 확인될 때만 생성합니다. 이는 기존 shape 진단 기준을 이용한 **리포트 후보 선별**이지 모델의 새 제어 규칙이 아닙니다. 결측치나 시각만으로 후보를 만들지 않습니다.
+- 진단 수치는 원인 확정과 구분합니다. 특히 최종 실행의 slope만으로 앞선 실행이 그 하락을 알고 있었다고 서술할 수 없습니다. 실제 튜닝에는 대상 시간 시작 전 입력의 replay가 필요합니다.
+- 생성기가 보완하는 `mechanism`, `nextCheck`와 저녁 후보 설명도 한국어·일본어로 제공합니다. 이미 충분한 AI 설명은 단순 템플릿으로 대체하지 않습니다.
+- 리포트 생성 CLI는 모델 replay가 아니므로 `proposedReplayCommand`로 제시하지 않습니다. 실제 실험이 정의되기 전에는 해당 명령을 비워 둡니다.
+
+관련 검증: `tests/test_ai_report_context_safety.py`, `tests/test_ai_report_ticket_evidence.py`. [9월 16일 점검](model-reviews/model-review-2026-09-16.md)에서는 네트워크 차단 테스트 74개와 실제 입력의 세 언어 문맥 재구성을 확인했습니다. 이는 기존 공개 리포트를 재생성하지 않으며, 유료 API 검증은 별도 승인된 호출 예산에서만 수행합니다.
+
 현재 구조는 의도적으로 보수적입니다. 그래서 리포트가 완전히 자유로운 문장보다 조금 더 정형적으로 보일 수 있습니다. 대신 근거 없는 멋진 해설이 공개되는 위험을 줄입니다.
 
 전력 수요 예측 대시보드에서는 이 trade-off가 적절합니다. 리포트는 읽기 쉬워야 하지만, 숫자와 주장은 추적 가능해야 하기 때문입니다.

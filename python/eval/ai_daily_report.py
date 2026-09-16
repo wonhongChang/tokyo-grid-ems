@@ -3668,7 +3668,14 @@ def _nearest_freeze_gap_for_hour(
     })
 
 
-def _recommended_ticket_for_event(event: dict) -> dict | None:
+def _recommended_ticket_for_event(
+    event: dict, shape_evidence: dict | None = None,
+) -> dict | None:
+    """Suggest investigation targets, not causes inferred from the clock alone.
+
+    Report regeneration is not model replay, so it is never offered as a replay
+    command. Leave commands absent until a concrete experiment is specified.
+    """
     hour = _hour_from_point(event)
     event_id = str(event.get("id") or "")
     direction = str(event.get("modelErrorDirection") or "")
@@ -3683,7 +3690,7 @@ def _recommended_ticket_for_event(event: dict) -> dict | None:
     if 6 <= hour <= 10:
         return {
             "eventId": event_id,
-            "target": "intraday_correction.business_type_transition",
+            "target": "lag_24h_hourly_delta",
             "testWindowJst": "06:00-11:00",
             "triggerFields": [
                 "morningTransitionDiagnostics.rows[].morningLagDeltaExcessMw",
@@ -3691,9 +3698,10 @@ def _recommended_ticket_for_event(event: dict) -> dict | None:
                 "focusedRows[].publishedVsLatestRecalculatedGapMw",
             ],
             "tuningDirection": (
-                "Backtest whether business-return transition thresholds or "
-                "morning published-line freeze handling explain the same-hour "
-                f"{direction or 'signed'} miss before changing production logic."
+                "Compare previous-day ramp, same-business-type support, weather "
+                "inputs, and raw-versus-calibrated forecasts for the same-hour "
+                f"{direction or 'signed'} miss. A morning timestamp alone does "
+                "not establish a business-type transition or a need for a guard."
             ),
             "acceptanceMetrics": [
                 "06-11 MAE/WAPE",
@@ -3703,10 +3711,6 @@ def _recommended_ticket_for_event(event: dict) -> dict | None:
             "failureMode": (
                 "Too much damping can suppress a genuine business-day or "
                 "cooling-demand ramp."
-            ),
-            "proposedReplayCommand": (
-                "python -m python.eval.ai_daily_report --public-dir web/public "
-                "--max-days 1 --languages en --no-openai --overwrite-existing"
             ),
         }
     if 11 <= hour <= 15:
@@ -3733,12 +3737,18 @@ def _recommended_ticket_for_event(event: dict) -> dict | None:
                 "A stronger midday guard can overfit a lunch dip and damage "
                 "13:00-15:00 recovery."
             ),
-            "proposedReplayCommand": (
-                "python -m python.eval.ai_daily_report --public-dir web/public "
-                "--max-days 1 --languages en --no-openai --overwrite-existing"
-            ),
         }
     if 16 <= hour <= 19:
+        shape = shape_evidence or {}
+        slope = _as_float(shape.get("sameDayActualSlopeMw"))
+        forecast_delta = _as_float(shape.get("postCalibrationForecastDeltaMw"))
+        if (
+            _as_float(event.get("modelErrorMw")) is None
+            or float(event["modelErrorMw"]) <= 0
+            or slope is None or slope > -SLOPE_MISMATCH_THRESHOLD_MW
+            or forecast_delta is None or forecast_delta <= 0
+        ):
+            return None
         return {
             "eventId": event_id,
             "target": "intraday_correction.evening_decline_continuity_guard",
@@ -3759,10 +3769,6 @@ def _recommended_ticket_for_event(event: dict) -> dict | None:
                 "overprediction tail error",
             ],
             "failureMode": "Over-damping can miss real late-day heat or activity rebound.",
-            "proposedReplayCommand": (
-                "python -m python.eval.ai_daily_report --public-dir web/public "
-                "--max-days 1 --languages en --no-openai --overwrite-existing"
-            ),
         }
     return None
 
@@ -3878,7 +3884,7 @@ def _build_event_evidence_bundles(
             "morningEvidence": morning_evidence,
             "shapeEvidence": shape_evidence,
             "freezeEvidence": _nearest_freeze_gap_for_hour(freeze_impact, hour),
-            "recommendedTicket": _recommended_ticket_for_event(event),
+            "recommendedTicket": _recommended_ticket_for_event(event, shape_evidence),
         })
         if bundle:
             bundles.append(bundle)
@@ -5568,7 +5574,17 @@ def _directional_hypothesis_copy(language: str, hypothesis: dict) -> dict | None
         not _meaningful_text(repaired.get("mechanism"))
         or _hypothesis_detail_is_generic(repaired.get("mechanism"))
     ):
-        if is_morning_window:
+        if language == "ko":
+            repaired["mechanism"] = (
+                "오차의 방향은 확인됐지만 원인은 아직 확정되지 않았습니다. "
+                "해당 시간의 lag·기상 입력, 원형 예측, 보정 전후 값을 구분해 확인합니다."
+            )
+        elif language == "ja":
+            repaired["mechanism"] = (
+                "誤差の方向は確認できますが、原因はまだ確定できません。"
+                "該当時間のlag・気象入力、モデルの元予測、補正前後の値を分けて確認します。"
+            )
+        elif is_morning_window:
             repaired["mechanism"] = (
                 "Morning ramp misses can come from lag inertia, business-type "
                 "transition features, intraday residual carryover, or the "
@@ -5590,7 +5606,17 @@ def _directional_hypothesis_copy(language: str, hypothesis: dict) -> dict | None
         not _meaningful_text(repaired.get("nextCheck"))
         or _next_check_is_generic(repaired.get("nextCheck"))
     ):
-        if is_morning_window:
+        if language == "ko":
+            repaired["nextCheck"] = (
+                "해당 시간 시작 전에 확보된 입력과 실행별 스냅샷으로 재현해, "
+                "원형 모델 오차와 보정 영향을 분리합니다. 사후 재계산값을 당시 예측으로 대체하지 않습니다."
+            )
+        elif language == "ja":
+            repaired["nextCheck"] = (
+                "該当時間の開始前に取得した入力と実行別スナップショットで再現し、"
+                "元のモデル誤差と補正の影響を分けます。事後の再計算値を当時の予測に置き換えません。"
+            )
+        elif is_morning_window:
             repaired["nextCheck"] = (
                 "Replay hours 06:00-11:00 and compare focusedRows, "
                 "morningTransitionDiagnostics causeTags, stageAttribution, and "
@@ -5753,8 +5779,16 @@ def _event_hypotheses_from_fact_packet(language: str, fact_packet: dict | None) 
             features.extend([
                 "lag_24h_hourly_delta",
                 "recent_same_business_type_delta_mean",
-                "intraday_correction.business_type_transition",
             ])
+            mismatch = _as_float((bundle.get("morningEvidence") or {}).get("lag24BusinessTypeMismatch"))
+            if mismatch is not None:
+                evidence.append({
+                    "source": "eventEvidenceBundles",
+                    "metric": "lag24BusinessTypeMismatch",
+                    "value": mismatch,
+                    "hour": hour,
+                    "timeBand": bundle.get("timeBand"),
+                })
         elif bundle.get("timeBand") == "daytime":
             features.extend([
                 "business_midday_x_lag_24h_delta",
@@ -6464,19 +6498,20 @@ def _event_hypothesis_copy_override(language: str, hypothesis: dict) -> dict[str
     if (
         "intraday_correction.business_type_transition" in features
         and 6 <= hour_int <= 10
+        and _as_float((evidence_by_metric.get("lag24BusinessTypeMismatch") or {}).get("value")) == 1.0
     ):
         if language == "en":
             return {
                 "title": f"{hour_int:02d}:00 morning transition {direction_en}.",
                 "explanation": (
                     f"At {hour_int:02d}:00, {published_actual_en}; signed error was "
-                    f"{value:+.1f} MW.{slope_en} This is a morning transition case, "
-                    "not a generic all-day bias."
+                    f"{value:+.1f} MW.{slope_en} A business-type change is present; "
+                    "this alone does not identify the cause or the all-day pattern."
                 ),
                 "mechanism": (
-                    "The likely check is whether previous-day lag inertia ran above "
-                    "recent same-business anchors while the business-type transition "
-                    "layer did not damp the served line enough."
+                    "The input confirms a business-type change, not its causal "
+                    "effect. Compare raw lag response and each applied adjustment "
+                    "against the signed error before attributing it to this layer."
                 ),
                 "nextCheck": (
                     "Replay 06:00-11:00 and compare morningLagDeltaExcessMw, "
@@ -6486,14 +6521,14 @@ def _event_hypothesis_copy_override(language: str, hypothesis: dict) -> dict[str
             }
         if language == "ja":
             return {
-                "title": f"{hour_int:02d}:00 JST 朝の営業区分遷移による{direction_ja}。",
+                "title": f"{hour_int:02d}:00 JST 営業区分変更日の朝の{direction_ja}。",
                 "explanation": (
                     f"{hour_int:02d}:00は{published_actual_ja}で、符号付き誤差は{value:+.1f} MWです。"
-                    f"{slope_ja}日全体のバイアスではなく、朝の営業区分遷移として扱います。"
+                    f"{slope_ja}営業区分の変更だけでは原因や一日全体の傾向は確定できません。"
                 ),
                 "mechanism": (
-                    "前日lag慣性が同一営業区分anchorより強く出て、営業区分遷移レイヤーが"
-                    "配信線を十分に抑えなかったかを確認します。"
+                    "入力から営業区分の変更は確認できますが、誤差の原因とは断定できません。"
+                    "lagに対する元予測の反応と適用された各補正を、誤差の方向と照合します。"
                 ),
                 "nextCheck": (
                     "06:00〜11:00をreplayし、遷移しきい値が実需要の立ち上がりを抑えずに"
@@ -6504,11 +6539,11 @@ def _event_hypothesis_copy_override(language: str, hypothesis: dict) -> dict[str
             "title": f"{hour_int:02d}:00 JST 오전 영업일 전환 {direction_ko}.",
             "explanation": (
                 f"{hour_int:02d}:00에는 {published_actual_ko}였고, 부호 있는 오차는 {value:+.1f} MW입니다."
-                f"{slope_ko} 하루 전체 바이어스가 아니라 오전 영업일 전환 문제로 봅니다."
+                f"{slope_ko} 영업일 구분 변경만으로 원인이나 하루 전체 패턴을 확정할 수는 없습니다."
             ),
             "mechanism": (
-                "전날 lag 관성이 최근 같은 영업형태 anchor보다 강했고, 영업일 전환 레이어가 "
-                "서빙 예측선을 충분히 낮추지 못했는지 확인합니다."
+                "입력에서 영업일 구분 변경은 확인되지만 오차 원인으로 확정할 수는 없습니다. "
+                "lag에 대한 원형 예측의 반응과 각 보정의 적용량을 오차 방향에 맞춰 확인합니다."
             ),
             "nextCheck": (
                 "06:00~11:00 replay에서 전환 threshold가 실제 ramp-up 수요를 누르지 않으면서 "
@@ -6771,6 +6806,21 @@ def _clarify_limitations_scope(report: dict) -> dict:
 
 def _recommendation_copy_override(language: str, target: str) -> dict[str, str] | None:
     """Keep high-risk recommendations framed as reviewable experiments."""
+    if target == "intraday_correction.evening_decline_continuity_guard":
+        if language == "ko":
+            return {
+                "suggestion": "실측 하락과 예측 반등이 함께 확인된 구간을 당시 입력으로 재현하고, 근거리 상방 제한의 효과를 비교합니다.",
+                "expectedEffect": "원형 예측과 각 보정의 기여를 분리해, 연결된 과대예측 구간의 오차를 줄일 수 있는지 검증합니다.",
+                "risk": "하락을 과도하게 연장하면 실제 기온 상승이나 저녁 활동에 따른 수요 반등을 놓칠 수 있습니다.",
+                "validationPlan": "해당 구간뿐 아니라 실제 반등일의 MAE/WAPE, 최대오차, 시간별 변화량 오차를 함께 비교합니다.",
+            }
+        if language == "ja":
+            return {
+                "suggestion": "実績低下と予測反発が同時に確認された区間を当時の入力で再現し、近距離の上方制限の効果を比較します。",
+                "expectedEffect": "元予測と各補正の寄与を分け、関連する過大予測区間の誤差を減らせるか検証します。",
+                "risk": "低下傾向を過度に延長すると、気温上昇や夕方の活動による実需要の反発を見逃す可能性があります。",
+                "validationPlan": "該当区間と実際に反発した日のMAE/WAPE、最大誤差、時間差分誤差を合わせて比較します。",
+            }
     if target in {"lag_24h", "lag_24h_hourly_delta"}:
         if language == "en":
             return {

@@ -25,12 +25,12 @@ def test_recalculation_gap_does_not_create_model_tuning_ticket(hour):
 
 
 @pytest.mark.parametrize("hour", [6, 12, 17])
-def test_real_demand_miss_remains_eligible_at_the_same_hour(hour):
+def test_real_demand_miss_with_supported_shape_remains_eligible(hour):
     ticket = _recommended_ticket_for_event({
         "id": f"top_miss_h{hour}", "hour": hour,
         "eventType": "large_absolute_error", "modelErrorDirection": "overprediction",
         "modelErrorMw": 1089.3,
-    })
+    }, {"sameDayActualSlopeMw": -800, "postCalibrationForecastDeltaMw": 900})
     assert ticket is not None
     assert ticket["eventId"] == f"top_miss_h{hour}"
 

@@ -137,6 +137,16 @@ Inspect the generated JSON and UI, then delete `tmp_ai_report_check`.
 
 ## Operational Trade-off
 
+### Event Context and Recommendation Evidence (2026-09-16)
+
+- A morning timestamp does not establish a business-type transition. The default investigation target is `lag_24h_hourly_delta`, comparing matching-type anchors, weather, raw forecasts and adjustments. Transition-specific copy requires `lag24BusinessTypeMismatch == 1`; even that flag establishes context, not causality.
+- Automatic evening decline-cap candidates require positive forecast error, `sameDayActualSlopeMw <= -500` and `postCalibrationForecastDeltaMw > 0` together. This is **report candidate selection** using the existing shape diagnostic threshold, not a new model control rule. Missing evidence or an hour alone is insufficient.
+- Diagnostic values are not causal proof. In particular, a final-run slope does not prove an earlier run knew about the decline. Tuning requires replay with inputs available before the target started.
+- Generated `mechanism`, `nextCheck` and evening-ticket repair text must also respect Korean/Japanese report language. Sufficient existing AI explanations are not replaced by generic templates.
+- The report-generation CLI is not model replay and must not be offered as `proposedReplayCommand`. Leave the command absent until an actual experiment is defined.
+
+Checks: `tests/test_ai_report_context_safety.py` and `tests/test_ai_report_ticket_evidence.py`. The [September 16 review](model-reviews/model-review-2026-09-16.md) passed 74 network-disabled tests plus a real-input three-language context check. These checks do not regenerate published reports; paid API verification requires a separately authorized call budget.
+
 The current design is intentionally conservative. It may make the report less free-form, but it reduces the chance of publishing a polished yet unsupported explanation.
 
 For an operational power-demand dashboard, that trade-off is appropriate: the narrative should be readable, but the numbers and claims must remain auditable.

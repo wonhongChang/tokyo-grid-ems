@@ -626,7 +626,7 @@ def test_ai_daily_report_can_merge_openai_narrative(monkeypatch, tmp_path):
         assert "modelErrorMw" in morning_bundle["focusedEvidence"]
         assert morning_bundle["morningEvidence"]["morningLagDeltaExcessMw"] == 1400.0
         assert morning_bundle["recommendedTicket"]["target"] == (
-            "intraday_correction.business_type_transition"
+            "lag_24h_hourly_delta"
         )
         tickets = context["factPacket"]["recommendationTicketCandidates"]
         assert tickets[0]["testWindowJst"] == "06:00-11:00"
