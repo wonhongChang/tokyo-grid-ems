@@ -1,6 +1,6 @@
 # 2026-09-17 UI Review and Improvement Plan
 
-Status (2026-09-18): **Phase 1 implemented and locally verified; Phase 2 not started**. Not committed or pushed. No forecast model, calibration, interval or data-generation policy changes.
+Status (2026-09-18): **Phase 1 in `27fb803530`; Phase 2 implemented and locally verified**. Phase 2 code and documentation ship together in this change; post-deployment verification remains. No forecast model, calibration, interval or data-generation policy changes.
 
 Languages: [한국어](../ko/ui-improvement-plan-2026-09-17.md) / [日本語](../ja/ui-improvement-plan-2026-09-17.md)
 
@@ -97,7 +97,7 @@ Files: `web/src/usageMetrics.ts`, `web/src/reportNotes.ts`, `web/src/App.tsx`, `
 - Local UI data is **September 17 08:32 JST**, older than the deployed-data review above. No `web/public` refresh, ETL, AI call or model evaluation was performed.
 - Full browser loading/network-error regression remains pending. Existing `<html lang>` does not track the language selector; record this as follow-up accessibility work.
 
-### Resume Here
+### Phase 1 Handoff (Superseded by Phase 2 Below)
 
 1. Stop after Phase 1. Changes remain uncommitted; do not include the existing untracked `web/public/` in the UI commit.
 2. Next session: read this handoff and `git status --short`; do not repeat completed model analysis or ETL.
@@ -106,3 +106,17 @@ Files: `web/src/usageMetrics.ts`, `web/src/reportNotes.ts`, `web/src/App.tsx`, `
 5. The September 20 post-ETL model review is separate. Do not initiate promotion, retraining or paid report generation for this UI task. Commit/push only when requested.
 
 Preview: `http://127.0.0.1:5173/`. If stopped, run `npm run dev -- --host 127.0.0.1 --port 5173 --strictPort` in `web`. Check an occupied port before starting on another port.
+
+## Phase 2 Completed (2026-09-18)
+
+- [x] `VintageComparison.tsx` defaults to advance comparison, separate from latest-published reference and offline backtesting. Existing JSON only; no data generation.
+- [x] Report-defined observation windows/lead boundaries, actual period, paired samples and limited coverage. Explicitly disclose the lack of version/policy-separated metrics.
+- [x] Daily MAE/WAPE switch, precise MW tooltips, MAE gap, 14-date chart/10-date table ranges and partial coverage. No frontend WAPE averaging.
+- [x] Three-language copy and document `lang` synchronization. Previous-day assessment is labeled as published-value comparison.
+- [x] **41/41 unit tests passed**, covering contracts, paired samples, coverage scope, missing/zero values, precision and direct WAPE values.
+- [x] No document overflow in **18 combinations**: ko/en/ja × 360/390/430px × two views. Checked 1440px, window/lead controls, MAE/WAPE and keyboard tooltips.
+- [x] Isolated temporary server verified advance-report 404/503/empty/unsupported/loading states without editing operational data. No automatic reference-view or zero-score substitution. Stop that test server after QA.
+
+Next, verify **both comparison views and the MAE/WAPE switch on the deployed Validation tab**. This change excludes `web/public/` and `tmp/`. A normal deployment or Deploy Only can publish UI changes; no ETL, training or AI regeneration is required.
+
+Future candidates: version/policy-separated advance metrics and detailed time-band tables. Do not infer missing version scores in the UI or expand this scope. The September 20 model review remains separate.

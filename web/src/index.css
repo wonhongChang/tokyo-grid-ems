@@ -252,6 +252,20 @@ body {
 }
 
 /* ── Validation ──────────────────────────────────────────────────────────── */
+.validation-section { min-width: 0; padding: 20px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.validation-mode { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.validation-mode button { font: inherit; font-size: 13px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--card-bg, #fff); color: var(--text-secondary); cursor: pointer; }
+.validation-mode button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: #eff6ff; }
+.validation-mode button:focus-visible, .validation-controls select:focus-visible, .validation-table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.validation-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.validation-controls label { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
+.validation-controls select { font: inherit; padding: 7px 10px; border: 1px solid var(--border); border-radius: 4px; background: #fff; color: var(--text); max-width: 100%; }
+.validation-scope-line { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 12px; margin-bottom: 12px; }
+.validation-scope-note { margin-top: 14px; }
+.validation-selected-row td { background: #eff6ff; }
+.validation-chart-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.validation-stat { min-width: 0; }
+.validation-section .chart-tooltip { max-width: min(320px, 75vw); overflow-wrap: anywhere; white-space: normal; }
 .validation-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

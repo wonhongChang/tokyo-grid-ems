@@ -6,9 +6,20 @@ Tokyo Grid EMS evaluates forecast quality from three angles.
 
 1. **Offline backtest**: checks whether the model improves over the statistical baseline on historical data.
 2. **Operational comparison**: checks whether the project model or TEPCO's published forecast was closer to actual demand in the dashboard's operating window.
-3. **Matched-vintage benchmark**: compares model and TEPCO values captured in the same run and at the same lead time.
+3. **Matched-capture benchmark**: compares model and TEPCO values collected in the same run and evaluated in the same lead-time bucket. This does not establish identical publication times.
 
-All three outputs are generated under `web/public/metrics/`. The dashboard's **Validation** tab currently shows the offline backtest and latest-published-value operational comparison; the matched-vintage result remains an internal promotion and qualification artifact until sufficient history is available.
+All three outputs are generated under `web/public/metrics/`. **Validation** opens on **Advance comparison**, with the existing operational comparison separated as **Latest-published reference**. Offline backtesting remains a separate section. Displaying available samples does not approve model promotion or TEPCO parity.
+
+## Dashboard Reading Guide
+
+- Advance comparison uses observation-day windows (currently 28/84) and lead buckets (0-2/2-4/4-8/8-24 hours) from the JSON. Show actual dates, paired samples and MAE/WAPE; the detail table adds RMSE and maximum error.
+- `capturedAt` is our collection time, not the source's publication time. Bounds are lower-exclusive/upper-inclusive; choose the minimum positive lead per target within each bucket. Buckets may share target hours, so their counts are not additive unique hours.
+- The report does not split model versions or calibration policies. It covers operational history in the selected period, not only the current model.
+- Date/hour/segment coverage failures from `qualification.failures` mark the affected window/bucket as **Limited coverage**. Performance failures are distinct. **Comparable** does not mean qualified for promotion or parity.
+- Latest-published reference shows the JSON summary window, latest 14 dates in the MAE/WAPE chart, and latest 10 dates in the table, each with its own actual date range. Fewer than 24 hours is **Partial coverage**, including historical gaps.
+- Tooltips give precise MW, model-minus-TEPCO MAE gap, both WAPEs and sample counts. Use backend same-sample WAPE directly, not daily-percentage averaging or `100 - WAPE` accuracy.
+- Missing files, network errors and unsupported contracts remain explicit; no automatic substitution with another benchmark. Offline results never replace missing advance results.
+- Validation power values retain up to one decimal in 万kW or three in GW, plus one-decimal MW details. Other chart/unit policies are unchanged.
 
 ---
 

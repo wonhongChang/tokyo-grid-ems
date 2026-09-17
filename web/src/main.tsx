@@ -1,4 +1,4 @@
-import { StrictMode, useState } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
@@ -6,6 +6,7 @@ import { I18nContext, type Locale } from './i18n'
 
 function Root() {
   const [locale, setLocale] = useState<Locale>('ja')
+  useEffect(() => { document.documentElement.lang = locale }, [locale])
   return (
     <I18nContext.Provider value={locale}>
       <App locale={locale} setLocale={setLocale} />

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -11,7 +12,12 @@ import type {
   ForecastAccuracyJSON,
   ModelBacktestJSON,
 } from '../types'
-import { formatPower, formatPowerDisplayValue, powerDisplayValue, powerUnit } from '../units'
+import { powerDisplayValue, powerUnit } from '../units'
+import { VintageComparison } from './VintageComparison'
+import {
+  errorGap, formatErrorPct, formatErrorPower, formatExactMw, isPartialDay, referenceDays, referenceMetricValue,
+  type ErrorMetric,
+} from '../validationMetrics'
 
 interface Props {
   baseUrl: string
@@ -20,11 +26,17 @@ interface Props {
 const COPY = {
   ko: {
     title: '모델 검증',
-    subtitle: '백테스트와 TEPCO 예측 대비 운영 성능을 함께 확인합니다.',
-    opsTitle: 'TEPCO 예측 대비 운영 비교',
+    subtitle: '사전 예측과 최신 게시값을 구분해 오차를 확인합니다.',
+    advance: '사전 예측 비교',
+    reference: '최신 게시값 참고',
+    comparisonMode: '비교 기준',
+    metricMode: '오차 지표',
+    gap: 'MAE 차이 (모델 − TEPCO)',
+    loadError: '비교 데이터를 불러오지 못했습니다.',
+    opsTitle: '최신 게시값 기준 오차 비교',
     backtestTitle: '모델 백테스트',
     maeHelp: 'MAE는 평균 오차 규모, WAPE는 전체 수요 대비 오차율, RMSE는 큰 오차 리스크를 봅니다. 낮을수록 실제 수요에 가깝습니다.',
-    opsScopeNote: '최근 같은 모델로 만든 예측만 모아 TEPCO와 비교합니다.',
+    opsScopeNote: 'TEPCO는 과거 예측값을 수정할 수 있어 사전 예측의 공정한 성능 판정으로 사용하지 않습니다. 아래 범위는 모델 계열 기준이며 동일 버전만의 집계가 아닙니다.',
     backtestScopeNote: '학습용 데이터와 평가용 데이터를 나눠서 계산했습니다.',
     trainWindow: '학습 구간',
     testWindow: '평가 구간',
@@ -40,14 +52,14 @@ const COPY = {
     rmseRisk: 'RMSE 리스크',
     maxErrorRisk: '최대 오차 리스크',
     advantageHours: 'TEPCO 대비 우위 시간',
-    assessment: '운영 판단',
+    assessment: '게시값 기준 비교',
     modelScope: '집계 대상',
     smallerBetter: '낮을수록 좋습니다.',
-    dailyTrend: '최근 일별 MAE',
-    recentDays: '최근 일별 운영 판단',
+    dailyTrend: '최근 일별 오차',
+    recentDays: '일별 상세',
     date: '날짜',
     hours: '시간',
-    winner: '운영 판단',
+    winner: '게시값 비교',
     comment: '코멘트',
     commentModelBetter: '모델이 더 가까웠습니다.',
     commentTepcoBetter: 'TEPCO가 더 가까웠습니다.',
@@ -55,7 +67,7 @@ const COPY = {
     commentMixed: '평균 오차와 큰 오차 리스크가 엇갈립니다.',
     commentInsufficient: '아직 비교 시간이 부족합니다.',
     commentModelMiss: '모델 오차가 커진 날입니다.',
-    partialPrefix: '집계 중',
+    partialPrefix: '부분 집계',
     model: '모델',
     tepco: 'TEPCO',
     mixed: '혼재',
@@ -71,11 +83,17 @@ const COPY = {
   },
   en: {
     title: 'Model Validation',
-    subtitle: 'Backtest results and operational accuracy against TEPCO forecasts.',
-    opsTitle: 'Operational Comparison vs TEPCO',
+    subtitle: 'Separate advance forecasts from latest-published values when comparing errors.',
+    advance: 'Advance comparison',
+    reference: 'Latest-published reference',
+    comparisonMode: 'Comparison basis',
+    metricMode: 'Error metric',
+    gap: 'MAE gap (model − TEPCO)',
+    loadError: 'Could not load comparison data.',
+    opsTitle: 'Latest-published error reference',
     backtestTitle: 'Model Backtest',
     maeHelp: 'MAE shows average MW error, WAPE shows error as a share of total load, and RMSE highlights large-error risk. Lower is better.',
-    opsScopeNote: 'Compares TEPCO against recent forecasts made by the same model.',
+    opsScopeNote: 'TEPCO may revise past forecasts, so this is not a fair advance-forecast assessment. The scope below uses model families, not a single model version.',
     backtestScopeNote: 'Training data and evaluation data are separated.',
     trainWindow: 'Training window',
     testWindow: 'Test window',
@@ -91,14 +109,14 @@ const COPY = {
     rmseRisk: 'RMSE risk',
     maxErrorRisk: 'Max error risk',
     advantageHours: 'Model advantage hours',
-    assessment: 'Operational assessment',
+    assessment: 'Published-value comparison',
     modelScope: 'Scope',
-    smallerBetter: 'Lower MAE is better.',
-    dailyTrend: 'Recent Daily MAE',
-    recentDays: 'Recent Daily Assessment',
+    smallerBetter: 'Lower is better.',
+    dailyTrend: 'Recent daily errors',
+    recentDays: 'Daily details',
     date: 'Date',
     hours: 'Hours',
-    winner: 'Assessment',
+    winner: 'Published comparison',
     comment: 'Comment',
     commentModelBetter: 'The model was closer.',
     commentTepcoBetter: 'TEPCO was closer.',
@@ -106,7 +124,7 @@ const COPY = {
     commentMixed: 'Average error and large-error risk are mixed.',
     commentInsufficient: 'Not enough comparable hours yet.',
     commentModelMiss: 'The model error widened that day.',
-    partialPrefix: 'In progress',
+    partialPrefix: 'Partial coverage',
     model: 'Model',
     tepco: 'TEPCO',
     mixed: 'Mixed',
@@ -122,11 +140,17 @@ const COPY = {
   },
   ja: {
     title: 'モデル検証',
-    subtitle: 'バックテストとTEPCO予測に対する運用精度を確認します。',
-    opsTitle: 'TEPCO予測との運用比較',
+    subtitle: '事前予測と最新公開値を区別して誤差を確認します。',
+    advance: '事前予測比較',
+    reference: '最新公開値の参考',
+    comparisonMode: '比較基準',
+    metricMode: '誤差指標',
+    gap: 'MAE差 (モデル − TEPCO)',
+    loadError: '比較データを取得できませんでした。',
+    opsTitle: '最新公開値ベースの誤差比較',
     backtestTitle: 'モデルバックテスト',
     maeHelp: 'MAEは平均的なMW誤差、WAPEは総需要に対する誤差率、RMSEは大きな誤差リスクを示します。低いほど良好です。',
-    opsScopeNote: '同じモデルで作成した直近予測だけをTEPCOと比較します。',
+    opsScopeNote: 'TEPCOは過去予測を修正する場合があり、厳密な事前予測の性能判定には使いません。下記はモデル系統別の範囲で、単一バージョンの集計ではありません。',
     backtestScopeNote: '学習データと評価データを分けて計算しています。',
     trainWindow: '学習期間',
     testWindow: '評価期間',
@@ -142,14 +166,14 @@ const COPY = {
     rmseRisk: 'RMSEリスク',
     maxErrorRisk: '最大誤差リスク',
     advantageHours: 'TEPCO比の優位時間',
-    assessment: '運用判断',
+    assessment: '公開値ベースの比較',
     modelScope: '集計対象',
-    smallerBetter: 'MAEは低いほど良好です。',
-    dailyTrend: '直近日別MAE',
-    recentDays: '直近日別運用判断',
+    smallerBetter: '低いほど良好です。',
+    dailyTrend: '直近日別誤差',
+    recentDays: '日別詳細',
     date: '日付',
     hours: '時間',
-    winner: '運用判断',
+    winner: '公開値比較',
     comment: 'コメント',
     commentModelBetter: 'モデルの方が近い予測でした。',
     commentTepcoBetter: 'TEPCOの方が近い予測でした。',
@@ -157,7 +181,7 @@ const COPY = {
     commentMixed: '平均誤差と大きな誤差リスクの評価が分かれています。',
     commentInsufficient: '比較できる時間がまだ不足しています。',
     commentModelMiss: 'モデル誤差が大きくなった日です。',
-    partialPrefix: '集計中',
+    partialPrefix: '部分集計',
     model: 'モデル',
     tepco: 'TEPCO',
     mixed: '混在',
@@ -179,7 +203,7 @@ const DAILY_REPORT_COPY = {
     subtitle: '확정 실측 기준으로 전날 예측 품질을 요약합니다.',
     modelMae: '모델 MAE',
     tepcoMae: 'TEPCO MAE',
-    winner: '운영 판단',
+    winner: '게시값 비교',
     modelWape: '모델 WAPE',
     tepcoWape: 'TEPCO WAPE',
     rmseRisk: 'RMSE 리스크',
@@ -218,7 +242,7 @@ const DAILY_REPORT_COPY = {
     subtitle: 'Summarizes yesterday’s forecast quality after confirmed actuals arrive.',
     modelMae: 'Model MAE',
     tepcoMae: 'TEPCO MAE',
-    winner: 'Assessment',
+    winner: 'Published-value comparison',
     modelWape: 'Model WAPE',
     tepcoWape: 'TEPCO WAPE',
     rmseRisk: 'RMSE risk',
@@ -257,7 +281,7 @@ const DAILY_REPORT_COPY = {
     subtitle: '確定実績を基準に、前日の予測品質を要約します。',
     modelMae: 'モデル MAE',
     tepcoMae: 'TEPCO MAE',
-    winner: '運用判断',
+    winner: '公開値比較',
     modelWape: 'モデル WAPE',
     tepcoWape: 'TEPCO WAPE',
     rmseRisk: 'RMSEリスク',
@@ -304,13 +328,11 @@ function fmtMetricPct(value: number | null | undefined): string {
 }
 
 function fmtPowerMaybe(value: number | null | undefined, locale: Locale): string {
-  if (value == null) return '-'
-  return formatPower(value, locale)
+  return formatErrorPower(value, locale)
 }
 
 function fmtMape(value: number | null | undefined): string {
-  if (value == null) return '-'
-  return `${value.toFixed(2)}%`
+  return formatErrorPct(value)
 }
 
 function severityLabel(severity: DailyOperationReport['insights'][number]['severity'], labels: typeof DAILY_REPORT_COPY.ko): string {
@@ -383,7 +405,7 @@ function commentFor(row: ForecastAccuracyDaily, labels: typeof COPY.ko): string 
     : labels.commentTepcoBetter
   if (verdict === 'close') comment = labels.commentClose
   if (verdict === 'mixed') comment = labels.commentMixed
-  return row.hours < 24 ? `${labels.partialPrefix}: ${comment}` : comment
+  return isPartialDay(row) ? `${labels.partialPrefix}: ${comment}` : comment
 }
 
 function periodSub(summaryDays: number, windowDays: number, locale: Locale): string {
@@ -427,19 +449,22 @@ function BacktestMetricRow({ label, metric, locale }: {
 
 function DailyTooltip({ active, payload, label, locale }: {
   active?: boolean
-  payload?: Array<{ dataKey: string; value: number; color?: string; name?: string }>
+  payload?: Array<{ payload: { source: ForecastAccuracyDaily } }>
   label?: string
   locale: Locale
 }) {
   if (!active || !payload?.length) return null
+  const row = payload[0].payload.source
+  const labels = COPY[locale]
   return (
     <div className="chart-tooltip">
-      <div className="chart-tooltip-title">{label}</div>
-      {payload.map(item => (
-        <div key={item.dataKey} style={{ color: item.color }}>
-          {item.name}: {formatPowerDisplayValue(item.value, locale)} {powerUnit(locale)}
-        </div>
-      ))}
+      <div className="chart-tooltip-title">{row.date || label}</div>
+      <div>{labels.modelMae}: {formatExactMw(row.modelMaeMw, locale)}</div>
+      <div>{labels.tepcoMae}: {formatExactMw(row.tepcoMaeMw, locale)}</div>
+      <div>{labels.gap}: {formatExactMw(errorGap(row.modelMaeMw, row.tepcoMaeMw), locale)}</div>
+      <div>{labels.modelWape}: {fmtMape(row.modelWapePct)}</div>
+      <div>{labels.tepcoWape}: {fmtMape(row.tepcoWapePct)}</div>
+      <div>{labels.samples}: {row.hours}/24 {isPartialDay(row) ? `· ${labels.partialPrefix}` : ''}</div>
     </div>
   )
 }
@@ -546,22 +571,29 @@ function OperationReportCard({
 export function ValidationPanel({ baseUrl }: Props) {
   const { t, locale, fmtDate } = useT()
   const labels = COPY[locale]
+  const [comparison, setComparison] = useState<'advance' | 'reference'>('advance')
+  const [metric, setMetric] = useState<ErrorMetric>('mae')
   const accuracy = useFetch<ForecastAccuracyJSON>(`${baseUrl}metrics/forecast_accuracy.json`)
   const backtest = useFetch<ModelBacktestJSON>(`${baseUrl}metrics/model_backtest.json`)
   const dailyReport = useFetch<DailyOperationReportIndex>(`${baseUrl}reports/daily/index.json`)
 
-  const loading = accuracy.loading || backtest.loading
+  const loading = accuracy.loading
   const latestReport = dailyReport.data?.latest
   const summary = accuracy.data?.summary
-  const scopedDaily = accuracy.data?.daily.filter(row => row.includedInSummary ?? true) ?? []
+  const scopedDaily = referenceDays(accuracy.data?.daily ?? [])
   const daily = scopedDaily.slice(-14)
   const recentDaily = scopedDaily.slice(-10).reverse()
   const firstDaily = scopedDaily[0]
   const lastDaily = scopedDaily[scopedDaily.length - 1]
+  const chartValue = (row: ForecastAccuracyDaily, source: 'model' | 'tepco') => {
+    const value = referenceMetricValue(row, source, metric)
+    return value == null || metric === 'wape' ? value : powerDisplayValue(value, locale)
+  }
   const chartRows = daily.map(row => ({
     date: row.date.slice(5),
-    [labels.model]: row.modelMaeMw != null ? powerDisplayValue(row.modelMaeMw, locale) : null,
-    [labels.tepco]: row.tepcoMaeMw != null ? powerDisplayValue(row.tepcoMaeMw, locale) : null,
+    source: row,
+    model: chartValue(row, 'model'),
+    tepco: chartValue(row, 'tepco'),
   }))
 
   return (
@@ -571,19 +603,23 @@ export function ValidationPanel({ baseUrl }: Props) {
         <p>{labels.subtitle}</p>
       </div>
 
-      {loading && <div className="loading">{t.loading}</div>}
+      <div className="validation-mode" role="group" aria-label={labels.comparisonMode}>
+        {(['advance', 'reference'] as const).map(mode => (
+          <button key={mode} type="button" aria-pressed={comparison === mode} onClick={() => setComparison(mode)}>{labels[mode]}</button>
+        ))}
+      </div>
 
-      {!loading && !accuracy.data && (
-        <div className="card empty-msg">{labels.unavailable}</div>
+      {comparison === 'advance' && <VintageComparison baseUrl={baseUrl} />}
+
+      {comparison === 'reference' && loading && <div className="loading" role="status">{t.loading}</div>}
+
+      {comparison === 'reference' && !loading && !accuracy.data && (
+        <div className="empty-msg" role={accuracy.error ? 'alert' : 'status'}>{accuracy.error ? labels.loadError : labels.unavailable}</div>
       )}
 
-      {!loading && latestReport && (
-        <OperationReportCard report={latestReport} locale={locale} fmtDate={fmtDate} />
-      )}
-
-      {!loading && accuracy.data && summary && (
+      {comparison === 'reference' && !loading && accuracy.data && summary && (
         <>
-          <div className="card">
+          <section className="validation-section">
             <div className="card-title">{labels.opsTitle}</div>
             <p className="validation-note">{labels.maeHelp}</p>
             <p className="validation-note">{labels.opsScopeNote}</p>
@@ -598,10 +634,11 @@ export function ValidationPanel({ baseUrl }: Props) {
                 sub={periodSub(summary.dates, accuracy.data.windowDays, locale)}
               />
               <StatCard label={labels.samples} value={summary.hours.toLocaleString()} />
-              <StatCard label={labels.modelMae} value={fmtPowerMaybe(summary.modelMaeMw, locale)} sub={labels.smallerBetter} />
-              <StatCard label={labels.tepcoMae} value={fmtPowerMaybe(summary.tepcoMaeMw, locale)} sub={labels.smallerBetter} />
+              <StatCard label={labels.modelMae} value={fmtPowerMaybe(summary.modelMaeMw, locale)} sub={formatExactMw(summary.modelMaeMw, locale)} />
+              <StatCard label={labels.tepcoMae} value={fmtPowerMaybe(summary.tepcoMaeMw, locale)} sub={formatExactMw(summary.tepcoMaeMw, locale)} />
               <StatCard label={labels.modelWape} value={fmtMape(summary.modelWapePct)} sub={labels.smallerBetter} />
               <StatCard label={labels.tepcoWape} value={fmtMape(summary.tepcoWapePct)} sub={labels.smallerBetter} />
+              <StatCard label={labels.gap} value={formatExactMw(errorGap(summary.modelMaeMw, summary.tepcoMaeMw), locale)} />
               <StatCard
                 label={labels.rmseRisk}
                 value={`${fmtPowerMaybe(summary.modelRmseMw, locale)} / ${fmtPowerMaybe(summary.tepcoRmseMw, locale)}`}
@@ -647,34 +684,43 @@ export function ValidationPanel({ baseUrl }: Props) {
                 </div>
               </div>
             </div>
-          </div>
+          </section>
 
           {chartRows.length > 0 && (
-            <div className="card chart-container">
-              <div className="card-title">{labels.dailyTrend}</div>
+            <section className="validation-section chart-container">
+              <div className="validation-chart-heading">
+                <div className="card-title">{labels.dailyTrend} · {metric.toUpperCase()}</div>
+                <div className="validation-mode" role="group" aria-label={labels.metricMode}>
+                  {(['mae', 'wape'] as const).map(value => <button key={value} type="button" aria-pressed={metric === value} onClick={() => setMetric(value)}>{value.toUpperCase()}</button>)}
+                </div>
+              </div>
+              <p className="validation-note">{daily[0]?.date} ~ {daily[daily.length - 1]?.date} · {daily.length} {locale === 'en' ? 'days' : locale === 'ja' ? '日' : '일'}</p>
+              {daily.some(isPartialDay) && <p className="validation-note">{labels.partialPrefix}: {daily.filter(isPartialDay).map(row => `${row.date} (${row.hours}/24h)`).join(', ')}</p>}
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={chartRows} margin={{ top: 4, right: 8, bottom: 0, left: 42 }}>
+                <BarChart accessibilityLayer data={chartRows} margin={{ top: 24, right: 8, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis
-                    tickFormatter={(v: number) => formatPowerDisplayValue(v, locale)}
+                    domain={[0, 'auto']}
+                    tickFormatter={(v: number) => v.toLocaleString(locale, { maximumFractionDigits: metric === 'wape' || locale === 'en' ? 2 : 0 })}
                     tick={{ fontSize: 11 }}
                     width={52}
-                    label={{ value: powerUnit(locale), angle: -90, position: 'insideLeft', offset: 12, style: { fontSize: 10, fill: '#94a3b8' } }}
+                    label={{ value: metric === 'wape' ? '%' : powerUnit(locale), position: 'top', offset: 8, style: { fontSize: 10, fill: '#64748b' } }}
                   />
                   <Tooltip content={<DailyTooltip locale={locale} />} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey={labels.model} name={labels.model} fill="#2563eb" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey={labels.tepco} name={labels.tepco} fill="#7c3aed" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="model" name={labels.model} fill="#2563eb" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="tepco" name={labels.tepco} fill="#7c3aed" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
+            </section>
           )}
 
           {recentDaily.length > 0 && (
-            <div className="card">
+            <section className="validation-section">
               <div className="card-title">{labels.recentDays}</div>
-              <div className="validation-table-wrap">
+              <p className="validation-note">{recentDaily[recentDaily.length - 1]?.date} ~ {recentDaily[0]?.date} · {labels.model} / TEPCO</p>
+              <div className="validation-table-wrap" tabIndex={0} role="region" aria-label={labels.recentDays}>
                 <table className="validation-table">
                   <thead>
                     <tr>
@@ -692,7 +738,7 @@ export function ValidationPanel({ baseUrl }: Props) {
                     {recentDaily.map(row => (
                       <tr key={row.date}>
                         <td>{fmtDate(row.date)}</td>
-                        <td>{row.hours}</td>
+                        <td>{row.hours}/24 {isPartialDay(row) && <span className="badge info">{labels.partialPrefix}</span>}</td>
                         <td>{fmtPowerMaybe(row.modelMaeMw, locale)} / {fmtPowerMaybe(row.tepcoMaeMw, locale)}</td>
                         <td>{fmtMape(row.modelWapePct)} / {fmtMape(row.tepcoWapePct)}</td>
                         <td>{fmtPowerMaybe(row.modelRmseMw, locale)} / {fmtPowerMaybe(row.tepcoRmseMw, locale)}</td>
@@ -710,12 +756,16 @@ export function ValidationPanel({ baseUrl }: Props) {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </section>
           )}
         </>
       )}
 
-      {!loading && (
+      {comparison === 'reference' && !loading && latestReport && (
+        <OperationReportCard report={latestReport} locale={locale} fmtDate={fmtDate} />
+      )}
+
+      {!backtest.loading && (
         <div className="card">
           <div className="card-title">{labels.backtestTitle}</div>
           {!backtest.data ? (
