@@ -180,6 +180,10 @@ The UI does not scan the whole folder. The default index range is recent days, s
 
 ---
 
+### Operator Notes and Technical Details
+
+Ordinary operator notes remain visible. Calibration signal catalogs appear in an initially collapsed `Technical details: calibration signals` section, accessible by keyboard. Long identifiers wrap on mobile. Known Korean, English and Japanese catalog labels are recognized; unknown notes stay visible. This presentation does not modify the source JSON or generated analysis.
+
 ## Cost Control
 
 - Only the latest finalized date is eligible for OpenAI by default

@@ -11,6 +11,7 @@ import type {
   Severity,
 } from '../types'
 import { formatPower } from '../units'
+import { isTechnicalCatalogNote } from '../reportNotes'
 
 interface Props {
   baseUrl: string
@@ -43,6 +44,7 @@ const COPY = {
     evidence: '근거',
     limitations: '한계',
     notes: '운영 메모',
+    technicalNotes: '기술 상세 · 보정 신호 목록',
     inputVersion: '입력 버전',
     inputFingerprint: '입력 지문',
     sourceGeneratedAt: '입력 생성 시각',
@@ -128,6 +130,7 @@ const COPY = {
     evidence: 'Evidence',
     limitations: 'Limitations',
     notes: 'Operator notes',
+    technicalNotes: 'Technical details: calibration signals',
     inputVersion: 'Input Version',
     inputFingerprint: 'Input fingerprint',
     sourceGeneratedAt: 'Input generated',
@@ -213,6 +216,7 @@ const COPY = {
     evidence: '根拠',
     limitations: '制約',
     notes: '運用メモ',
+    technicalNotes: '技術詳細・補正シグナル一覧',
     inputVersion: '入力バージョン',
     inputFingerprint: '入力フィンガープリント',
     sourceGeneratedAt: '入力生成時刻',
@@ -688,6 +692,8 @@ export function OpsReportPanel({ baseUrl }: Props) {
   const visibleOperatorNotes = selectedReport?.operatorNotes.filter(note => (
     selectedReport.generator.provider !== 'openai' || !isFallbackNoteForOpenAI(note)
   )) ?? []
+  const operatorNotes = visibleOperatorNotes.filter(note => !isTechnicalCatalogNote(note))
+  const technicalNotes = visibleOperatorNotes.filter(isTechnicalCatalogNote)
 
   useEffect(() => {
     if (!latestDate) return
@@ -901,13 +907,21 @@ export function OpsReportPanel({ baseUrl }: Props) {
 
           {(visibleOperatorNotes.length > 0 || selectedReport.limitations.length > 0) && (
             <div className="card">
-              {visibleOperatorNotes.length > 0 && (
+              {operatorNotes.length > 0 && (
                 <>
                   <div className="card-title">{labels.notes}</div>
                   <ul className="ops-bullet-list">
-                    {visibleOperatorNotes.map(note => <li key={note}>{note}</li>)}
+                    {operatorNotes.map(note => <li key={note}>{note}</li>)}
                   </ul>
                 </>
+              )}
+              {technicalNotes.length > 0 && (
+                <details className="ops-technical-notes" key={`${reportDate}-${locale}`}>
+                  <summary>{labels.technicalNotes}</summary>
+                  <ul className="ops-bullet-list">
+                    {technicalNotes.map(note => <li key={note}>{note}</li>)}
+                  </ul>
+                </details>
               )}
               {selectedReport.limitations.length > 0 && (
                 <>

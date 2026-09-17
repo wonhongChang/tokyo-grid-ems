@@ -7,6 +7,7 @@ import { ValidationPanel } from './components/ValidationPanel'
 import { OpsReportPanel } from './components/OpsReportPanel'
 import { useT, LOCALE_LABELS, type Locale } from './i18n'
 import { formatPowerParts } from './units'
+import { isObservedActual, peakUsageMetrics, type UsageMetric, type PeakUsageMetrics } from './usageMetrics'
 import type {
   StatusJSON, ForecastJSON, AlertsJSON, ActualJSON,
   LatestSummary, ForecastSummary, Severity, ForecastPoint, ActualPoint,
@@ -30,43 +31,22 @@ function WeatherSourceLabel() {
   return <div className="peak-stat-sub peak-stat-source">JMA</div>
 }
 
-type UsageMetricSource = 'reported' | 'model_forecast'
-
-interface UsageMetric {
-  usagePct: number
-  supplyMw: number
-  at: string
-  source: UsageMetricSource
-}
-
 function usageMetricLabels(locale: Locale) {
-  if (locale === 'en') return { estimatedPeakUsage: 'Estimated Peak Usage' }
-  if (locale === 'ja') return { estimatedPeakUsage: '予測最大使用率' }
-  return { estimatedPeakUsage: '예상 최대 사용률' }
-}
-
-function peakUsageMetric(forecast?: ForecastPoint[] | null, actual?: ActualPoint[] | null): UsageMetric | null {
-  if (!forecast?.length || !actual?.length) return null
-
-  const candidates = forecast.flatMap(f => {
-    const hour = f.ts.substring(11, 13)
-    const act = actual.find(a => a.ts.substring(11, 13) === hour)
-    if (act?.supplyMw == null || act.supplyMw <= 0) return []
-
-    const observedUsagePct = act.usagePct ?? (act.actualMw != null ? (act.actualMw / act.supplyMw) * 100 : null)
-    const source: UsageMetricSource = observedUsagePct != null ? 'reported' : 'model_forecast'
-    const usagePct = observedUsagePct ?? (f.forecastMw / act.supplyMw) * 100
-
-    return [{
-      usagePct,
-      supplyMw: act.supplyMw,
-      at: f.ts,
-      source,
-    }]
-  })
-
-  if (candidates.length === 0) return null
-  return candidates.reduce((best, row) => row.usagePct > best.usagePct ? row : best)
+  if (locale === 'en') return {
+    observed: 'Peak observed usage', tepco: 'TEPCO estimated peak usage',
+    model: 'Model estimated peak usage', modelDetails: 'Model usage estimate',
+    tepcoSupply: 'Supply at TEPCO usage peak', modelSupply: 'Supply at model usage peak',
+  }
+  if (locale === 'ja') return {
+    observed: '最大実績使用率', tepco: 'TEPCO予測最大使用率',
+    model: 'モデル予測最大使用率', modelDetails: 'モデルの予測使用率',
+    tepcoSupply: 'TEPCO使用率ピーク時の供給力', modelSupply: 'モデル使用率ピーク時の供給力',
+  }
+  return {
+    observed: '최대 실측 사용률', tepco: 'TEPCO 예상 최대 사용률',
+    model: '모델 예상 최대 사용률', modelDetails: '모델 예상 사용률',
+    tepcoSupply: 'TEPCO 사용률 피크 시점 공급력', modelSupply: '모델 사용률 피크 시점 공급력',
+  }
 }
 
 function usageSeverity(pct: number | null | undefined): Severity | null {
@@ -93,31 +73,54 @@ function SeverityBadge({ sev }: { sev: Severity }) {
   return <span className={`badge ${sev}`}>{label}</span>
 }
 
-function UsageMetricStats({ metric }: { metric: UsageMetric | null }) {
-  const { t, locale } = useT()
-  if (!metric) return null
+function UsageStat({ metric, label }: { metric: UsageMetric | null; label: string }) {
+  return (
+    <div className="peak-stat">
+      <div className="peak-stat-label">{label}</div>
+      <div>
+        <span className="peak-stat-value">{metric ? fmtPct(metric.usagePct) : '-'}</span>
+        {metric && <span className="peak-stat-unit"> %</span>}
+      </div>
+      <div className="peak-stat-sub">{metric ? `@ ${fmtTime(metric.at)}` : '-'}</div>
+    </div>
+  )
+}
 
+function UsageSupplyStat({ metric, label }: { metric: UsageMetric | null; label: string }) {
+  return (
+    <div className="peak-stat">
+      <div className="peak-stat-label">{label}</div>
+      <div>
+        {metric?.supplyMw != null ? <PowerStatValue mw={metric.supplyMw} /> : <span className="peak-stat-value">-</span>}
+      </div>
+      <div className="peak-stat-sub">{metric ? `@ ${fmtTime(metric.at)}` : '-'}</div>
+    </div>
+  )
+}
+
+function UsageMetricStats({ metrics, showObserved = false }: { metrics: PeakUsageMetrics; showObserved?: boolean }) {
+  const { locale } = useT()
   const labels = usageMetricLabels(locale)
-  const usageLabel = metric.source === 'model_forecast' ? labels.estimatedPeakUsage : t.peakUsage
-
   return (
     <>
-      <div className="peak-stat">
-        <div className="peak-stat-label">{usageLabel}</div>
-        <div>
-          <span className="peak-stat-value">{fmtPct(metric.usagePct)}</span>
-          <span className="peak-stat-unit"> %</span>
-        </div>
-        <div className="peak-stat-sub">@ {fmtTime(metric.at)}</div>
-      </div>
-      <div className="peak-stat">
-        <div className="peak-stat-label">{t.supply}</div>
-        <div>
-          <PowerStatValue mw={metric.supplyMw} />
-        </div>
-        <div className="peak-stat-sub">@ {fmtTime(metric.at)}</div>
-      </div>
+      {showObserved && <UsageStat metric={metrics.observed} label={labels.observed} />}
+      <UsageStat metric={metrics.tepco} label={labels.tepco} />
+      <UsageSupplyStat metric={metrics.tepco} label={labels.tepcoSupply} />
     </>
+  )
+}
+
+function ModelUsageDetails({ metric }: { metric: UsageMetric | null }) {
+  const { locale } = useT()
+  const labels = usageMetricLabels(locale)
+  return (
+    <details className="usage-comparison">
+      <summary>{labels.modelDetails}</summary>
+      <div className="peak-grid">
+        <UsageStat metric={metric} label={labels.model} />
+        <UsageSupplyStat metric={metric} label={labels.modelSupply} />
+      </div>
+    </details>
   )
 }
 
@@ -177,7 +180,7 @@ function ForecastPeakCard({ s, forecast, actual }: {
   actual?: ActualPoint[]
 }) {
   const { t } = useT()
-  const usageMetric = peakUsageMetric(forecast, actual)
+  const metrics = peakUsageMetrics(s.date, forecast, actual)
   return (
     <div className="card">
       {s.severity !== 'info' && <div className="card-title"><SeverityBadge sev={s.severity} /></div>}
@@ -191,7 +194,7 @@ function ForecastPeakCard({ s, forecast, actual }: {
             {s.peakForecastAt && <div className="peak-stat-sub">@ {fmtTime(s.peakForecastAt)}</div>}
           </div>
         )}
-        <UsageMetricStats metric={usageMetric} />
+        <UsageMetricStats metrics={metrics} />
         {s.peakTempC != null && (
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakTemp}</div>
@@ -203,6 +206,7 @@ function ForecastPeakCard({ s, forecast, actual }: {
           </div>
         )}
       </div>
+      <ModelUsageDetails metric={metrics.model} />
     </div>
   )
 }
@@ -214,19 +218,19 @@ function TodayPeakCard({ actual, forecast, severity, peakTempC }: {
   peakTempC?: number
 }) {
   const { t } = useT()
-  const usageMetric = peakUsageMetric(forecast, actual.series)
+  const metrics = peakUsageMetrics(actual.date, forecast, actual.series)
   const tepcoPoints = actual.series.filter(p => p.tepcoForecastMw != null)
   const tPeak = tepcoPoints.length > 0
     ? tepcoPoints.reduce((a, b) => b.tepcoForecastMw! > a.tepcoForecastMw! ? b : a)
     : null
-  const actualPoints = actual.series.filter(p => p.actualMw != null)
+  const actualPoints = actual.series.filter(isObservedActual)
   const aPeak = actualPoints.length > 0
     ? actualPoints.reduce((a, b) => b.actualMw! > a.actualMw! ? b : a)
     : null
   return (
     <div className="card">
       {severity !== 'info' && <div className="card-title"><SeverityBadge sev={severity} /></div>}
-      <div className="peak-grid">
+      <div className="peak-grid peak-grid-today">
         {tPeak && (
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakTepcoForecast}</div>
@@ -245,7 +249,7 @@ function TodayPeakCard({ actual, forecast, severity, peakTempC }: {
             <div className="peak-stat-sub">@ {fmtTime(aPeak.ts)}</div>
           </div>
         )}
-        <UsageMetricStats metric={usageMetric} />
+        <UsageMetricStats metrics={metrics} showObserved />
         {peakTempC != null && (
           <div className="peak-stat">
             <div className="peak-stat-label">{t.peakTemp}</div>
@@ -257,6 +261,7 @@ function TodayPeakCard({ actual, forecast, severity, peakTempC }: {
           </div>
         )}
       </div>
+      <ModelUsageDetails metric={metrics.model} />
     </div>
   )
 }
