@@ -8,6 +8,7 @@ Languages: [Korean](../../ko/model-improvements/README.md) / [Japanese](../../ja
 
 ## 2026-09
 
+- [2026-09-21 observed recovery before weekend residual damping](model-improvement-2026-09-21-observed-evening-recovery.md)
 - [2026-09-13 observed weekend morning shape support and AI evidence repair](model-improvement-2026-09-13-observed-weekend-shape-support.md)
 - [2026-09-11 model review, sustained-decline restoration and replay-origin repair](model-improvement-2026-09-11-review-and-sustained-decline.md)
 - [2026-09-10 observed-supported negative residual floor](model-improvement-2026-09-10-observed-support-floor.md)

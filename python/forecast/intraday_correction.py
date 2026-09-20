@@ -790,6 +790,21 @@ class IntradayResidualCorrector:
             ),
             0.0,
         )
+        evening_recovery_config = non_business_evening_positive_config.get(
+            "observed_recovery_veto", {},
+        )
+        self._evening_positive_recovery_enabled = bool(
+            evening_recovery_config.get("enabled", False)
+        )
+        self._evening_positive_recovery_max_lead_hours = max(
+            int(evening_recovery_config.get("max_lead_hours", 3)), 1,
+        )
+        self._evening_positive_recovery_min_latest_slope_mw = max(
+            float(evening_recovery_config.get("min_latest_slope_mw", 600.0)), 0.0,
+        )
+        self._evening_positive_recovery_min_mean_slope_mw = max(
+            float(evening_recovery_config.get("min_mean_slope_mw", 300.0)), 0.0,
+        )
         non_business_evening_negative_config = correction_config.get(
             "non_business_evening_negative_residual_damping",
             {},
@@ -2922,6 +2937,7 @@ class IntradayResidualCorrector:
         inference_features: pd.DataFrame | None,
         last_observed_hour: int | None,
         base_adjustment_mw: float,
+        actual_mw_by_hour: dict[int, float] | None = None,
     ) -> dict | None:
         if (
             not self._non_business_evening_positive_enabled
@@ -2943,10 +2959,37 @@ class IntradayResidualCorrector:
         else:
             return None
 
-        return {
+        context = {
             "lastObservedHour": last_observed_hour,
             "factor": self._non_business_evening_positive_damping_factor,
         }
+        if not self._evening_positive_recovery_enabled:
+            return context
+
+        # Only genuine consecutive observations can override historical shape.
+        observed = actual_mw_by_hour or {}
+        forecast_by_hour = {
+            pd.Timestamp(point.ts).hour: point.forecast_mw for point in forecasts
+        }
+        hours = range(last_observed_hour - 2, last_observed_hour + 1)
+        actuals = [self._finite_float(observed.get(hour)) for hour in hours]
+        predicted = [self._finite_float(forecast_by_hour.get(hour)) for hour in hours]
+        if any(value is None for value in [*actuals, *predicted]):
+            return context
+        latest_slope = actuals[-1] - actuals[-2]
+        mean_slope = (actuals[-1] - actuals[0]) / 2.0
+        min_residual = min(a - p for a, p in zip(actuals, predicted))
+        if (
+            latest_slope >= self._evening_positive_recovery_min_latest_slope_mw
+            and mean_slope >= self._evening_positive_recovery_min_mean_slope_mw
+            and min_residual > 0.0
+        ):
+            context["observedRecovery"] = {
+                "latestSlopeMw": latest_slope,
+                "meanSlopeMw": mean_slope,
+                "minResidualMw": min_residual,
+            }
+        return context
 
     def _non_business_evening_positive_residual_damping(
         self,
@@ -2993,10 +3036,23 @@ class IntradayResidualCorrector:
         if damped_mw < self._non_business_evening_positive_min_damped_mw:
             return None
 
+        recovery = context.get("observedRecovery")
+        recovery_veto = bool(
+            recovery
+            and lead_hours <= self._evening_positive_recovery_max_lead_hours
+            and support_delta_mw >= 0.0
+        )
+        if recovery_veto:
+            damping_factor = 1.0
+            damped_adjustment_mw = decayed_adjustment_mw
+            damped_mw = 0.0
+
         return {
             "factor": damping_factor,
             "dampedAdjustmentMw": damped_adjustment_mw,
             "dampedMw": round(float(damped_mw), 1),
+            "observedRecoveryVeto": recovery_veto,
+            "observedRecovery": recovery if recovery_veto else None,
             "supportDeltaMw": round(float(support_delta_mw), 1),
             "lag24DeltaMw": (
                 round(float(lag_delta_mw), 1)
@@ -5225,6 +5281,7 @@ class IntradayResidualCorrector:
                 inference_features,
                 last_observed_hour,
                 base_adjustment_mw,
+                actual_mw_by_hour=actual_mw_by_hour,
             )
         )
         non_business_evening_negative_context = (
@@ -5369,6 +5426,7 @@ class IntradayResidualCorrector:
             non_business_evening_positive_support_delta_mw = None
             non_business_evening_positive_lag24_delta_mw = None
             non_business_evening_positive_recent_delta_mw = None
+            non_business_evening_positive_recovery = None
             non_business_evening_negative_damping_factor = 1.0
             non_business_evening_negative_damped_mw = 0.0
             non_business_evening_negative_support_delta_mw = None
@@ -5557,6 +5615,22 @@ class IntradayResidualCorrector:
                     )
                 )
                 if non_business_evening_positive_damping is not None:
+                    if non_business_evening_positive_damping.get("observedRecoveryVeto"):
+                        non_business_evening_positive_recovery = (
+                            non_business_evening_positive_damping["observedRecovery"]
+                        )
+                        non_business_evening_positive_support_delta_mw = (
+                            non_business_evening_positive_damping["supportDeltaMw"]
+                        )
+                        non_business_evening_positive_lag24_delta_mw = (
+                            non_business_evening_positive_damping["lag24DeltaMw"]
+                        )
+                        non_business_evening_positive_recent_delta_mw = (
+                            non_business_evening_positive_damping["recentSameBusinessTypeDeltaMw"]
+                        )
+                        reason = "non_business_evening_positive_residual_observed_recovery"
+                        if reason not in applied_reasons:
+                            applied_reasons.append(reason)
                     damped_adjustment_mw = float(
                         non_business_evening_positive_damping["dampedAdjustmentMw"]
                     )
@@ -6065,6 +6139,14 @@ class IntradayResidualCorrector:
                 "nonBusinessEveningPositiveResidualDampedMw": round(
                     non_business_evening_positive_damped_mw,
                     1,
+                ),
+                "nonBusinessEveningPositiveResidualObservedRecovery": (
+                    {
+                        key: round(float(value), 1)
+                        for key, value in non_business_evening_positive_recovery.items()
+                    }
+                    if non_business_evening_positive_recovery is not None
+                    else None
                 ),
                 "nonBusinessEveningPositiveResidualSupportDeltaMw": (
                     round(float(non_business_evening_positive_support_delta_mw), 1)

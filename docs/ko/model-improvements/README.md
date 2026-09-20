@@ -8,6 +8,7 @@
 
 ## 2026-09
 
+- [2026-09-21 실측 회복을 고려한 주말 저녁 잔차 감쇠](model-improvement-2026-09-21-observed-evening-recovery.md)
 - [2026-09-13 관측 근거 기반 주말 아침 shape floor·AI 리포트 근거 수정](model-improvement-2026-09-13-observed-weekend-shape-support.md)
 - [2026-09-11 모델 점검·연속 하락 복원 완화·replay origin 수정](model-improvement-2026-09-11-review-and-sustained-decline.md)
 - [2026-09-10 실측 지지 범위에 따른 음수 잔차 하한](model-improvement-2026-09-10-observed-support-floor.md)

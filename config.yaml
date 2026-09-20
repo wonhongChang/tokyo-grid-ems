@@ -291,6 +291,11 @@ intraday_correction:
     weak_support_delta_mw: 600 # damp only when weekend evening shape does not support a rebound
     damping_factor: 0.45
     min_damped_mw: 120
+    observed_recovery_veto:
+      enabled: true
+      max_lead_hours: 3 # measured from the last genuine observation
+      min_latest_slope_mw: 600
+      min_mean_slope_mw: 300 # two consecutive observed intervals; all three residuals must be positive
   non_business_evening_negative_residual_damping:
     enabled: true
     target_hours: [18, 19, 20]

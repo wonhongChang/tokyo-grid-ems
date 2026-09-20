@@ -8,6 +8,7 @@ Languages: [English](../../en/model-improvements/README.md) / [한국어](../../
 
 ## 2026-09
 
+- [2026-09-21 実測の回復を考慮した週末夕方の残差減衰](model-improvement-2026-09-21-observed-evening-recovery.md)
 - [2026-09-13 観測根拠による週末朝shape floor・AI根拠修正](model-improvement-2026-09-13-observed-weekend-shape-support.md)
 - [2026-09-11 モデル点検・継続低下時の復元緩和・replay origin修正](model-improvement-2026-09-11-review-and-sustained-decline.md)
 - [2026-09-10 実測支持範囲に基づく負の残差下限](model-improvement-2026-09-10-observed-support-floor.md)

@@ -266,6 +266,7 @@ Raw LightGBM Forecast
 | Near-term negative residual floor | intraday calibration | 履歴支持を実測水準と変化幅も裏付けられた上昇余裕に制限し、負の補正の最大700MW復元を維持 ([9月10日契約](model-improvements/model-improvement-2026-09-10-observed-support-floor.md)) |
 | 継続低下時の復元緩和 | 同じnear-term floor | 真の実測二区間がともに低下し合計500MW以上の低下、かつ未来全区間の両履歴deltaが低下を支持する場合に復元の25%のみ維持。対象時間の追加なし ([9月11日点検](model-improvements/model-improvement-2026-09-11-review-and-sustained-decline.md)) |
 | Positive residual slope damping | intraday calibration | 実績slope鈍化時の正residual伝播を抑制 |
+| 実測に基づく夕方の回復 | 非営業日の正残差減衰 | 連続三実測の残差が正、最新/平均傾き600/300MW、対象の過去支持が非負の場合、最後の実測から三時間以内のこの減衰だけ省略 ([9月21日の契約](model-improvements/model-improvement-2026-09-21-observed-evening-recovery.md)) |
 | Morning ramp continuity guard | intraday calibration | 営業日朝の近距離dipを防止 |
 | Morning observed ramp floor | intraday calibration | 当日実績がすでに強い朝rampを示した場合、次の1-2時間の営業日朝予測を保守的に支える |
 | Evening decline continuity guard | intraday calibration | 夕方下落時の近距離反発spikeと高水準overhangを制限 |
