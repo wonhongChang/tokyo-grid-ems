@@ -1,0 +1,872 @@
+{
+  "schemaVersion": "1.0.0",
+  "reportType": "ai_daily_operation_report",
+  "timezone": "Asia/Tokyo",
+  "date": "2026-09-25",
+  "generatedAt": "2026-09-26T07:42:14+09:00",
+  "availability": "ok",
+  "language": "ja",
+  "contentLanguage": "ja",
+  "generator": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "promptVersion": "openai_ops_report_v5",
+    "schemaVersion": "1.0.0",
+    "localizationModel": "gpt-4o-mini",
+    "localizationStatus": "ok"
+  },
+  "inputRefs": {
+    "operationReport": "reports/daily/2026-09-25.json",
+    "internalDiagnostics": "reports/internal/daily-diagnostics/2026-09-25.json",
+    "operationalCalibration": "reports/internal/operational-calibration/2026-09-25.json",
+    "operationalCalibrationHistory": "reports/internal/operational-calibration/snapshots/2026-09-25/index.json",
+    "alerts": "alerts/2026-09-25.json",
+    "forecast": "forecast/2026-09-25.json",
+    "actual": "actual/2026-09-25.json",
+    "metrics": "metrics/forecast_accuracy.json"
+  },
+  "inputSnapshot": {
+    "schemaVersion": "1.0.0",
+    "createdAt": "2026-09-26T07:42:14+09:00",
+    "fingerprint": "sha256:02fc8eed58cde1246b09480bc6a8d00f13695a4330cd9279657e2216677c5bb5",
+    "sources": {
+      "operationReport": {
+        "path": "reports/daily/2026-09-25.json",
+        "exists": true,
+        "date": "2026-09-25",
+        "generatedAt": "2026-09-26T07:41:34+09:00",
+        "fingerprint": "sha256:0369cda3d96e033d8404081f872ae3b16f6f523c3d6425d45aba3c0e07f8afaa"
+      },
+      "internalDiagnostics": {
+        "path": "reports/internal/daily-diagnostics/2026-09-25.json",
+        "exists": true,
+        "date": "2026-09-25",
+        "generatedAt": "2026-09-26T07:41:34+09:00",
+        "fingerprint": "sha256:c25a3473272403ba2756479fca248a48b77326e61cd8a2933d5142f02499c48e"
+      },
+      "operationalCalibration": {
+        "path": "reports/internal/operational-calibration/2026-09-25.json",
+        "exists": true,
+        "date": "2026-09-25",
+        "generatedAt": "2026-09-25T23:54:16+09:00",
+        "fingerprint": "sha256:8f60c18d0880e690e55a30857fde3d5d8027896c7b8ba1b6aaebee6ebeea96f7"
+      },
+      "operationalCalibrationHistory": {
+        "path": "reports/internal/operational-calibration/snapshots/2026-09-25/index.json",
+        "exists": true,
+        "date": "2026-09-25",
+        "generatedAt": "2026-09-26T07:30:27+09:00",
+        "fingerprint": "sha256:41b2832a2a94e01daab2bb43d357bb7ed18dbc2bd7c720183fde94679334577d"
+      },
+      "alerts": {
+        "path": "alerts/2026-09-25.json",
+        "exists": true,
+        "date": "2026-09-25",
+        "generatedAt": null,
+        "fingerprint": "sha256:549b9d41338d877611dc7143f33762a308f1c1e207e040d295253612140d1e7a"
+      },
+      "forecast": {
+        "path": "forecast/2026-09-25.json",
+        "exists": true,
+        "date": "2026-09-25",
+        "generatedAt": null,
+        "fingerprint": "sha256:7d245b60edd79cd5670946caf77b5127aa5100a5651c52563b268dc49f688b0b"
+      },
+      "actual": {
+        "path": "actual/2026-09-25.json",
+        "exists": true,
+        "date": "2026-09-25",
+        "generatedAt": null,
+        "fingerprint": "sha256:d3bc9f56069513f3c4a804f0e283db13162a3f3cd5aec10c85ec4b4f7f0109da"
+      },
+      "metrics": {
+        "path": "metrics/forecast_accuracy.json",
+        "exists": true,
+        "date": null,
+        "generatedAt": "2026-09-26T07:31:01+09:00",
+        "fingerprint": "sha256:1ecaebf00fc3fcc274b486edd9b5a9adce3c053c4667f2a16a80c27ed2f27984"
+      }
+    }
+  },
+  "dataQuality": {
+    "comparableHours": 24,
+    "observedHours": 24,
+    "fallbackActualHours": 0,
+    "calibrationSnapshotCount": 18,
+    "limitations": [
+      "分析は要約された運用指標と保持された補正スナップショットに基づいています。"
+    ]
+  },
+  "diagnosticContext": {
+    "coverageContext": {
+      "finalActualCoverage": {
+        "scope": "final_daily_actuals_for_performance",
+        "comparableHours": 24,
+        "observedHours": 24,
+        "fallbackActualHours": 0
+      },
+      "intradayCalibrationCoverage": {
+        "scope": "retained_intraday_calibration_snapshot_not_final_actual_csv",
+        "observedHours": 23,
+        "missingHours": 0,
+        "lastObservedHour": 22,
+        "sourceConfidence": "observed"
+      }
+    },
+    "controllerDiagnosis": {
+      "source": "operationalCalibration.correction",
+      "applied": true,
+      "baseAdjustmentMw": -871.1,
+      "carryoverAdjustmentMw": 0.0,
+      "maxAbsAdjustmentMw": 1200.0,
+      "capHitLikely": false,
+      "direction": "downward",
+      "lastObservedHour": 22,
+      "residualTrend": {
+        "latestResidualMw": -213.9,
+        "recentMeanResidualMw": -1268.5,
+        "sameDirectionHours": 6
+      },
+      "slopeContext": {
+        "latestActualSlopeMw": -1350.0,
+        "latestModelSlopeMw": -2413.0,
+        "mismatchedGradient": false
+      },
+      "guardSummary": {
+        "positiveResidualSlopeDampingApplied": false,
+        "positiveResidualSlopeDampingFactor": 1.0,
+        "positiveResidualSlopeDampingMaxMw": 0.0,
+        "morningPositiveResidualCarryoverDampingApplied": false,
+        "morningPositiveResidualCarryoverDampingFactor": 1.0,
+        "morningPositiveResidualCarryoverDampingMaxMw": 0.0,
+        "nonBusinessEveningPositiveResidualDampingApplied": false,
+        "nonBusinessEveningPositiveResidualDampingFactor": 1.0,
+        "nonBusinessEveningPositiveResidualDampingMaxMw": 0.0,
+        "nonBusinessEveningNegativeResidualDampingApplied": false,
+        "nonBusinessEveningNegativeResidualDampingFactor": 1.0,
+        "nonBusinessEveningNegativeResidualDampingMaxMw": 0.0,
+        "morningRampContinuityGuardApplied": false,
+        "morningRampContinuityMaxRestoreMw": 0.0,
+        "negativeResidualContinuityFloorApplied": false,
+        "negativeResidualContinuityFloorMaxRestoreMw": 0.0,
+        "negativeResidualNearTermFloorApplied": false,
+        "negativeResidualNearTermFloorMaxRestoreMw": 0.0,
+        "eveningDeclineContinuityGuardApplied": false,
+        "eveningDeclineContinuityMaxReductionMw": 0.0,
+        "rampGuardDeclineSupportRelaxationApplied": false,
+        "rampGuardDeclineSupportRelaxationMaxExtraDropMw": 0.0
+      },
+      "flags": [
+        "freezeLikelyVisibleInUi"
+      ]
+    },
+    "stageAttribution": {
+      "source": "operationalCalibration.hourlyDiagnostics.forecastMwByStage",
+      "stageOrder": [
+        "raw_lgbm",
+        "analog_adjusted",
+        "post_holiday_guarded",
+        "midday_guarded",
+        "pre_calibration",
+        "post_calibration",
+        "published"
+      ],
+      "largestStageShifts": [
+        {
+          "hour": 11,
+          "ts": "2026-09-25T11:00:00+09:00",
+          "actualMw": 36760.0,
+          "actualSource": "observed",
+          "tepcoForecastMw": 36150.0,
+          "stageImpactSummary": [
+            {
+              "stage": "raw_lgbm",
+              "label": "raw lgbm",
+              "value_mw": 38103.1,
+              "delta_mw": 0.0
+            },
+            {
+              "stage": "analog_adjusted",
+              "label": "analog adjusted",
+              "value_mw": 38103.1,
+              "delta_mw": 0.0,
+              "delta_from": "raw_lgbm"
+            },
+            {
+              "stage": "post_holiday_guarded",
+              "label": "post holiday guarded",
+              "value_mw": 38103.1,
+              "delta_mw": 0.0,
+              "delta_from": "analog_adjusted"
+            },
+            {
+              "stage": "midday_guarded",
+              "label": "midday guarded",
+              "value_mw": 38103.1,
+              "delta_mw": 0.0,
+              "delta_from": "post_holiday_guarded"
+            },
+            {
+              "stage": "pre_calibration",
+              "label": "pre calibration",
+              "value_mw": 38103.1,
+              "delta_mw": 0.0,
+              "delta_from": "midday_guarded"
+            },
+            {
+              "stage": "post_calibration",
+              "label": "post calibration",
+              "value_mw": 38103.1,
+              "delta_mw": 0.0,
+              "delta_from": "pre_calibration"
+            },
+            {
+              "stage": "published",
+              "label": "published",
+              "value_mw": 35792.1,
+              "delta_mw": -2311.0,
+              "delta_from": "post_calibration"
+            }
+          ],
+          "netStageShiftMw": -2311.0,
+          "largestStageDelta": {
+            "stage": "published",
+            "delta_mw": -2311.0,
+            "delta_from": "post_calibration"
+          },
+          "publishedVsLatestRecalculatedGapMw": -2311.0
+        },
+        {
+          "hour": 12,
+          "ts": "2026-09-25T12:00:00+09:00",
+          "actualMw": 37050.0,
+          "actualSource": "observed",
+          "tepcoForecastMw": 35230.0,
+          "stageImpactSummary": [
+            {
+              "stage": "raw_lgbm",
+              "label": "raw lgbm",
+              "value_mw": 36815.4,
+              "delta_mw": 0.0
+            },
+            {
+              "stage": "analog_adjusted",
+              "label": "analog adjusted",
+              "value_mw": 36815.4,
+              "delta_mw": 0.0,
+              "delta_from": "raw_lgbm"
+            },
+            {
+              "stage": "post_holiday_guarded",
+              "label": "post holiday guarded",
+              "value_mw": 36815.4,
+              "delta_mw": 0.0,
+              "delta_from": "analog_adjusted"
+            },
+            {
+              "stage": "midday_guarded",
+              "label": "midday guarded",
+              "value_mw": 36815.4,
+              "delta_mw": 0.0,
+              "delta_from": "post_holiday_guarded"
+            },
+            {
+              "stage": "pre_calibration",
+              "label": "pre calibration",
+              "value_mw": 36815.4,
+              "delta_mw": 0.0,
+              "delta_from": "midday_guarded"
+            },
+            {
+              "stage": "post_calibration",
+              "label": "post calibration",
+              "value_mw": 36815.4,
+              "delta_mw": 0.0,
+              "delta_from": "pre_calibration"
+            },
+            {
+              "stage": "published",
+              "label": "published",
+              "value_mw": 35717.3,
+              "delta_mw": -1098.1,
+              "delta_from": "post_calibration"
+            }
+          ],
+          "netStageShiftMw": -1098.1,
+          "largestStageDelta": {
+            "stage": "published",
+            "delta_mw": -1098.1,
+            "delta_from": "post_calibration"
+          },
+          "publishedVsLatestRecalculatedGapMw": -1098.1
+        },
+        {
+          "hour": 14,
+          "ts": "2026-09-25T14:00:00+09:00",
+          "actualMw": 37180.0,
+          "actualSource": "observed",
+          "tepcoForecastMw": 37560.0,
+          "stageImpactSummary": [
+            {
+              "stage": "raw_lgbm",
+              "label": "raw lgbm",
+              "value_mw": 34803.8,
+              "delta_mw": 0.0
+            },
+            {
+              "stage": "analog_adjusted",
+              "label": "analog adjusted",
+              "value_mw": 34803.8,
+              "delta_mw": 0.0,
+              "delta_from": "raw_lgbm"
+            },
+            {
+              "stage": "post_holiday_guarded",
+              "label": "post holiday guarded",
+              "value_mw": 34803.8,
+              "delta_mw": 0.0,
+              "delta_from": "analog_adjusted"
+            },
+            {
+              "stage": "midday_guarded",
+              "label": "midday guarded",
+              "value_mw": 34803.8,
+              "delta_mw": 0.0,
+              "delta_from": "post_holiday_guarded"
+            },
+            {
+              "stage": "pre_calibration",
+              "label": "pre calibration",
+              "value_mw": 34803.8,
+              "delta_mw": 0.0,
+              "delta_from": "midday_guarded"
+            },
+            {
+              "stage": "post_calibration",
+              "label": "post calibration",
+              "value_mw": 34803.8,
+              "delta_mw": 0.0,
+              "delta_from": "pre_calibration"
+            },
+            {
+              "stage": "published",
+              "label": "published",
+              "value_mw": 37405.4,
+              "delta_mw": 2601.6,
+              "delta_from": "post_calibration"
+            }
+          ],
+          "netStageShiftMw": 2601.6,
+          "largestStageDelta": {
+            "stage": "published",
+            "delta_mw": 2601.6,
+            "delta_from": "post_calibration"
+          },
+          "publishedVsLatestRecalculatedGapMw": 2601.6
+        },
+        {
+          "hour": 16,
+          "ts": "2026-09-25T16:00:00+09:00",
+          "actualMw": 35650.0,
+          "actualSource": "observed",
+          "tepcoForecastMw": 35910.0,
+          "stageImpactSummary": [
+            {
+              "stage": "raw_lgbm",
+              "label": "raw lgbm",
+              "value_mw": 35874.5,
+              "delta_mw": 0.0
+            },
+            {
+              "stage": "analog_adjusted",
+              "label": "analog adjusted",
+              "value_mw": 35874.5,
+              "delta_mw": 0.0,
+              "delta_from": "raw_lgbm"
+            },
+            {
+              "stage": "post_holiday_guarded",
+              "label": "post holiday guarded",
+              "value_mw": 35874.5,
+              "delta_mw": 0.0,
+              "delta_from": "analog_adjusted"
+            },
+            {
+              "stage": "midday_guarded",
+              "label": "midday guarded",
+              "value_mw": 35874.5,
+              "delta_mw": 0.0,
+              "delta_from": "post_holiday_guarded"
+            },
+            {
+              "stage": "pre_calibration",
+              "label": "pre calibration",
+              "value_mw": 35874.5,
+              "delta_mw": 0.0,
+              "delta_from": "midday_guarded"
+            },
+            {
+              "stage": "post_calibration",
+              "label": "post calibration",
+              "value_mw": 35874.5,
+              "delta_mw": 0.0,
+              "delta_from": "pre_calibration"
+            },
+            {
+              "stage": "published",
+              "label": "published",
+              "value_mw": 37859.2,
+              "delta_mw": 1984.7,
+              "delta_from": "post_calibration"
+            }
+          ],
+          "netStageShiftMw": 1984.7,
+          "largestStageDelta": {
+            "stage": "published",
+            "delta_mw": 1984.7,
+            "delta_from": "post_calibration"
+          },
+          "publishedVsLatestRecalculatedGapMw": 1984.7
+        },
+        {
+          "hour": 18,
+          "ts": "2026-09-25T18:00:00+09:00",
+          "actualMw": 34110.0,
+          "actualSource": "observed",
+          "tepcoForecastMw": 33840.0,
+          "stageImpactSummary": [
+            {
+              "stage": "raw_lgbm",
+              "label": "raw lgbm",
+              "value_mw": 34901.9,
+              "delta_mw": 0.0
+            },
+            {
+              "stage": "analog_adjusted",
+              "label": "analog adjusted",
+              "value_mw": 34901.9,
+              "delta_mw": 0.0,
+              "delta_from": "raw_lgbm"
+            },
+            {
+              "stage": "post_holiday_guarded",
+              "label": "post holiday guarded",
+              "value_mw": 34901.9,
+              "delta_mw": 0.0,
+              "delta_from": "analog_adjusted"
+            },
+            {
+              "stage": "midday_guarded",
+              "label": "midday guarded",
+              "value_mw": 34901.9,
+              "delta_mw": 0.0,
+              "delta_from": "post_holiday_guarded"
+            },
+            {
+              "stage": "pre_calibration",
+              "label": "pre calibration",
+              "value_mw": 34901.9,
+              "delta_mw": 0.0,
+              "delta_from": "midday_guarded"
+            },
+            {
+              "stage": "post_calibration",
+              "label": "post calibration",
+              "value_mw": 34901.9,
+              "delta_mw": 0.0,
+              "delta_from": "pre_calibration"
+            },
+            {
+              "stage": "published",
+              "label": "published",
+              "value_mw": 36047.5,
+              "delta_mw": 1145.6,
+              "delta_from": "post_calibration"
+            }
+          ],
+          "netStageShiftMw": 1145.6,
+          "largestStageDelta": {
+            "stage": "published",
+            "delta_mw": 1145.6,
+            "delta_from": "post_calibration"
+          },
+          "publishedVsLatestRecalculatedGapMw": 1145.6
+        }
+      ],
+      "topDriver": "published"
+    },
+    "bandQuality": {
+      "comparableHours": 24,
+      "p95CoverageHours": 24,
+      "p95CoverageRate": 1.0,
+      "p99CoverageHours": 24,
+      "p99CoverageRate": 1.0,
+      "outsideP95Hours": [],
+      "outsideP99Hours": [],
+      "medianP95HalfWidthMw": 2599.5,
+      "medianP99HalfWidthMw": 5198.9,
+      "q50LargeMissCoveredByP95Hours": [
+        8,
+        11,
+        12,
+        13,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21
+      ]
+    },
+    "rollingPatternContext": {
+      "lookbackDays": 7,
+      "targetDate": "2026-09-25",
+      "dateRange": {
+        "from": "2026-09-19",
+        "to": "2026-09-25"
+      },
+      "bandSummaries": [
+        {
+          "band": "daytime",
+          "label": "11-15",
+          "days": 7,
+          "meanModelBiasMw": -32.8,
+          "meanModelMaeMw": 517.3,
+          "dominantDirection": "overprediction",
+          "sameDirectionMissDays": 2,
+          "verdictCounts": {
+            "tepco_better": 4,
+            "model_better": 2,
+            "close": 1
+          },
+          "sampleDates": [
+            "2026-09-23",
+            "2026-09-24",
+            "2026-09-25"
+          ]
+        },
+        {
+          "band": "evening",
+          "label": "19-23",
+          "days": 7,
+          "meanModelBiasMw": 199.1,
+          "meanModelMaeMw": 340.7,
+          "dominantDirection": "overprediction",
+          "sameDirectionMissDays": 2,
+          "verdictCounts": {
+            "close": 1,
+            "model_better": 1,
+            "tepco_better": 5
+          },
+          "sampleDates": [
+            "2026-09-23",
+            "2026-09-24",
+            "2026-09-25"
+          ]
+        },
+        {
+          "band": "late_afternoon",
+          "label": "16-18",
+          "days": 7,
+          "meanModelBiasMw": 400.8,
+          "meanModelMaeMw": 784.4,
+          "dominantDirection": "overprediction",
+          "sameDirectionMissDays": 4,
+          "verdictCounts": {
+            "tepco_better": 5,
+            "model_better": 1,
+            "close": 1
+          },
+          "sampleDates": [
+            "2026-09-23",
+            "2026-09-24",
+            "2026-09-25"
+          ]
+        },
+        {
+          "band": "morning_ramp",
+          "label": "06-10",
+          "days": 7,
+          "meanModelBiasMw": -55.9,
+          "meanModelMaeMw": 477.1,
+          "dominantDirection": "overprediction",
+          "sameDirectionMissDays": 2,
+          "verdictCounts": {
+            "tepco_better": 5,
+            "model_better": 2
+          },
+          "sampleDates": [
+            "2026-09-23",
+            "2026-09-24",
+            "2026-09-25"
+          ]
+        },
+        {
+          "band": "overnight",
+          "label": "00-05",
+          "days": 7,
+          "meanModelBiasMw": 185.0,
+          "meanModelMaeMw": 289.9,
+          "dominantDirection": "overprediction",
+          "sameDirectionMissDays": 1,
+          "verdictCounts": {
+            "tepco_better": 4,
+            "close": 2,
+            "model_better": 1
+          },
+          "sampleDates": [
+            "2026-09-23",
+            "2026-09-24",
+            "2026-09-25"
+          ]
+        }
+      ],
+      "sameBandRepeatedMisses": [
+        {
+          "band": "late_afternoon",
+          "label": "16-18",
+          "days": 7,
+          "meanModelBiasMw": 400.8,
+          "meanModelMaeMw": 784.4,
+          "dominantDirection": "overprediction",
+          "sameDirectionMissDays": 4,
+          "verdictCounts": {
+            "tepco_better": 5,
+            "model_better": 1,
+            "close": 1
+          },
+          "sampleDates": [
+            "2026-09-23",
+            "2026-09-24",
+            "2026-09-25"
+          ]
+        }
+      ],
+      "recentTrendVerdict": "late_afternoon_overprediction_repeated"
+    },
+    "freezeImpact": {
+      "thresholdMw": 500.0,
+      "largestGaps": [
+        {
+          "hour": 14,
+          "publishedForecastMw": 37405.4,
+          "latestRecalculatedForecastMw": 34803.8,
+          "freezeGapMw": 2601.6
+        },
+        {
+          "hour": 11,
+          "publishedForecastMw": 35792.1,
+          "latestRecalculatedForecastMw": 38103.1,
+          "freezeGapMw": -2311.0
+        },
+        {
+          "hour": 16,
+          "publishedForecastMw": 37859.2,
+          "latestRecalculatedForecastMw": 35874.5,
+          "freezeGapMw": 1984.7
+        }
+      ],
+      "interpretation": "positive freezeGapMw means the published forecast is above the latest recalculated post-calibration line"
+    }
+  },
+  "executiveSummary": {
+    "severity": "warning",
+    "headline": "TEPCO予測の日次誤差はモデルより小さくなりました。",
+    "summary": "比較可能な24時間で、モデルはMAE 749.6 MW, WAPE 2.46%、TEPCOはMAE 342.1 MW, WAPE 1.12%でした。モデル優位は3/24、TEPCO優位は21/24です。 公開予測線と再計算予測線の最大差は14:00 JSTで2601.6 MWでした。",
+    "modelVerdict": "tepco_better",
+    "confidence": "high"
+  },
+  "performance": {
+    "comparableHours": 24,
+    "modelMaeMw": 749.6,
+    "tepcoMaeMw": 342.1,
+    "modelWapePct": 2.46,
+    "tepcoWapePct": 1.12,
+    "modelRmseMw": 956.0,
+    "tepcoRmseMw": 506.3,
+    "modelMaxErrorMw": 2209.2,
+    "tepcoMaxErrorMw": 1860.0,
+    "modelMaxErrorHour": 16,
+    "tepcoMaxErrorHour": 12,
+    "maeGapMw": 407.5,
+    "wapeGapPct": 1.34,
+    "verdict": "tepco_better",
+    "modelWins": 3,
+    "tepcoWins": 21,
+    "ties": 0,
+    "modelAdvantageHours": 3,
+    "tepcoAdvantageHours": 21,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.125
+  },
+  "rootCauseHypotheses": [
+    {
+      "id": "event.top_miss_h16",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "16:00 JST にモデルが実績を上回って予測しました。",
+      "explanation": "符号付きモデル誤差は +2209.2 MW で、予測値が実績を上回りました。関連する lag、気象、補正レイヤーを候補として確認し、日全体の問題として一括処理しないでください。",
+      "sourceEventIds": [
+        "top_miss_h16"
+      ],
+      "evidence": [
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "modelErrorMw",
+          "value": 2209.2,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": "late_afternoon"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "publishedForecastMw",
+          "value": null,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": "late_afternoon"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "actualMw",
+          "value": null,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": "late_afternoon"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "sameDayActualSlopeMw",
+          "value": -650.0,
+          "unit": "MW",
+          "hour": 16,
+          "timeBand": "late_afternoon"
+        }
+      ],
+      "relatedHours": [
+        16
+      ],
+      "relatedTimeBands": [
+        "late_afternoon"
+      ],
+      "relatedFeatures": [],
+      "counterEvidence": [],
+      "mechanism": "誤差の方向は確認できますが、原因はまだ確定できません。該当時間のlag・気象入力、モデルの元予測、補正前後の値を分けて確認します。",
+      "nextCheck": "該当時間の開始前に取得した入力と実行別スナップショットで再現し、元のモデル誤差と補正の影響を分けます。事後の再計算値を当時の予測に置き換えません。"
+    },
+    {
+      "id": "event.top_miss_h13",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "13:00 JST 日中カーブの過小予測。",
+      "explanation": "13:00は公開予測36224.3 MW、実績38160.0 MWで、符号付き誤差は-1935.7 MWです。 当日実績の傾きは+290.0 MWでした。raw LGBM水準、正午特徴量、残差持ち越し、公開予測フリーズ差分を分けて確認します。",
+      "sourceEventIds": [
+        "top_miss_h13"
+      ],
+      "evidence": [
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "modelErrorMw",
+          "value": -1935.7,
+          "unit": "MW",
+          "hour": 13,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "publishedForecastMw",
+          "value": 36224.3,
+          "unit": "MW",
+          "hour": 13,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "actualMw",
+          "value": 38160.0,
+          "unit": "MW",
+          "hour": 13,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "sameDayActualSlopeMw",
+          "value": 290.0,
+          "unit": "MW",
+          "hour": 13,
+          "timeBand": "daytime"
+        }
+      ],
+      "relatedHours": [
+        13
+      ],
+      "relatedTimeBands": [
+        "daytime"
+      ],
+      "relatedFeatures": [
+        "business_midday_x_lag_24h_delta",
+        "recent_same_business_type_delta_mean",
+        "serving.published_forecast_freeze"
+      ],
+      "counterEvidence": [],
+      "mechanism": "日中shapeは符号が混在しやすく、固定的な正午ルールは一部時刻を改善しても昼食後の回復や日中ピークを悪化させる可能性があります。",
+      "nextCheck": "10:00〜16:00をreplayし、11〜15時MAE/WAPE、shape delta error、stageAttribution差分、freezeImpact差分を比較します。"
+    },
+    {
+      "id": "h2",
+      "severity": "warning",
+      "confidence": "medium",
+      "evidenceStatus": "partial",
+      "title": "昼間の過小予測は、昼間帯のフリーズと昼食機能の分離が必要です。",
+      "explanation": "署名されたモデル誤差は-741.1 MWで、提供されるラインが実際の需要を下回り、隣接する昼間時間には混合の符号がありました。昼食機能の形状、残差の持ち越し、または公開予測フリーズによって配信予測線が最新の再計算された曲線より低くなっているか確認します。",
+      "mechanism": "昼間の混合符号のミスは、原LGBMレベル、昼食/アナログ形状の調整、残差の持ち越し、公開予測フリーズの差分を分けた後にルート原因を割り当てる必要があります。",
+      "nextCheck": "10:00〜16:00をリプレイし、ビジネス昼食機能、ステージの帰属のデルタ、固定影響の差分、および隣接する集中した行の符号を比較します。",
+      "sourceEventIds": [],
+      "evidence": [
+        {
+          "source": "reports/daily",
+          "metric": "modelBiasMw",
+          "value": -741.1,
+          "unit": "MW",
+          "hour": null,
+          "timeBand": "11-15"
+        }
+      ],
+      "relatedHours": [],
+      "relatedTimeBands": [
+        "11-15"
+      ],
+      "relatedFeatures": [
+        "cooling_degree",
+        "apparent_temp_c",
+        "recent_same_business_type_mean"
+      ],
+      "counterEvidence": []
+    }
+  ],
+  "featureRecommendations": [
+    {
+      "id": "ticket.top_miss_h13",
+      "priority": "high",
+      "type": "feature_engineering",
+      "target": "business_midday_x_lag_24h_delta",
+      "suggestion": "10:00〜16:00のreplayで、raw LGBMレベル、アナログ補正、残差持ち越し、公開予測フリーズ差分を切り分けたうえで、正午特徴量に形状専用しきい値が必要かを検証候補にします。",
+      "expectedEffect": "昼食時間帯から日中ピークへの回復で誤差方向が混在する日に、固定的な正午dipを強制せず11:00〜15:00の形状精度を改善できるか確認します。",
+      "risk": "正午ルールを強くしすぎると、反発する日の13:00〜15:00で過大予測が増える可能性があります。",
+      "validationPlan": "直近2〜4週間で11:00〜15:00のMAE/WAPE、shape delta error、11:00・12:00・15:00周辺の最大誤差を比較します。",
+      "linkedHypotheses": [
+        "event.top_miss_h13"
+      ],
+      "autoApply": false
+    }
+  ],
+  "operatorNotes": [
+    "featureRecommendationsはレビュー候補であり、自動的に適用されることはありません。",
+    "オペレーショナル・キャリブレーション信号カタログ: intraday_correction.pre_observation_prior_stack_cap, intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.morning_positive_residual_carryover_damping, intraday_correction.morning_observed_ramp_floor, intraday_correction.non_business_evening_positive_residual_damping, intraday_correction.non_business_evening_negative_residual_damping, intraday_correction.ramp_guard_decline_support_relaxation, intraday_correction.daytime_sustained_underforecast_lift, intraday_correction.negative_residual_recovery_damping, intraday_correction.negative_residual_continuity_floor, intraday_correction.negative_residual_near_term_floor, intraday_correction.morning_warm_lag_overreaction_guard, intraday_correction.morning_observed_anchor_cap, intraday_correction.afternoon_observed_anchor_cap, intraday_correction.evening_decline_continuity_guard, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, adjustment.non_business_analog_downshift_guard, adjustment.non_business_morning_shape_floor_guard, adjustment.localized_shape_spike_guard, serving.published_forecast_freeze"
+  ],
+  "limitations": [
+    "分析は要約された運用指標と保持された補正スナップショットに基づいています。"
+  ]
+}
