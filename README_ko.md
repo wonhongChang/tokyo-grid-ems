@@ -220,6 +220,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 - [모델 승격 및 성능 저하 Champion 정책](docs/ko/model-promotion-policy.md)
 - [운영 Runbook](docs/ko/operations-runbook.md)
 - [모델 점검 기록](docs/ko/model-reviews/README.md)
+- 모델 점검 도구: [근거 패키지와 읽기 전용 CLI](docs/ko/review-bundle-cli.md), [검증 요약](docs/ko/review-bundle-validation.md)
 - [기온 데이터 연동 설계](docs/ko/weather-integration.md)
 - [데이터 보존 및 아카이브 전략](docs/ko/data-retention-strategy.md)
 - [모델 평가 리포트](docs/ko/model-evaluation.md)

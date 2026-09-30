@@ -197,6 +197,7 @@ ETLが `web/public/` 以下に生成するファイルです。
 - [モデル昇格および性能低下Championポリシー](docs/ja/model-promotion-policy.md)
 - [運用 Runbook](docs/ja/operations-runbook.md)
 - [モデルレビュー記録](docs/ja/model-reviews/README.md)
+- モデルレビュー用ツール: [根拠パッケージと読み取り専用 CLI](docs/ja/review-bundle-cli.md)、[検証概要](docs/ja/review-bundle-validation.md)
 - [気温データ連携設計](docs/ja/weather-integration.md)
 - [データ保持とアーカイブ戦略](docs/ja/data-retention-strategy.md)
 - [モデル評価リポート](docs/ja/model-evaluation.md)

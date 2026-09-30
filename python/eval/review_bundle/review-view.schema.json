@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tokyo-grid:review-view:1.1.0",
+  "title": "Read-only review presentation over unchanged v0.2 evidence",
+  "oneOf": [{"$ref": "#/$defs/view"}, {"$ref": "#/$defs/overflow"}],
+  "$defs": {
+    "state": {
+      "type": "object", "required": ["status", "code"],
+      "properties": {"status": {"enum": ["available", "partial", "unavailable", "incompatible"]}, "code": {"type": "string"}}
+    },
+    "ref": {"type": ["string", "null"]},
+    "population": {
+      "type": ["object", "null"],
+      "required": ["id", "scope", "date", "method", "n", "identityRef"],
+      "properties": {
+        "id": {"type": "string"}, "scope": {"type": "string"}, "date": {"type": ["string", "null"]},
+        "method": {"type": "string"}, "n": {"type": ["integer", "null"], "minimum": 0},
+        "identityRef": {"$ref": "#/$defs/ref"}
+      }, "additionalProperties": false
+    },
+    "section": {
+      "type": "object",
+      "required": ["factId", "method", "population", "sampleCount", "state", "value", "provenanceRef", "detailRef", "noticeRefs"],
+      "properties": {
+        "factId": {"type": "string"}, "method": {"type": ["string", "null"]},
+        "population": {"$ref": "#/$defs/population"}, "sampleCount": {"type": ["integer", "null"], "minimum": 0},
+        "state": {"$ref": "#/$defs/state"}, "value": {},
+        "provenanceRef": {"$ref": "#/$defs/ref"}, "detailRef": {"$ref": "#/$defs/ref"},
+        "noticeRefs": {"type": "array", "items": {"type": "string"}},
+        "selection": {
+          "type": "object", "required": ["hour", "rowCount", "state", "parentPopulationUnchanged"],
+          "properties": {"hour": {"type": "integer", "minimum": 0, "maximum": 23},
+            "rowCount": {"type": ["integer", "null"]}, "state": {"$ref": "#/$defs/state"},
+            "parentPopulationUnchanged": {"const": true}}
+        }
+      }
+    },
+    "sections": {"type": "object", "additionalProperties": {"$ref": "#/$defs/section"}},
+    "paging": {
+      "type": "object", "required": ["offset", "limit", "total", "nextOffset", "truncated"],
+      "properties": {
+        "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 31},
+        "total": {"type": "integer", "minimum": 0}, "nextOffset": {"type": ["integer", "null"], "minimum": 0},
+        "truncated": {"const": false}
+      }
+    },
+    "view": {
+      "type": "object",
+      "required": ["schemaVersion", "view", "scopeContext", "registry", "dates", "scopeSections", "mandatoryNotices", "sourceInventoryRef", "compatibleBasesAssumed", "promotionAuthorization"],
+      "properties": {
+        "schemaVersion": {"const": "review-bundle-batch/1.1.0"},
+        "view": {"enum": ["review-summary", "metrics-inventory", "direction-screen", "stage-interval-review", "hour-review", "membership-summary", "initial-overview"]},
+        "scopeContext": {"type": ["object", "null"]},
+        "sourceInventoryRef": {"type": "object", "required": ["path", "sha256", "bytes", "pointer"]},
+        "registry": {
+          "type": "object", "required": ["methods", "identities", "provenance", "details", "notices", "files"],
+          "properties": {"methods": {"type": "object"}, "identities": {"type": "object"},
+            "provenance": {"type": "object", "additionalProperties": {"oneOf": [
+              {"type": "array"},
+              {"type": "object", "required": ["deferred", "sources", "sourceCount", "identityStatus"],
+                "properties": {"deferred": {"const": false}, "sources": {"type": "array"}, "sourceCount": {"type": "integer", "minimum": 0}}},
+              {"type": "object", "required": ["command", "factId", "sealedFactRef", "deferred", "sourceCount", "referenceListSha256", "identityStatus"],
+                "properties": {"command": {"const": "provenance"}, "factId": {"type": "string"},
+                  "sealedFactRef": {"type": ["object", "null"], "required": ["fileRef", "pointer"]}, "deferred": {"const": true},
+                  "sourceCount": {"type": "integer", "minimum": 0}, "referenceListSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                  "state": {"$ref": "#/$defs/state"}, "compatibleBasesAssumed": {"const": false}}},
+              {"type": "object", "required": ["deferred", "sealedIndexRef", "sourceCount", "identityStatus", "expandQuery", "compatibleBasesAssumed"],
+                "properties": {"deferred": {"const": true}, "sealedIndexRef": {"type": ["object", "null"]},
+                  "sourceCount": {"type": ["integer", "null"], "minimum": 0}, "compatibleBasesAssumed": {"const": false}}}
+            ]}},
+            "files": {"type": "object", "additionalProperties": {"type": "object", "required": ["path", "sha256", "bytes"]}},
+            "details": {"type": "object"}, "notices": {"type": "object", "additionalProperties": {"type": "object"}}},
+          "additionalProperties": false
+        },
+        "dates": {"type": "array", "items": {"type": "object", "required": ["scope", "date", "sections"],
+          "properties": {"scope": {"type": "string"}, "date": {"type": "string", "format": "date"}, "sections": {"$ref": "#/$defs/sections"},
+            "targets": {"type": "array", "minItems": 1, "maxItems": 24, "items": {"type": "object", "required": ["hour", "sections", "target"],
+              "properties": {"hour": {"type": "integer", "minimum": 0, "maximum": 23}, "sections": {"$ref": "#/$defs/sections"}, "target": {"type": "object"}}}}}}},
+        "scopeSections": {"$ref": "#/$defs/sections"}, "mandatoryNotices": {"type": "object", "required": ["count", "ref"]},
+        "paging": {"$ref": "#/$defs/paging"},
+        "compatibleBasesAssumed": {"const": false}, "promotionAuthorization": {"const": false}
+      }
+    },
+    "overflow": {
+      "type": "object", "required": ["schemaVersion", "view", "overflow", "reason", "mandatoryNotices", "continuation", "scopeFactIds"],
+      "properties": {
+        "schemaVersion": {"const": "review-bundle-batch/1.1.0"}, "view": {"const": "initial-overview"},
+        "overflow": {"const": true}, "reason": {"const": "OVERVIEW_ENVELOPE_OVERFLOW"},
+        "mandatoryNotices": {"type": "object", "required": ["count", "ref"]},
+        "continuation": {"type": "array"}, "scopeFactIds": {"type": "array"}
+      }
+    }
+  }
+}
