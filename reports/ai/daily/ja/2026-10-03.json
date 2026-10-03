@@ -3,15 +3,17 @@
   "reportType": "ai_daily_operation_report",
   "timezone": "Asia/Tokyo",
   "date": "2026-10-03",
-  "generatedAt": "2026-10-04T07:42:16+09:00",
+  "generatedAt": "2026-10-04T08:30:10+09:00",
   "availability": "ok",
   "language": "ja",
   "contentLanguage": "ja",
   "generator": {
-    "provider": "fallback",
-    "model": null,
-    "promptVersion": "fallback_rules_v1",
-    "schemaVersion": "1.0.0"
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "promptVersion": "openai_ops_report_v5",
+    "schemaVersion": "1.0.0",
+    "localizationModel": "gpt-4o-mini",
+    "localizationStatus": "ok"
   },
   "inputRefs": {
     "operationReport": "reports/daily/2026-10-03.json",
@@ -25,22 +27,22 @@
   },
   "inputSnapshot": {
     "schemaVersion": "1.0.0",
-    "createdAt": "2026-10-04T07:42:16+09:00",
-    "fingerprint": "sha256:f1c413995051c9d56eff141e7af4359f1a7d308298e5c807e7dee6958d2f4270",
+    "createdAt": "2026-10-04T08:30:10+09:00",
+    "fingerprint": "sha256:7507250d180fbb8e0715507e31ec0ad57ea9e517eeb8160e45e12c98a5d04fac",
     "sources": {
       "operationReport": {
         "path": "reports/daily/2026-10-03.json",
         "exists": true,
         "date": "2026-10-03",
-        "generatedAt": "2026-10-04T07:41:35+09:00",
-        "fingerprint": "sha256:95cab56c2b6f2c808f1b66943933718aad59d7899812678f1dbc26dd4ebcea19"
+        "generatedAt": "2026-10-04T07:46:38+09:00",
+        "fingerprint": "sha256:754c1d3b722a2b00011a2a33a655ef0b81ca6edb4f92577ead14d674b3501d5d"
       },
       "internalDiagnostics": {
         "path": "reports/internal/daily-diagnostics/2026-10-03.json",
         "exists": true,
         "date": "2026-10-03",
-        "generatedAt": "2026-10-04T07:41:36+09:00",
-        "fingerprint": "sha256:d174aa9401900748ee6e1cf67729cdc4d1d8a21d53a5492531aff8199be12796"
+        "generatedAt": "2026-10-04T07:46:38+09:00",
+        "fingerprint": "sha256:f65e414ae5ccba0bd73038ba9a51f95ddd08d201c2010dc2f33e58d0d396b13b"
       },
       "operationalCalibration": {
         "path": "reports/internal/operational-calibration/2026-10-03.json",
@@ -53,8 +55,8 @@
         "path": "reports/internal/operational-calibration/snapshots/2026-10-03/index.json",
         "exists": true,
         "date": "2026-10-03",
-        "generatedAt": "2026-10-04T07:30:27+09:00",
-        "fingerprint": "sha256:5fb9db7d5a05af8ef74b01f025577950197ab28046c844de258c1a43173c1814"
+        "generatedAt": "2026-10-04T07:46:21+09:00",
+        "fingerprint": "sha256:82c1f6254823f78cdbb5bc17e8b084cf8c54b66f72b3f2b5bff8c679868f18a7"
       },
       "alerts": {
         "path": "alerts/2026-10-03.json",
@@ -81,8 +83,8 @@
         "path": "metrics/forecast_accuracy.json",
         "exists": true,
         "date": null,
-        "generatedAt": "2026-10-04T07:31:03+09:00",
-        "fingerprint": "sha256:c56f7ce23e8e4726ead1601c6a1eb970d80429390b262cf8eaf60e7ab3f964bc"
+        "generatedAt": "2026-10-04T07:46:38+09:00",
+        "fingerprint": "sha256:fe7cefd3d7be719921e67329e5bd13c5860252fb4a47509fa754aab67769e227"
       }
     }
   },
@@ -92,8 +94,7 @@
     "fallbackActualHours": 0,
     "calibrationSnapshotCount": 13,
     "limitations": [
-      "このレポートはOpenAIを呼び出さず、deterministic JSONのみから生成したfallback解説です。",
-      "中間intraday実行はoperational-calibration snapshotに基づいて限定的に復元します。"
+      "この分析は、要約されたオペレーションの証拠と保存された補正スナップショットに基づいています。"
     ]
   },
   "diagnosticContext": {
@@ -646,8 +647,8 @@
   },
   "executiveSummary": {
     "severity": "warning",
-    "headline": "この日はTEPCOの精度が優勢でした。",
-    "summary": "比較可能時間は24時間です。モデルMAEは506.5 MW、TEPCO MAEは266.2 MWでした。WAPEはモデル2.02%、TEPCO 1.06%です。",
+    "headline": "TEPCO予測の日次誤差はモデルより小さくなりました。",
+    "summary": "比較可能な24時間で、モデルはMAE 506.5 MW, WAPE 2.02%、TEPCOはMAE 266.2 MW, WAPE 1.06%でした。モデル優位は6/24、TEPCO優位は18/24です。 公開予測線と再計算予測線の最大差は14:00 JSTで1511.5 MWでした。",
     "modelVerdict": "tepco_better",
     "confidence": "high"
   },
@@ -676,57 +677,18 @@
   },
   "rootCauseHypotheses": [
     {
-      "id": "h1",
+      "id": "event.top_miss_h14",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "日次誤差はTEPCOより大きくなりました。",
-      "explanation": "日次MAE/WAPEではTEPCO予測のほうが近い結果でした。詳細時間帯と内部特徴量を併せて確認する必要があります。",
+      "title": "14:00 JST 日中カーブの過大予測。",
+      "explanation": "14:00は公開予測29020.7 MW、実績27080.0 MWで、符号付き誤差は+1940.7 MWです。 当日実績の傾きは-410.0 MWでした。raw LGBM水準、正午特徴量、残差持ち越し、公開予測フリーズ差分を分けて確認します。",
+      "sourceEventIds": [
+        "top_miss_h14"
+      ],
       "evidence": [
         {
-          "source": "reports/daily",
-          "metric": "maeGapMw",
-          "value": 240.3,
-          "unit": "MW",
-          "hour": null,
-          "timeBand": null
-        },
-        {
-          "source": "reports/daily",
-          "metric": "wapeGapPct",
-          "value": 0.96,
-          "unit": null,
-          "hour": null,
-          "timeBand": null
-        }
-      ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "lag_24h",
-        "temp_c",
-        "humidity_pct"
-      ],
-      "counterEvidence": []
-    },
-    {
-      "id": "h2",
-      "severity": "warning",
-      "confidence": "medium",
-      "evidenceStatus": "partial",
-      "title": "特定時間で大きな単発誤差が発生しました。",
-      "explanation": "最大誤差時間が日次指標を大きく動かしました。その時刻のlag、天候、補正レイヤーメタデータを優先して確認する必要があります。",
-      "evidence": [
-        {
-          "source": "reports/daily",
-          "metric": "modelAbsErrorMw",
-          "value": 1940.7,
-          "unit": "MW",
-          "hour": 14,
-          "timeBand": null
-        },
-        {
-          "source": "reports/daily",
+          "source": "eventEvidenceBundles",
           "metric": "modelErrorMw",
           "value": 1940.7,
           "unit": "MW",
@@ -734,17 +696,25 @@
           "timeBand": "daytime"
         },
         {
-          "source": "reports/daily",
-          "metric": "modelForecastMw",
+          "source": "eventEvidenceBundles",
+          "metric": "publishedForecastMw",
           "value": 29020.7,
           "unit": "MW",
           "hour": 14,
           "timeBand": "daytime"
         },
         {
-          "source": "reports/daily",
+          "source": "eventEvidenceBundles",
           "metric": "actualMw",
           "value": 27080.0,
+          "unit": "MW",
+          "hour": 14,
+          "timeBand": "daytime"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "sameDayActualSlopeMw",
+          "value": -410.0,
           "unit": "MW",
           "hour": 14,
           "timeBand": "daytime"
@@ -753,168 +723,186 @@
       "relatedHours": [
         14
       ],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "lag_24h",
-        "temp_c",
-        "intraday_correction.day_boundary_carryover"
+      "relatedTimeBands": [
+        "daytime"
       ],
-      "counterEvidence": []
+      "relatedFeatures": [
+        "business_midday_x_lag_24h_delta",
+        "recent_same_business_type_delta_mean",
+        "serving.published_forecast_freeze"
+      ],
+      "counterEvidence": [],
+      "mechanism": "日中shapeは符号が混在しやすく、固定的な正午ルールは一部時刻を改善しても昼食後の回復や日中ピークを悪化させる可能性があります。",
+      "nextCheck": "10:00〜16:00をreplayし、11〜15時MAE/WAPE、shape delta error、stageAttribution差分、freezeImpact差分を比較します。"
     },
     {
-      "id": "h3",
+      "id": "event.top_miss_h8",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "モデル曲線が実需より急に下がった可能性があります。",
-      "explanation": "時間差分ベースでモデルの低下幅と実需の低下幅に大きな差がありました。負の残差carry-overとshape guardの動作を確認する必要があります。",
+      "title": "08:00 JST にモデルが実績を上回って予測しました。",
+      "explanation": "符号付きモデル誤差は +1362.0 MW で、予測値が実績を上回りました。関連する lag、気象、補正レイヤーを候補として確認し、日全体の問題として一括処理しないでください。",
+      "sourceEventIds": [
+        "top_miss_h8"
+      ],
       "evidence": [
         {
-          "source": "reports/daily",
-          "metric": "modelDeltaMw",
-          "value": -1312.7,
+          "source": "eventEvidenceBundles",
+          "metric": "modelErrorMw",
+          "value": 1362.0,
           "unit": "MW",
-          "hour": null,
-          "timeBand": null
+          "hour": 8,
+          "timeBand": "morning_ramp"
         },
         {
-          "source": "reports/daily",
-          "metric": "actualDeltaMw",
-          "value": 500.0,
+          "source": "eventEvidenceBundles",
+          "metric": "publishedForecastMw",
+          "value": 25842.0,
           "unit": "MW",
-          "hour": null,
-          "timeBand": null
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "actualMw",
+          "value": 24480.0,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "sameDayActualSlopeMw",
+          "value": 960.0,
+          "unit": "MW",
+          "hour": 8,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "lag24BusinessTypeMismatch",
+          "value": 1.0,
+          "unit": null,
+          "hour": 8,
+          "timeBand": "morning_ramp"
         }
       ],
       "relatedHours": [
-        14,
-        15
+        8
       ],
-      "relatedTimeBands": [],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
       "relatedFeatures": [
-        "intraday_correction.negative_residual_recovery_damping",
-        "intraday_correction.day_boundary_carryover"
+        "lag_24h_hourly_delta",
+        "recent_same_business_type_delta_mean"
       ],
-      "counterEvidence": []
+      "counterEvidence": [],
+      "mechanism": "誤差の方向は確認できますが、原因はまだ確定できません。該当時間のlag・気象入力、モデルの元予測、補正前後の値を分けて確認します。",
+      "nextCheck": "該当時間の開始前に取得した入力と実行別スナップショットで再現し、元のモデル誤差と補正の影響を分けます。事後の再計算値を当時の予測に置き換えません。"
     },
     {
-      "id": "h4",
+      "id": "event.top_miss_h10",
       "severity": "warning",
       "confidence": "medium",
       "evidenceStatus": "partial",
-      "title": "ピーク発生時刻の予測がずれました。",
-      "explanation": "モデルピーク時刻と実ピーク時刻に差がありました。ピーク前後の気象変化量とlag shapeを併せて見る必要があります。",
+      "title": "10:00 JST にモデルが実績を下回って予測しました。",
+      "explanation": "符号付きモデル誤差は -1191.4 MW で、予測値が実績を下回りました。関連する lag、気象、補正レイヤーを候補として確認し、日全体の問題として一括処理しないでください。",
+      "sourceEventIds": [
+        "top_miss_h10"
+      ],
       "evidence": [
         {
-          "source": "reports/daily",
-          "metric": "timeErrorHours",
-          "value": 3,
+          "source": "eventEvidenceBundles",
+          "metric": "modelErrorMw",
+          "value": -1191.4,
+          "unit": "MW",
+          "hour": 10,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "publishedForecastMw",
+          "value": 26438.6,
+          "unit": "MW",
+          "hour": 10,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "actualMw",
+          "value": 27630.0,
+          "unit": "MW",
+          "hour": 10,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "sameDayActualSlopeMw",
+          "value": 1940.0,
+          "unit": "MW",
+          "hour": 10,
+          "timeBand": "morning_ramp"
+        },
+        {
+          "source": "eventEvidenceBundles",
+          "metric": "lag24BusinessTypeMismatch",
+          "value": 1.0,
           "unit": null,
-          "hour": null,
-          "timeBand": null
+          "hour": 10,
+          "timeBand": "morning_ramp"
         }
       ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
+      "relatedHours": [
+        10
+      ],
+      "relatedTimeBands": [
+        "morning_ramp"
+      ],
       "relatedFeatures": [
-        "temp_delta_1h",
-        "lag_168h_hourly_delta"
+        "lag_24h_hourly_delta",
+        "recent_same_business_type_delta_mean"
       ],
-      "counterEvidence": []
-    },
-    {
-      "id": "h60",
-      "severity": "info",
-      "confidence": "high",
-      "evidenceStatus": "confirmed",
-      "title": "intraday補正の実行履歴がスナップショットとして保存されました。",
-      "explanation": "operational-calibration snapshot indexに中間実行履歴が残っているため、最終上書きJSONだけを見る場合より補正レイヤーの流れを追跡しやすくなります。",
-      "evidence": [
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "snapshotCount",
-          "value": 13
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "dominantAppliedRegimeReason",
-          "value": "intraday_observed_residual"
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "dominantReasonCount",
-          "value": 11
-        },
-        {
-          "source": "reports/internal/operational-calibration/snapshots",
-          "metric": "latestGeneratedAt",
-          "value": "2026-10-03T23:02:06+09:00"
-        }
-      ],
-      "relatedHours": [],
-      "relatedTimeBands": [],
-      "relatedFeatures": [
-        "intraday_correction.day_boundary_carryover",
-        "intraday_correction.business_type_transition_prior",
-        "intraday_correction.negative_residual_recovery_damping"
-      ],
-      "counterEvidence": [
-        "スナップショットは保存された13回の実行のみを説明し、削除済みの過去実行は復元できません。",
-        "補正が実際に適用されたスナップショット数は13回です。"
-      ]
+      "counterEvidence": [],
+      "mechanism": "誤差の方向は確認できますが、原因はまだ確定できません。該当時間のlag・気象入力、モデルの元予測、補正前後の値を分けて確認します。",
+      "nextCheck": "該当時間の開始前に取得した入力と実行別スナップショットで再現し、元のモデル誤差と補正の影響を分けます。事後の再計算値を当時の予測に置き換えません。"
     }
   ],
   "featureRecommendations": [
     {
-      "id": "r1",
-      "priority": "medium",
+      "id": "ticket.top_miss_h14",
+      "priority": "high",
       "type": "feature_engineering",
-      "target": "lag_24h",
-      "suggestion": "「日次誤差はTEPCOより大きくなりました。」仮説を基準に、lag_24hの影響を再確認します。",
-      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
-      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
-      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
+      "target": "business_midday_x_lag_24h_delta",
+      "suggestion": "10:00〜16:00のreplayで、raw LGBMレベル、アナログ補正、残差持ち越し、公開予測フリーズ差分を切り分けたうえで、正午特徴量に形状専用しきい値が必要かを検証候補にします。",
+      "expectedEffect": "昼食時間帯から日中ピークへの回復で誤差方向が混在する日に、固定的な正午dipを強制せず11:00〜15:00の形状精度を改善できるか確認します。",
+      "risk": "正午ルールを強くしすぎると、反発する日の13:00〜15:00で過大予測が増える可能性があります。",
+      "validationPlan": "直近2〜4週間で11:00〜15:00のMAE/WAPE、shape delta error、11:00・12:00・15:00周辺の最大誤差を比較します。",
       "linkedHypotheses": [
-        "h1"
+        "event.top_miss_h14"
       ],
       "autoApply": false
     },
     {
-      "id": "r2",
+      "id": "ticket.top_miss_h8",
       "priority": "medium",
       "type": "feature_engineering",
-      "target": "lag_24h",
-      "suggestion": "「特定時間で大きな単発誤差が発生しました。」仮説を基準に、lag_24hの影響を再確認します。",
-      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
-      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
-      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
+      "target": "lag_24h_hourly_delta",
+      "suggestion": "モデル特徴量を変える前に、最大誤差時間の前後を replay し、lag_24h の水準と時間差分を最近の同一営業形態 anchor と比較します。",
+      "expectedEffect": "前日慣性が有効なケースと、古い ramp 形状を引きずったケースを分離し、朝の曲線の過補正/過小補正を避けます。",
+      "risk": "lag を広く弱めると、前日の形状が本当に有効な日に精度を落とす可能性があります。",
+      "validationPlan": "直近2〜4週を replay し、06〜11時 MAE/WAPE、最大誤差、同時刻のTEPCO差を比較します。",
       "linkedHypotheses": [
-        "h2"
-      ],
-      "autoApply": false
-    },
-    {
-      "id": "r3",
-      "priority": "medium",
-      "type": "calibration",
-      "target": "intraday_correction.negative_residual_recovery_damping",
-      "suggestion": "「モデル曲線が実需より急に下がった可能性があります。」仮説を基準に、intraday_correction.negative_residual_recovery_dampingの影響を再確認します。",
-      "expectedEffect": "繰り返し発生する時間帯/営業形態条件でMAE、WAPE、RMSEが同時に改善するか確認します。",
-      "risk": "単一日のパターンを過度に反映すると、他の季節や曜日で過補正になる可能性があります。",
-      "validationPlan": "直近2〜4週のreplayとバックテストで、TEPCO比のWAPE、RMSE、最大誤差を比較します。",
-      "linkedHypotheses": [
-        "h3"
+        "event.top_miss_h8"
       ],
       "autoApply": false
     }
   ],
   "operatorNotes": [
-    "OpenAIレポート生成に失敗したため、fallback解説を使用しました: The read operation timed out",
-    "featureRecommendationsはレビュー候補であり、自動適用されません。",
-    "運用補正シグナルカタログ: intraday_correction.pre_observation_prior_stack_cap, intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.morning_positive_residual_carryover_damping, intraday_correction.morning_observed_ramp_floor, intraday_correction.non_business_evening_positive_residual_damping, intraday_correction.non_business_evening_negative_residual_damping, intraday_correction.ramp_guard_decline_support_relaxation, intraday_correction.daytime_sustained_underforecast_lift, intraday_correction.negative_residual_recovery_damping, intraday_correction.negative_residual_continuity_floor, intraday_correction.negative_residual_near_term_floor, intraday_correction.morning_warm_lag_overreaction_guard, intraday_correction.morning_observed_anchor_cap, intraday_correction.afternoon_observed_anchor_cap, intraday_correction.evening_decline_continuity_guard, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, adjustment.non_business_analog_downshift_guard, adjustment.non_business_morning_shape_floor_guard, adjustment.localized_shape_spike_guard, serving.published_forecast_freeze"
+    "featureRecommendationsはレビュー候補であり、自動では適用されません。",
+    "オペレーショナルキャリブレーション信号カタログ：intraday_correction.pre_observation_prior_stack_cap, intraday_correction.business_type_transition_prior, intraday_correction.business_type_transition, intraday_correction.positive_residual_mitigation, intraday_correction.positive_residual_slope_damping, intraday_correction.morning_positive_residual_carryover_damping, intraday_correction.morning_observed_ramp_floor, intraday_correction.non_business_evening_positive_residual_damping, intraday_correction.non_business_evening_negative_residual_damping, intraday_correction.ramp_guard_decline_support_relaxation, intraday_correction.daytime_sustained_underforecast_lift, intraday_correction.negative_residual_recovery_damping, intraday_correction.negative_residual_continuity_floor, intraday_correction.negative_residual_near_term_floor, intraday_correction.morning_warm_lag_overreaction_guard, intraday_correction.morning_observed_anchor_cap, intraday_correction.afternoon_observed_anchor_cap, intraday_correction.evening_decline_continuity_guard, intraday_correction.day_boundary_carryover, intraday_correction.day_level_scale, adjustment.non_business_analog_downshift_guard, adjustment.non_business_morning_shape_floor_guard, adjustment.localized_shape_spike_guard, serving.published_forecast_freeze"
   ],
   "limitations": [
-    "このレポートはOpenAIを呼び出さず、deterministic JSONのみから生成したfallback解説です。",
-    "中間intraday実行はoperational-calibration snapshotに基づいて限定的に復元します。"
+    "この分析は、要約されたオペレーションの証拠と保存された補正スナップショットに基づいています。"
   ]
 }
