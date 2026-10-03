@@ -16,7 +16,7 @@ TEPCO 공개 전력 데이터를 활용한 **전력 수요 예측 / 이상 탐�
 - 예측 대비 **이상 패턴 탐지** (급등/급락, 잔차 드리프트, 공급 예비율 위험)
 - GitHub Pages로 공개 가능한 **정적 대시보드**
 
-> 전제: GitHub Pages에 정적 JSON을 배포하는 구조지만, 당일 데이터는 TEPCO intraday CSV를 2시간마다 가져와 보강합니다.
+> 확정 이력은 로컬 Windows/Docker ETL이 갱신합니다. GitHub Actions는 오전·보충 실행을 포함한 예약 일정으로 당일 데이터를 갱신하고 정적 대시보드를 빌드·배포합니다.
 > 따라서 **어제의 확정 이상 탐지 리포트** + **오늘/내일 예측 리포트** + **당일 실측/TEPCO 예측 비교**를 중심으로 화면을 구성합니다.
 
 ---
@@ -48,26 +48,15 @@ TEPCO 공개 전력 데이터를 활용한 **전력 수요 예측 / 이상 탐�
 
 ## 대시보드 화면 구성
 
-**상단 상태바 (항상 표시)**
-- 최종 업데이트 시각 / 데이터 취득 상황
+상태바는 갱신 시각과 데이터 취득 상황을 표시합니다.
 
-**탭 5개**
-
-1. **어제** — 전날 실적 + 이상 이벤트
-   - Spike / Drop: 예측 구간(95/99%) 초과 여부
-   - Drift: 잔차(residual) 지속 편향 (EWMA)
-   - Reserve Risk: 사용률/예비율 임계 기반 위험 구간
-
-2. **오늘** — 시간별 예측 + 예측 구간 + 피크 예상 (시각/값)
-
-3. **내일** — 시간별 예측 + 예측 구간 + 피크 예상 (시각/값)
-
-4. **검증** — 전날 운영 리포트 + 자체 모델과 TEPCO 예측 비교 + LightGBM 백테스트
-
-5. **운영 리포트** — deterministic 지표를 바탕으로 생성하는 일일 운영 해설
-   - 전날 성능 지표, 주요 오차, 데이터 품질, 운영 보정 메타데이터를 사용
-   - OpenAI 키가 없으면 규칙 기반 fallback 리포트로 표시
-   - `TOKYO_GRID_EMS_OPENAI_API_KEY`가 있으면 영어 마스터 분석을 만들고 한국어/일본어로 현지화
+| 탭 | 내용 |
+|---|---|
+| 어제 | 전날 실측과 급등·급락, 잔차 드리프트, 예비율 위험 이벤트 |
+| 오늘 | 시간별 예측, 예측 구간, 실측, 피크 예상 |
+| 내일 | 다음날 시간별 예측, 예측 구간, 피크 예상 |
+| 검증 | 일일 지표, 모델·TEPCO 비교, LightGBM 백테스트 |
+| 운영 리포트 | 근거 기반 일일 해설. 선택적 OpenAI 영어 분석·한일 현지화 또는 규칙 기반 fallback |
 
 ---
 
@@ -79,29 +68,6 @@ TEPCO 공개 전력 데이터를 활용한 **전력 수요 예측 / 이상 탐�
 | 인코딩 | **cp932 (Shift-JIS)** |
 | 단위 | **万kW (= 10 MW)** |
 | 포맷 | 여러 테이블이 빈 줄로 연결된 **멀티 섹션 CSV** |
-
-### CSV 섹션 구조 (1파일 = 1일)
-
-```
-2026/5/6 23:55 UPDATE
-[당일 요약 블록] × 4 (피크 공급력, 예상 최대 전력, 사용률 피크 등)
-
-DATE,TIME,当日実績(万kW),予測値(万kW),使用率(%),供給力(万kW)
-← 시간별(24행) →
-
-最大使用率(%) 블록
-
-[익일 요약 블록] × 4
-
-DATE,TIME,当日実績(５分間隔値)(万kW),太陽光発電実績(...),太陽光発電量(...)
-← 5분(288행) →
-```
-
-### 데이터 처리 규칙
-
-- 인코딩: `cp932` (또는 자동 감지)
-- 타임스탬프: `DATE + TIME` → `Asia/Tokyo` 기준 ISO 8601 (`+09:00` 포함)
-- 품질 게이트: 시간별 24행 / 5분 288행 확인, 중복/단조성/갭 체크
 
 ---
 
@@ -116,8 +82,12 @@ DATE,TIME,当日実績(５分間隔値)(万kW),太陽光発電実績(...),太陽
 │   │   ├── fetch_tepco.py      # TEPCO 월별 ZIP 다운로드
 │   │   ├── fetch_today.py      # 당일 실시간 데이터 취득
 │   │   └── quality_gate.py     # 품질 검사
-│   ├── forecast/               # 수요 예측 모델
-│   └── anomaly/                # 이상 탐지
+│   ├── forecast/              # 수요 모델, 보정, 예측 구간
+│   ├── anomaly/               # 이상 탐지
+│   └── eval/                  # 지표, 리포트, replay, Review Bundle, challenger 도구
+├── scripts/                   # 로컬 실행 제어, 데이터 복원, 게시
+├── docker/                    # 격리된 shadow 런타임 이미지
+├── docker-compose.yml         # 로컬 ETL 및 독립 shadow 서비스
 ├── web/                        # React/Vite 대시보드
 ├── docs/
 │   ├── en/                     # 영어 문서
@@ -125,7 +95,7 @@ DATE,TIME,当日実績(５分間隔値)(万kW),太陽光発電実績(...),太陽
 │   ├── ja/                     # 일본어 문서
 │   └── assets/                 # README와 문서용 이미지
 └── data/
-    └── raw/                    # 원본 CSV (Actions에서 자동 다운로드, git 제외)
+    └── raw/                    # 원본 CSV (통상 로컬에서 취득, git 제외)
         └── YYYY/
             └── YYYYMM_power_usage/
 ```
@@ -134,43 +104,34 @@ DATE,TIME,当日実績(５分間隔値)(万kW),太陽光発電実績(...),太陽
 
 ## 빠른 시작
 
-### 로컬 실행
+### 대시보드 미리보기
+
+Git, Python 3, Node.js를 설치한 뒤 repository root에서 실행합니다.
 
 ```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-
-# TEPCO 데이터 취득
-python python/etl/fetch_tepco.py
-
-# ETL 실행 → web/public/ 아래에 JSON 생성
-python python/etl/run_batch.py --input data/raw --out web/public
-
-# 선택 사항: OpenAI 기반 일일 운영 리포트 활성화
-# Windows PowerShell:
-# $env:TOKYO_GRID_EMS_OPENAI_API_KEY="..."
-# $env:OPENAI_DAILY_REPORT_MODEL="gpt-4o-mini"
-# $env:OPENAI_DAILY_REPORT_LOCALIZATION_MODEL="gpt-4o-mini"
-
-# 대시보드 로컬 미리보기
-cd web && npm install && npm run dev
+python scripts/restore_public_from_data_branch.py
+cd web
+npm ci
+npm run dev
 ```
 
-### Docker 로컬 ETL
+복원 명령은 `web/public/`을 게시된 `origin/data` 내용으로 교체합니다. 미게시 로컬 산출물이 있다면 먼저 보존해야 합니다. 이 미리보기는 ETL이나 OpenAI 호출을 실행하지 않습니다.
 
-GitHub-hosted runner가 TEPCO 월별 ZIP을 다운로드하지 못하는 경우, Docker로 로컬 ETL을 실행하고 생성된 정적 JSON을 내 PC에서 `data` 브랜치로 publish합니다.
+### 운영 ETL 실행과 게시
+
+Windows 호스트 스크립트에는 Docker Desktop, `py` launcher의 Python 3.14, Git 인증과 workflow dispatch 인증이 필요합니다. Repository root에서 실행합니다.
 
 ```powershell
-# 첫 실행: 이미지 빌드 + TEPCO ZIP 취득 + ETL 실행 + OpenAI 리포트 + data 브랜치 publish + Deploy Only 호출
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build -Publish
+# 최초 수동 실행: 확정 이력 ETL이 필요한 경우 이미지 빌드
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build -Publish -AllowOffSchedule
 
-# 이후 실행: 기존 이미지 재사용 + ETL 실행 + data 브랜치 publish + Deploy Only 호출
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
+# 이후 수동 실행
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -AllowOffSchedule
 ```
 
-Docker는 Python 런타임, TEPCO fetch, OpenAI 리포트 생성을 담당합니다. publish와 deploy-dispatch 단계는 기존 Git 인증 정보를 재사용할 수 있도록 호스트에서 실행합니다.
+호스트는 게시된 데이터·모델 상태를 복원하고, 전날 실측이 미확정이면 Docker ETL을 실행한 뒤 산출물 검증·게시와 배포/intraday dispatch를 수행합니다. 전날 실측이 이미 확정되었다면 이력 ETL은 건너뛰고 누락/fallback AI 리포트만 별도 복구할 수 있습니다. `-AllowOffSchedule`은 오전 예약 시간 밖의 수동 실행을 허용합니다. 게시에는 컨테이너가 아닌 호스트의 Git 인증을 사용합니다.
+
+Python만으로 로컬 산출물을 다시 만들려면 `requirements.txt`를 설치한 뒤 `python python/etl/fetch_tepco.py`, `python python/etl/run_batch.py --input data/raw --out web/public`을 순서대로 실행합니다. 모델·상태 산출물을 복원하지 않은 새 환경에서는 배포된 Champion의 재현을 보장하지 않습니다.
 
 ### GitHub Pages 배포
 
@@ -180,7 +141,7 @@ Docker는 Python 런타임, TEPCO fetch, OpenAI 리포트 생성을 담당합니
 
 ## 정적 JSON 산출물
 
-ETL이 `web/public/` 아래에 생성하는 파일들입니다.
+`data`에서 복원하거나 해당 파이프라인/도구가 생성하는 `web/public/`의 주요 산출물입니다.
 
 | 파일 | 내용 |
 |------|------|
@@ -188,29 +149,24 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 | `alerts/YYYY-MM-DD.json` | 이상 탐지 이벤트 목록 |
 | `forecast/YYYY-MM-DD.json` | 시간별 예측값 + 예측 구간(95/99%) |
 | `actual/YYYY-MM-DD.json` | 시간별 실적값 (당일 실시간 포함) |
-| `forecast_snapshots/YYYY-MM-DD/*.json` | 운영 분석용 lead-time 예측 스냅샷 (UI에는 직접 연결하지 않음) |
 | `metrics/forecast_accuracy.json` | TEPCO 최신 게시값 기준 운영 참고치. 공식 동일 vintage 비교에는 사용하지 않음 |
-| `metrics/forecast_vintage_accuracy.json` | 같은 캡처 시점과 lead-time으로 맞춘 모델/TEPCO 비교 및 28/84일 자격 판정 |
-| `metrics/model_backtest.json` | 베이스라인 대비 LightGBM 백테스트 |
-| `metrics/model_promotion.json` | artifact-bound D0·D-1 검증, drift 결정, Champion/rollback 식별자와 복구 상태 |
-| `metrics/model_contract_comparison.json` | 실제 배포 v11과 승격 v14-r2의 고정 시점 비교 |
-| `metrics/model_shadow_evaluation.json` | 기본 성능 저하 Champion 복구 경로의 artifact 결합 shadow 근거 |
-| `metrics/operational_replay.json` | 실제 게시 예측, 단계별 shadow, TEPCO 참고치, 밴드 coverage replay |
+| `metrics/forecast_vintage_accuracy.json` | 동일 capture·lead-time으로 맞춘 모델/TEPCO 평가 |
 | `reports/daily/*.json` | 검증 탭에 표시하는 전날 운영 리포트 |
 | `reports/ai/daily/{ko,en,ja}/*.json` | 운영 리포트 탭의 일일 해설. OpenAI 설정 시 AI 해설, 미설정 시 deterministic fallback 사용 |
-| `reports/internal/daily-diagnostics/*.json` | 운영 산출물과 함께 저장하는 내부 분석용 lag/기온/shape 진단 JSON (UI에는 연결하지 않음) |
-| `reports/internal/operational-calibration/*.json` | 운영 디버깅용 source confidence와 보정 메타데이터 |
-| `reports/internal/forecast-vintages/*.json` | 공정한 lead-time 평가를 위해 같은 실행에서 함께 캡처한 모델/TEPCO append-only 장부 |
+| `forecast_snapshots/`, `reports/internal/` | 검토용 예측 vintage, 보정 단계와 진단 근거. UI에서는 직접 링크하지 않음 |
+
+백테스트·replay·승격 산출물은 [모델 운영 명세](docs/ko/model-operations-spec.md)에 정리되어 있습니다. 특히 `model_contract_comparison.json`은 명시적인 승격 도구가 작성하며 매 ETL에서 재생성하지 않습니다. `internal`이라는 이름은 접근 제어를 뜻하지 않으며 정적 배포에 포함될 수 있습니다.
 
 > 타임스탬프는 전 산출물에서 `Asia/Tokyo (+09:00)` 기준 ISO 8601로 출력합니다.
 
 ### AI 운영 리포트 동작
 
-- AI 리포트는 ETL 실행에서만 생성하며, intraday/status-only 실행은 리포트 본문을 다시 쓰지 않습니다.
-- 같은 날짜/언어의 리포트 JSON이 이미 있으면 후속 ETL 재시도에서도 보존하여 API 비용이 반복 발생하지 않게 합니다.
-- OpenAI 호출은 기본 최대 3회로 제한합니다. 1차는 저비용 영어 마스터 분석(`OPENAI_DAILY_REPORT_MODEL`, 기본값 `gpt-4o-mini`), 2차는 한국어/일본어 현지화(`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, 기본값 `gpt-4o-mini`), 3차는 현지화 결과 검증 실패 시 같은 저비용 모델로 한 번 더 재시도하는 용도입니다. 더 강한 분석 모델이 필요하면 `OPENAI_DAILY_REPORT_MODEL`을 명시적으로 지정합니다.
-- GitHub Actions용 timeout 기본값은 `OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90`, `OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180`입니다. GitHub repository variables를 설정하지 않아도 Python 기본값이 적용됩니다.
-- 번역이 실패하거나 timeout되면 해당 언어 경로는 영어 마스터 본문으로 fallback하고 `localizationStatus: "fallback_en"`을 기록합니다.
+- Intraday/status-only 실행은 AI 해설을 생성하지 않습니다. 일반 생성은 최신 확정 일일 리포트를 대상으로 하며, 기존의 성공한 OpenAI 리포트는 유지하고 누락/fallback 리포트는 별도 복구할 수 있습니다.
+- 분석과 현지화 모델은 모두 `gpt-4o-mini`가 기본입니다. 기본 실행 예산은 **논리 호출 2회**이며 HTTP 시도 횟수나 비용의 하드 상한선은 아닙니다. 전송 재시도는 별도입니다.
+- ETL에서 사용하려면 실행 전에 `TOKYO_GRID_EMS_OPENAI_API_KEY`와 `OPENAI_DAILY_REPORT_AUTO_ENABLE=true`를 설정합니다. 전용 리포트 CLI는 대신 `--use-openai`를 받습니다. `.env`나 키는 커밋하지 않으며 프로젝트 리포트에 일반 런타임 변수 `OPENAI_API_KEY`를 사용하지 않습니다.
+- 분석을 생성할 수 없으면 규칙 기반 fallback을 사용하고, 현지화 실패 시 `localizationStatus: "fallback_en"`으로 영어 마스터를 유지합니다. AI 추천은 예측에 자동 적용되지 않습니다.
+
+활성화 예시, 재시도 예산, timeout과 리포트 전용 복구는 [운영 리포트 설정과 비용 제어](docs/ko/ops-report-tab.md)를 참고하세요.
 
 ---
 
@@ -242,17 +198,6 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 - [2026-09-21 실측 회복을 고려한 주말 저녁 잔차 감쇠](docs/ko/model-improvements/model-improvement-2026-09-21-observed-evening-recovery.md)
 - [2026-09-13 관측 근거 기반 주말 아침 shape floor·AI 리포트 근거 수정](docs/ko/model-improvements/model-improvement-2026-09-13-observed-weekend-shape-support.md)
 - [2026-09-11 모델 점검·연속 하락 복원 완화·replay origin 수정](docs/ko/model-improvements/model-improvement-2026-09-11-review-and-sustained-decline.md)
-- [2026-09-10 실측 지지 범위에 따른 음수 잔차 하한](docs/ko/model-improvements/model-improvement-2026-09-10-observed-support-floor.md)
-- [2026-09-09 리드별 밴드·D-1 보정 범위·최종 가드 추적](docs/ko/model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)
-- [2026-09-04 rolling conformal target 예측 밴드](docs/ko/model-improvements/model-improvement-2026-09-04-rolling-conformal-target-interval.md)
-- [2026-09-04 운영 증거 무결성과 보정 상태 Fail-Closed](docs/ko/model-improvements/model-improvement-2026-09-04-operational-evidence-integrity.md)
-- [2026-08-21 v14-r2 출처 강건형 다음날 예측 Champion](docs/ko/model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
-- [2026-08-21 과거 v14-r1 Champion 보존형 staging](docs/ko/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
-- [2026-08-18 동일 시점 TEPCO 평가와 모델 승격 거버넌스](docs/ko/model-improvements/model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
-- [2026-08-13 AMeDAS-JMA 경계 일관성 보정](docs/ko/model-improvements/model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
-- [2026-08-12 영업일 복귀 보정의 실측 과대예측 veto](docs/ko/model-improvements/model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
-- [2026-08-11 rolling conformal 예측 밴드 최소 폭 보정](docs/ko/model-improvements/model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
-- [2026-08-11 비영업일 오전 실측 anchor 확장](docs/ko/model-improvements/model-improvement-2026-08-11-non-business-morning-anchor-extension.md)
 
 전체 날짜순 로그: [docs/ko/model-improvements/README.md](docs/ko/model-improvements/README.md)
 
@@ -265,7 +210,7 @@ ETL이 `web/public/` 아래에 생성하는 파일들입니다.
 | Phase 1–3 | ETL / 예측 / 이상 탐지 / 대시보드 | ✅ 완료 |
 | Phase 4 | GitHub Pages 자동 배포 | ✅ 완료 |
 | Phase 5-A | LightGBM 예측 모델 | ✅ 운영 반영 |
-| Phase 5-B | 기온 데이터 연동 (Open-Meteo) | ✅ 운영 반영 |
+| Phase 5-B | JMA 실측·예보 + Open-Meteo 습도·이력 보조 | ✅ 운영 반영 |
 | Phase 6 | 검증 탭 / 백테스트 / TEPCO 비교 | ✅ 완료 |
 
 ---

@@ -9,6 +9,7 @@ Languages: [Korean](DEPLOY_ko.md) / [Japanese](DEPLOY_ja.md)
 - GitHub Pages source set to **GitHub Actions**
 - Actions workflow permissions set to **Read and write permissions**
 - Docker Desktop installed for local historical ETL
+- Python 3.14 available through the Windows `py` launcher, host Git credentials, and authentication for workflow dispatch
 
 Generated data under `web/public/` is not committed to `main`. It is published to the `data` branch, then the Pages workflow restores that branch before building the Vite app.
 
@@ -20,7 +21,7 @@ Historical TEPCO monthly ZIP downloads are run locally because GitHub-hosted run
 Local Windows Task Scheduler
   -> scripts/local_etl.ps1 -Publish
     -> restore origin/data into web/public
-    -> run Docker ETL and OpenAI daily report generation
+    -> run Docker ETL when yesterday is not finalized (AI reports are opt-in)
     -> push web/public to origin/data
     -> dispatch Deploy Only
     -> dispatch Intraday Update
@@ -39,14 +40,16 @@ Local Windows Task Scheduler
 First run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -Build
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -Build -AllowOffSchedule
 ```
 
 Normal run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -AllowOffSchedule
 ```
+
+These are manual commands: `-AllowOffSchedule` permits execution outside the morning schedule. Scheduled tasks do not need that flag. If yesterday is already finalized, the script skips historical ETL, optionally recovers its missing/fallback AI report, and dispatches intraday. See [AI activation and cost controls](docs/en/ops-report-tab.md).
 
 Before publish, the local script validates `web/public`:
 
@@ -81,7 +84,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 
 | Error | Cause | Fix |
 |---|---|---|
-| TEPCO monthly ZIP returns `403` in Actions | GitHub-hosted runner IP is blocked by TEPCO | Use local Docker ETL: `scripts\local_etl.ps1 -Publish` |
+| TEPCO monthly ZIP returns `403` in Actions | GitHub-hosted runner IP is blocked by TEPCO | Use local Docker ETL: `scripts\local_etl.ps1 -Publish -AllowOffSchedule` |
 | Deploy Only dispatch fails | No GitHub token available locally | Set `GH_TOKEN` or `GITHUB_TOKEN`, sign in with GitHub CLI, or trigger `Deploy Only` manually in Actions |
 | Intraday dispatch fails after local ETL | No GitHub token available locally, or GitHub Actions dispatch failed | Run `Intraday Update` manually in Actions, then check `logs/local_etl/*.log` |
 | OpenAI report falls back | API key missing, invalid, or timed out | Check `.env` and `logs/local_etl/*.log`, then rerun local ETL |

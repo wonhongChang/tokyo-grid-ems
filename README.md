@@ -14,9 +14,9 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 
 - **Demand forecasting** (hourly, with peak time and value)
 - **Anomaly detection** against forecasts (spikes/drops, residual drift, supply reserve risk)
-- A **static dashboard** deployable to GitHub Pages at zero cost
+- A **static dashboard** delivered through GitHub Pages without a backend inference server
 
-> Assumption: the dashboard is served from static JSON on GitHub Pages, while same-day data is refreshed from TEPCO's intraday CSV every 2 hours.
+> Historical data is refreshed by local Windows/Docker ETL. GitHub Actions refresh same-day data on a schedule with additional morning and catch-up runs, then build and deploy the static dashboard.
 > The UI centers on **yesterday's finalized anomaly report** + **today/tomorrow forecasts** + **same-day actual/TEPCO forecast comparison**.
 
 ---
@@ -48,26 +48,15 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 
 ## Dashboard Layout
 
-**Status bar (always visible)**
-- Last updated time / data availability
+The status bar shows update time and data availability.
 
-**5 tabs**
-
-1. **Yesterday** — Previous day's actuals + anomaly events
-   - Spike / Drop: forecast interval (95/99%) breach
-   - Drift: persistent residual bias (EWMA)
-   - Reserve Risk: usage rate / reserve margin threshold breach
-
-2. **Today** — Hourly forecast + forecast bands + peak prediction (time and value)
-
-3. **Tomorrow** — Hourly forecast + forecast bands + peak prediction (time and value)
-
-4. **Validation** — Previous-day operation report + Model-vs-TEPCO comparison + LightGBM backtest
-
-5. **Ops Report** — Daily operational explanation generated from deterministic metrics
-   - Uses previous-day metrics, top misses, data quality, and calibration metadata
-   - Runs as a rules-based fallback when no OpenAI key is configured
-   - When `TOKYO_GRID_EMS_OPENAI_API_KEY` is available, creates an English master analysis and localizes it to Korean/Japanese
+| Tab | Contents |
+|---|---|
+| Yesterday | Previous-day actuals and spike/drop, residual-drift, and reserve-risk events |
+| Today | Hourly forecast, prediction intervals, actuals, and peak forecast |
+| Tomorrow | Next-day hourly forecast, prediction intervals, and peak forecast |
+| Validation | Daily metrics, model/TEPCO comparison, and LightGBM backtest |
+| Ops Report | Evidence-based daily explanation; optional OpenAI English analysis with Korean/Japanese localization, or rules-based fallback |
 
 ---
 
@@ -93,8 +82,12 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 │   │   ├── fetch_tepco.py      # TEPCO monthly ZIP downloader
 │   │   ├── fetch_today.py      # Intraday real-time data fetcher
 │   │   └── quality_gate.py     # Data quality checks
-│   ├── forecast/               # Demand forecasting models
-│   └── anomaly/                # Anomaly detection
+│   ├── forecast/              # Demand models, calibration, and intervals
+│   ├── anomaly/               # Anomaly detection
+│   └── eval/                  # Metrics, reports, replay, Review Bundle, and challenger tooling
+├── scripts/                   # Local orchestration, data restore, and publication
+├── docker/                    # Isolated shadow runtime image
+├── docker-compose.yml         # Local ETL and independent shadow services
 ├── web/                        # React/Vite dashboard
 ├── docs/
 │   ├── en/                     # English documentation
@@ -102,7 +95,7 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 │   ├── ja/                     # Japanese documentation
 │   └── assets/                 # README and documentation images
 └── data/
-    └── raw/                    # Raw CSV data (auto-downloaded by Actions, git-ignored)
+    └── raw/                    # Raw CSV data (normally fetched locally, git-ignored)
         └── YYYY/
             └── YYYYMM_power_usage/
 ```
@@ -111,43 +104,34 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 
 ## Quickstart
 
-### Local setup
+### Preview the dashboard
+
+With Git, Python 3, and Node.js installed, run from the repository root:
 
 ```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-
-# Fetch TEPCO data
-python python/etl/fetch_tepco.py
-
-# Run ETL → generates JSON under web/public/
-python python/etl/run_batch.py --input data/raw --out web/public
-
-# Optional: enable OpenAI-backed daily ops reports
-# Windows PowerShell:
-# $env:TOKYO_GRID_EMS_OPENAI_API_KEY="..."
-# $env:OPENAI_DAILY_REPORT_MODEL="gpt-4o-mini"
-# $env:OPENAI_DAILY_REPORT_LOCALIZATION_MODEL="gpt-4o-mini"
-
-# Local dashboard preview
-cd web && npm install && npm run dev
+python scripts/restore_public_from_data_branch.py
+cd web
+npm ci
+npm run dev
 ```
 
-### Docker local ETL
+The restore command replaces `web/public/` with the published `origin/data` contents. Preserve any unpublished local artifacts first. This preview does not run ETL or call OpenAI.
 
-When GitHub-hosted runners cannot download the TEPCO monthly ZIP, run the ETL locally in Docker and publish the generated static JSON from your machine:
+### Run and publish operational ETL
+
+The Windows host script requires Docker Desktop, Python 3.14 via the `py` launcher, Git credentials, and workflow-dispatch authentication. Run from the repository root:
 
 ```powershell
-# First run: build the image, fetch TEPCO ZIP, run ETL, and publish data
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build -Publish
+# First manual run: build the image if historical ETL is needed
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build -Publish -AllowOffSchedule
 
-# Later runs: reuse the image, rerun ETL, and publish data
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
+# Later manual runs
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -AllowOffSchedule
 ```
 
-Docker handles the Python runtime, TEPCO fetch, and OpenAI report generation. The publish and deploy-dispatch steps run on the host so they can reuse your existing Git credentials.
+The host restores published data/model state, runs Docker ETL when yesterday is not finalized, validates and publishes outputs, and dispatches deployment/intraday workflows. If yesterday is already finalized, it skips historical ETL; a missing/fallback AI report can be recovered separately. `-AllowOffSchedule` allows manual runs outside the morning schedule. Publication uses host Git credentials, not container credentials.
+
+For a Python-only local rebuild, install `requirements.txt`, then run `python python/etl/fetch_tepco.py` and `python python/etl/run_batch.py --input data/raw --out web/public`. Without restored model/state artifacts, a fresh rebuild is not guaranteed to reproduce the deployed Champion.
 
 ### GitHub Pages deployment
 
@@ -157,7 +141,7 @@ See [DEPLOY.md](DEPLOY.md).
 
 ## Static JSON Outputs
 
-Files generated by the ETL under `web/public/`:
+Common artifacts under `web/public/`, restored from `data` or generated by the relevant pipeline/tool:
 
 | File | Contents |
 |------|------|
@@ -165,30 +149,24 @@ Files generated by the ETL under `web/public/`:
 | `alerts/YYYY-MM-DD.json` | Anomaly detection event list |
 | `forecast/YYYY-MM-DD.json` | Hourly forecast + prediction intervals (95/99%) |
 | `actual/YYYY-MM-DD.json` | Hourly actuals (includes intraday real-time data) |
-| `forecast_snapshots/YYYY-MM-DD/*.json` | Bounded lead-time forecast snapshots for operational review, not linked directly in the UI |
 | `metrics/forecast_accuracy.json` | Latest-published-value operational reference against TEPCO; not a formal same-vintage benchmark |
-| `metrics/forecast_vintage_accuracy.json` | Same-capture, lead-time-matched model/TEPCO comparison and 28/84-day qualification |
-| `metrics/model_backtest.json` | LightGBM backtest against the baseline |
-| `metrics/model_promotion.json` | Artifact-bound D0/D-1 validation, drift decision, Champion/rollback identity, and recovery status |
-| `metrics/model_contract_comparison.json` | Exact deployed-v11 versus promoted-v14-r2 fixed-origin comparison |
-| `metrics/model_shadow_evaluation.json` | Artifact-bound shadow evidence for the default degraded-Champion recovery path |
-| `metrics/operational_replay.json` | Served forecast, stage shadow, TEPCO reference, and interval coverage replay |
+| `metrics/forecast_vintage_accuracy.json` | Same-capture, lead-time-matched model/TEPCO evaluation |
 | `reports/daily/*.json` | Public previous-day operation summaries for the validation tab |
 | `reports/ai/daily/{ko,en,ja}/*.json` | Daily Ops Report narratives; OpenAI when configured, deterministic fallback otherwise |
-| `reports/internal/daily-diagnostics/*.json` | Internal lag/weather/shape diagnostics, stored with operational outputs but not linked in the UI |
-| `reports/internal/operational-calibration/*.json` | Source confidence and post-processing calibration metadata for operational debugging |
-| `reports/internal/forecast-vintages/*.json` | Append-only model/TEPCO forecasts captured in the same run for fair lead-time evaluation |
+| `forecast_snapshots/`, `reports/internal/` | Retained forecast vintages, calibration stages, and diagnostics for review; not directly linked in the UI |
+
+Backtest, replay, and promotion artifacts are documented in the [model operations specification](docs/en/model-operations-spec.md). In particular, `model_contract_comparison.json` is written by explicit promotion tools, not regenerated by every ETL. Files named `internal` are not an access-control boundary and may be included in static deployment.
 
 > All timestamps are ISO 8601 in `Asia/Tokyo (+09:00)`.
 
 ### AI Ops Report Behavior
 
-- AI reports are generated during ETL only; intraday/status-only runs do not rewrite report bodies.
-- Existing report JSON for the same date/language is preserved on later ETL retries to avoid repeated API cost.
-- OpenAI usage is capped by default to 2 logical calls: one English master analysis (`OPENAI_DAILY_REPORT_MODEL`, default `gpt-4o-mini`) and one Korean/Japanese localization (`OPENAI_DAILY_REPORT_LOCALIZATION_MODEL`, default `gpt-4o-mini`). A localization validation retry is available only when the configured per-run budget is at least 3.
-- Transient HTTP failures such as 500/502/503/504 are retried once by default (`OPENAI_DAILY_REPORT_HTTP_ATTEMPTS=2`) with a short backoff. If the first morning ETL still leaves a fallback report, the later 08:30/09:30 local schedule retries only that report without rerunning the historical ETL, and publishes it when OpenAI succeeds.
-- Timeout defaults are conservative for GitHub Actions: `OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90` and `OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180`. If GitHub repository variables are not set, the Python defaults are used.
-- If localization fails or times out, the localized path falls back to the English master text and records `localizationStatus: "fallback_en"`.
+- Intraday/status-only runs do not generate AI narratives. Normal generation targets the latest finalized daily report; successful existing OpenAI reports are preserved, while missing/fallback reports can be recovered separately.
+- Both analysis and localization default to `gpt-4o-mini`. The default per-run budget is **2 logical calls**, not a hard cap on HTTP attempts or spending; transport retries are separate.
+- To opt in during ETL, configure `TOKYO_GRID_EMS_OPENAI_API_KEY` and `OPENAI_DAILY_REPORT_AUTO_ENABLE=true` before launching it. The dedicated report CLI instead accepts `--use-openai`. Do not commit `.env` or keys, and do not use the generic `OPENAI_API_KEY` runtime variable for project reports.
+- If analysis is unavailable, rules-based fallback is used; failed localization retains the English master with `localizationStatus: "fallback_en"`. AI recommendations never auto-apply to forecasting.
+
+See [Ops Report configuration and cost controls](docs/en/ops-report-tab.md) for activation examples, retry budgets, timeouts, and report-only recovery.
 
 ---
 
@@ -220,17 +198,6 @@ Selected recent operational changes:
 - [2026-09-21 observed recovery before weekend residual damping](docs/en/model-improvements/model-improvement-2026-09-21-observed-evening-recovery.md)
 - [2026-09-13 observed weekend morning shape support and AI evidence repair](docs/en/model-improvements/model-improvement-2026-09-13-observed-weekend-shape-support.md)
 - [2026-09-11 model review, sustained-decline restoration and replay-origin repair](docs/en/model-improvements/model-improvement-2026-09-11-review-and-sustained-decline.md)
-- [2026-09-10 observed-supported negative residual floor](docs/en/model-improvements/model-improvement-2026-09-10-observed-support-floor.md)
-- [2026-09-09 lead-aware intervals, D-1 calibration scope and terminal guard attribution](docs/en/model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)
-- [2026-09-04 rolling conformal target interval](docs/en/model-improvements/model-improvement-2026-09-04-rolling-conformal-target-interval.md)
-- [2026-09-04 operational evidence integrity and fail-closed calibration state](docs/en/model-improvements/model-improvement-2026-09-04-operational-evidence-integrity.md)
-- [2026-08-21 v14-r2 source-robust day-ahead Champion](docs/en/model-improvements/model-improvement-2026-08-21-v14-r2-source-robust-day-ahead.md)
-- [2026-08-21 historical v14-r1 champion-preserving staging](docs/en/model-improvements/model-improvement-2026-08-21-v14-champion-preserving-calibration.md)
-- [2026-08-18 matched-vintage TEPCO evaluation and promotion governance](docs/en/model-improvements/model-improvement-2026-08-18-matched-vintage-promotion-governance.md)
-- [2026-08-13 AMeDAS-JMA boundary consistency](docs/en/model-improvements/model-improvement-2026-08-13-amedas-jma-boundary-consistency.md)
-- [2026-08-12 business-return observed overforecast veto](docs/en/model-improvements/model-improvement-2026-08-12-business-return-observed-overforecast-veto.md)
-- [2026-08-11 rolling conformal interval floor](docs/en/model-improvements/model-improvement-2026-08-11-rolling-conformal-interval-floor.md)
-- [2026-08-11 non-business morning observed anchor extension](docs/en/model-improvements/model-improvement-2026-08-11-non-business-morning-anchor-extension.md)
 
 Full chronological log: [docs/en/model-improvements/README.md](docs/en/model-improvements/README.md)
 
@@ -243,7 +210,7 @@ Full chronological log: [docs/en/model-improvements/README.md](docs/en/model-imp
 | Phase 1–3 | ETL / Forecasting / Anomaly Detection / Dashboard | ✅ Done |
 | Phase 4 | GitHub Pages auto-deploy | ✅ Done |
 | Phase 5-A | LightGBM forecast model | ✅ In production |
-| Phase 5-B | Weather data integration (Open-Meteo) | ✅ In production |
+| Phase 5-B | JMA observations/forecast + guarded Open-Meteo humidity/history support | ✅ In production |
 | Phase 6 | Validation tab / backtest / TEPCO comparison | ✅ Done |
 
 ---

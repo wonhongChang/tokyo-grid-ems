@@ -184,13 +184,33 @@ UIはフォルダ全体を走査せず、indexのみを読みます。既定のi
 
 通常の運用メモは表示を維持し、補正シグナルカタログは初期状態で折り畳んだ`技術詳細・補正シグナル一覧`に表示します。キーボードで開閉でき、長い識別子はモバイルでも折り返します。既存の韓国語・英語・日本語カタログ表現を認識し、未知のメモは隠しません。元のJSONやAI生成内容は変更しません。
 
+## 有効化とレポート単独復旧
+
+レポートキーだけでは`run_batch.py`のAI呼び出しは有効になりません。Python ETLでは起動前に実行プロセスの環境変数へ有効化フラグを設定します。
+
+```powershell
+$env:TOKYO_GRID_EMS_OPENAI_API_KEY='YOUR_REPORT_KEY'
+$env:OPENAI_DAILY_REPORT_AUTO_ENABLE='true'
+python python/etl/run_batch.py --input data/raw --out web/public
+```
+
+Docker ETLではこの2つの変数と値をローカル`.env`に設定すると、Composeがコンテナへ渡します。`.env`や認証情報をコミットしないでください。プロジェクトのレポートキーは汎用の実行時変数`OPENAI_API_KEY`ではなく`TOKYO_GRID_EMS_OPENAI_API_KEY`です。
+
+既存の日次根拠があれば、専用CLIでETLを再実行せずに最新の欠落/fallbackレポートを復旧できます。
+
+```bash
+python -m python.eval.ai_daily_report --public-dir web/public --languages ko,en,ja --use-openai --openai-max-calls 2
+```
+
+このコマンドはローカルのレポート・indexを作成しますが、公開はしません。明示的な上書き指定がなければ成功済みOpenAIレポートを保持し、最新のfallbackは呼び出し成功時に置き換えられます。ローカルホストの実行制御も前日実測が確定済みならこのレポート単独復旧経路を使います。上記コマンドはAPI費用が発生し得るため、ダッシュボードのプレビュー用ではありません。
+
 ## コスト制御
 
 - 既定では最新の確定済み日付だけがOpenAI対象
-- ETL 1回あたりOpenAI呼び出しは最大2回。英語マスター1回と韓国語/日本語ローカライズ1回に制限する
-- 既存レポートは保持して再生成しない
+- 生成実行の既定予算は論理呼び出し2回。英語マスター1回と韓国語/日本語ローカライズ1回で、両モデルとも`gpt-4o-mini`が既定
+- 成功済みOpenAIレポートを保持し、欠落/最新fallbackレポートは復旧可能
 - OpenAIの一時的なHTTP 500/502/503/504は既定で1回再試行する。最初の朝ETLで前日のレポートがfallbackのままなら、08:30/09:30のローカルスケジュールはhistorical ETL全体を再実行せず、レポートだけを再試行し、成功後にdata branchとPagesへ反映する
-- OpenAIには全時間帯raw rowではなく圧縮fact packetだけを渡す
+- 全時間帯の原始成果物ではなく圧縮fact packetと限定された主要区間の根拠を渡す
 - fact packetには `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, `rollingPatternContext` などの計算済みフィールドを含める
 - fallback自然文、全hourly diagnostics、SHA fingerprint、file pathはプロンプトから除外
 
@@ -199,11 +219,16 @@ UIはフォルダ全体を走査せず、indexのみを読みます。既定のi
 ```text
 OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
+OPENAI_DAILY_REPORT_MODEL=gpt-4o-mini
+OPENAI_DAILY_REPORT_LOCALIZATION_MODEL=gpt-4o-mini
+OPENAI_DAILY_REPORT_HTTP_ATTEMPTS=2
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180
 ```
 
-GitHub Actionsのrepository secret名は `OPENAI_API_KEY` のままでも構いませんが、workflow内ではプロジェクト専用の実行時変数 `TOKYO_GRID_EMS_OPENAI_API_KEY` にマッピングします。その他は必要に応じてrepository variablesで調整します。
+論理予算とHTTP試行回数は異なります。`OPENAI_DAILY_REPORT_HTTP_ATTEMPTS=2`は論理呼び出し内で再試行可能なHTTP応答に対して1回の再試行を許可します。この通信試行は追加の論理予算を消費しないため、論理予算は実際のリクエスト回数や課金のハード上限ではありません。追加ローカライズ/検証再試行は論理枠を消費し、予算を3に設定するなど残り枠がある場合に限ります。予算の増加は既定動作ではなく運用者の明示的な選択です。
+
+GitHub Actionsのrepository secret名は`OPENAI_API_KEY`のままでも構いませんが、workflow内ではプロジェクト専用の実行時変数`TOKYO_GRID_EMS_OPENAI_API_KEY`にマッピングします。モデル・予算・timeoutはworkflowのrepository variablesで渡せます。ETLの有効化フラグも`run_batch.py`プロセスに届く必要があり、キー注入だけではこの条件を代替できません。
 
 ---
 

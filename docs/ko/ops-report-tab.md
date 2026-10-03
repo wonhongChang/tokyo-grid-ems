@@ -190,15 +190,35 @@ UI는 전체 파일 목록을 직접 훑지 않고 index만 읽습니다. 기본
 
 일반 운영 메모는 그대로 표시하고, 보정 신호 카탈로그는 기본 접힌 `기술 상세 · 보정 신호 목록`에 표시합니다. 키보드로 펼치거나 접을 수 있으며 긴 변수명은 모바일에서도 줄바꿈됩니다. 기존 한국어·영어·일본어 카탈로그 문구를 분류하되, 알 수 없는 문구는 숨기지 않습니다. 원본 JSON이나 AI 생성 내용은 변경하지 않습니다.
 
+## 활성화와 리포트 전용 복구
+
+리포트 키만으로 `run_batch.py`의 AI 호출이 활성화되지는 않습니다. Python ETL에서는 시작 전에 실행 프로세스의 환경변수로 활성화 플래그를 설정합니다.
+
+```powershell
+$env:TOKYO_GRID_EMS_OPENAI_API_KEY='YOUR_REPORT_KEY'
+$env:OPENAI_DAILY_REPORT_AUTO_ENABLE='true'
+python python/etl/run_batch.py --input data/raw --out web/public
+```
+
+Docker ETL에서는 두 변수와 값을 로컬 `.env`에 설정하면 Compose가 컨테이너에 전달합니다. `.env`와 인증 정보는 커밋하지 않습니다. 프로젝트 리포트 키는 일반 런타임 변수 `OPENAI_API_KEY`가 아닌 `TOKYO_GRID_EMS_OPENAI_API_KEY`입니다.
+
+기존 일일 근거가 있다면 전용 CLI로 ETL을 재실행하지 않고 최신 누락/fallback 리포트를 복구할 수 있습니다.
+
+```bash
+python -m python.eval.ai_daily_report --public-dir web/public --languages ko,en,ja --use-openai --openai-max-calls 2
+```
+
+이 명령은 로컬 리포트·index를 작성하지만 게시하지는 않습니다. 명시적인 덮어쓰기 요청이 없으면 성공한 기존 OpenAI 리포트는 유지하며, 최신 fallback은 호출 성공 시 교체할 수 있습니다. 로컬 호스트 실행 제어도 전날 실측이 확정되면 이 리포트 전용 복구 경로를 사용합니다. 위 명령은 API 비용이 발생할 수 있으며 대시보드 미리보기 명령이 아닙니다.
+
 ## 비용 제어
 
 OpenAI 비용을 막기 위해 다음 제어를 둡니다.
 
 - 최신 확정 일자만 OpenAI 대상
-- 기본 최대 호출 수 2회. 영어 마스터 1회와 한국어/일본어 현지화 1회를 기준으로 제한
-- 기존 리포트가 있으면 재생성하지 않음
+- 생성 실행의 기본 예산은 논리 호출 2회입니다. 영어 마스터 1회와 한국어/일본어 현지화 1회이며, 두 모델 모두 `gpt-4o-mini`가 기본입니다.
+- 성공한 기존 OpenAI 리포트는 유지하고 누락/최신 fallback 리포트는 복구할 수 있습니다.
 - OpenAI의 일시적인 HTTP 500/502/503/504 오류는 기본 1회 재시도합니다. 첫 아침 ETL에서 전날 리포트가 fallback으로 남으면 08:30/09:30 로컬 스케줄이 historical ETL 전체를 다시 돌리지 않고 리포트만 재시도하며, 성공 시 data branch와 Pages에 반영합니다.
-- OpenAI 입력은 압축된 fact packet만 전달
+- 전체 시간별 원천 산출물 대신 압축된 fact packet과 제한된 주요 구간 근거를 전달
 - fact packet에는 `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, `rollingPatternContext` 같은 계산 완료 필드를 포함
 - 자연어 fallback 문장, 전체 hourly row, SHA fingerprint, 파일 path 등은 프롬프트에서 제외
 
@@ -207,11 +227,16 @@ OpenAI 비용을 막기 위해 다음 제어를 둡니다.
 ```text
 OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
+OPENAI_DAILY_REPORT_MODEL=gpt-4o-mini
+OPENAI_DAILY_REPORT_LOCALIZATION_MODEL=gpt-4o-mini
+OPENAI_DAILY_REPORT_HTTP_ATTEMPTS=2
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180
 ```
 
-GitHub Actions의 repository secret 이름은 `OPENAI_API_KEY`를 유지해도 되지만, workflow 안에서는 프로젝트 전용 런타임 변수인 `TOKYO_GRID_EMS_OPENAI_API_KEY`로 매핑합니다. 나머지는 repository variables로 필요할 때만 조정합니다.
+논리 예산과 HTTP 시도 횟수는 다릅니다. `OPENAI_DAILY_REPORT_HTTP_ATTEMPTS=2`는 논리 호출 안에서 재시도 가능한 HTTP 응답에 대해 1회 재시도를 허용합니다. 이 전송 시도는 별도의 논리 예산을 차감하지 않으므로 논리 예산은 실제 요청 횟수나 과금의 하드 상한선이 아닙니다. 추가 현지화/검증 재시도는 논리 슬롯을 더 사용하며, 예산을 3으로 설정하는 등 남은 슬롯이 있을 때만 가능합니다. 예산 증가는 기본 동작이 아니라 운영자의 명시적 선택입니다.
+
+GitHub Actions의 repository secret 이름은 `OPENAI_API_KEY`를 유지해도 되지만, workflow 안에서는 프로젝트 전용 런타임 변수인 `TOKYO_GRID_EMS_OPENAI_API_KEY`로 매핑합니다. 모델·예산·timeout은 workflow의 repository variables로 전달할 수 있습니다. ETL 활성화 플래그도 `run_batch.py` 프로세스에 도달해야 하며 키 주입만으로 이 조건이 대체되지는 않습니다.
 
 ---
 

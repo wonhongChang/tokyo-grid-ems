@@ -184,13 +184,33 @@ The UI does not scan the whole folder. The default index range is recent days, s
 
 Ordinary operator notes remain visible. Calibration signal catalogs appear in an initially collapsed `Technical details: calibration signals` section, accessible by keyboard. Long identifiers wrap on mobile. Known Korean, English and Japanese catalog labels are recognized; unknown notes stay visible. This presentation does not modify the source JSON or generated analysis.
 
+## Activation and Report-only Recovery
+
+Having a report key alone does not enable narrative calls in `run_batch.py`. For a Python ETL run, set the opt-in flag in the process environment before starting:
+
+```powershell
+$env:TOKYO_GRID_EMS_OPENAI_API_KEY='YOUR_REPORT_KEY'
+$env:OPENAI_DAILY_REPORT_AUTO_ENABLE='true'
+python python/etl/run_batch.py --input data/raw --out web/public
+```
+
+For Docker ETL, put those two variable names and values in the local `.env`; Compose loads them into the container. Never commit `.env` or credentials. The project report key is `TOKYO_GRID_EMS_OPENAI_API_KEY`, not the generic runtime variable `OPENAI_API_KEY`.
+
+With existing daily evidence available, the dedicated CLI can recover a missing/fallback latest report without rerunning ETL:
+
+```bash
+python -m python.eval.ai_daily_report --public-dir web/public --languages ko,en,ja --use-openai --openai-max-calls 2
+```
+
+This writes local reports/indexes but does not publish them. It preserves successful existing OpenAI reports unless explicitly instructed to overwrite; the latest fallback can be replaced when a call succeeds. The local host orchestration uses the same report-only recovery path when yesterday is already finalized. These commands can incur API costs; they are not dashboard-preview commands.
+
 ## Cost Control
 
 - Only the latest finalized date is eligible for OpenAI by default
-- Default maximum: 2 OpenAI calls per ETL run: one English master call and one Korean/Japanese localization call
-- Existing report files are preserved
+- Default budget: 2 logical calls per generation run: one English master call and one Korean/Japanese localization call. Both models default to `gpt-4o-mini`.
+- Successful existing OpenAI reports are preserved; missing/latest fallback reports can be recovered.
 - A transient OpenAI HTTP error is retried once. If the first local morning ETL still stores a fallback for yesterday, the later scheduled runs retry only the report and publish it after a successful OpenAI response.
-- OpenAI receives a compact fact packet, not full hourly raw rows
+- OpenAI receives a compact fact packet with bounded focused evidence, not the full hourly source artifacts
 - The fact packet includes computed fields such as `controllerDiagnosis`, `stageAttribution`, `bandQuality`, `freezeImpact`, `coverageContext`, and `rollingPatternContext`
 - Fallback narratives, full hourly diagnostics, SHA fingerprints, and file paths are excluded from the prompt
 
@@ -199,11 +219,16 @@ Defaults:
 ```text
 OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN=2
 OPENAI_DAILY_REPORT_LATEST_ONLY=true
+OPENAI_DAILY_REPORT_MODEL=gpt-4o-mini
+OPENAI_DAILY_REPORT_LOCALIZATION_MODEL=gpt-4o-mini
+OPENAI_DAILY_REPORT_HTTP_ATTEMPTS=2
 OPENAI_DAILY_REPORT_TIMEOUT_SECONDS=90
 OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS=180
 ```
 
-GitHub Actions can keep the repository secret named `OPENAI_API_KEY`, but the workflow maps it to the project-scoped runtime variable `TOKYO_GRID_EMS_OPENAI_API_KEY`. Other values can be tuned later with repository variables.
+Logical budget and HTTP attempts are different: `OPENAI_DAILY_REPORT_HTTP_ATTEMPTS=2` permits one retry for retryable HTTP responses within a logical call. These transport attempts do not consume another logical-call budget slot, so the logical budget is not a hard request-count or billing cap. A further localization/validation retry consumes an additional logical slot and is possible only if budget remains, for example with a budget of 3. Raising the budget is an explicit operator choice, not the default.
+
+GitHub Actions can keep the repository secret named `OPENAI_API_KEY`, but the workflow maps it to the project-scoped runtime variable `TOKYO_GRID_EMS_OPENAI_API_KEY`. Model, budget, and timeout values can be supplied through the workflow's repository variables. The ETL opt-in flag must also reach the `run_batch.py` process; injecting a key does not replace that requirement.
 
 ---
 

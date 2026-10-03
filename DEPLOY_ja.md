@@ -9,6 +9,7 @@
 - GitHub Pages Source を **GitHub Actions** に設定
 - Actions workflow permissions を **Read and write permissions** に設定
 - ローカル historical ETL 用の Docker Desktop
+- Windows `py` launcherで実行可能なPython 3.14、ホストGit認証とworkflow dispatch認証
 
 `web/public/` 以下の生成データは `main` にはコミットしません。生成データは `data` ブランチへ publish し、Pages デプロイ workflow がそのブランチを復元してから Vite アプリをビルドします。
 
@@ -20,7 +21,7 @@ TEPCO 月次 ZIP の取得は GitHub-hosted runner から HTTP 403 になる可�
 Windows タスク スケジューラ
   -> scripts/local_etl.ps1 -Publish
     -> origin/data を web/public に復元
-    -> Docker ETL と OpenAI 日次レポート生成
+    -> 前日実測が未確定ならDocker ETLを実行 (AIレポートは明示的に有効化)
     -> web/public を origin/data に push
     -> Deploy Only workflow を呼び出し
     -> Intraday Update workflow を呼び出し
@@ -39,14 +40,16 @@ Windows タスク スケジューラ
 初回実行:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -Build
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -Build -AllowOffSchedule
 ```
 
 通常実行:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -AllowOffSchedule
 ```
+
+上記は手動コマンドで、`-AllowOffSchedule`が朝の予約時間外の実行を許可します。予約タスクにはこのオプションは不要です。前日実測が確定済みなら履歴ETLを省略し、必要に応じて欠落/fallbackのAIレポートを復旧してintradayをdispatchします。[AI有効化とコスト制御](docs/ja/ops-report-tab.md)を参照してください。
 
 publish 前にローカルスクリプトが `web/public` を検証します。
 
@@ -81,7 +84,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 
 | 問題 | 原因 | 対応 |
 |---|---|---|
-| Actions で TEPCO 月次 ZIP が `403` | GitHub-hosted runner の IP が TEPCO 側でブロック | ローカル Docker ETL を実行: `scripts\local_etl.ps1 -Publish` |
+| Actions で TEPCO 月次 ZIP が `403` | GitHub-hosted runner の IP が TEPCO 側でブロック | ローカル Docker ETL を実行: `scripts\local_etl.ps1 -Publish -AllowOffSchedule` |
 | Deploy Only 呼び出し失敗 | ローカルで GitHub token が見つからない | `GH_TOKEN` または `GITHUB_TOKEN` を設定、GitHub CLI にログイン、または Actions で `Deploy Only` を手動実行 |
 | ローカル ETL 後の Intraday 呼び出し失敗 | ローカル GitHub token がない、または GitHub Actions dispatch に失敗 | Actions で `Intraday Update` を手動実行し、`logs/local_etl/*.log` を確認 |
 | OpenAI レポートが fallback | API キー不足、認証失敗、timeout | `.env` と `logs/local_etl/*.log` を確認して再実行 |

@@ -9,6 +9,7 @@
 - GitHub Pages Source를 **GitHub Actions**로 설정
 - Actions workflow permissions를 **Read and write permissions**로 설정
 - 로컬 historical ETL용 Docker Desktop 설치
+- Windows `py` launcher에서 실행 가능한 Python 3.14, 호스트 Git 인증과 workflow dispatch 인증
 
 `web/public/` 아래의 생성 데이터는 `main`에 커밋하지 않습니다. 생성 데이터는 `data` 브랜치에 publish하고, Pages 배포 workflow가 이 브랜치를 복원한 뒤 Vite 앱을 빌드합니다.
 
@@ -20,7 +21,7 @@ TEPCO 월별 ZIP 다운로드는 GitHub-hosted runner에서 HTTP 403이 발생�
 Windows 작업 스케줄러
   -> scripts/local_etl.ps1 -Publish
     -> origin/data 를 web/public 로 복원
-    -> Docker ETL 및 OpenAI 일일 리포트 생성
+    -> 전날 실측이 미확정이면 Docker ETL 실행 (AI 리포트는 명시적으로 활성화)
     -> web/public 을 origin/data 로 push
     -> Deploy Only workflow 호출
     -> Intraday Update workflow 호출
@@ -39,14 +40,16 @@ Windows 작업 스케줄러
 첫 실행:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -Build
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -Build -AllowOffSchedule
 ```
 
 평소 실행:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -AllowOffSchedule
 ```
+
+위는 수동 명령으로, `-AllowOffSchedule`이 오전 예약 시간 밖의 실행을 허용합니다. 예약 작업에는 이 옵션이 필요하지 않습니다. 전날 실측이 이미 확정되었다면 이력 ETL을 건너뛰고 필요한 경우 누락/fallback AI 리포트만 복구한 뒤 intraday를 dispatch합니다. [AI 활성화와 비용 제어](docs/ko/ops-report-tab.md)를 참고하세요.
 
 publish 전에는 로컬 스크립트가 `web/public`을 검증합니다.
 
@@ -81,7 +84,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 
 | 문제 | 원인 | 해결 |
 |---|---|---|
-| Actions에서 TEPCO 월별 ZIP이 `403` 반환 | GitHub-hosted runner IP가 TEPCO에서 차단됨 | 로컬 Docker ETL 실행: `scripts\local_etl.ps1 -Publish` |
+| Actions에서 TEPCO 월별 ZIP이 `403` 반환 | GitHub-hosted runner IP가 TEPCO에서 차단됨 | 로컬 Docker ETL 실행: `scripts\local_etl.ps1 -Publish -AllowOffSchedule` |
 | Deploy Only 호출 실패 | 로컬에서 GitHub token을 찾지 못함 | `GH_TOKEN` 또는 `GITHUB_TOKEN` 설정, GitHub CLI 로그인, 또는 Actions에서 `Deploy Only` 수동 실행 |
 | 로컬 ETL 후 Intraday 호출 실패 | 로컬 GitHub token 없음 또는 GitHub Actions dispatch 실패 | Actions에서 `Intraday Update`를 수동 실행하고 `logs/local_etl/*.log` 확인 |
 | OpenAI 리포트가 fallback | API 키 누락, 인증 실패, timeout | `.env`와 `logs/local_etl/*.log` 확인 후 로컬 ETL 재실행 |
