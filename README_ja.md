@@ -29,7 +29,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 | 予測 / 異常検知 | Python (LightGBM + 統計fallback、rule-based anomaly detection) |
 | ダッシュボード | React + Vite |
 | 配布 | GitHub Pages (静的 JSON) |
-| 自動更新 | GitHub Actions (毎日 + 2時間ごと) |
+| 自動更新 | ローカルWindows/Docker ETL + GitHub Actionsによる定期intraday更新・配信 |
 | 運用レポート | Pythonルールベースfallback + 任意のOpenAI解説/翻訳 |
 
 ---
@@ -38,9 +38,11 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 
 ![Tokyo Grid EMS Architecture](docs/assets/tokyo-grid-ems-architecture.png)
 
-- **ETL**: TEPCO月次ZIPを毎日ダウンロード → 確定済み履歴データをパース → JSON生成 → GitHub Pages へデプロイ
-- **Intraday**: 2時間ごとに当日のTEPCO intraday CSVを取得・更新
-- **検証 / 運用レポート**: 前日運用レポート、TEPCO予測比較、LightGBMバックテスト、UIには表示しない内部診断JSON、任意のAI解説レポートを生成
+- **ETL**: ローカルWindowsの実行制御がDocker ETLを起動し、TEPCOの確定履歴・特徴量を更新して静的成果物をdataブランチへ公開します。
+- **Intraday / 配信**: GitHub Actionsの定期実行が当日実測と補正予測を更新し、静的ビルドがJSONとReact/ViteダッシュボードをGitHub Pagesへ配信します。
+- **レポート / 検証**: 日次指標と任意のAI解説が運用を支援します。Review Evidence Bundle、replay、隔離されたshadow評価はproduction servingと分離して証拠を分析します。
+
+[アーキテクチャの説明と編集用ソース](docs/architecture/tokyo-grid-ems-architecture.md)
 
 ---
 

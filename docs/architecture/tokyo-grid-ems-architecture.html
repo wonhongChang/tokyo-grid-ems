@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Tokyo Grid EMS production architecture: data ingestion, LightGBM forecasting, operational analytics and static delivery.">
+  <title>Tokyo Grid EMS Architecture</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { --ink:#1d2b38; --muted:#627181; --blue:#356da9; --green:#277e59; --teal:#16857e; --purple:#7d5cad; }
+    html,body { margin:0; font-family:Arial,Helvetica,sans-serif; color:var(--ink); letter-spacing:0; }
+    body { padding:20px; background:#e9edf2; }
+    #poster { width:1600px; height:1120px; padding:36px 40px; background:#fff; position:relative; overflow:hidden; display:grid; grid-template-rows:116px 704px 44px 120px 64px; box-shadow:0 8px 40px #25364a12; }
+    .svg-library { position:absolute; width:0; height:0; overflow:hidden; }
+    .icon { width:30px; height:30px; fill:none; stroke:currentColor; stroke-width:1.65; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
+    header { display:flex; justify-content:space-between; align-items:flex-start; position:relative; z-index:3; }
+    .kicker { font-size:13px; font-weight:700; color:var(--blue); margin-bottom:9px; }
+    h1 { font-size:46px; line-height:1.05; margin:0 0 10px; font-weight:750; }
+    .subtitle { font-size:18px; line-height:25px; color:var(--muted); margin:0; }
+    .header-note { text-align:right; padding-top:12px; font-size:14px; line-height:23px; color:var(--muted); }
+    .header-note strong { color:#45614f; font-size:16px; }
+    .main-grid { display:grid; grid-template-columns:232px minmax(0,1fr) 344px; grid-template-rows:minmax(0,1fr); gap:24px; min-height:0; }
+    .input-rail { display:grid; grid-template-rows:444px minmax(0,1fr); gap:18px; min-height:0; }
+    .support-grid { display:grid; grid-template-columns:1.2fr .8fr 1fr; grid-template-rows:minmax(0,1fr); gap:24px; min-height:0; }
+    .group { border:1.5px dashed var(--group-border); border-radius:16px; background:var(--group-bg); padding:20px; min-width:0; min-height:0; display:flex; flex-direction:column; position:relative; }
+    .sources,.delivery { --group-border:#b9cfe5; --group-bg:#f8fafd; --accent:var(--blue); }
+    .production { --group-border:#aecfbd; --group-bg:#f5faf6; --accent:var(--green); }
+    .review { --group-border:#c6d9d6; --group-bg:#fafcfb; --accent:#557c78; }
+    .research,.shadow { --group-border:#d9d2e1; --group-bg:#fcfbfd; --accent:#81718f; }
+    .orchestration { --group-border:#d2d9df; --group-bg:#fafbfc; --accent:#647587; padding:16px 15px; }
+    .orchestration .group-heading { height:22px; }
+    .orchestration .group-heading h2 { font-size:15px; line-height:22px; }
+    .orchestration .schedule { margin-top:12px; }
+    .orchestration .time-basis { margin-top:auto; font-size:11px; color:#87919c; }
+    .group-heading { display:flex; align-items:center; gap:9px; height:27px; flex-shrink:0; position:relative; z-index:3; color:var(--accent); }
+    .group-heading .icon { width:23px; height:23px; }
+    .group-heading h2 { font-size:20px; font-weight:700; line-height:27px; margin:0; white-space:nowrap; }
+    .pill { display:inline-flex; align-items:center; border:1px solid; border-radius:20px; padding:5px 8px; line-height:1; font-size:10px; font-weight:600; white-space:nowrap; }
+    .group-heading .pill { margin-left:auto; color:var(--accent); border-color:var(--group-border); background:#fff; }
+    .node { border:1px solid var(--node-border,#d6e1eb); background:#fff; border-radius:8px; position:relative; z-index:3; min-width:0; box-shadow:0 3px 9px #20334806; }
+    .node h3 { font-size:18px; font-weight:700; line-height:24px; margin:0 0 8px; }
+    .node p { margin:0; font-size:14px; line-height:21px; color:#5c6c7b; }
+    .source-stack { display:grid; grid-template-rows:170px 170px; gap:18px; margin-top:18px; }
+    .source-card { padding:17px 15px; --node-border:#cddcec; }
+    .source-card .icon { width:32px; height:32px; color:var(--blue); margin-bottom:9px; }
+    .source-card h3 { font-size:18px; margin-bottom:7px; }
+    .source-card p { font-size:14px; line-height:21px; }
+    .source-card .secondary { display:block; color:#74818d; font-size:12px; line-height:18px; margin-top:6px; }
+    .schedule { display:flex; gap:9px; align-items:flex-start; margin-top:14px; }
+    .schedule .icon { width:22px; height:22px; color:#7991aa; }
+    .schedule strong { font-size:13px; line-height:19px; }
+    .schedule p { margin:2px 0 0; font-size:12px; line-height:18px; color:var(--muted); }
+    .time-basis { font-size:12px; color:#76899b; margin-top:19px; line-height:18px; }
+    .three { display:grid; grid-template-columns:1fr 1.12fr 1fr; gap:16px; grid-template-rows:minmax(0,1fr); flex-shrink:0; }
+    .data-row { height:116px; margin-top:20px; }
+    .data-row .node { padding:16px 15px; --node-border:#c4ddce; }
+    .row-title { display:flex; gap:9px; align-items:center; margin-bottom:8px; }
+    .row-title .icon { width:26px; height:26px; color:var(--accent); }
+    .row-title h3 { font-size:16px; line-height:22px; margin:0; }
+    .data-row p { font-size:13px; line-height:20px; }
+    .forecast-row { height:182px; margin-top:38px; }
+    .forecast-row .node { padding:17px; --node-border:#c4ddce; }
+    .forecast-row .icon { width:32px; height:32px; margin-bottom:10px; color:var(--green); }
+    .forecast-row h3 { font-size:18px; line-height:23px; }
+    .forecast-row p { font-size:14px; line-height:21px; }
+    .forecast-row .tiny { font-size:12px; line-height:18px; color:#758278; margin-top:7px; }
+    .forecast-row .champion { background:#236e4f; border-color:#236e4f; color:white; box-shadow:0 6px 15px #24634820; }
+    .champion-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+    .champion-top .icon { color:#d8f2e4; width:28px; height:28px; margin:0; }
+    .champion .pill { color:#e1f7e8; border-color:#ffffff40; }
+    .champion h3 { font-size:24px; line-height:28px; margin-bottom:9px; }
+    .champion p { color:#e0efe6; font-size:14px; line-height:21px; }
+    .analytics-label { margin-top:22px; height:18px; display:flex; justify-content:space-between; align-items:center; position:relative; z-index:3; font-size:12px; color:#63816d; }
+    .analytics-label strong { font-weight:600; }
+    .analytics-label span { color:#7c8a81; }
+    .analytics-row { height:112px; margin-top:10px; }
+    .analytics-row .node { padding:16px 15px; --node-border:#c4ddce; }
+    .analytics-row .alert .icon { color:#b87531; }
+    .analytics-row p { font-size:13px; line-height:20px; }
+    .artifact { min-height:96px; margin-top:auto; padding:14px 17px; display:grid; grid-template-columns:34px minmax(0,1fr) minmax(0,1.16fr); align-items:center; gap:15px; --node-border:#b4d1c0; }
+    .artifact .icon { color:var(--green); width:34px; height:34px; }
+    .artifact h3 { font-size:17px; line-height:22px; margin:0 0 4px; }
+    .artifact p { font-size:13px; line-height:19px; }
+    .artifact-main { flex:1; min-width:0; border-left:1px solid #d9e6dd; padding-left:17px; }
+    .artifact-meta { color:#5c7665; }
+    .artifact-meta h3 { font-size:16px; color:#526e63; }
+    .artifact-meta p { font-size:12px; }
+    .artifact .artifact-context { margin-top:3px; font-size:11px; line-height:17px; color:#7c8982; }
+    .delivery-intro { position:relative; z-index:3; font-size:13px; line-height:20px; color:#7c8b9b; margin:14px 0 20px; }
+    .dashboard { height:192px; padding:19px 17px; flex-shrink:0; --node-border:#c5d7eb; }
+    .dashboard .icon { color:var(--blue); width:38px; height:38px; margin-bottom:12px; }
+    .dashboard h3 { font-size:21px; line-height:26px; }
+    .dashboard p { font-size:14px; line-height:22px; }
+    .languages { margin-top:12px; font-size:12px; line-height:18px; color:#65809b; }
+    .pages { height:105px; margin-top:64px; padding:17px; display:flex; align-items:center; gap:13px; flex-shrink:0; --node-border:#c5d7eb; }
+    .pages .icon { color:var(--blue); width:34px; height:34px; }
+    .pages h3 { font-size:20px; margin:0 0 5px; }
+    .pages p { font-size:13px; line-height:20px; }
+    .build { min-height:94px; margin-top:auto; padding:16px; display:flex; align-items:center; gap:13px; --node-border:#c5d7eb; }
+    .build .icon { color:var(--blue); width:32px; height:32px; }
+    .build h3 { font-size:18px; margin:0 0 5px; }
+    .build p { font-size:13px; line-height:20px; }
+    .support-grid .group { padding:15px 20px; }
+    .support-grid .group-heading h2 { font-size:17px; line-height:25px; }
+    .support-grid .group-heading .icon { width:21px; height:21px; }
+    .support-grid .pill { font-size:9px; }
+    .support-grid p { position:relative; z-index:3; margin:9px 0 0; font-size:13px; line-height:21px; color:#73808a; }
+    .support-grid strong { color:var(--accent); font-weight:500; }
+    footer { position:relative; z-index:3; display:flex; justify-content:space-between; align-items:flex-end; gap:20px; }
+    .principle { display:flex; align-items:center; gap:8px; color:#45614f; font-size:13px; line-height:19px; }
+    .principle .icon { width:21px; height:21px; color:var(--green); }
+    footer .note { color:var(--muted); font-size:12px; line-height:19px; text-align:right; }
+    #connectors { position:absolute; inset:0; width:1600px; height:1120px; pointer-events:none; z-index:2; }
+    path.route { fill:none; stroke-width:1.8; }
+    path.route.support-route { stroke-width:1.25; }
+    .connector-label.support-label text { font-size:11px; font-weight:500; }
+    .connector-label.support-label rect { stroke:#e8ebee; }
+    .connector-label rect { fill:white; stroke:#e0e7ed; stroke-width:.7; }
+    .connector-label text { font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:600; text-anchor:middle; dominant-baseline:central; }
+    @media print { body { padding:0; background:white; } #poster { box-shadow:none; } @page { size:1600px 1120px; margin:0; } }
+  </style>
+</head>
+<body>
+<main id="poster" aria-label="Tokyo Grid EMS production system architecture">
+  <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-demand" viewBox="0 0 32 32"><path d="M5 25h22M9 25V12l7-6 7 6v13M13 25v-7h6v7M4 12l12-10 12 10"/><path d="m17 9-4 5h5l-3 5"/></symbol>
+    <symbol id="i-weather" viewBox="0 0 32 32"><path d="M10 24H8a6 6 0 1 1 1.5-11.8A8 8 0 0 1 25 15a4.5 4.5 0 0 1 0 9h-3M16 15v11m0 0-3-3m3 3 3-3M24 4v3m6 4-3 1M6 5l2 2"/></symbol>
+    <symbol id="i-pipeline" viewBox="0 0 32 32"><rect x="3" y="4" width="8" height="8" rx="2"/><rect x="21" y="20" width="8" height="8" rx="2"/><path d="M11 8h9a5 5 0 0 1 5 5v7M21 16l4 4 4-4M7 12v12h14"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 32 32"><rect x="8" y="8" width="16" height="16" rx="3"/><rect x="12" y="12" width="8" height="8" rx="1"/><path d="M12 3v5m8-5v5M12 24v5m8-5v5M3 12h5m-5 8h5m16-8h5m-5 8h5"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 32 32"><path d="M7 4v9m0 6v9M16 4v3m0 6v15M25 4v15m0 6v3"/><rect x="4" y="13" width="6" height="6" rx="2"/><rect x="13" y="7" width="6" height="6" rx="2"/><rect x="22" y="19" width="6" height="6" rx="2"/></symbol>
+    <symbol id="i-data" viewBox="0 0 32 32"><ellipse cx="16" cy="7" rx="11" ry="4"/><path d="M5 7v17c0 2.2 4.9 4 11 4s11-1.8 11-4V7M5 15c0 2.2 4.9 4 11 4s11-1.8 11-4"/></symbol>
+    <symbol id="i-browser" viewBox="0 0 32 32"><rect x="3" y="5" width="26" height="23" rx="3"/><path d="M3 12h26M7 8.5h.1m3.5 0h.1M8 23l5-5 5 3 6-6"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 32 32"><path d="M9 26H8a6 6 0 1 1 1-11.9A8 8 0 0 1 25 15a5.5 5.5 0 0 1 .5 11H23M16 27V15m-4 4 4-4 4 4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 32 32"><circle cx="13.5" cy="13.5" r="9.5"/><path d="m21 21 8 8M10 10h7m-7 5h5"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 32 32"><path d="M11 3h10m-8 0v10L5 26c-.8 1.4 0 3 2 3h18c2 0 2.8-1.6 2-3l-8-13V3M10 20h12M12 25h.1m7-2h.1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 32 32"><path d="m16 3 11 4v9c0 6-6 11-11 14C11 27 5 22 5 16V7l11-4Z"/><path d="m10 16 4 4 8-9"/></symbol>
+    <symbol id="i-container" viewBox="0 0 32 32"><path d="m16 3 13 7v13l-13 7-13-7V10l13-7ZM3 10l13 7 13-7M16 17v13M10 7l13 7M9 15v10m14-10v10"/></symbol>
+    <symbol id="i-git" viewBox="0 0 32 32"><circle cx="8" cy="6" r="3"/><circle cx="8" cy="26" r="3"/><circle cx="24" cy="8" r="3"/><path d="M8 9v14M24 11v2c0 6-16 3-16 10"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 32 32"><path d="M4 4v24h25M8 21l6-8 6 4 8-11M23 6h5v5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 32 32"><circle cx="16" cy="16" r="12"/><path d="M16 8v9l6 3"/></symbol>
+    <symbol id="i-band" viewBox="0 0 32 32"><path d="M4 4v24h25M8 10l6-3 7 2 7-3M8 22l6-3 7 2 7-3M8 16l6-3 7 2 7-3"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 32 32"><path d="m16 4 13 23H3L16 4Zm0 8v7m0 4v.1"/></symbol>
+    <symbol id="i-report" viewBox="0 0 32 32"><path d="M20 3H7a2 2 0 0 0-2 2v23a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V10l-7-7Zm0 0v8h7M10 16h12m-12 5h12m-12 5h7"/></symbol>
+  </defs></svg>
+  <header>
+    <div><div class="kicker">ELECTRICITY DEMAND FORECASTING</div><h1>Tokyo Grid EMS Architecture</h1><p class="subtitle">From operational data to calibrated forecasts, daily insights and a static dashboard.</p></div>
+    <div class="header-note"><strong>Production forecasting.</strong><br>Calibrated demand &middot; alerts &middot; daily insights</div>
+  </header>
+  <section class="main-grid" aria-label="Production data, forecasting and delivery">
+    <div class="input-rail">
+    <section class="group sources" id="sources">
+      <div class="group-heading"><svg class="icon"><use href="#i-cloud"/></svg><h2>Data sources</h2></div>
+      <div class="source-stack">
+        <article class="node source-card" id="tepco"><svg class="icon"><use href="#i-demand"/></svg><h3>TEPCO demand</h3><p>ZIP history: finalized<br>Live CSV: provisional</p></article>
+        <article class="node source-card" id="weather"><svg class="icon"><use href="#i-weather"/></svg><h3>Weather inputs</h3><p>JMA actuals + forecast</p><span class="secondary">Open-Meteo: humidity<br>fallback + history</span></article>
+      </div>
+    </section>
+    <section class="group orchestration" id="orchestration">
+      <div class="group-heading"><h2>Scheduled orchestration</h2></div>
+      <div class="schedule"><svg class="icon"><use href="#i-clock"/></svg><div><strong>Windows + Docker</strong><p>Data restore + historical ETL<br>Publish &amp; dispatch</p></div></div>
+      <div class="schedule"><svg class="icon"><use href="#i-git"/></svg><div><strong>GitHub Actions</strong><p>Intraday refresh<br>Static build &amp; deployment</p></div></div>
+      <div class="time-basis">Pipeline execution &amp; delivery</div>
+    </section>
+    </div>
+    <section class="group production" id="production">
+      <div class="group-heading"><svg class="icon"><use href="#i-pipeline"/></svg><h2>Production forecast pipeline</h2><span class="pill">PYTHON</span></div>
+      <div class="three data-row">
+        <article class="node" id="ingestion"><div class="row-title"><svg class="icon"><use href="#i-cloud"/></svg><h3>Data ingestion</h3></div><p>Fetch &amp; parse CSV / ZIP<br>Observed + forecast weather</p></article>
+        <article class="node" id="quality"><div class="row-title"><svg class="icon"><use href="#i-check"/></svg><h3>Normalization &amp; quality</h3></div><p>JST timestamps &middot; MW units<br>Demand completeness checks</p></article>
+        <article class="node" id="features"><div class="row-title"><svg class="icon"><use href="#i-data"/></svg><h3>Cache &amp; features</h3></div><p>Hourly history &middot; demand lags<br>Calendar + weather features</p></article>
+      </div>
+      <div class="three forecast-row">
+        <article class="node champion" id="engine"><div class="champion-top"><svg class="icon"><use href="#i-chip"/></svg><span class="pill">CHAMPION</span></div><h3>Forecast engine</h3><p>LightGBM quantile forecasts<br>Base / day-ahead demand</p><p>Stored, compatible model</p></article>
+        <article class="node" id="calibration"><svg class="icon"><use href="#i-sliders"/></svg><h3>Calibration &amp; intraday</h3><p>Level / shape guards<br>Same-day residual correction</p><div class="tiny">Preserve observed-hour forecasts</div></article>
+        <article class="node" id="intervals"><svg class="icon"><use href="#i-band"/></svg><h3>Prediction intervals</h3><p>Lead-aware calibration<br>Residual history &amp; coverage</p><div class="tiny">Uncertainty around the forecast</div></article>
+      </div>
+      <div class="analytics-label"><strong>Operational analytics</strong><span>Forecasts &middot; actuals &middot; retained evidence</span></div>
+      <div class="three analytics-row">
+        <article class="node alert" id="anomaly"><div class="row-title"><svg class="icon"><use href="#i-alert"/></svg><h3>Anomaly detection</h3></div><p>Reserve risk &middot; spike / drop<br>Residual drift alerts</p></article>
+        <article class="node" id="metrics"><div class="row-title"><svg class="icon"><use href="#i-chart"/></svg><h3>Accuracy metrics</h3></div><p>MAE / RMSE / WAPE<br>Published &amp; matched-vintage views</p></article>
+        <article class="node" id="reports"><div class="row-title"><svg class="icon"><use href="#i-report"/></svg><h3>Daily / AI reports</h3></div><p>Deterministic operational facts<br>Optional AI narrative</p></article>
+      </div>
+      <article class="node artifact" id="artifacts"><svg class="icon"><use href="#i-data"/></svg><div class="artifact-meta" id="retained-evidence"><h3>Retained evidence</h3><p>Issue-time snapshots &middot; calibration stages</p><div class="artifact-context">ETL state: observation-finalization context</div></div><div class="artifact-main" id="serving-artifacts"><h3>Serving / public artifacts</h3><p>Forecast &middot; actual &middot; alerts &middot; metrics &middot; reports</p><div class="artifact-context">web/public &rarr; GitHub data branch</div></div></article>
+    </section>
+    <section class="group delivery" id="delivery">
+      <div class="group-heading"><svg class="icon"><use href="#i-browser"/></svg><h2>Delivery &amp; dashboard</h2></div>
+      <p class="delivery-intro">Static assets &middot; no inference API server</p>
+      <article class="node dashboard" id="dashboard"><svg class="icon"><use href="#i-browser"/></svg><h3>React / Vite dashboard</h3><p>Browser views of demand &amp; risk<br>Validation + daily Ops reports</p><div class="languages">EN / KO / JA &middot; static JSON</div></article>
+      <article class="node pages" id="pages"><svg class="icon"><use href="#i-cloud"/></svg><div><h3>GitHub Pages</h3><p>Static web hosting<br>Forecast JSON + web assets</p></div></article>
+      <article class="node build" id="build"><svg class="icon"><use href="#i-git"/></svg><div><h3>GitHub Actions</h3><p>Restore data &middot; Vite build<br>Package &amp; deploy static output</p></div></article>
+    </section>
+  </section>
+  <div aria-hidden="true"></div>
+  <section class="support-grid" aria-label="Independent supporting evidence and evaluation">
+    <section class="group review" id="review"><div class="group-heading"><svg class="icon"><use href="#i-search"/></svg><h2>Review Evidence &amp; Validation</h2><span class="pill">READ-ONLY</span></div><p>Evidence bundle &middot; replay &middot; selective inspection<br>Distinct methods, populations &amp; provenance.</p></section>
+    <section class="group research" id="research"><div class="group-heading"><svg class="icon"><use href="#i-flask"/></svg><h2>Model Research</h2></div><p>Offline training &amp; replay<br>Chronological evaluation</p></section>
+    <section class="group shadow" id="shadow"><div class="group-heading"><svg class="icon"><use href="#i-container"/></svg><h2>Isolated Shadow Evaluation</h2></div><p>Docker &middot; parallel predictions &middot; actual joins<br><strong>Cannot modify production forecasts.</strong></p></section>
+  </section>
+  <footer><div class="principle"><svg class="icon"><use href="#i-check"/></svg><span>Production serves the dashboard. Review and shadow observe independently.</span></div><div class="note">Published forecasts, issue-time evidence and finalized actuals remain distinct.</div></footer>
+  <svg id="connectors" viewBox="0 0 1600 1120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9Z" fill="#6b95bd"/></marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9Z" fill="#519c74"/></marker>
+    <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9Z" fill="#a0abb6"/></marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9Z" fill="#91b0ac"/></marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1 9 5 1 9Z" fill="#afa3bc"/></marker>
+  </defs><g id="routes"></g><g id="route-labels"></g></svg>
+</main>
+<script>
+  // CSS owns the layout; the overlay follows actual card edges after fonts load.
+  const connections = [
+    {from:'tepco',to:'ingestion',toFraction:.35,color:'blue'},
+    {from:'weather',to:'ingestion',toFraction:.78,color:'blue'},
+    {from:'orchestration',to:'ingestion',toSide:'bottom',toFraction:.26,color:'gray',dashed:true,muted:true,triggerEntry:true,label:'scheduled runs'},
+    {from:'ingestion',to:'quality',color:'green'},
+    {from:'quality',to:'features',color:'green'},
+    {from:'features',to:'engine',fromSide:'bottom',toSide:'top',color:'green',label:'features'},
+    {from:'engine',to:'calibration',color:'green'},
+    {from:'calibration',to:'intervals',color:'green'},
+    {from:'intervals',to:'serving-artifacts',toSide:'right',color:'green',rightBypass:true},
+    {from:'anomaly',to:'serving-artifacts',fromSide:'bottom',toSide:'top',toFraction:.16,color:'green'},
+    {from:'metrics',to:'serving-artifacts',fromSide:'bottom',toSide:'top',toFraction:.50,color:'green'},
+    {from:'reports',to:'serving-artifacts',fromSide:'bottom',toSide:'top',toFraction:.83,color:'green'},
+    {from:'serving-artifacts',to:'build',color:'blue'},
+    {from:'build',to:'pages',fromSide:'top',toSide:'bottom',color:'blue',label:'deploy'},
+    {from:'pages',to:'dashboard',fromSide:'top',toSide:'bottom',color:'blue',label:'HTTPS'},
+    {from:'retained-evidence',to:'review',fromSide:'bottom',fromFraction:.16,toSide:'top',toFraction:.71,color:'teal',dashed:true,muted:true,label:'evidence'},
+    {from:'retained-evidence',to:'research',fromSide:'bottom',fromFraction:.50,toSide:'top',toFraction:.5,color:'purple',muted:true,label:'historical data'},
+    {from:'retained-evidence',to:'shadow',fromSide:'bottom',fromFraction:.87,toSide:'top',toFraction:.31,color:'purple',muted:true,label:'snapshots + actuals'}
+  ];
+  const colors={blue:'#6b95bd',green:'#519c74',teal:'#91b0ac',purple:'#afa3bc',gray:'#a0abb6'};
+  const ns='http://www.w3.org/2000/svg';
+  function el(tag,attrs,text){const e=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));if(text)e.textContent=text;return e;}
+  function bounds(id){const p=document.getElementById('poster').getBoundingClientRect(),r=document.getElementById(id).getBoundingClientRect();return {x:r.left-p.left,y:r.top-p.top,w:r.width,h:r.height};}
+  function anchor(id,side,f=.5){
+    const r=bounds(id),a=side==='left'?[r.x,r.y+r.h*f]:side==='right'?[r.x+r.w,r.y+r.h*f]:side==='top'?[r.x+r.w*f,r.y]:[r.x+r.w*f,r.y+r.h];
+    // Each role uses its own horizontal span and the shared card's outer edge.
+    if(id==='serving-artifacts'||id==='retained-evidence'){
+      const card=bounds('artifacts');
+      if(side==='top')a[1]=card.y;
+      if(side==='bottom')a[1]=card.y+card.h;
+      if(id==='serving-artifacts'&&side==='right')a[0]=card.x+card.w;
+    }
+    return a;
+  }
+  function draw(){
+    const routes=document.getElementById('routes'),labels=document.getElementById('route-labels');routes.replaceChildren();labels.replaceChildren();
+    connections.forEach(c=>{
+      const fs=c.fromSide||'right',ts=c.toSide||'left',a=anchor(c.from,fs,c.fromFraction),b=anchor(c.to,ts,c.toFraction);
+      let d;
+      if(c.triggerEntry){
+        const entry=bounds('ingestion'),x=bounds('production').x+8,y=entry.y+entry.h+18;
+        d=`M ${a} C ${x} ${a[1]}, ${x} ${a[1]}, ${x} ${a[1]-14} L ${x} ${y+12} Q ${x} ${y} ${x+12} ${y} L ${b[0]-10} ${y} Q ${b[0]} ${y} ${b[0]} ${y-10} L ${b}`;
+      }
+      else if(c.rightBypass){const g=bounds('production'),x=g.x+g.w-9;d=`M ${a} C ${x} ${a[1]}, ${x} ${a[1]+12}, ${x} ${a[1]+28} L ${x} ${b[1]-28} C ${x} ${b[1]-12}, ${x} ${b[1]}, ${b}`;}
+      else if(fs==='top'||fs==='bottom')d=`M ${a} C ${a[0]} ${(a[1]+b[1])/2}, ${b[0]} ${(a[1]+b[1])/2}, ${b}`;
+      else d=`M ${a} C ${(a[0]+b[0])/2} ${a[1]}, ${(a[0]+b[0])/2} ${b[1]}, ${b}`;
+      const path=el('path',{d,class:c.muted?'route support-route':'route',stroke:colors[c.color],'marker-end':`url(#arrow-${c.color})`,'data-from':c.from,'data-to':c.to});
+      if(c.dashed)path.setAttribute('stroke-dasharray','5 5');routes.append(path);
+      if(c.label){const q=c.triggerEntry?{x:b[0],y:bounds('ingestion').y+bounds('ingestion').h+18}:path.getPointAtLength(path.getTotalLength()/2);const g=el('g',{class:c.muted?'connector-label support-label':'connector-label'}),t=el('text',{x:q.x,y:q.y,fill:colors[c.color]},c.label);g.append(t);labels.append(g);const r=t.getBBox();g.prepend(el('rect',{x:r.x-9,y:r.y-5,width:r.width+18,height:r.height+10,rx:11}));}
+    });
+    window.architectureReady=true;
+  }
+  document.fonts.ready.then(draw);window.addEventListener('resize',draw);
+</script>
+</body>
+</html>

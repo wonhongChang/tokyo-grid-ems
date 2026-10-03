@@ -29,7 +29,7 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 | Forecasting / Anomaly Detection | Python (LightGBM + statistical fallback, rule-based anomaly detection) |
 | Dashboard | React + Vite |
 | Hosting | GitHub Pages (static JSON) |
-| Automation | GitHub Actions (daily + every 2 hours) |
+| Automation | Local Windows/Docker ETL + scheduled GitHub Actions intraday updates and deployment |
 | Operations report | Deterministic Python fallback + optional OpenAI narrative/localization |
 
 ---
@@ -38,9 +38,11 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 
 ![Tokyo Grid EMS Architecture](docs/assets/tokyo-grid-ems-architecture.png)
 
-- **ETL**: Downloads TEPCO monthly ZIP daily → parses confirmed historical data → generates JSON → deploys to GitHub Pages
-- **Intraday**: Fetches and updates today's TEPCO intraday CSV every 2 hours
-- **Validation / Ops report**: Generates previous-day operation reports, forecast snapshots, TEPCO-comparison metrics, LightGBM backtests, UI-hidden internal diagnostics JSON, and an optional AI narrative report
+- **ETL**: Local Windows orchestration runs Docker ETL to refresh confirmed TEPCO history, prepare features, and publish static artifacts to the data branch.
+- **Intraday / delivery**: Scheduled GitHub Actions update same-day observations and calibrated forecasts; the static build delivers JSON and the React/Vite dashboard through GitHub Pages.
+- **Reports / validation**: Daily metrics and optional AI narratives support operations. Review Evidence Bundle, replay, and isolated shadow evaluation analyze evidence separately from production serving.
+
+[Architecture notes and editable source](docs/architecture/tokyo-grid-ems-architecture.md)
 
 ---
 
