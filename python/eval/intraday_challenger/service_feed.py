@@ -47,7 +47,9 @@ def sync(remote, out, start_date, previous=None):
     if not bare.exists():
         bare.parent.mkdir(parents=True, exist_ok=True)
         git(bare, 'init', '--bare', str(bare))
-    git(bare, 'fetch', '--depth=1', remote, 'refs/heads/data:refs/heads/shadow-data')
+    # Shallow history cannot prove ancestry; replace only this private tracking ref.
+    # Immutable source/revision evidence is separate, and the remote is never written.
+    git(bare, 'fetch', '--depth=1', remote, '+refs/heads/data:refs/heads/shadow-data')
     revision = git(bare, 'rev-parse', 'refs/heads/shadow-data').decode().strip()
     if not re.fullmatch('[0-9a-f]{40,64}', revision):
         raise ValueError('Invalid data revision')

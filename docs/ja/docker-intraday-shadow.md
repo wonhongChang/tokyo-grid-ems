@@ -17,6 +17,8 @@ Imageには評価moduleとpinned dependencyだけをコピーする。`.env`、c
 
 専用bare repoの`refs/heads/shadow-data`だけをfetchしproduction refsは変更しない。Public HTTPSでhost credential helper/configを使わない。
 
+Depth-1 fetchは祖先を確認できず、通常の複数commit前進もnon-fast-forwardとして拒否する場合がある。`+refs/heads/data:refs/heads/shadow-data`で専用local refだけを更新する。Remote force pushではなく、既存immutable source/cache/revision/予測/評価は保存する。
+
 ## SourceとPolling
 
 | Source | 用途 | 欠落時 |
@@ -95,5 +97,7 @@ Volume OS lockは別Compose projectの二重workerも拒否。`docker compose do
 ## 検証と制限
 
 2026-10-03関連suite **291件通過**: registry/Draft 2020-12 schema、identity、ACTIVE上限、retirement/history、shared parsing、leakage/cutoff、完了boundary、遅延/activation/research除外、actual revision、不変/dedup、no-change/network/health、path/secret隔離、ETL Compose不変性。Schema validatorはlocal dev/test専用でproduction dependencyは変えない。
+
+2026-10-04のprivate ref更新修正後、関連suite **293件通過**。追加2件はネットワークなしの実local Gitで複数commit前進とbranch再作成を検証する。旧revision/source bytesの保存、専用ref範囲、変更なしの再fetchも確認する。
 
 実Linux Dockerでfinite sync/capture/evaluation、read-only書込拒否、API key/ETL不在、frozen L5 Windows/Linux予測一致を確認。Process/restart/health/no-changeは別のdeployment確認。PC稼働率、publication遅延、native interval/historical provenanceの制限は残る。Review Bundleは人間の根拠閲覧用でこの継続収集serviceとは別役割。

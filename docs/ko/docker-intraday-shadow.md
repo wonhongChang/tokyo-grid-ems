@@ -17,6 +17,8 @@ Image에는 평가 모듈과 pinned dependency만 복사한다. `.env`, Git chec
 
 전용 bare repo의 `refs/heads/shadow-data`만 fetch하며 production refs는 변경하지 않는다. Public HTTPS source에서 host credential helper/config를 사용하지 않는다.
 
+Depth-1 fetch는 조상을 확인할 수 없어 정상적인 여러 commit 전진도 non-fast-forward로 거부할 수 있다. `+refs/heads/data:refs/heads/shadow-data`로 이 전용 local ref만 교체한다. 원격 force push가 아니며 기존 immutable source/cache/revision/예측/평가는 보존한다.
+
 ## Source와 Polling
 
 | Source | 용도 | 누락 시 |
@@ -95,5 +97,7 @@ Health는 loop/status age >2100초, fatal/stopped, workspace 접근 실패를 �
 ## 검증과 제한
 
 2026-10-03 관련 suite **291개 통과**: registry/Draft 2020-12 schema, identity, ACTIVE 상한, retirement/history, shared parsing, leakage/cutoff, 완료 시각 boundary, delayed/activation/research 제외, actual revision, no-overwrite/dedup, no-change/network/health, path/secret 격리, ETL compose 불변성. Schema validator는 local dev/test 전용이며 production dependency는 바꾸지 않는다.
+
+2026-10-04 private ref 갱신 수정 후 관련 suite **293개 통과**. 추가 2개 회귀 테스트는 네트워크 없이 실제 local Git으로 여러 commit 전진과 branch 재작성을 검증한다. 이전 revision/source bytes 보존, 전용 ref 제한, unchanged 재조회도 확인한다.
 
 실제 Linux Docker에서 유한 sync/capture/evaluation, read-only 쓰기 거부, API key/ETL absence, frozen L5 Windows/Linux 예측 일치를 확인했다. Process/restart/health/no-change는 배포 검증으로 별도 확인한다. 개발 PC의 가동률, source publication delay, native interval/historical provenance 제한은 남는다. Review Bundle은 사람의 근거 조회 도구이고 이 지속 수집 서비스와 역할이 다르다.

@@ -17,6 +17,8 @@ Only evaluation modules and pinned dependencies are copied into the image. No `.
 
 The isolated bare repo fetches `refs/heads/shadow-data`; production refs stay untouched. Public HTTPS fetches do not read host credential helpers/config.
 
+A depth-1 fetch cannot prove ancestry and may reject even an ordinary multi-commit advance as non-fast-forward. `+refs/heads/data:refs/heads/shadow-data` replaces only this private local ref. It is not a remote force push; immutable sources, caches, revisions, predictions and evaluations remain preserved.
+
 ## Sources and Polling
 
 | Source | Purpose | Missing state |
@@ -95,5 +97,7 @@ The shared-volume OS lock rejects duplicate workers across Compose projects. Nev
 ## Validation and Limits
 
 The 2026-10-03 implementation passes **291 relevant tests**: registry/Draft 2020-12 schema, identity, active limit, retirement/history, shared parsing, leakage/cutoff, completion boundary, timing/activation/research exclusions, actual revisions, immutable/dedup, unchanged/network/health, path/secret isolation and unchanged ETL Compose configuration. Schema validation is local dev/test only; production dependencies are unchanged.
+
+After the 2026-10-04 private-ref update fix, **293 relevant tests pass**. Two additional regressions use real local Git without network access for multi-commit advances and rewritten branches, verifying preservation of prior revision/source bytes, private-ref scope and unchanged re-fetches.
 
 Real Linux Docker checks verify finite sync/capture/evaluation, read-only write rejection, no API keys/ETL code, and frozen Windows/Linux L5 equality. Process/restart/health/no-change checks are deployment verification. Development-PC availability, publication delay, native interval/historical provenance limitations remain. Review Bundle is human-review evidence access, not this collection service.
