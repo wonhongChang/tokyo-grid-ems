@@ -4,6 +4,8 @@
 
 ## Status and Architecture
 
+Separate L4/L5 follow-up research: [Lead-Aware Intraday Shadow](lead-aware-intraday-shadow.md). Original results below remain frozen.
+
 The October 3, 2026 experiment concludes **RETAIN CHALLENGER: L2**. This is not production promotion. The champion, ETL, scheduler, published outputs and existing promotion policy are unchanged. No Jev or model API calls are involved.
 
 `python/eval/intraday_challenger/` turns immutable issue-time calibration snapshots into observed-path/residual features, trains chronological error models and stores isolated shadow predictions. Finalized actuals later produce daily, time-band, lead and cumulative comparisons.

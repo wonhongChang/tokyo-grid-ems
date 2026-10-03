@@ -4,6 +4,8 @@
 
 ## 상태
 
+별도 L4/L5 후속 연구는 [Lead-Aware Intraday Shadow](lead-aware-intraday-shadow.md)를 참고한다. 아래 원래 결과는 동결 상태다.
+
 2026-10-03 실험의 결론은 **RETAIN CHALLENGER: L2**다. 기존 post 예측 뒤에 남은 오차를 별도의 LightGBM으로 학습한다. 운영 champion, ETL, scheduler, published forecast, 기존 승격 정책은 변경하지 않았다. Shadow worker는 별도 실행 도구이며 자동 운영 경로에 등록되어 있지 않다.
 
 전체 미래 예측에서는 개선했지만 근거리 예측에서는 악화했다. 따라서 운영 승격이나 shadow 합격으로 표현하지 않는다.

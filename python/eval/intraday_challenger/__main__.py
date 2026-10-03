@@ -11,7 +11,7 @@ from .storage import workspace
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=['prepare', 'train-replay', 'shadow-capture', 'shadow-evaluate', 'shadow-watch'])
+    p.add_argument('command', choices=['prepare', 'train-replay', 'shadow-capture', 'shadow-evaluate', 'shadow-watch', 'lead-research'])
     p.add_argument('--output-root', required=True)
     p.add_argument('--input-root')
     p.add_argument('--input-sha')
@@ -26,11 +26,15 @@ def main():
     p.add_argument('--state-file')
     p.add_argument('--interval-seconds', type=int, default=300)
     p.add_argument('--cycles', type=int)
+    p.add_argument('--dataset')
+    p.add_argument('--registration-file')
+    p.add_argument('--code-revision')
     a = p.parse_args()
     required = {'prepare': ['input_root', 'input_sha', 'periods'], 'train-replay': ['registration_sha'],
                 'shadow-capture': ['snapshot', 'snapshot_sha', 'model_root', 'identity_sha'],
                 'shadow-evaluate': ['actual_root', 'state_file'],
-                'shadow-watch': ['snapshots_root', 'model_root', 'identity_sha', 'actual_root', 'state_file']}
+                'shadow-watch': ['snapshots_root', 'model_root', 'identity_sha', 'actual_root', 'state_file'],
+                'lead-research': ['dataset', 'registration_file', 'registration_sha', 'code_revision']}
     for key in required[a.command]:
         if not getattr(a, key):
             p.error('--' + key.replace('_', '-') + ' is required')
@@ -46,6 +50,10 @@ def main():
             result = capture(a.snapshot, a.snapshot_sha, a.model_root, a.identity_sha, out)
         elif a.command == 'shadow-evaluate':
             result = aggregate(out, a.actual_root, a.state_file)
+        elif a.command == 'lead-research':
+            from .walk_forward import run as lead_run
+            result = lead_run(a.dataset, a.registration_file, a.registration_sha, out, a.code_revision)
+            result = {'selected': result['selected'], 'status': result['status'], 'resultsPath': str(out / 'RESULTS.json')}
         else:
             watch(a.snapshots_root, a.model_root, a.identity_sha, out, a.actual_root, a.state_file, a.interval_seconds, a.cycles)
             return

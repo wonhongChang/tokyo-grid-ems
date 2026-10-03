@@ -4,6 +4,8 @@
 
 ## 状態と構成
 
+別のL4/L5追加研究は[Lead-Aware Intraday Shadow](lead-aware-intraday-shadow.md)を参照。以下の元結果は凍結している。
+
 2026年10月3日の結論は **RETAIN CHALLENGER: L2**。本番昇格ではない。Champion、ETL、scheduler、公開予測、既存の昇格方針は変更していない。Jevや有料モデルAPIも使用しない。
 
 `python/eval/intraday_challenger/` は発行時点の不変snapshotから当日観測経路・残差を抽出し、誤差モデルを学習する。別領域にshadow予測を保存し、確定実測の到着後に日別・時間帯別・lead別・累計を評価する。
