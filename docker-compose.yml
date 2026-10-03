@@ -17,3 +17,47 @@ services:
       export OPENAI_DAILY_REPORT_LATEST_ONLY=$${OPENAI_DAILY_REPORT_LATEST_ONLY:-true} &&
       python python/etl/fetch_tepco.py --overwrite-recent-days 3 &&
       python python/etl/run_batch.py --input data/raw --out web/public"
+
+  intraday-shadow:
+    image: tokyo-grid-ems-intraday-shadow:1.0.0
+    build:
+      context: .
+      dockerfile: docker/shadow.Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      TZ: Asia/Tokyo
+    volumes:
+      - type: bind
+        source: ./data/intraday_challenger/shadow-deployment
+        target: /shadow-input
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: volume
+        source: intraday-shadow-data
+        target: /app/data/intraday_challenger
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cpus: 2.0
+    mem_limit: 1g
+    stop_grace_period: 210s
+    healthcheck:
+      test: [CMD, python, -m, python.eval.intraday_challenger.service, health]
+      interval: 60s
+      timeout: 15s
+      start_period: 300s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  intraday-shadow-data:
+    name: tokyo-grid-ems-intraday-shadow

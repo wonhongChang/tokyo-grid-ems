@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tokyo-grid-ems:intraday-shadow-registry:1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "version", "championReference", "challengers"],
+  "properties": {
+    "contract": {"const": "intraday-shadow-registry/1.0.0"},
+    "version": {"type": "integer", "minimum": 1},
+    "championReference": {"type": "string"},
+    "challengers": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/challenger"}}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "reference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "state"],
+      "properties": {"path": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"}, "state": {"type": "string"}}
+    },
+    "challenger": {
+      "type": "object", "additionalProperties": false,
+      "required": ["modelName", "modelVersion", "identitySha256", "combinedFingerprint", "artifactPath",
+        "featureSchemaIdentity", "trainingDatasetIdentity", "trainingCutoff", "shadowActivatedAt", "status",
+        "researchDateRanges", "historicalQualification", "legacyEvidence"],
+      "properties": {
+        "modelName": {"type": "string", "minLength": 1},
+        "modelVersion": {"type": "string", "minLength": 1},
+        "identitySha256": {"$ref": "#/$defs/hash"},
+        "combinedFingerprint": {"$ref": "#/$defs/hash"},
+        "artifactPath": {"type": "string"},
+        "featureSchemaIdentity": {"$ref": "#/$defs/hash"},
+        "trainingDatasetIdentity": {"$ref": "#/$defs/hash"},
+        "trainingCutoff": {"type": "string", "format": "date"},
+        "shadowActivatedAt": {"type": "string", "format": "date-time"},
+        "status": {"enum": ["ACTIVE", "PAUSED", "RETIRED"]},
+        "researchDateRanges": {"type": "array", "minItems": 1, "items": {
+          "type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string", "format": "date"}}},
+        "historicalQualification": {"$ref": "#/$defs/reference"},
+        "legacyEvidence": {"type": "array", "items": {"$ref": "#/$defs/reference"}}
+      }
+    }
+  }
+}

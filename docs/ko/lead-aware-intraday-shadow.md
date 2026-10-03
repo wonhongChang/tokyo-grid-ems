@@ -74,6 +74,8 @@ Walk-forward 전체 악화량 p90/p95/max는 재학습 L2 905.0/1,243.7/2,552.9�
 
 ## Worker와 기록
 
+지속 수집에는 [격리된 Docker multi-challenger 서비스](docker-intraday-shadow.md)를 사용한다. 아래 terminal worker와 1.1 계약은 historical/manual 도구로 유지하며 독립 live inclusion은 새 서비스의 별도 계약으로 관리한다.
+
 `feed.py`는 `data/intraday_challenger/<workspace>`의 별도 bare Git 저장소로 `data`만 가져온다. Allowlist의 snapshot/actual/ETL-state를 읽고 원본 bytes/hash/revision을 보존한다. `web/public` 복원·쓰기, production Git ref 변경, ETL 실행, 모델 API 호출은 없다.
 
 Prediction `intraday-shadow/1.1.0`은 issue/capture 시각과 각 lead, target, raw/pre/post, cutoff, source pointer/hash, immutable identity를 보존한다. 시작된 target은 retrospective이며 기존 1.0 기록도 그대로 읽는다. 지연 수집은 제시각 발행이 아니므로 `captureDelayMinutes`, `capture_lead_minutes`를 확인한다.
@@ -91,7 +93,7 @@ python -m python.eval.intraday_challenger.feed --remote https://github.com/wonho
 
 L5는 10/1까지 확정 5,235행으로 학습했다. Identity SHA-256은 `e39715d5e956d6bb8f110df0b857f4af7baf94fa57fd3122fdce4f9e70a9a149`, 결합 fingerprint는 `614486238b55aaec6e705a686905b6264b9284c6ef38ed0cc75f2a4de6b393be`다. Artifact/dataset/피처/설정/OOF 기간/구현 hash를 고정했다. 원래 L2 모델·피처 source identity와 loader는 그대로다.
 
-L2의 유한 worker cycle과 L5의 첫 prospective capture는 확인했다. 상시 worker는 **READY TO START**, RUNNING은 아니다. 세션 종속 background process는 남기지 않았다. 초기 수집은 지연 retained snapshot이며 확정 독립 evidence는 아직 없다.
+연구 단계에서는 L2 유한 worker cycle과 L5 첫 prospective capture를 확인했고 세션 background process를 남기지 않았다. 당시 지연 수집은 context이지 확정 독립 evidence가 아니다. 지속 수집은 별도 Docker 서비스가 담당하며 이 historical 확인을 현재 health로 해석하지 말고 status를 조회한다.
 
 Identity별 기존 readiness를 유지한다: 확정 14일, 영업일 >=8, 비영업일 >=4, 확정 prospective pair >=300, closest target >=150. 실제 수집이 충족될 경우 10/18 ETL 후 재점검한다. 날짜 경과만으로 승인하지 않는다. Native interval/champion identity/정상 승격 절차도 여전히 필요하다.
 

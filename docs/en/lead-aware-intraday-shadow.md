@@ -74,6 +74,8 @@ Retained L5 counterexamples include maximum added errors of Sep 14 09:00 +474.9,
 
 ## Worker and Contracts
 
+For persistent collection, use the [isolated Docker multi-challenger service](docker-intraday-shadow.md). The terminal worker below and its 1.1 contracts remain historical/manual tools; independent live eligibility uses the new service's separate contract.
+
 `feed.py` fetches only `data` into an isolated bare Git repository under `data/intraday_challenger/<workspace>`. It reads allowlisted snapshots/actuals/ETL state and preserves source bytes/hashes/revisions. It does not restore/write `web/public`, modify production Git refs, run ETL or call a model API.
 
 Prediction `intraday-shadow/1.1.0` stores issue/capture time and both leads, target, raw/pre/post, cutoff, source pointer/hash and immutable identity. Started targets are retrospective. Old 1.0 captures remain readable and unchanged. Delayed captures are not on-time issues; inspect `captureDelayMinutes` and `capture_lead_minutes`.
@@ -91,7 +93,7 @@ Use `--cycles 1` for finite collection. Otherwise the standalone worker sleeps i
 
 L5 trains on 5,235 finalized rows through Oct 1. Identity SHA-256: `e39715d5e956d6bb8f110df0b857f4af7baf94fa57fd3122fdce4f9e70a9a149`; combined fingerprint: `614486238b55aaec6e705a686905b6264b9284c6ef38ed0cc75f2a4de6b393be`. Native artifacts, dataset, feature schema, parameters, OOF periods and implementation hashes are pinned. Original L2 model/feature source identities and loader stay unchanged.
 
-L2's finite worker cycle and L5's first prospective capture were verified. Persistent workers are **READY TO START**, not RUNNING. No session-dependent background process was left behind. Initial captures use delayed retained snapshots; no finalized independent confirmation exists.
+At the research-stage check, L2's finite worker cycle and L5's first prospective capture were verified without leaving a session background process. Those initial delayed captures are context, not finalized independent confirmation. Persistent collection now uses the separate Docker service; inspect its status rather than treating this historical check as live health.
 
 Keep per-identity readiness: 14 finalized dates, >=8 business and >=4 non-business dates, >=300 finalized prospective pairs, >=150 closest targets. October 18 after ETL is a conditional checkpoint, not an automatic approval date. Native interval, champion identity and normal promotion limitations still apply.
 

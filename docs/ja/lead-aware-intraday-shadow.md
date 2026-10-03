@@ -74,6 +74,8 @@ L5の全改善5.61%、closest改善0.18%は実質的優越性の証明ではな�
 
 ## Worker・記録
 
+継続収集は[分離Docker multi-challenger service](docker-intraday-shadow.md)を使う。下記terminal workerと1.1契約はhistorical/manualツールとして維持し、独立live inclusionは新serviceの別契約で管理する。
+
 `feed.py`は`data/intraday_challenger/<workspace>`の専用bare Gitに`data`のみ取得する。Allowlistのsnapshot/actual/ETL-stateを読み、bytes/hash/revisionを保存する。`web/public`、production Git refs、ETL、モデルAPIを変更・実行しない。
 
 Prediction `intraday-shadow/1.1.0`はissue/capture時刻、各lead、target、raw/pre/post、cutoff、source pointer/hash、identityを記録。開始済targetはretrospectiveで旧1.0も不変。遅延captureは定刻issueではないため`captureDelayMinutes`、`capture_lead_minutes`を確認する。
@@ -91,7 +93,7 @@ python -m python.eval.intraday_challenger.feed --remote https://github.com/wonho
 
 L5は10/1まで確定5,235行で学習。Identity SHA-256 `e39715d5e956d6bb8f110df0b857f4af7baf94fa57fd3122fdce4f9e70a9a149`、combined fingerprint `614486238b55aaec6e705a686905b6264b9284c6ef38ed0cc75f2a4de6b393be`。Artifact/dataset/特徴/設定/OOF期間/実装hashを固定。元L2 model/feature source identityとloaderは不変。
 
-L2の有限worker cycleとL5初回prospective captureを確認。常駐は **READY TO START**、RUNNINGではない。Session依存background processは残していない。初期入力は遅延retained snapshotで確定独立evidenceはまだない。
+研究段階でL2有限worker cycleとL5初回prospective captureを確認しsession background processは残さなかった。当時の遅延captureはcontextで確定独立evidenceではない。継続収集は別Docker serviceが担当する。このhistorical確認を現在のhealthと解釈せずstatusを照会する。
 
 Identityごとに従来readiness維持: 確定14日、営業日 >=8、非営業日 >=4、確定prospective pair >=300、closest target >=150。実収集が充足した場合だけ10/18 ETL後に確認する。日数だけで承認しない。Native interval/champion identity/通常昇格手続きも必要。
 
