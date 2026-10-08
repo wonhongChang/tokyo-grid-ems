@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-10-09T00:26:35+09:00",
+  "date": "2026-10-08",
+  "availability": "ok",
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "family": "lgbm_quantile_q50"
+  },
+  "summary": {
+    "comparableHours": 23,
+    "modelMaeMw": 323.6,
+    "tepcoMaeMw": 169.6,
+    "modelWapePct": 1.15,
+    "tepcoWapePct": 0.6,
+    "modelRmseMw": 431.2,
+    "tepcoRmseMw": 249.7,
+    "modelMaxErrorMw": 1175.0,
+    "tepcoMaxErrorMw": 770.0,
+    "modelMaxErrorHour": 13,
+    "tepcoMaxErrorHour": 9,
+    "maeGapMw": 154.0,
+    "wapeGapPct": 0.55,
+    "verdict": "tepco_better",
+    "modelWins": 8,
+    "tepcoWins": 15,
+    "ties": 0,
+    "modelAdvantageHours": 8,
+    "tepcoAdvantageHours": 15,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.348
+  },
+  "peak": {
+    "actual": {
+      "hour": 14,
+      "actualMw": 33150.0
+    },
+    "model": {
+      "hour": 11,
+      "forecastMw": 33514.8,
+      "errorAtActualPeakMw": -605.3,
+      "timeErrorHours": -3
+    },
+    "tepco": {
+      "hour": 14,
+      "forecastMw": 33340.0,
+      "errorAtActualPeakMw": 190.0,
+      "timeErrorHours": 0
+    }
+  },
+  "timeBands": [
+    {
+      "code": "overnight",
+      "label": "00-05",
+      "hours": 6,
+      "modelMaeMw": 174.2,
+      "tepcoMaeMw": 43.3,
+      "modelBiasMw": -99.4,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "morning_ramp",
+      "label": "06-10",
+      "hours": 5,
+      "modelMaeMw": 210.5,
+      "tepcoMaeMw": 436.0,
+      "modelBiasMw": -33.5,
+      "verdict": "model_better"
+    },
+    {
+      "code": "daytime",
+      "label": "11-15",
+      "hours": 5,
+      "modelMaeMw": 757.5,
+      "tepcoMaeMw": 196.0,
+      "modelBiasMw": -471.6,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "late_afternoon",
+      "label": "16-18",
+      "hours": 3,
+      "modelMaeMw": 290.1,
+      "tepcoMaeMw": 53.3,
+      "modelBiasMw": -108.6,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "evening",
+      "label": "19-23",
+      "hours": 4,
+      "modelMaeMw": 171.8,
+      "tepcoMaeMw": 80.0,
+      "modelBiasMw": 109.0,
+      "verdict": "tepco_better"
+    }
+  ],
+  "shape": {
+    "transitionHours": 22,
+    "modelDeltaMaeMw": 382.7,
+    "tepcoDeltaMaeMw": 170.0,
+    "maxActualRiseMw": 3190.0,
+    "maxActualDropMw": -1610.0,
+    "maxModelRiseMw": 3138.7,
+    "maxModelDropMw": -1984.2,
+    "largestDeltaMiss": {
+      "fromHour": 10,
+      "toHour": 11,
+      "actualDeltaMw": 670.0,
+      "modelDeltaMw": 1776.4,
+      "tepcoDeltaMw": 1000.0,
+      "modelDeltaErrorMw": 1106.4,
+      "tepcoDeltaErrorMw": 330.0,
+      "modelAbsDeltaErrorMw": 1106.4,
+      "tepcoAbsDeltaErrorMw": 330.0
+    },
+    "largeShapeBreaks": []
+  },
+  "topMisses": [
+    {
+      "hour": 13,
+      "actualMw": 33040.0,
+      "modelForecastMw": 31865.0,
+      "tepcoForecastMw": 33230.0,
+      "modelErrorMw": -1175.0,
+      "tepcoErrorMw": 190.0,
+      "modelAbsErrorMw": 1175.0,
+      "tepcoAbsErrorMw": 190.0
+    },
+    {
+      "hour": 15,
+      "actualMw": 33150.0,
+      "modelForecastMw": 32188.8,
+      "tepcoForecastMw": 33340.0,
+      "modelErrorMw": -961.2,
+      "tepcoErrorMw": 190.0,
+      "modelAbsErrorMw": 961.2,
+      "tepcoAbsErrorMw": 190.0
+    },
+    {
+      "hour": 11,
+      "actualMw": 32800.0,
+      "modelForecastMw": 33514.8,
+      "tepcoForecastMw": 32750.0,
+      "modelErrorMw": 714.8,
+      "tepcoErrorMw": -50.0,
+      "modelAbsErrorMw": 714.8,
+      "tepcoAbsErrorMw": 50.0
+    }
+  ],
+  "insights": [
+    {
+      "code": "tepco_closer_overall",
+      "severity": "warning",
+      "title": "TEPCO was closer overall.",
+      "evidence": {
+        "maeGapMw": 154.0,
+        "wapeGapPct": 0.55
+      }
+    },
+    {
+      "code": "peak_timing_miss",
+      "severity": "warning",
+      "title": "The model peak occurred at a different hour than the actual peak.",
+      "evidence": {
+        "timeErrorHours": -3
+      }
+    }
+  ]
+}
