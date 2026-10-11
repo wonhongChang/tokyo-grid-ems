@@ -4,6 +4,8 @@
 
 언어: [English](../en/model-operations-spec.md) · [日本語](../ja/model-operations-spec.md)
 
+구조별 참고: [운영 모델 설계](lgbm-design.md) · [Read-only Review Bundle](review-bundle-cli.md) · [Challenger 연구](learned-intraday-challenger.md) · [리드별 Shadow 연구](lead-aware-intraday-shadow.md) · [Docker Shadow runtime](docker-intraday-shadow.md). Review Bundle은 선택적으로 사용하는 로컬 근거 도구이며 replay 실행·승격 판단 엔진이 아닙니다. 연구·Shadow 산출물은 운영 예측에 입력되거나 모델을 자동 승격하지 않습니다.
+
 ---
 
 ## 1. 모델 개요 및 역할
@@ -72,15 +74,17 @@ TEPCO forecast fallback은 pipeline continuity를 위한 임시값입니다. Lig
 
 | 시간 범위 | 기온 우선순위 | 습도 우선순위 | 운영 메모 |
 |---|---|---|---|
-| 과거/현재 | JMA AMeDAS 관측 | JMA AMeDAS 관측 | 공식 실측 우선 |
+| 최근 관측 조회 | JMA AMeDAS 우선, 공백은 Open-Meteo archive | JMA AMeDAS 우선, 공백은 archive | 시작·종료일 차이가 3일 이하이고 종료일이 오늘-2일 이상인 경우 AMeDAS 우선 |
+| 오래되거나 넓은 과거 조회 | Open-Meteo archive | Open-Meteo archive | 미래 습도 보완용 Open-Meteo JMA와 다른 경로 |
 | 가까운 미래 | JMA 공식 예보 | 최신 AMeDAS 습도 forward fill | 기온은 JMA forecast를 신뢰 |
-| 미래 습도 보완 | JMA forecast temperature 유지 | Open-Meteo JMA humidity fallback | Open-Meteo는 습도 보완용으로 제한 |
-| 최종 fallback | 기존 값 또는 보수적 평균 | 월/시간대 seasonal humidity | 통신 장애 방어 |
+| 미래 습도 보완 | JMA forecast temperature 유지 | Open-Meteo JMA, 이후 계절 습도 평균 | Open-Meteo JMA는 예보 습도만 보완 |
+| 공식 예보 취득 실패 | ETL 예보 확장에서 기존 캐시 유지 | 기존 캐시 유지 | 다른 예보 기온으로 대체하지 않음. 미래 입력 결측이 남을 수 있음 |
 
 운영 원칙:
 
-- 미래 기온은 JMA 공식 forecast를 우선합니다.
+- 미래 기온은 JMA 공식 forecast를 사용합니다. `fetch_forecast_temps`는 공식 기온 취득 실패 또는 빈 결과에 예외를 내고, ETL 예보 확장은 이를 받아 기존 캐시를 유지합니다.
 - Open-Meteo JMA는 기온을 덮어쓰지 않고 습도 결측 보완에만 사용합니다.
+- 계절 습도 평균은 예보 습도의 최종 보완값이며 기온 대체값이 아닙니다.
 - `weather_source`는 예측 튐 원인을 추적하는 핵심 필드입니다.
 
 ### 관측 입력 공백과 외부 benchmark 맥락
@@ -101,6 +105,8 @@ TEPCO의 비공개 운영 피처는 알 수 없습니다. 특정 비공개 입�
 
 ## 3. LightGBM 하이퍼파라미터
 
+표는 주 시간별 trainer의 기본값과 구간 설정을 기록하며, 모든 보조 모델·저장된 booster의 파라미터 목록은 아닙니다. 후보 override는 별도로 확인해야 하며, 현재 운영 config는 주 trainer의 `subsample_freq`를 덮어쓰지 않습니다.
+
 | 파라미터 | 현재 값 | 튜닝 의도 |
 |---|---:|---|
 | `objective` | `quantile` | 예측 밴드 생성을 위한 quantile regression |
@@ -109,7 +115,8 @@ TEPCO의 비공개 운영 피처는 알 수 없습니다. 특정 비공개 입�
 | `learning_rate` | `0.05` | 안정적인 boosting step |
 | `num_leaves` | `31` | 중간 수준의 트리 복잡도 |
 | `min_child_samples` | `20` | 작은 split 과적합 방지 |
-| `subsample` | `0.8` | row sampling으로 variance 완화 |
+| `subsample` | `0.8` | 설정된 행 비율. `subsample_freq=0`일 때는 적용되지 않음 |
+| `subsample_freq` | `0` (LightGBM 기본값) | 행 bagging 비활성. 양의 frequency를 설정해야 `subsample`이 작동 |
 | `colsample_bytree` | `0.8` | 특정 lag/피처 의존 완화 |
 | `min_p95_half_width_mw` | `500` | 밴드 과소폭 방지 |
 
@@ -254,10 +261,14 @@ Raw LightGBM Forecast
   -> Midday Transition Guard
   -> Localized Shape Spike Guard
   -> Intraday Residual Correction
-  -> Forecast Snapshots / Operational Calibration / Reports
+  -> Observed-hour Preservation (D0, when enabled)
+  -> Served Band Normalization / Lead-aware Interval Calibration
+  -> Published Forecasts / Issuance Snapshots / Reports
 ```
 
 현재 `run_batch.py` 기준 stage 이름은 `raw_lgbm`, `same_regime_level_calibrated`, `analog_adjusted`, `post_holiday_guarded`, `midday_guarded`, `localized_shape_guarded`, `pre_calibration`입니다. Intraday 보정은 `pre_calibration` 이후 실행합니다. 그 내부의 최종 shape/ramp 가드는 `shapeGuardDeltaMw`, `rampGuardDeltaMw`로 별도 기록하므로 이 변동을 잔차 이월량만으로 설명하면 안 됩니다.
+
+위 흐름은 서빙 순서이며 모든 근거가 마지막에 기록된다는 뜻은 아닙니다. Same-run operational calibration snapshot은 intraday 보정 중, 관측 시간 보존과 최종 서빙 밴드 구성 전에 기록합니다. 따라서 published/issuance 예측과 same-run stage는 다른 평가 모집단으로 유지합니다. D-1 예측은 당일 intraday 보정을 건너뛰며, 구간 보정 자체는 q50을 바꾸지 않습니다.
 
 | 레이어 | 구현 | 목적 |
 |---|---|---|
@@ -388,7 +399,7 @@ Raw LightGBM Forecast
 | 23시 실측 지연 | 전날 마지막 실측 공백 | fallback source flag 확인 |
 | TEPCO ZIP 403 | GitHub Actions ETL 실패 | 로컬 ETL 또는 별도 runner 사용 |
 | 기상 API 장애 | 온도/습도 NaN 또는 fallback 과다 | `weather_source` 비율 확인 |
-| 모델 배치 재학습 실패(Dry rot) | 데이터는 쌓이지만 모델이 재학습되지 않거나 오래된 `.lgbm_model.pkl`로 계속 추론 | 최소 학습량 90일 유지, 모델 저장 시각, interval version, ETL 학습 로그를 확인합니다. 실패 시 기존 최신 가중치로 추론은 유지하되 운영 리포트에 재학습 실패를 남깁니다. |
+| 요청한 재학습 실패 / 오래된 artifact 위험 | 명시적 요청 또는 활성화된 정기 학습 실행이 실패하거나 승인된 contract와 artifact 식별·최신성 상태가 불일치 | 먼저 `scheduled_challenger_training_enabled`, 강제 학습 의도, 최소 2,160개 유효 학습 행, 학습·검증 로그를 확인합니다. 현재 정기 학습은 의도적으로 꺼져 있으므로 Champion이 그대로라는 사실만으로 실패가 아닙니다. 유효한 Champion을 보존하고 실제 실패한 학습 시도나 artifact 불일치를 별도 기록합니다. |
 
 ---
 

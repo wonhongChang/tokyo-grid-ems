@@ -40,7 +40,9 @@ LightGBM을 사용할 수 없거나, 학습 데이터가 부족하거나, 예측
 
 D-1 시점에는 대상일의 `lag_24h`와 최근 영업 타입 수요가 정의상 아직 없을 수 있습니다. v14-r2는 이런 행을 감지해 확정되지 않은 수요 lag 피처 6개와 발행 시점에 일관되게 재구성할 수 없는 기상 입력을 제외한 전용 모델을 사용합니다. 비영업일 specialist는 가중치 1.0을 사용합니다. 별도의 same-regime calibrator는 최근 확정 3일 잔차의 25%를 +/-1,000MW 안에서 반영하고 대상일은 학습에서 제외합니다.
 
-대시보드는 최종 q50을 예측선으로 사용합니다. q025/q975를 p95 밴드로 정규화하고 sanity 보정한 뒤, coverage 보정을 위해 폭을 1.25배 확대합니다. 확대 전 p95 half-width 상한은 3,000MW, 최종 상한은 3,750MW입니다. p99 스타일 구간도 파생하지만 이 interval 단계들은 q50을 바꾸지 않습니다.
+대시보드는 최종 q50을 예측선으로 사용합니다. 모델의 native q025/q975 밴드는 sanity 보정과 1.25배 폭 확대를 거치며, 확대 전 반폭 상한은 3,000MW, 확대 후 상한은 3,750MW입니다.
+
+최종 서빙에는 `served_interval_calibration`의 `lead_aware_conformal_target_width` 모드를 적용합니다. 최근 28일의 호환되는 사전 발행 이력을 리드 구간과 대상 시간대로 나누며, 유효한 집계에는 최소 24표본·4개 날짜가 필요합니다. 같은 레짐/전체 레짐 중 유효한 오차 q95의 큰 값에 safety 1.05를 곱해 p95 반폭을 대칭으로 대체합니다. 근거 부족·비호환 또는 필요 반폭 3,750MW 초과 시 native 밴드의 정규화·상한 처리를 유지합니다. 이미 관측된 시간의 밴드는 발행 정책에 따라 보존할 수 있습니다. p99 스타일 구간은 휴리스틱으로 파생하며, 구간 처리는 q50을 바꾸거나 실측 포함률 95%를 보장하지 않습니다. 자세한 조건은 [서빙 보정 계약](model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)을 참고합니다.
 
 최소 학습 데이터:
 
@@ -77,7 +79,7 @@ weather_features:
   heating_base_temp_c: 18.0
 ```
 
-기상 보강은 과거/현재 시간에는 JMA AMeDAS 실측을 우선 사용하고, 미래 시간의 기온은 JMA 공식 예보를 우선 사용합니다. Open-Meteo JMA는 습도 보완용 fallback으로만 사용하며 JMA 예보 기온을 덮어쓰지 않습니다. 첫 당일 JMA 예보가 최근 AMeDAS 추세와 크게 단절되면 cap과 decay가 있는 연속성 보정을 메모리의 모델 입력에만 적용합니다. 공식 예보 습도가 없을 때도 습도 기반 체감온도와 불쾌지수 계산이 끊기지 않도록 humidity fallback을 적용합니다.
+기상 보강은 최근 관측에 JMA AMeDAS를 우선하고 공백은 Open-Meteo archive로 보완합니다. 오래되거나 넓은 범위의 과거 조회는 Open-Meteo archive를 직접 사용합니다. 미래 기온은 JMA 공식 예보를 사용하며, Open-Meteo JMA는 해당 기온을 덮어쓰지 않고 습도만 보완합니다. 습도는 짧은 AMeDAS persistence, Open-Meteo JMA, 계절 평균 순서로 보완합니다. 공식 예보 취득 실패 시 ETL의 예보 확장은 기존 캐시를 유지하며 Open-Meteo 예보 기온으로 대체하지 않습니다. 첫 당일 JMA 예보가 최근 AMeDAS 추세와 크게 단절되면 cap과 decay가 있는 연속성 보정을 메모리의 모델 입력에만 적용합니다.
 
 `temp_delta_24h`와 `cooling_delta_24h`는 오늘 날씨가 어제 같은 시간과 달라졌을 때, 전날 수요 lag를 얼마나 믿을지 모델에 알려주는 피처입니다. `temp_delta_168h`와 `cooling_delta_168h`는 전주 같은 시간대 수요에 대해 같은 역할을 합니다. `temp_delta_1h`, `temp_delta_2h`, `apparent_temp_delta_1h`, `cooling_delta_1h`는 단기 기상 변화 방향을 반영합니다. `cooling_degree_3h_mean`, `cooling_degree_6h_mean`, `heating_degree_3h_mean`, `heating_degree_6h_mean`, `temp_72h_mean`, `cooling_degree_72h_mean`, `heating_degree_72h_mean`은 지속적인 더위나 추위의 누적 효과를 반영합니다. `apparent_temp_c`와 `apparent_cooling_degree`는 데이터 소스가 체감온도를 제공할 때 이를 보완 신호로 사용합니다.
 
@@ -114,7 +116,7 @@ residual = actualMw - modelForecastMw
 
 시간별 residual carry-over와 guard metadata는 operational calibration snapshot에 저장되어 일일 AI/Ops 리포트가 예측선 변화를 설명할 수 있게 합니다.
 
-23:40 JST 시점에도 23:00 실측이 없으면 TEPCO 예측값을 임시 입력으로 사용할 수 있습니다.
+늦은 실측 보강 workflow는 23:50 JST에 예약되어 있습니다. 실제 실행 시에도 마지막 23:00 실측이 없으면 TEPCO 예측값을 표시된 임시 입력으로 사용할 수 있습니다.
 
 ```json
 {
@@ -157,13 +159,19 @@ v13 영업 전환 계약, 기상 출처 연속성 replay와 당시 승격 상태
 ## 학습과 추론 흐름
 
 1. ETL이 TEPCO 월별 ZIP에서 확정 이력 데이터를 읽습니다.
-2. JMA AMeDAS 실측 기상, JMA 공식 예보 기온, 습도 fallback 필드를 붙입니다.
+2. 최근 JMA AMeDAS 실측, 과거 Open-Meteo archive 값, JMA 공식 예보 기온, 습도 fallback 필드를 붙입니다.
 3. 전체 ETL은 현재 Champion을 유지합니다. v14-r2 안정화 중에는 일반 정기 Challenger 학습을 끄며, 새 artifact는 누수 방지 D0·D-1 replay와 명시적 승격을 거쳐야 합니다.
 4. 승격된 모델만 `web/public/.lgbm_model.pkl`로 저장하며 status/intraday workflow는 이 Champion을 다시 로드합니다.
 5. 월별 ZIP이 아직 갱신되지 않은 구간은 최근 actual JSON으로 cache를 보강하고 저장해 다음 실행의 lag 연속성을 유지합니다.
 6. 오늘 예측을 만들고 intraday residual correction을 적용합니다.
 7. 같은 cache로 내일 예측도 만듭니다.
-8. `web/public/forecast/` 아래 JSON으로 저장합니다.
+8. 발행 정책에 따라 이미 관측된 시간을 보존하고 최종 밴드를 리드별 보정으로 정규화한 뒤 `web/public/forecast/` 아래에 JSON을 씁니다.
+
+## 분리된 점검·연구·Shadow 경로
+
+- [Review Bundle / read-only batch CLI](review-bundle-cli.md)는 동결된 로컬 입력에서 deterministic 근거를 정리합니다. replay 실행이나 승격 판단을 대신하지 않으며 일반 점검 자동화에 연결되어 있지 않습니다.
+- [Learned Intraday Challenger](learned-intraday-challenger.md)와 [Lead-Aware Intraday Shadow](lead-aware-intraday-shadow.md)는 격리된 학습·시간순 검증·전향적 후보 근거 수집을 설명하며, 운영 모델 교체 경로가 아닙니다.
+- [Docker Multi-Challenger Shadow](docker-intraday-shadow.md)는 `data` 브랜치의 발행 시점 calibration snapshot, actual, ETL state를 읽습니다. 예측·평가는 shadow 전용 저장소에 남고 공개 예측에 입력되거나 모델을 자동 승격하지 않습니다.
 
 ---
 

@@ -4,6 +4,8 @@
 
 Languages: [한국어](../ko/model-operations-spec.md) · [日本語](../ja/model-operations-spec.md)
 
+Architecture boundaries: [Production model design](lgbm-design.md) · [Read-only Review Bundle](review-bundle-cli.md) · [Challenger research](learned-intraday-challenger.md) · [Lead-aware shadow research](lead-aware-intraday-shadow.md) · [Docker shadow runtime](docker-intraday-shadow.md). Review Bundle is an optional local evidence tool, not a replay or promotion engine. Research and shadow outputs do not feed production forecasting or automatically promote a model.
+
 ---
 
 ## 1. Model Overview
@@ -72,12 +74,13 @@ TEPCO forecast fallback is a continuity input. It may support lag construction, 
 
 | Time range | Temperature priority | Humidity priority | Operational note |
 |---|---|---|---|
-| past/current | JMA AMeDAS observations | JMA AMeDAS observations | official observed weather first |
+| recent observed fetch | JMA AMeDAS, then Open-Meteo archive gaps | JMA AMeDAS, then archive gaps | AMeDAS preference applies when end minus start is at most three days and end is no earlier than today minus two days |
+| older/wider historical fetch | Open-Meteo archive | Open-Meteo archive | archive retrieval is distinct from future Open-Meteo JMA humidity fallback |
 | near future | JMA official forecast | latest AMeDAS humidity forward fill | keep JMA forecast temperature authoritative |
-| future humidity fallback | keep JMA forecast temperature | Open-Meteo JMA humidity fallback | Open-Meteo is humidity-only fallback |
-| final fallback | existing value or conservative mean | monthly/hourly seasonal humidity | network failure protection |
+| future humidity fallback | keep JMA forecast temperature | Open-Meteo JMA, then seasonal humidity | Open-Meteo JMA supplements forecast humidity only |
+| official forecast fetch failure | retain existing cache in the ETL forecast extension | retain existing cache | no substitute forecast-temperature provider; missing future inputs can remain missing |
 
-`weather_source` is a key diagnostic field when forecast shape changes unexpectedly.
+`fetch_forecast_temps` raises on failed or empty official temperature retrieval; the ETL forecast extension catches the error and retains its cache. Seasonal humidity is a fallback for missing forecast humidity, not a replacement temperature source. `weather_source` is a key diagnostic field when forecast shape changes unexpectedly.
 
 ### Observed input gaps and external benchmark context
 
@@ -97,6 +100,8 @@ TEPCO's private production features are unknown. Any claim that it uses a specif
 
 ## 3. LightGBM Hyperparameters
 
+The table records the main hourly trainer's defaults and interval configuration, not a parameter inventory for every auxiliary model or saved booster. Candidate overrides must be checked separately; the current production config does not override the main trainer's `subsample_freq`.
+
 | Parameter | Current value | Intent |
 |---|---:|---|
 | `objective` | `quantile` | quantile regression for forecast bands |
@@ -105,7 +110,8 @@ TEPCO's private production features are unknown. Any claim that it uses a specif
 | `learning_rate` | `0.05` | stable boosting step |
 | `num_leaves` | `31` | moderate tree complexity |
 | `min_child_samples` | `20` | avoid tiny overfit splits |
-| `subsample` | `0.8` | reduce variance through row sampling |
+| `subsample` | `0.8` | configured row fraction; inactive while `subsample_freq` is zero |
+| `subsample_freq` | `0` (LightGBM default) | row bagging is disabled; a positive frequency is needed to activate `subsample` |
 | `colsample_bytree` | `0.8` | reduce dependence on a single lag group |
 | `min_p95_half_width_mw` | `500` | prevent unrealistically narrow bands |
 
@@ -246,10 +252,14 @@ Raw LightGBM Forecast
   -> Midday Transition Guard
   -> Localized Shape Spike Guard
   -> Intraday Residual Correction
-  -> Forecast Snapshots / Operational Calibration / Reports
+  -> Observed-hour Preservation (D0, when enabled)
+  -> Served Band Normalization / Lead-aware Interval Calibration
+  -> Published Forecasts / Issuance Snapshots / Reports
 ```
 
 The current `run_batch.py` stage names are `raw_lgbm`, `same_regime_level_calibrated`, `analog_adjusted`, `post_holiday_guarded`, `midday_guarded`, `localized_shape_guarded`, and `pre_calibration`. Intraday correction follows `pre_calibration`. Its terminal shape/ramp guards report separate `shapeGuardDeltaMw` and `rampGuardDeltaMw` values, which must not be attributed to residual carryover alone.
+
+This is the serving sequence, not a claim that all evidence is captured at its endpoint. Same-run operational calibration snapshots are written during intraday correction, before observed-hour preservation and final serving-band construction. Published/issuance forecasts and same-run stages therefore remain distinct populations. D-1 forecasts skip same-day intraday correction, and interval calibration does not alter q50.
 
 | Layer | Implementation | Purpose |
 |---|---|---|
@@ -375,7 +385,7 @@ Every guard should have a cap, shrinkage, and metadata footprint.
 | Late-hour actual delay | previous day lacks final actuals | inspect fallback source flags |
 | TEPCO ZIP 403 | GitHub Actions ETL cannot fetch monthly CSV | use local ETL or a separate runner |
 | Weather API issue | NaN weather or excessive fallback | inspect `weather_source` ratios |
-| Batch retraining failure (dry rot) | data keeps accumulating but model is not retrained, or inference keeps using an old `.lgbm_model.pkl` | check the 90-day minimum, model save timestamp, interval version, and ETL training logs. Continue serving the latest valid model but record the retraining failure in the operations report. |
+| Requested retraining failure / stale artifact risk | an explicitly requested or enabled scheduled training run fails, or artifact identity/freshness is inconsistent with its approved contract | first check `scheduled_challenger_training_enabled`, force-train intent, minimum 2,160 valid training rows, and training/validation logs. Current scheduled training is intentionally disabled; an unchanged Champion is not itself a failure. Preserve the valid Champion and record an actual failed training attempt or artifact mismatch separately. |
 
 ---
 

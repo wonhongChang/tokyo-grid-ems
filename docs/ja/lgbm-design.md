@@ -40,7 +40,9 @@ LightGBMが利用できない場合、学習データが不足する場合、ま
 
 D-1時点では対象日の`lag_24h`や直近営業type需要が定義上まだ存在しない場合があります。v14-r2は該当行を検出し、未確定需要lagの6特徴量と発行時点に一貫して再構築できない気象入力を除外した専用モデルを使います。非営業日specialistはweight 1.0です。別のsame-regime calibratorは直近3確定日の残差の25%を+/-1,000MW以内で反映し、対象日は学習しません。
 
-ダッシュボードは最終q50を予測線に使います。q025/q975をp95 bandへ正規化しsanity calibrationした後、coverage補正として幅を1.25倍します。scale前p95 half-width上限は3,000MW、最終上限は3,750MWです。p99風の区間も派生しますが、これらのinterval処理はq50を変更しません。
+ダッシュボードは最終q50を予測線に使います。モデルのnative q025/q975 bandにはsanity補正と1.25倍の幅調整を適用し、scale前の半幅上限は3,000MW、scale後は3,750MWです。
+
+最終配信では`served_interval_calibration`の`lead_aware_conformal_target_width`モードを適用します。直近28日の互換性のある事前発行履歴をlead区分と対象時間帯で集計し、有効な集計には24標本・4日以上が必要です。同regime/全regimeの有効な誤差q95の大きい値にsafety 1.05を掛け、p95半幅を対称に置き換えます。証拠不足・非互換、または必要半幅が3,750MWを超える場合はnative bandの正規化・上限処理を維持します。観測済み時間のbandは発行方針に従って保存できます。p99風の区間はheuristicで派生し、区間処理はq50を変更せず、実測包含率95%も保証しません。詳しくは[配信補正契約](model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md)を参照してください。
 
 最小学習データ:
 
@@ -77,7 +79,7 @@ weather_features:
   heating_base_temp_c: 18.0
 ```
 
-気象補強では、過去/現在時間はJMA AMeDAS観測を優先し、未来時間の気温はJMA公式予報を優先します。Open-Meteo JMAは湿度fallback専用で、JMA予報気温を上書きしません。最初の当日JMA予報が直近AMeDAS trendから大きく不連続になる場合、capとdecayを持つ連続性補正をメモリ上のモデル入力だけに適用します。公式予報に湿度がない場合でも、湿度由来の体感温度と不快指数を安定して計算できるようにfallbackを使います。
+気象補強では最近の観測にJMA AMeDASを優先し、欠落をOpen-Meteo archiveで補います。古い期間や広い期間の過去取得はOpen-Meteo archiveを直接使います。未来気温はJMA公式予報を使い、Open-Meteo JMAは気温を上書きせず湿度だけを補います。湿度は短期AMeDAS persistence、Open-Meteo JMA、季節平均の順に補完します。公式予報の取得に失敗するとETLの予報拡張は既存cacheを維持し、Open-Meteo予報気温に置き換えません。当日最初のJMA予報が最近のAMeDAS trendと大きく不連続な場合、capとdecayを持つ連続性補正をメモリ上のモデル入力だけに適用します。
 
 `temp_delta_24h` と `cooling_delta_24h` は、今日の天候が前日同時刻から変わった場合に、前日需要ラグをどの程度信頼するかをモデルに伝える特徴量です。`temp_delta_168h` と `cooling_delta_168h` は、前週同時刻の需要に対して同じ役割を持ちます。`temp_delta_1h`、`temp_delta_2h`、`apparent_temp_delta_1h`、`cooling_delta_1h` は短期の気象変化方向を表します。`cooling_degree_3h_mean`、`cooling_degree_6h_mean`、`heating_degree_3h_mean`、`heating_degree_6h_mean`、`temp_72h_mean`、`cooling_degree_72h_mean`、`heating_degree_72h_mean` は、持続的な暑さや寒さの蓄積効果を反映します。`apparent_temp_c` と `apparent_cooling_degree` は、データソースが体感温度を提供する場合に補助信号として使います。
 
@@ -114,7 +116,7 @@ residual = actualMw - modelForecastMw
 
 時間別のresidual carry-overとguard metadataはoperational calibration snapshotに保存され、日次AI/Opsレポートが予測線の変化を説明できるようにしています。
 
-23:40 JST時点でも23:00実績が未公開の場合、TEPCO予測値を一時的な入力として使用できます。
+遅い実績の補完workflowは23:50 JSTに予約されています。実際の実行時にも最後の23:00実績が未公開なら、TEPCO予測値を明示された一時入力として使用できます。
 
 ```json
 {
@@ -157,13 +159,19 @@ v13営業日遷移契約、気象source連続性replay、当時の昇格状態�
 ## 学習と推論の流れ
 
 1. ETLがTEPCO月次ZIPから確定済み履歴データを読み込みます。
-2. JMA AMeDAS観測気象、JMA公式予報気温、湿度fallbackフィールドを付与します。
+2. 最近のJMA AMeDAS観測、過去のOpen-Meteo archive値、JMA公式予報気温、湿度fallbackフィールドを付与します。
 3. Full ETLは現在のChampionを維持します。v14-r2安定化中は汎用の定期Challenger学習を無効にし、新artifactには漏洩防止D0・D-1 replayと明示昇格を要求します。
 4. 昇格済みモデルだけを`web/public/.lgbm_model.pkl`へ保存し、status/intraday workflowはこのChampionを再ロードします。
 5. 月次ZIPがまだ更新されていない期間は、直近のactual JSONでcacheを補完して保存し、次回実行のlag連続性を維持します。
 6. 今日の予測を生成し、intraday residual correctionを適用します。
 7. 同じcacheから明日の予測も生成します。
-8. `web/public/forecast/` 以下にJSONとして保存します。
+8. 発行方針に従って観測済み時間を保存し、最終bandをlead別補正で正規化してから`web/public/forecast/`以下にJSONを保存します。
+
+## 分離されたレビュー・研究・Shadow経路
+
+- [Review Bundle / read-only batch CLI](review-bundle-cli.md)は凍結したローカル入力からdeterministicな証拠を整理します。replay実行や昇格判断を代行せず、通常のレビュー自動化には接続していません。
+- [Learned Intraday Challenger](learned-intraday-challenger.md)と[Lead-Aware Intraday Shadow](lead-aware-intraday-shadow.md)は、隔離した学習・時系列検証・前向き候補証拠の収集を説明し、本番モデルの置換経路ではありません。
+- [Docker Multi-Challenger Shadow](docker-intraday-shadow.md)は`data` branchの発行時点calibration snapshot、actual、ETL stateを読みます。予測・評価はshadow専用storageに保存し、公開予測の入力やモデルの自動昇格には使いません。
 
 ---
 

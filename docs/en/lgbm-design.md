@@ -40,7 +40,9 @@ On a normal D0 row, q50 keeps the absolute-demand, `lag_24h + predicted residual
 
 At a D-1 origin, target-day `lag_24h` and last-business-type demand can be unavailable by definition. v14-r2 detects those rows and uses dedicated models trained without six unfinalized demand-lag features and without weather inputs that cannot be reconstructed consistently at issuance time. The non-business specialist receives full weight. A separate same-regime calibrator applies 25% of the recent three-finalized-day residual with a +/-1,000MW cap. It is artifact-scoped and excludes the target day.
 
-The dashboard uses the resulting q50 as the main forecast line. q025/q975 are normalized into the displayed p95 band, sanity-calibrated, and then widened by a fixed 1.25 coverage scale. The pre-scale p95 half-width cap is 3,000MW and the final cap is 3,750MW. A wider p99-style band is derived heuristically; none of these interval steps changes q50.
+The dashboard uses the resulting q50 as the main forecast line. Native q025/q975 bands undergo sanity calibration and a fixed 1.25 width scale, with a pre-scale half-width cap of 3,000MW and a scaled cap of 3,750MW.
+
+Final serving applies `served_interval_calibration` in `lead_aware_conformal_target_width` mode. Compatible pre-target issuance history is grouped by lead bucket and target time band over 28 days. An eligible group needs at least 24 samples across four dates; the larger eligible same-regime/all-regime error q95 receives a 1.05 safety factor and replaces the p95 half-width symmetrically. Missing/incompatible evidence or a required half-width above 3,750MW retains the native normalized/capped band. Already-observed bands can be preserved by the publication policy. A p99-style band is derived heuristically; interval processing does not change q50 or guarantee measured 95% coverage. See [Serving Calibration Contracts](model-improvements/model-improvement-2026-09-09-serving-calibration-contracts.md).
 
 Minimum training data:
 
@@ -77,7 +79,7 @@ weather_features:
   heating_base_temp_c: 18.0
 ```
 
-Weather enrichment now prefers JMA AMeDAS observations for past/current hours and JMA official forecast temperatures for future hours. Open-Meteo JMA is kept as a humidity fallback only; it does not overwrite JMA forecast temperatures. When the first same-day JMA forecast is materially discontinuous from the recent AMeDAS trend, a capped and decaying continuity correction is applied only to the in-memory model input. Humidity-derived apparent temperature and discomfort index values are used to keep cooling-demand features stable when official forecast humidity is unavailable.
+Weather enrichment prefers JMA AMeDAS for recent observations, with Open-Meteo archive filling gaps. Older or wider historical fetches use the Open-Meteo archive directly. Future temperature comes from the official JMA forecast; Open-Meteo JMA fills humidity only and does not overwrite that temperature. Humidity uses short AMeDAS persistence, then Open-Meteo JMA, then a seasonal mean. If official forecast retrieval fails, the ETL extension retains its existing cache rather than substituting Open-Meteo forecast temperatures. When the first same-day JMA forecast is materially discontinuous from the recent AMeDAS trend, a capped and decaying continuity correction is applied only to the in-memory model input.
 
 `temp_delta_24h` and `cooling_delta_24h` help the model decide how much to trust yesterday's same-hour demand when today's weather has shifted. `temp_delta_168h` and `cooling_delta_168h` do the same for the same-hour value from one week ago. `temp_delta_1h`, `temp_delta_2h`, `apparent_temp_delta_1h`, and `cooling_delta_1h` capture short-term weather direction. `cooling_degree_3h_mean`, `cooling_degree_6h_mean`, `heating_degree_3h_mean`, `heating_degree_6h_mean`, `temp_72h_mean`, `cooling_degree_72h_mean`, and `heating_degree_72h_mean` capture sustained heat or cold. `apparent_temp_c` and `apparent_cooling_degree` add a feels-like temperature signal when the weather source provides one.
 
@@ -114,7 +116,7 @@ The correction layer is no longer a plain residual carry-over. It also includes 
 
 Per-hour residual carry-over and guard metadata are written into operational calibration snapshots so that daily AI/Ops reports can explain why a served forecast changed.
 
-At the final 23:00 hour, if TEPCO has not published the actual value by the 23:40 JST refresh, the pipeline may use TEPCO's forecast as a marked fallback:
+The late catch-up workflow is scheduled at 23:50 JST. If the final 23:00 actual is still unpublished when it runs, the pipeline may use TEPCO's forecast as a marked fallback:
 
 ```json
 {
@@ -155,13 +157,19 @@ The rejected v14-r1 path is documented in [v14 Champion-Preserving Calibration](
 ## Training and Inference Flow
 
 1. ETL loads confirmed historical TEPCO data from monthly ZIP files.
-2. Weather enrichment fills JMA AMeDAS observed weather, JMA official forecast temperatures, and humidity fallback fields.
+2. Weather enrichment fills recent JMA AMeDAS observations, historical Open-Meteo archive values, official JMA forecast temperatures, and humidity fallback fields.
 3. Full ETL keeps the current Champion. Generic scheduled Challenger training is disabled during v14-r2 stabilization; a new artifact requires explicit leakage-safe D0/D-1 replay and promotion.
 4. The promoted model is saved to `web/public/.lgbm_model.pkl`; status/intraday workflows only reload this Champion.
 5. Recent actual JSON files are injected into the cache and persisted to fill gaps before the monthly ZIP is updated.
 6. Today's forecast is generated and adjusted with intraday residual correction.
 7. Tomorrow's forecast is generated using the same enriched cache.
-8. JSON outputs are written under `web/public/forecast/`.
+8. Publication preserves already-observed hours where required and normalizes the final bands with lead-aware calibration before writing JSON under `web/public/forecast/`.
+
+## Separate Review, Research, and Shadow Paths
+
+- [Review Bundle / read-only batch CLI](review-bundle-cli.md) prepares deterministic evidence from frozen local inputs; it neither runs replay nor decides promotion, and is not wired into normal review automation.
+- [Learned Intraday Challenger](learned-intraday-challenger.md) and [Lead-Aware Intraday Shadow](lead-aware-intraday-shadow.md) document isolated training, chronological evaluation, and prospective challenger evidence, not production model replacement.
+- [Docker Multi-Challenger Shadow](docker-intraday-shadow.md) reads retained issue-time calibration snapshots, actuals, and ETL state from the `data` branch. Predictions and evaluations stay in shadow-only storage and never feed the published forecast or automatically promote a model.
 
 ---
 

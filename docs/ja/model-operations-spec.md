@@ -4,6 +4,8 @@
 
 言語: [English](../en/model-operations-spec.md) · [한국어](../ko/model-operations-spec.md)
 
+構造別の参考: [運用モデル設計](lgbm-design.md) · [Read-only Review Bundle](review-bundle-cli.md) · [Challenger研究](learned-intraday-challenger.md) · [Lead別Shadow研究](lead-aware-intraday-shadow.md) · [Docker Shadow runtime](docker-intraday-shadow.md)。Review Bundleは任意で使うローカル証拠ツールで、replay実行・昇格判断エンジンではありません。研究・Shadow成果物は本番予測の入力やモデルの自動昇格には使いません。
+
 ---
 
 ## 1. モデル概要
@@ -72,12 +74,13 @@ TEPCO forecast fallbackは継続性のための一時入力です。lag構築に
 
 | 時間範囲 | 気温優先順位 | 湿度優先順位 | 運用メモ |
 |---|---|---|---|
-| 過去/現在 | JMA AMeDAS観測 | JMA AMeDAS観測 | 公式観測を優先 |
+| 最近の観測取得 | JMA AMeDAS優先、欠落はOpen-Meteo archive | JMA AMeDAS優先、欠落はarchive | 開始日と終了日の差が3日以下で、終了日が今日-2日以降ならAMeDAS優先 |
+| 古い/広い期間の過去取得 | Open-Meteo archive | Open-Meteo archive | 未来湿度補完用のOpen-Meteo JMAとは別経路 |
 | 近未来 | JMA公式予報 | 最新AMeDAS湿度forward fill | 気温はJMA forecastを信頼 |
-| 未来湿度補完 | JMA forecast temperature維持 | Open-Meteo JMA humidity fallback | Open-Meteoは湿度補完専用 |
-| 最終fallback | 既存値または保守的平均 | 月/時刻別seasonal humidity | 通信障害対策 |
+| 未来湿度補完 | JMA forecast temperature維持 | Open-Meteo JMA、その後は季節湿度平均 | Open-Meteo JMAは予報湿度だけを補完 |
+| 公式予報取得失敗 | ETL予報拡張で既存cacheを維持 | 既存cacheを維持 | 別の予報気温で代替せず、未来入力の欠落が残る場合あり |
 
-`weather_source`は予測線が急に変化した時の重要な診断フィールドです。
+`fetch_forecast_temps`は公式気温の取得失敗や空の結果に例外を出し、ETL予報拡張はそれを受けて既存cacheを維持します。季節湿度平均は予報湿度の最終補完値で、気温の代替値ではありません。`weather_source`は予測線が急に変化した時の重要な診断フィールドです。
 
 ### 観測入力の欠落と外部benchmarkの文脈
 
@@ -97,6 +100,8 @@ TEPCOの非公開production featureは不明です。特定の非公開入力を
 
 ## 3. LightGBMハイパーパラメータ
 
+表は主な時間別trainerの既定値と区間設定であり、すべての補助モデル・保存boosterのパラメータ一覧ではありません。候補overrideは別途確認します。現在の本番configは主trainerの`subsample_freq`を上書きしません。
+
 | パラメータ | 現在値 | 意図 |
 |---|---:|---|
 | `objective` | `quantile` | 予測バンド生成 |
@@ -105,7 +110,8 @@ TEPCOの非公開production featureは不明です。特定の非公開入力を
 | `learning_rate` | `0.05` | 安定したboosting step |
 | `num_leaves` | `31` | 中程度の木の複雑度 |
 | `min_child_samples` | `20` | 小さなsplitの過学習防止 |
-| `subsample` | `0.8` | row samplingでvarianceを抑制 |
+| `subsample` | `0.8` | 設定上の行比率。`subsample_freq=0`では適用しない |
+| `subsample_freq` | `0` (LightGBM既定値) | 行baggingは無効。正のfrequencyが必要 |
 | `colsample_bytree` | `0.8` | 特定lag群への依存を緩和 |
 | `min_p95_half_width_mw` | `500` | 非現実的に狭いバンドを防止 |
 
@@ -244,10 +250,14 @@ Raw LightGBM Forecast
   -> Midday Transition Guard
   -> Localized Shape Spike Guard
   -> Intraday Residual Correction
-  -> Forecast Snapshots / Operational Calibration / Reports
+  -> Observed-hour Preservation (D0, when enabled)
+  -> Served Band Normalization / Lead-aware Interval Calibration
+  -> Published Forecasts / Issuance Snapshots / Reports
 ```
 
 現在の`run_batch.py`のstage名は`raw_lgbm`、`same_regime_level_calibrated`、`analog_adjusted`、`post_holiday_guarded`、`midday_guarded`、`localized_shape_guarded`、`pre_calibration`です。Intraday補正は`pre_calibration`の後に実行します。その内部の終段shape/ramp guardは`shapeGuardDeltaMw`、`rampGuardDeltaMw`として別記録するため、この変動を残差伝播だけに帰属させてはいけません。
+
+上記は配信順序であり、すべての証拠を最後に記録するという意味ではありません。同一runのoperational calibration snapshotはintraday補正中、観測済み時間の保存と最終配信bandの構築より前に記録します。published/issuance予測とsame-run stageは別の評価母集団として扱います。D-1予測は当日のintraday補正をスキップし、区間補正自体はq50を変更しません。
 
 | レイヤー | 実装 | 目的 |
 |---|---|---|
@@ -373,7 +383,7 @@ Raw LightGBM Forecast
 | 23時実績遅延 | 前日最終実績が欠ける | fallback source flagを確認 |
 | TEPCO ZIP 403 | GitHub Actions ETLが月次CSVを取得できない | ローカルETLまたは別runnerを使う |
 | 気象API障害 | 気温/湿度NaNまたはfallback過多 | `weather_source`比率を確認 |
-| モデルbatch再学習失敗(Dry rot) | データは増えるがモデルが再学習されない、または古い`.lgbm_model.pkl`で推論が続く | 最小学習量90日、モデル保存時刻、interval version、ETL学習ログを確認します。最新有効モデルで推論は継続しつつ、運用レポートに再学習失敗を記録します。 |
+| 要求した再学習の失敗 / 古いartifactのリスク | 明示要求または有効な定期学習が失敗する、あるいは承認contractとartifactの識別・鮮度が不一致 | まず`scheduled_challenger_training_enabled`、強制学習の意図、最低2,160有効学習行、学習・検証ログを確認します。現在の定期学習は意図的に無効で、Championが変わらないことだけでは失敗ではありません。有効なChampionを維持し、実際の学習失敗やartifact不一致を別記録します。 |
 
 ---
 
