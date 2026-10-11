@@ -173,43 +173,43 @@
     },
     {
       "ts": "2026-10-11T19:00:00+09:00",
-      "forecastMw": 27719.1,
-      "p95LowerMw": 26256.8,
-      "p95UpperMw": 29181.4,
-      "p99LowerMw": 24794.5,
-      "p99UpperMw": 30643.7
+      "forecastMw": 26983.9,
+      "p95LowerMw": 24193.9,
+      "p95UpperMw": 28873.3,
+      "p99LowerMw": 21403.9,
+      "p99UpperMw": 30762.7
     },
     {
       "ts": "2026-10-11T20:00:00+09:00",
-      "forecastMw": 26313.9,
-      "p95LowerMw": 24863.1,
-      "p95UpperMw": 27764.7,
-      "p99LowerMw": 23412.3,
-      "p99UpperMw": 29215.5
+      "forecastMw": 26217.2,
+      "p95LowerMw": 24754.9,
+      "p95UpperMw": 27679.5,
+      "p99LowerMw": 23292.6,
+      "p99UpperMw": 29141.8
     },
     {
       "ts": "2026-10-11T21:00:00+09:00",
-      "forecastMw": 25199.5,
-      "p95LowerMw": 23748.7,
-      "p95UpperMw": 26650.3,
-      "p99LowerMw": 22297.9,
-      "p99UpperMw": 28101.1
+      "forecastMw": 24940.2,
+      "p95LowerMw": 23477.9,
+      "p95UpperMw": 26402.5,
+      "p99LowerMw": 22015.6,
+      "p99UpperMw": 27864.8
     },
     {
       "ts": "2026-10-11T22:00:00+09:00",
-      "forecastMw": 23833.6,
-      "p95LowerMw": 22263.1,
-      "p95UpperMw": 25404.1,
-      "p99LowerMw": 20692.6,
-      "p99UpperMw": 26974.6
+      "forecastMw": 23607.6,
+      "p95LowerMw": 22156.8,
+      "p95UpperMw": 25058.4,
+      "p99LowerMw": 20706.0,
+      "p99UpperMw": 26509.2
     },
     {
       "ts": "2026-10-11T23:00:00+09:00",
-      "forecastMw": 22562.2,
-      "p95LowerMw": 20991.7,
-      "p95UpperMw": 24132.7,
-      "p99LowerMw": 19421.2,
-      "p99UpperMw": 25703.2
+      "forecastMw": 22492.9,
+      "p95LowerMw": 21042.1,
+      "p95UpperMw": 23943.7,
+      "p99LowerMw": 19591.3,
+      "p99UpperMw": 25394.5
     }
   ],
   "intervalCalibration": {
@@ -217,7 +217,7 @@
     "availability": "ok",
     "method": "lead_aware_conformal_target_width",
     "source": "finalized_actual_vs_issued_forecast",
-    "issuedAt": "2026-10-11T17:39:09+09:00",
+    "issuedAt": "2026-10-11T19:31:23+09:00",
     "artifactSha256": "c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3",
     "servingPolicyFingerprint": "ba4d14312e56659c46a87b8e9c13750b51e93334dcb59661b8d37e6f2d0647bc",
     "floorsMwByTimeBand": {},
@@ -225,12 +225,10 @@
       "availability": "ok",
       "application": "replace_symmetric_p95_half_width",
       "targetWidthsMwByHour": {
-        "18": 2319.7,
-        "19": 1462.3,
-        "20": 1450.8,
-        "21": 1450.8,
-        "22": 1570.5,
-        "23": 1570.5
+        "20": 1462.3,
+        "21": 1462.3,
+        "22": 1450.8,
+        "23": 1450.8
       },
       "detailsByHour": {
         "0": {
@@ -540,23 +538,40 @@
           "application": "native_fallback"
         },
         "18": {
-          "leadBand": "0_2h",
+          "leadBand": null,
           "timeBand": "late_afternoon",
           "groups": {
             "same_regime": {
-              "samples": 21,
-              "days": 7,
-              "quantileMw": 960.9
+              "samples": 0,
+              "days": 0,
+              "quantileMw": null
             },
             "all_regime": {
-              "samples": 55,
-              "days": 19,
-              "quantileMw": 2209.2
+              "samples": 0,
+              "days": 0,
+              "quantileMw": null
             }
           },
-          "application": "lead_target"
+          "application": "native_fallback"
         },
         "19": {
+          "leadBand": null,
+          "timeBand": "evening",
+          "groups": {
+            "same_regime": {
+              "samples": 0,
+              "days": 0,
+              "quantileMw": null
+            },
+            "all_regime": {
+              "samples": 0,
+              "days": 0,
+              "quantileMw": null
+            }
+          },
+          "application": "native_fallback"
+        },
+        "20": {
           "leadBand": "0_2h",
           "timeBand": "evening",
           "groups": {
@@ -573,70 +588,53 @@
           },
           "application": "lead_target"
         },
-        "20": {
-          "leadBand": "2_4h",
-          "timeBand": "evening",
-          "groups": {
-            "same_regime": {
-              "samples": 34,
-              "days": 7,
-              "quantileMw": 1182.1
-            },
-            "all_regime": {
-              "samples": 94,
-              "days": 19,
-              "quantileMw": 1381.7
-            }
-          },
-          "application": "lead_target"
-        },
         "21": {
-          "leadBand": "2_4h",
+          "leadBand": "0_2h",
           "timeBand": "evening",
           "groups": {
             "same_regime": {
-              "samples": 34,
+              "samples": 31,
               "days": 7,
-              "quantileMw": 1182.1
+              "quantileMw": 1392.7
             },
             "all_regime": {
-              "samples": 94,
+              "samples": 91,
               "days": 19,
-              "quantileMw": 1381.7
+              "quantileMw": 1045.0
             }
           },
           "application": "lead_target"
         },
         "22": {
-          "leadBand": "4_8h",
+          "leadBand": "2_4h",
           "timeBand": "evening",
           "groups": {
             "same_regime": {
-              "samples": 35,
+              "samples": 34,
               "days": 7,
-              "quantileMw": 1225.0
+              "quantileMw": 1182.1
             },
             "all_regime": {
-              "samples": 95,
+              "samples": 94,
               "days": 19,
-              "quantileMw": 1495.7
+              "quantileMw": 1381.7
             }
           },
           "application": "lead_target"
         },
         "23": {
-          "leadBand": "4_8h",
+          "leadBand": "2_4h",
           "timeBand": "evening",
           "groups": {
             "same_regime": {
-              "samples": 35,
+              "samples": 34,
               "days": 7,
-              "quantileMw": 1225.0
+              "quantileMw": 1182.1
             },
             "all_regime": {
-              "samples": 95,
+              "samples": 94,
               "days": 19,
-              "quantileMw": 1495.7
+              "quantileMw": 1381.7
             }
           },
           "application": "lead_target"
@@ -671,7 +669,9 @@
       13,
       14,
       15,
-      16
+      16,
+      17,
+      18
     ]
   }
 }
