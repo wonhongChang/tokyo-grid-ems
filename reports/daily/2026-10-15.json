@@ -1,0 +1,172 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-10-16T00:25:30+09:00",
+  "date": "2026-10-15",
+  "availability": "ok",
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "family": "lgbm_quantile_q50"
+  },
+  "summary": {
+    "comparableHours": 23,
+    "modelMaeMw": 339.6,
+    "tepcoMaeMw": 213.5,
+    "modelWapePct": 1.22,
+    "tepcoWapePct": 0.77,
+    "modelRmseMw": 431.3,
+    "tepcoRmseMw": 277.1,
+    "modelMaxErrorMw": 1297.6,
+    "tepcoMaxErrorMw": 700.0,
+    "modelMaxErrorHour": 8,
+    "tepcoMaxErrorHour": 12,
+    "maeGapMw": 126.1,
+    "wapeGapPct": 0.45,
+    "verdict": "tepco_better",
+    "modelWins": 8,
+    "tepcoWins": 15,
+    "ties": 0,
+    "modelAdvantageHours": 8,
+    "tepcoAdvantageHours": 15,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.348
+  },
+  "peak": {
+    "actual": {
+      "hour": 14,
+      "actualMw": 32430.0
+    },
+    "model": {
+      "hour": 14,
+      "forecastMw": 32299.4,
+      "errorAtActualPeakMw": -130.6,
+      "timeErrorHours": 0
+    },
+    "tepco": {
+      "hour": 16,
+      "forecastMw": 32540.0,
+      "errorAtActualPeakMw": -40.0,
+      "timeErrorHours": 2
+    }
+  },
+  "timeBands": [
+    {
+      "code": "overnight",
+      "label": "00-05",
+      "hours": 6,
+      "modelMaeMw": 342.8,
+      "tepcoMaeMw": 86.7,
+      "modelBiasMw": 145.9,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "morning_ramp",
+      "label": "06-10",
+      "hours": 5,
+      "modelMaeMw": 466.2,
+      "tepcoMaeMw": 274.0,
+      "modelBiasMw": 190.8,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "daytime",
+      "label": "11-15",
+      "hours": 5,
+      "modelMaeMw": 359.4,
+      "tepcoMaeMw": 344.0,
+      "modelBiasMw": -359.4,
+      "verdict": "close"
+    },
+    {
+      "code": "late_afternoon",
+      "label": "16-18",
+      "hours": 3,
+      "modelMaeMw": 228.8,
+      "tepcoMaeMw": 163.3,
+      "modelBiasMw": 228.8,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "evening",
+      "label": "19-23",
+      "hours": 4,
+      "modelMaeMw": 235.2,
+      "tepcoMaeMw": 202.5,
+      "modelBiasMw": -157.2,
+      "verdict": "close"
+    }
+  ],
+  "shape": {
+    "transitionHours": 22,
+    "modelDeltaMaeMw": 315.1,
+    "tepcoDeltaMaeMw": 207.3,
+    "maxActualRiseMw": 2460.0,
+    "maxActualDropMw": -1530.0,
+    "maxModelRiseMw": 3342.9,
+    "maxModelDropMw": -1739.4,
+    "largestDeltaMiss": {
+      "fromHour": 8,
+      "toHour": 9,
+      "actualDeltaMw": 2460.0,
+      "modelDeltaMw": 1042.4,
+      "tepcoDeltaMw": 2080.0,
+      "modelDeltaErrorMw": -1417.6,
+      "tepcoDeltaErrorMw": -380.0,
+      "modelAbsDeltaErrorMw": 1417.6,
+      "tepcoAbsDeltaErrorMw": 380.0
+    },
+    "largeShapeBreaks": []
+  },
+  "topMisses": [
+    {
+      "hour": 8,
+      "actualMw": 28080.0,
+      "modelForecastMw": 29377.6,
+      "tepcoForecastMw": 28590.0,
+      "modelErrorMw": 1297.6,
+      "tepcoErrorMw": 510.0,
+      "modelAbsErrorMw": 1297.6,
+      "tepcoAbsErrorMw": 510.0
+    },
+    {
+      "hour": 12,
+      "actualMw": 31530.0,
+      "modelForecastMw": 30885.0,
+      "tepcoForecastMw": 30830.0,
+      "modelErrorMw": -645.0,
+      "tepcoErrorMw": -700.0,
+      "modelAbsErrorMw": 645.0,
+      "tepcoAbsErrorMw": 700.0
+    },
+    {
+      "hour": 11,
+      "actualMw": 31710.0,
+      "modelForecastMw": 31103.5,
+      "tepcoForecastMw": 31600.0,
+      "modelErrorMw": -606.5,
+      "tepcoErrorMw": -110.0,
+      "modelAbsErrorMw": 606.5,
+      "tepcoAbsErrorMw": 110.0
+    }
+  ],
+  "insights": [
+    {
+      "code": "tepco_closer_overall",
+      "severity": "warning",
+      "title": "TEPCO was closer overall.",
+      "evidence": {
+        "maeGapMw": 126.1,
+        "wapeGapPct": 0.45
+      }
+    },
+    {
+      "code": "large_single_hour_miss",
+      "severity": "warning",
+      "title": "One or more hours had a large model error.",
+      "evidence": {
+        "hour": 8,
+        "modelAbsErrorMw": 1297.6
+      }
+    }
+  ]
+}
