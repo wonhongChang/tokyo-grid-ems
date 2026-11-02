@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-11-03T00:17:54+09:00",
+  "date": "2026-11-02",
+  "availability": "ok",
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "family": "lgbm_quantile_q50"
+  },
+  "summary": {
+    "comparableHours": 23,
+    "modelMaeMw": 394.3,
+    "tepcoMaeMw": 187.8,
+    "modelWapePct": 1.43,
+    "tepcoWapePct": 0.68,
+    "modelRmseMw": 530.1,
+    "tepcoRmseMw": 253.2,
+    "modelMaxErrorMw": 1196.4,
+    "tepcoMaxErrorMw": 580.0,
+    "modelMaxErrorHour": 15,
+    "tepcoMaxErrorHour": 11,
+    "maeGapMw": 206.5,
+    "wapeGapPct": 0.75,
+    "verdict": "tepco_better",
+    "modelWins": 10,
+    "tepcoWins": 13,
+    "ties": 0,
+    "modelAdvantageHours": 10,
+    "tepcoAdvantageHours": 13,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.435
+  },
+  "peak": {
+    "actual": {
+      "hour": 16,
+      "actualMw": 32450.0
+    },
+    "model": {
+      "hour": 17,
+      "forecastMw": 32465.8,
+      "errorAtActualPeakMw": -973.1,
+      "timeErrorHours": 1
+    },
+    "tepco": {
+      "hour": 16,
+      "forecastMw": 32900.0,
+      "errorAtActualPeakMw": 450.0,
+      "timeErrorHours": 0
+    }
+  },
+  "timeBands": [
+    {
+      "code": "overnight",
+      "label": "00-05",
+      "hours": 6,
+      "modelMaeMw": 58.6,
+      "tepcoMaeMw": 108.3,
+      "modelBiasMw": 9.1,
+      "verdict": "close"
+    },
+    {
+      "code": "morning_ramp",
+      "label": "06-10",
+      "hours": 5,
+      "modelMaeMw": 251.6,
+      "tepcoMaeMw": 194.0,
+      "modelBiasMw": 189.1,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "daytime",
+      "label": "11-15",
+      "hours": 5,
+      "modelMaeMw": 868.5,
+      "tepcoMaeMw": 300.0,
+      "modelBiasMw": -638.2,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "late_afternoon",
+      "label": "16-18",
+      "hours": 3,
+      "modelMaeMw": 392.7,
+      "tepcoMaeMw": 293.3,
+      "modelBiasMw": -295.5,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "evening",
+      "label": "19-23",
+      "hours": 4,
+      "modelMaeMw": 484.5,
+      "tepcoMaeMw": 80.0,
+      "modelBiasMw": -484.5,
+      "verdict": "tepco_better"
+    }
+  ],
+  "shape": {
+    "transitionHours": 22,
+    "modelDeltaMaeMw": 321.5,
+    "tepcoDeltaMaeMw": 196.4,
+    "maxActualRiseMw": 2630.0,
+    "maxActualDropMw": -1450.0,
+    "maxModelRiseMw": 2782.1,
+    "maxModelDropMw": -2175.6,
+    "largestDeltaMiss": {
+      "fromHour": 11,
+      "toHour": 12,
+      "actualDeltaMw": -760.0,
+      "modelDeltaMw": -2175.6,
+      "tepcoDeltaMw": -650.0,
+      "modelDeltaErrorMw": -1415.6,
+      "tepcoDeltaErrorMw": 110.0,
+      "modelAbsDeltaErrorMw": 1415.6,
+      "tepcoAbsDeltaErrorMw": 110.0
+    },
+    "largeShapeBreaks": []
+  },
+  "topMisses": [
+    {
+      "hour": 15,
+      "actualMw": 31790.0,
+      "modelForecastMw": 30593.6,
+      "tepcoForecastMw": 31830.0,
+      "modelErrorMw": -1196.4,
+      "tepcoErrorMw": 40.0,
+      "modelAbsErrorMw": 1196.4,
+      "tepcoAbsErrorMw": 40.0
+    },
+    {
+      "hour": 14,
+      "actualMw": 31670.0,
+      "modelForecastMw": 30618.3,
+      "tepcoForecastMw": 31580.0,
+      "modelErrorMw": -1051.7,
+      "tepcoErrorMw": -90.0,
+      "modelAbsErrorMw": 1051.7,
+      "tepcoAbsErrorMw": 90.0
+    },
+    {
+      "hour": 16,
+      "actualMw": 32450.0,
+      "modelForecastMw": 31476.9,
+      "tepcoForecastMw": 32900.0,
+      "modelErrorMw": -973.1,
+      "tepcoErrorMw": 450.0,
+      "modelAbsErrorMw": 973.1,
+      "tepcoAbsErrorMw": 450.0
+    }
+  ],
+  "insights": [
+    {
+      "code": "tepco_closer_overall",
+      "severity": "warning",
+      "title": "TEPCO was closer overall.",
+      "evidence": {
+        "maeGapMw": 206.5,
+        "wapeGapPct": 0.75
+      }
+    },
+    {
+      "code": "peak_level_underestimated",
+      "severity": "warning",
+      "title": "The actual peak level was higher than the model expected.",
+      "evidence": {
+        "errorAtActualPeakMw": -973.1
+      }
+    }
+  ]
+}
