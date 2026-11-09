@@ -2,7 +2,6 @@ import copy
 from datetime import timedelta
 import json
 from pathlib import Path
-import subprocess
 
 import pytest
 
@@ -308,12 +307,17 @@ def test_input_output_traversal_and_secret_roots_blocked(env):
     with pytest.raises(ValueError):service.config(out,'config.json',out)
 
 
-def test_docker_compose_production_lane_unchanged_and_shadow_isolation():
+def test_docker_compose_etl_scope_and_shadow_isolation():
     import yaml
     root=Path(__file__).parents[1]
     current=yaml.safe_load((root/'docker-compose.yml').read_bytes())
-    old=yaml.safe_load(subprocess.check_output(['git','show','HEAD:docker-compose.yml'],cwd=root))
-    assert current['services']['etl']==old['services']['etl']
+    etl=current['services']['etl']
+    assert 'env_file' not in etl
+    assert set(etl['volumes']) == {'./python:/app/python:ro', './config.yaml:/app/config.yaml:ro',
+                                  './data/raw:/app/data/raw', './web/public:/app/web/public'}
+    from python.eval.ai_daily_report import _REPORT_DOTENV_KEYS
+    assert set(etl['environment']) == _REPORT_DOTENV_KEYS | {
+        'TZ', 'TOKYO_GRID_EMS_FORCE_MODEL_TRAIN', 'TOKYO_GRID_EMS_APPROVE_RECOVERY_PROMOTION'}
     shadow=current['services']['intraday-shadow']
     assert shadow['read_only'] and shadow['restart']=='unless-stopped'
     assert 'env_file' not in shadow and set(shadow['environment'])=={'TZ'}

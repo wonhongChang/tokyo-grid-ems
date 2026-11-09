@@ -13,9 +13,21 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $StartedAt = Get-Date
-$LogRoot = Join-Path $RepoRoot $LogDir
-New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+$requested = if ([IO.Path]::IsPathRooted($LogDir)) { $LogDir } else { Join-Path $RepoRoot $LogDir }
+$LogRoot = [IO.Path]::GetFullPath($requested)
+$privateLogs = [IO.Path]::GetFullPath((Join-Path $RepoRoot "logs"))
+if ($LogRoot -ne $privateLogs -and -not $LogRoot.StartsWith($privateLogs + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "ETL transcripts must be stored under the private logs directory."
+}
 $LogPath = Join-Path $LogRoot ($StartedAt.ToString("yyyy-MM-dd_HH-mm-ss") + ".log")
+# Refuse links/junctions that would redirect the transcript into a public tree.
+for ($cursor = $LogPath; $cursor -ne $RepoRoot.Path; $cursor = [IO.Path]::GetDirectoryName($cursor)) {
+    $entry = Get-Item -LiteralPath $cursor -Force -ErrorAction SilentlyContinue
+    if ($entry -and ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "ETL transcripts cannot use a linked path."
+    }
+}
+New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
 
 function Invoke-Native {
     param(
@@ -52,7 +64,6 @@ function Write-LocalEtlStatus {
         status = $Status
         stage = $Stage
         message = $Message
-        logPath = $LogPath
         dataBranchPublished = $Published
         deployTriggered = $DeployTriggered
         intradayTriggered = $IntradayTriggered
@@ -485,7 +496,7 @@ try {
     Write-LocalEtlStatus -Status "ok" -Stage "completed" -Message "Local ETL completed" -Published $published -DeployTriggered $deployTriggered -IntradayTriggered $intradayTriggered
 }
 catch {
-    Write-LocalEtlStatus -Status "failed" -Stage "failed" -Message $_.Exception.Message
+    Write-LocalEtlStatus -Status "failed" -Stage "failed" -Message "Local ETL failed; check the private scheduler log."
     throw
 }
 finally {

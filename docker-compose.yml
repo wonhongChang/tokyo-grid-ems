@@ -3,14 +3,26 @@ services:
     build:
       context: .
     working_dir: /app
-    env_file:
-      - path: .env
-        required: false
     environment:
       TZ: Asia/Tokyo
-      OPENAI_API_KEY: ""
+      TOKYO_GRID_EMS_OPENAI_API_KEY: ${TOKYO_GRID_EMS_OPENAI_API_KEY:-}
+      OPENAI_DAILY_REPORT_MODEL: ${OPENAI_DAILY_REPORT_MODEL:-}
+      OPENAI_DAILY_REPORT_LOCALIZATION_MODEL: ${OPENAI_DAILY_REPORT_LOCALIZATION_MODEL:-}
+      OPENAI_DAILY_REPORT_TIMEOUT_SECONDS: ${OPENAI_DAILY_REPORT_TIMEOUT_SECONDS:-}
+      OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS: ${OPENAI_DAILY_REPORT_LOCALIZATION_TIMEOUT_SECONDS:-}
+      OPENAI_DAILY_REPORT_HTTP_ATTEMPTS: ${OPENAI_DAILY_REPORT_HTTP_ATTEMPTS:-}
+      OPENAI_DAILY_REPORT_RETRY_BASE_SECONDS: ${OPENAI_DAILY_REPORT_RETRY_BASE_SECONDS:-}
+      OPENAI_DAILY_REPORT_LOCALES: ${OPENAI_DAILY_REPORT_LOCALES:-}
+      OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN: ${OPENAI_DAILY_REPORT_MAX_CALLS_PER_RUN:-}
+      OPENAI_DAILY_REPORT_AUTO_ENABLE: ${OPENAI_DAILY_REPORT_AUTO_ENABLE:-}
+      OPENAI_DAILY_REPORT_LATEST_ONLY: ${OPENAI_DAILY_REPORT_LATEST_ONLY:-true}
+      TOKYO_GRID_EMS_FORCE_MODEL_TRAIN: ${TOKYO_GRID_EMS_FORCE_MODEL_TRAIN:-}
+      TOKYO_GRID_EMS_APPROVE_RECOVERY_PROMOTION: ${TOKYO_GRID_EMS_APPROVE_RECOVERY_PROMOTION:-}
     volumes:
-      - .:/app
+      - ./python:/app/python:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data/raw:/app/data/raw
+      - ./web/public:/app/web/public
     command: >
       sh -lc "unset OPENAI_API_KEY &&
       if [ -n \"$${TOKYO_GRID_EMS_OPENAI_API_KEY}\" ]; then echo '[OPENAI] project report key: set'; else echo '[OPENAI] project report key: missing; fallback report will be used'; fi &&

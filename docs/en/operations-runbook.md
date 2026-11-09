@@ -81,6 +81,8 @@ GitHub scheduled runs can be delayed or skipped. Do not classify one missed run 
 | `metrics/operational_replay.json` | Recent served performance | Period, segment error, and interval coverage reviewed |
 | `metrics/forecast_vintage_accuracy.json` | Fair TEPCO benchmark | `collecting` until complete 28/84-day windows; never treat collecting as a pass |
 
+The ETL container receives only the project report key and explicitly listed settings. Its mounts expose source/config read-only and only raw CSVs and generated public data read-write. Keep transcripts under the private `logs/` directory. Release security checks are mandatory even with `--skip-validation`: a rejected file, link or credential signature stops publication. Investigate privately, remove the offending input and rotate any exposed key before retrying; never bypass the check. Pages excludes the binary ETL cache/models; this does not make the separate data branch private or erase history.
+
 ## 5. Model Candidate Operations
 
 During v14-r2 stabilization, `scheduled_challenger_training_enabled: false` prevents Monday ETL from replacing the promoted artifact. New candidates must use an explicit builder and the fixed-origin recovery path. `validation_window_days: 28` remains a rolling evidence window; it does not mean the model is replaced every 28 days.

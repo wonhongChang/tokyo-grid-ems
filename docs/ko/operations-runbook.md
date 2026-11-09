@@ -81,6 +81,8 @@ GitHub 예약 실행은 지연되거나 누락될 수 있다. 한 번의 누락�
 | `metrics/operational_replay.json` | 최근 운영 성능 | 기간, 구간별 오차, 밴드 coverage 확인 |
 | `metrics/forecast_vintage_accuracy.json` | 공정한 TEPCO 벤치마크 | 28/84일 창이 찰 때까지 `collecting`; 이를 합격으로 해석하지 않음 |
 
+ETL 컨테이너에는 프로젝트 보고서 키와 명시한 설정만 전달합니다. 소스·설정은 읽기 전용이고, 원본 CSV와 공개 산출물 디렉터리만 읽기/쓰기로 연결합니다. transcript는 비공개 `logs/` 아래에 둡니다. `--skip-validation`도 공개 보안 검사를 생략하지 못합니다. 파일·링크·자격증명 패턴으로 배포가 차단되면 로컬에서 원인을 확인하고, 유출된 키는 교체한 뒤 재시도하세요. Pages에서 ETL 모델·캐시 바이너리를 제외해도 별도 data 브랜치가 비공개가 되거나 과거 기록이 삭제되지는 않습니다.
+
 ## 5. 모델 후보 운영
 
 v14-r2 안정화 중에는 `scheduled_challenger_training_enabled: false`가 월요일 ETL이 승격 artifact를 교체하지 못하게 한다. 새 후보는 명시적 builder와 고정 시점 복구 경로로만 만든다. `validation_window_days: 28`은 최근 확정 28일을 쓰는 rolling 근거이며, 28일마다 모델을 교체한다는 뜻이 아니다.

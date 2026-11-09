@@ -34,7 +34,7 @@ def _repo_full_name() -> str:
         match = re.search(pattern, remote)
         if match:
             return f"{match.group('owner')}/{match.group('repo')}"
-    raise RuntimeError(f"Cannot infer GitHub repository from origin URL: {remote}")
+    raise RuntimeError("Cannot infer GitHub repository from origin URL")
 
 
 def _token_from_git_credential() -> str:
@@ -78,6 +78,8 @@ def dispatch(workflow: str, ref: str) -> None:
             "or ensure git credential manager can provide a GitHub token."
         )
 
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo) or not re.fullmatch(r"[\w.-]+\.ya?ml", workflow):
+        raise ValueError("Invalid GitHub repository or workflow name")
     url = f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches"
     body = json.dumps({"ref": ref}).encode("utf-8")
     request = urllib.request.Request(
@@ -92,13 +94,19 @@ def dispatch(workflow: str, ref: str) -> None:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        # A redirect must not forward the GitHub Authorization header.
+        opener = urllib.request.build_opener(_NoRedirect())
+        with opener.open(request, timeout=30) as response:
             if response.status != 204:
                 raise RuntimeError(f"Unexpected GitHub status: {response.status}")
     except urllib.error.HTTPError as exc:
-        detail = exc.read(500).decode("utf-8", errors="replace")
-        raise RuntimeError(f"GitHub workflow dispatch failed: HTTP {exc.code} {detail}") from exc
+        raise RuntimeError(f"GitHub workflow dispatch failed: HTTP {exc.code}") from None
     print(f"[WORKFLOW] Dispatched {workflow} on {repo}@{ref}")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def main() -> None:

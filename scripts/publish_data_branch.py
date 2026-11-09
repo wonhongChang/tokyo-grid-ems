@@ -20,6 +20,7 @@ JST = ZoneInfo("Asia/Tokyo")
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.public_artifact_security import check_tree, prepare
 
 def _run(args: list[str], cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, cwd=cwd, text=True, check=True)
@@ -72,9 +73,9 @@ def _copy_public_to_worktree(worktree: Path) -> None:
     for child in PUBLIC_DIR.iterdir():
         target = worktree / child.name
         if child.is_dir():
-            shutil.copytree(child, target)
+            shutil.copytree(child, target, symlinks=True)
         else:
-            shutil.copy2(child, target)
+            shutil.copy2(child, target, follow_symlinks=False)
 
 
 def _validate_public(min_yesterday_hours: int = 24) -> None:
@@ -91,6 +92,7 @@ def publish(
 ) -> None:
     if not PUBLIC_DIR.exists():
         raise FileNotFoundError(f"Missing generated public directory: {PUBLIC_DIR}")
+    check_tree(PUBLIC_DIR, scan_text=False)
     if not skip_validation:
         _validate_public(min_yesterday_hours=min_yesterday_hours)
 
@@ -111,8 +113,10 @@ def publish(
             _run(["git", "worktree", "add", "--orphan", "-b", DATA_BRANCH, str(worktree)])
 
         try:
+            check_tree(worktree, worktree=True, scan_text=False)
             _clear_directory(worktree)
             _copy_public_to_worktree(worktree)
+            prepare(worktree, worktree=True)
             _run(["git", "add", "-A"], cwd=worktree)
 
             diff = subprocess.run(

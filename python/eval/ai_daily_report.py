@@ -26,6 +26,13 @@ SCHEMA_VERSION = "1.0.0"
 PROMPT_VERSION = "fallback_rules_v1"
 OPENAI_PROMPT_VERSION = "openai_ops_report_v5"
 PROJECT_OPENAI_API_KEY_ENV = "TOKYO_GRID_EMS_OPENAI_API_KEY"
+_REPORT_DOTENV_KEYS = {PROJECT_OPENAI_API_KEY_ENV} | {
+    "OPENAI_DAILY_REPORT_" + setting for setting in (
+        "MODEL", "LOCALIZATION_MODEL", "TIMEOUT_SECONDS", "LOCALIZATION_TIMEOUT_SECONDS",
+        "HTTP_ATTEMPTS", "RETRY_BASE_SECONDS", "LOCALES", "MAX_CALLS_PER_RUN",
+        "AUTO_ENABLE", "LATEST_ONLY",
+    )
+}
 OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALIZATION_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_LOCALES = "ko,en,ja"
@@ -678,7 +685,7 @@ def _load_local_dotenv(public_dir: Path) -> None:
             key, value = raw.split("=", 1)
             key = key.strip().lstrip("\ufeff")
             value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
+            if key in _REPORT_DOTENV_KEYS and key not in os.environ:
                 os.environ[key] = value
         return
 

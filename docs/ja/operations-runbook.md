@@ -81,6 +81,8 @@ GitHubのscheduleは遅延・欠落する場合があります。1回の欠落�
 | `metrics/operational_replay.json` | 最近のserved性能 | 期間、segment誤差、interval coverage |
 | `metrics/forecast_vintage_accuracy.json` | 公平なTEPCO benchmark | 28/84日window完成までは`collecting`。合格と解釈しない |
 
+ETL コンテナにはプロジェクトのレポート用キーと明示した設定だけを渡します。ソースと設定は読み取り専用で、元 CSV と公開成果物のディレクトリのみ読み書き可能です。実行ログは非公開の `logs/` 配下に保存します。`--skip-validation` でも公開時のセキュリティ検査は無効になりません。ファイル・リンク・認証情報のパターンで停止した場合はローカルで原因を確認し、流出したキーを更新してから再実行してください。Pages からモデル・キャッシュのバイナリを除外しても、別の data ブランチが非公開になったり履歴が消えたりするわけではありません。
+
 ## 5. モデル候補運用
 
 v14-r2安定化中は`scheduled_challenger_training_enabled: false`により、月曜日ETLが昇格artifactを置き換えないようにします。新候補は明示的builderとfixed-origin復旧経路だけで作成します。`validation_window_days: 28`は直近確定28日のrolling証拠であり、28日ごとのモデル交換ではありません。

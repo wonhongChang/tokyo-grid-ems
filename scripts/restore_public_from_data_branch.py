@@ -12,6 +12,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_DIR = REPO_ROOT / "web" / "public"
 DATA_BRANCH = "data"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.public_artifact_security import check_tree, prepare
 
 
 def _run(args: list[str], cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
@@ -53,21 +57,26 @@ def restore() -> None:
     if not _has_remote_data_branch():
         print("[DATA] No origin/data branch found; keeping current web/public")
         PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
+        prepare(PUBLIC_DIR)
         return
 
     with tempfile.TemporaryDirectory(prefix="tokyo-grid-data-restore-") as tmp:
         worktree = Path(tmp) / "data-wt"
         _run(["git", "worktree", "add", "--detach", str(worktree), f"origin/{DATA_BRANCH}"])
         try:
+            check_tree(worktree, worktree=True)
+            if PUBLIC_DIR.exists():
+                check_tree(PUBLIC_DIR, scan_text=False)
             _clear_directory(PUBLIC_DIR)
             for child in worktree.iterdir():
                 if child.name == ".git":
                     continue
                 target = PUBLIC_DIR / child.name
                 if child.is_dir():
-                    shutil.copytree(child, target)
+                    shutil.copytree(child, target, symlinks=True)
                 else:
-                    shutil.copy2(child, target)
+                    shutil.copy2(child, target, follow_symlinks=False)
+            prepare(PUBLIC_DIR)
             print("[DATA] Restored web/public from origin/data")
         finally:
             _run(["git", "worktree", "remove", str(worktree), "--force"])
