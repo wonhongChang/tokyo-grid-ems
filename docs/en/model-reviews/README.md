@@ -8,6 +8,7 @@ Languages: [한국어](../../ko/model-reviews/README.md) / [日本語](../../ja/
 
 ## Reviews
 
+- [2026-09-21 holiday and post-change review](model-review-2026-09-21.md) - finalized September 20 and September 21 through hour 18; separated morning underprediction, afternoon overprediction and policy-compatible interval history loss. No additional model change.
 - [2026-09-20 weekday and weekend forecast review](model-review-2026-09-20.md) - includes actuals through hour 20. Weekday errors decreased but the TEPCO gap remains; raw errors, residual side effects and partial interval-calibration activation were identified. Model unchanged.
 - [2026-09-16 evening forecast and report review](model-review-2026-09-16.md) - completed; weather sensitivity averaging and cooler-day prior limits rejected for regressions, model retained. Repaired unsupported guard recommendations and multilingual repair text in AI reports.
 - [2026-09-15 warm-to-cool forecast review](model-review-2026-09-15.md) - investigation and candidate tests complete; model unchanged. Afternoon overprediction and weather-error effects confirmed; global feature-view bound expansion and standalone morning guard relaxation rejected for regression risk.
