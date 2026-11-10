@@ -1,0 +1,275 @@
+{
+  "uid": "tgems-quality",
+  "title": "Champion Quality",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": [
+    "tokyo-grid-ems"
+  ],
+  "timezone": "Asia/Tokyo",
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Latest finalized published daily MAE",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "tgems_quality_mae_mw and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1) and on() (tgems_projector_success == 1) and on() (tgems_quality_available == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Latest finalized published daily RMSE",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "tgems_quality_rmse_mw and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1) and on() (tgems_projector_success == 1) and on() (tgems_quality_available == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Published WAPE (ratio)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "tgems_quality_wape_ratio and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1) and on() (tgems_projector_success == 1) and on() (tgems_quality_available == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Comparable samples",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "tgems_quality_samples and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1) and on() (tgems_projector_success == 1) and on() (tgems_quality_available == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Time-band bias (MW)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "tgems_quality_band_bias_mw and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1) and on() (tgems_projector_success == 1) and on() (tgems_quality_available == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Time-band MAE (MW)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "tgems_quality_band_mae_mw and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1) and on() (tgems_projector_success == 1) and on() (tgems_quality_available == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Quality target age (since midnight JST)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "(time() - tgems_quality_target_timestamp_seconds) and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1) and on() (tgems_projector_success == 1) and on() (tgems_quality_available == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Finalized quality target (public data revision)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "(1000 * tgems_quality_target_timestamp_seconds) and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1) and on() (tgems_projector_success == 1) and on() (tgems_quality_available == 1)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsLocal",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

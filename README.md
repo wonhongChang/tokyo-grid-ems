@@ -177,6 +177,7 @@ See [Ops Report configuration and cost controls](docs/en/ops-report-tab.md) for 
 - [Model operations specification](docs/en/model-operations-spec.md)
 - [Model promotion and degraded Champion policy](docs/en/model-promotion-policy.md)
 - [Operations runbook](docs/en/operations-runbook.md)
+- [Public observability runbook (Korean)](ops/observability/README.md): an independent OpenTelemetry reader feeds local Grafana dashboards from published artifacts; it does not enable tracing in scheduled ETL.
 - [Model review archive](docs/en/model-reviews/README.md)
 - Model review tooling: [evidence bundle and read-only CLI](docs/en/review-bundle-cli.md), [validation summary](docs/en/review-bundle-validation.md)
 - Experimental [learned intraday challenger and isolated shadow evaluation](docs/en/learned-intraday-challenger.md)

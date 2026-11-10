@@ -1,0 +1,147 @@
+{
+  "uid": "tgems-forecast",
+  "title": "Forecast Pipeline",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": [
+    "tokyo-grid-ems"
+  ],
+  "timezone": "Asia/Tokyo",
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Model load, features, inference p95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "histogram_quantile(0.95, sum by(le,span_name)(rate(tgems_stage_duration_seconds_bucket{span_name=~\"model.*|features.build\"}[1h])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Calibration and issue latency p95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "histogram_quantile(0.95, sum by(le,span_name)(rate(tgems_stage_duration_seconds_bucket{span_name=~\"forecast.issue|forecast.calibrate|forecast.intraday\"}[1h])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Forecast writes, retention and freeze",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "sum by(span_name,outcome)(increase(tgems_stage_calls_total{span_name=~\"forecast.publish|snapshot.retain|origin.record|publication.freeze\"}[1h]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Forecast issue traces",
+      "type": "table",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tgems-tempo"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tgems-tempo"
+          },
+          "queryType": "traceql",
+          "query": "{ resource.service.name != \"tgems-fixture\" && name = \"forecast.issue\" }",
+          "limit": 20
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

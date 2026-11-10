@@ -1,0 +1,300 @@
+{
+  "uid": "tgems-health",
+  "title": "Observability Health",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": [
+    "tokyo-grid-ems"
+  ],
+  "timezone": "Asia/Tokyo",
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Scrape targets",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "up{job=~\"collector|pipeline|tempo|grafana|prometheus\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Trace export queue",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "otelcol_exporter_queue_size"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Trace export failures / second",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "rate(otelcol_exporter_send_failed_spans[5m])"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Prometheus blocks on disk",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "prometheus_tsdb_storage_blocks_bytes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Projector last read succeeded",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "tgems_projector_success and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Finalized quality available",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "tgems_quality_available and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Reader delivery state",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "(((1 + (time() - tgems_projector_timestamp_seconds < bool 90)) * on() tgems_projector_success) and on() (time() - tgems_projector_timestamp_seconds < 180) and on() (up{job=\"pipeline\"} == 1)) or on() vector(-1)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Unavailable",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "No recent delivery",
+                  "color": "orange"
+                },
+                "0": {
+                  "text": "Source read failed",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "Delayed",
+                  "color": "yellow"
+                },
+                "2": {
+                  "text": "Receiving",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Last successful public read received (24h)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tgems-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tgems-prom"
+          },
+          "expr": "1000 * max_over_time((tgems_projector_timestamp_seconds and on() (tgems_projector_success == 1))[24h:1m])",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsLocal",
+          "noValue": "Unavailable"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

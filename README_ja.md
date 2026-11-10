@@ -177,6 +177,7 @@ Pythonだけでローカル成果物を再生成する場合は、`requirements.
 - [モデル運用仕様](docs/ja/model-operations-spec.md)
 - [モデル昇格および性能低下Championポリシー](docs/ja/model-promotion-policy.md)
 - [運用 Runbook](docs/ja/operations-runbook.md)
+- [公開データの監視ガイド（韓国語）](ops/observability/README.md): 独立した OpenTelemetry リーダーが公開済みデータをローカルの Grafana に表示します。定期 ETL のトレースは有効になりません。
 - [モデルレビュー記録](docs/ja/model-reviews/README.md)
 - モデルレビュー用ツール: [根拠パッケージと読み取り専用 CLI](docs/ja/review-bundle-cli.md)、[検証概要](docs/ja/review-bundle-validation.md)
 - 実験用 [学習型 intraday challenger と分離された shadow 評価](docs/ja/learned-intraday-challenger.md)

@@ -1,0 +1,9 @@
+# Optional second file ONLY for the explicitly invoked CLI project.
+services:
+  etl:
+    image: tgems-manual-observed-etl:1
+    build: {context: ., dockerfile: ops/observability/manual-etl.Dockerfile}
+    environment: {TGEMS_OTEL_ENDPOINT: "http://host.docker.internal:4318"}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./logs/observability:/app/logs/observability

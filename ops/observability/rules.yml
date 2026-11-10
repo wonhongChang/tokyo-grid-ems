@@ -1,0 +1,11 @@
+groups:
+  - name: diagnostic-health
+    rules:
+      - alert: ObservabilityTargetUnavailable
+        expr: up == 0
+        for: 2m
+        annotations: {summary: "Observability target unavailable; forecast state is unknown."}
+      - alert: PublicReaderMissing
+        expr: absent(tgems_projector_timestamp_seconds) or time() - tgems_projector_timestamp_seconds > 180
+        for: 3m
+        annotations: {summary: "No recent public projection; do not interpret this as model failure."}

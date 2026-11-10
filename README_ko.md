@@ -177,6 +177,7 @@ Python만으로 로컬 산출물을 다시 만들려면 `requirements.txt`를 �
 - [모델 운영 명세](docs/ko/model-operations-spec.md)
 - [모델 승격 및 성능 저하 Champion 정책](docs/ko/model-promotion-policy.md)
 - [운영 Runbook](docs/ko/operations-runbook.md)
+- [공개 관측 운영 가이드](ops/observability/README.md): 독립 OpenTelemetry Reader가 공개 산출물을 로컬 Grafana에 표시합니다. 예약 ETL의 계측을 켜지는 않습니다.
 - [모델 점검 기록](docs/ko/model-reviews/README.md)
 - 모델 점검 도구: [근거 패키지와 읽기 전용 CLI](docs/ko/review-bundle-cli.md), [검증 요약](docs/ko/review-bundle-validation.md)
 - 실험용 [학습형 intraday challenger와 격리된 shadow 평가](docs/ko/learned-intraday-challenger.md)
