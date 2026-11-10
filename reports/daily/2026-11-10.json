@@ -1,0 +1,172 @@
+{
+  "schemaVersion": "1.0.0",
+  "timezone": "Asia/Tokyo",
+  "generatedAt": "2026-11-11T00:15:31+09:00",
+  "date": "2026-11-10",
+  "availability": "ok",
+  "model": {
+    "name": "lgbm_quantile_q50_intraday_residual",
+    "family": "lgbm_quantile_q50"
+  },
+  "summary": {
+    "comparableHours": 23,
+    "modelMaeMw": 575.4,
+    "tepcoMaeMw": 233.9,
+    "modelWapePct": 1.78,
+    "tepcoWapePct": 0.72,
+    "modelRmseMw": 669.3,
+    "tepcoRmseMw": 300.4,
+    "modelMaxErrorMw": 1107.7,
+    "tepcoMaxErrorMw": 900.0,
+    "modelMaxErrorHour": 22,
+    "tepcoMaxErrorHour": 14,
+    "maeGapMw": 341.5,
+    "wapeGapPct": 1.06,
+    "verdict": "tepco_better",
+    "modelWins": 7,
+    "tepcoWins": 16,
+    "ties": 0,
+    "modelAdvantageHours": 7,
+    "tepcoAdvantageHours": 16,
+    "equalHours": 0,
+    "modelAdvantageRate": 0.304
+  },
+  "peak": {
+    "actual": {
+      "hour": 17,
+      "actualMw": 37510.0
+    },
+    "model": {
+      "hour": 17,
+      "forecastMw": 36841.7,
+      "errorAtActualPeakMw": -668.3,
+      "timeErrorHours": 0
+    },
+    "tepco": {
+      "hour": 17,
+      "forecastMw": 37410.0,
+      "errorAtActualPeakMw": -100.0,
+      "timeErrorHours": 0
+    }
+  },
+  "timeBands": [
+    {
+      "code": "overnight",
+      "label": "00-05",
+      "hours": 6,
+      "modelMaeMw": 808.5,
+      "tepcoMaeMw": 126.7,
+      "modelBiasMw": -808.5,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "morning_ramp",
+      "label": "06-10",
+      "hours": 5,
+      "modelMaeMw": 540.9,
+      "tepcoMaeMw": 244.0,
+      "modelBiasMw": -452.2,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "daytime",
+      "label": "11-15",
+      "hours": 5,
+      "modelMaeMw": 163.0,
+      "tepcoMaeMw": 414.0,
+      "modelBiasMw": -118.3,
+      "verdict": "model_better"
+    },
+    {
+      "code": "late_afternoon",
+      "label": "16-18",
+      "hours": 3,
+      "modelMaeMw": 648.5,
+      "tepcoMaeMw": 186.7,
+      "modelBiasMw": -648.5,
+      "verdict": "tepco_better"
+    },
+    {
+      "code": "evening",
+      "label": "19-23",
+      "hours": 4,
+      "modelMaeMw": 729.4,
+      "tepcoMaeMw": 192.5,
+      "modelBiasMw": -729.4,
+      "verdict": "tepco_better"
+    }
+  ],
+  "shape": {
+    "transitionHours": 22,
+    "modelDeltaMaeMw": 261.9,
+    "tepcoDeltaMaeMw": 215.5,
+    "maxActualRiseMw": 3120.0,
+    "maxActualDropMw": -1800.0,
+    "maxModelRiseMw": 3211.1,
+    "maxModelDropMw": -2220.0,
+    "largestDeltaMiss": {
+      "fromHour": 14,
+      "toHour": 15,
+      "actualDeltaMw": -60.0,
+      "modelDeltaMw": 604.6,
+      "tepcoDeltaMw": 390.0,
+      "modelDeltaErrorMw": 664.6,
+      "tepcoDeltaErrorMw": 450.0,
+      "modelAbsDeltaErrorMw": 664.6,
+      "tepcoAbsDeltaErrorMw": 450.0
+    },
+    "largeShapeBreaks": []
+  },
+  "topMisses": [
+    {
+      "hour": 22,
+      "actualMw": 31340.0,
+      "modelForecastMw": 30232.3,
+      "tepcoForecastMw": 31190.0,
+      "modelErrorMw": -1107.7,
+      "tepcoErrorMw": -150.0,
+      "modelAbsErrorMw": 1107.7,
+      "tepcoAbsErrorMw": 150.0
+    },
+    {
+      "hour": 4,
+      "actualMw": 25100.0,
+      "modelForecastMw": 24060.9,
+      "tepcoForecastMw": 24870.0,
+      "modelErrorMw": -1039.1,
+      "tepcoErrorMw": -230.0,
+      "modelAbsErrorMw": 1039.1,
+      "tepcoAbsErrorMw": 230.0
+    },
+    {
+      "hour": 0,
+      "actualMw": 25540.0,
+      "modelForecastMw": 24556.6,
+      "tepcoForecastMw": 25490.0,
+      "modelErrorMw": -983.4,
+      "tepcoErrorMw": -50.0,
+      "modelAbsErrorMw": 983.4,
+      "tepcoAbsErrorMw": 50.0
+    }
+  ],
+  "insights": [
+    {
+      "code": "tepco_closer_overall",
+      "severity": "warning",
+      "title": "TEPCO was closer overall.",
+      "evidence": {
+        "maeGapMw": 341.5,
+        "wapeGapPct": 1.06
+      }
+    },
+    {
+      "code": "afternoon_plateau_underestimated",
+      "severity": "warning",
+      "title": "Late afternoon demand stayed higher than the model expected.",
+      "evidence": {
+        "band": "16-18",
+        "modelBiasMw": -648.5
+      }
+    }
+  ]
+}
