@@ -88,8 +88,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 | Deploy Only dispatch fails | No GitHub token available locally | Set `GH_TOKEN` or `GITHUB_TOKEN`, sign in with GitHub CLI, or trigger `Deploy Only` manually in Actions |
 | Intraday dispatch fails after local ETL | No GitHub token available locally, or GitHub Actions dispatch failed | Run `Intraday Update` manually in Actions, then check `logs/local_etl/*.log` |
 | OpenAI report falls back | API key missing, invalid, or timed out | Check `.env` and `logs/local_etl/*.log`, then rerun local ETL |
-| Chart shows stale data | `data` branch was pushed but Pages was not deployed | Run `Deploy Only` manually |
+| Chart shows stale data | `data` branch was pushed but Pages was not deployed | Verify the latest `data` status, then start a fresh `Deploy Only` run. Do not rerun ETL to redeploy existing data. |
 | `Permission denied` on data push | Git credentials are not available on the host | Re-authenticate Git for GitHub on Windows |
+
+All three Pages workflows confirm that this run attempt's exact artifact is listed before deploying. If the lookup times out, the workflow stops without retrying ETL or creating a Pages deployment.
 
 ## Vite Base Path
 

@@ -88,8 +88,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 | Deploy Only 호출 실패 | 로컬에서 GitHub token을 찾지 못함 | `GH_TOKEN` 또는 `GITHUB_TOKEN` 설정, GitHub CLI 로그인, 또는 Actions에서 `Deploy Only` 수동 실행 |
 | 로컬 ETL 후 Intraday 호출 실패 | 로컬 GitHub token 없음 또는 GitHub Actions dispatch 실패 | Actions에서 `Intraday Update`를 수동 실행하고 `logs/local_etl/*.log` 확인 |
 | OpenAI 리포트가 fallback | API 키 누락, 인증 실패, timeout | `.env`와 `logs/local_etl/*.log` 확인 후 로컬 ETL 재실행 |
-| 차트가 오래된 데이터 표시 | `data` 브랜치는 갱신됐지만 Pages 배포가 안 됨 | `Deploy Only` 수동 실행 |
+| 차트가 오래된 데이터 표시 | `data` 브랜치는 갱신됐지만 Pages 배포가 안 됨 | 최신 `data` 상태를 확인하고 `Deploy Only`를 새로 실행. 배포를 위해 ETL을 다시 돌리지 않음 |
 | data push 권한 오류 | 호스트 Git 인증 없음 | Windows GitHub 인증 재설정 |
+
+세 Pages 워크플로는 현재 실행 시도의 아티팩트 이름과 ID가 조회된 뒤 배포합니다. 조회 시간이 초과되면 ETL을 재실행하거나 Pages 배포를 생성하지 않고 종료합니다.
 
 ## Vite Base Path
 

@@ -88,8 +88,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\unregister_local_etl
 | Deploy Only 呼び出し失敗 | ローカルで GitHub token が見つからない | `GH_TOKEN` または `GITHUB_TOKEN` を設定、GitHub CLI にログイン、または Actions で `Deploy Only` を手動実行 |
 | ローカル ETL 後の Intraday 呼び出し失敗 | ローカル GitHub token がない、または GitHub Actions dispatch に失敗 | Actions で `Intraday Update` を手動実行し、`logs/local_etl/*.log` を確認 |
 | OpenAI レポートが fallback | API キー不足、認証失敗、timeout | `.env` と `logs/local_etl/*.log` を確認して再実行 |
-| チャートが古い | `data` ブランチは更新済みだが Pages が未デプロイ | `Deploy Only` を手動実行 |
+| チャートが古い | `data` ブランチは更新済みだが Pages が未デプロイ | 最新の `data` の状態を確認して `Deploy Only` を新規実行。再デプロイのために ETL をやり直さない |
 | data push 権限エラー | ホスト側 Git 認証がない | Windows の GitHub 認証を再設定 |
+
+Pages の各ワークフローは、その実行試行のアーティファクト名と ID を確認してからデプロイします。照会のタイムアウト時は ETL を再実行せず、Pages のデプロイも作成しません。
 
 ## Vite Base Path
 
