@@ -417,6 +417,14 @@ export interface AIDailyReportDiagnosticContext {
 }
 
 export interface AIDailyReport {
+  operationsBrief?: {
+    version: string
+    date: string
+    language: string
+    fingerprint: string
+    advisoryStatus: string
+    nodes: unknown[]
+  }
   schemaVersion: string
   reportType: 'ai_daily_operation_report'
   timezone: string

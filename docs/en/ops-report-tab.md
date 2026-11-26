@@ -1,5 +1,13 @@
 # Ops Report Tab
 
+Newly generated reports for JST targets from 2026-11-26 use a short operational summary, expandable evidence, and a research worksheet only when warranted. Signed error means forecast minus observed demand. The published curve and a later recalculation are not consecutive stages of one issuance.
+
+The dated JSON keeps its legacy fields. A compatible `operationsBrief` selects the new view exclusively; older reports keep their original presentation. The date index and the selected report are revalidated on entry or selection, not continuously polled. Python supplies all required content. When enabled and eligible, one optional GPT-6 Luna selection (none / 4000) is shared across the report languages. An unavailable or empty selection does not suppress the report.
+
+## Reading older reports
+
+The sections below describe the archived narrative format.
+
 The Ops Report tab provides a daily operational explanation of the previous day's power-demand forecast. The Validation tab focuses on quantitative metrics such as MAE, WAPE, and RMSE; the Ops Report tab explains **why the errors happened**, **which calibration layers may be related**, and **what should be reviewed next**.
 
 ---

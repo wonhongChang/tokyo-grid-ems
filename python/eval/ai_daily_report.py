@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -4621,6 +4622,8 @@ def _openai_request_json(
     timeout_seconds: int,
     label: str,
     model: str,
+    *,
+    attempt_limit: int | None = None,
 ) -> dict:
     attempts = max(
         1,
@@ -4629,6 +4632,8 @@ def _openai_request_json(
             OPENAI_DEFAULT_HTTP_ATTEMPTS,
         ),
     )
+    if attempt_limit is not None:
+        attempts = min(attempts, max(1, attempt_limit))
     retry_base_seconds = max(
         0,
         _env_int(
@@ -8035,6 +8040,37 @@ def build_ai_daily_reports(
     }, reports
 
 
+# First unpublished JST target at the approved migration. Earlier archives keep their layout.
+V8_FIRST_NEW_TARGET = "2026-11-26"
+
+
+def _restore_missing_korean_alias(root: Path, target: str) -> None:
+    """Repair an interrupted publication without replacing either existing copy."""
+    local, alias = root / "ko" / f"{target}.json", root / f"{target}.json"
+    if local.exists() == alias.exists():
+        return
+    src, dst = (local, alias) if local.exists() else (alias, local)
+    report = _load_existing_report(src, "ko")
+    if not report or report.get("date") != target:
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=dst.parent, delete=False, suffix=".tmp") as f:
+        tmp = Path(f.name)
+        try:
+            f.write(src.read_bytes())
+        except BaseException:
+            f.close()
+            tmp.unlink(missing_ok=True)
+            raise
+    try:
+        # An exclusive link publishes a complete independent copy, not a link to src.
+        os.link(tmp, dst)
+    except FileExistsError:
+        pass
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def build_ai_daily_reports_multilingual(
     public_dir: Path,
     generated_at: str,
@@ -8046,7 +8082,16 @@ def build_ai_daily_reports_multilingual(
     openai_budget: dict[str, int] | None = None,
     openai_locales: set[str] | None = None,
     openai_latest_only: bool = True,
+    report_layout: str = "auto",
 ) -> tuple[dict[str, dict], dict[str, list[dict]], dict[str, int]]:
+    if report_layout not in ("auto","v8","legacy"):
+        raise ValueError("unknown report layout")
+    # Both existing writers treat the returned rows as their write set. Keep a full
+    # inventory for indexes, but never pass cached dates back for reserialization.
+    immutable = skip_existing and existing_report_root is not None and (
+        report_layout == "v8" or (report_layout == "auto" and generated_at[:10] >= V8_FIRST_NEW_TARGET)
+    )
+    cached_paths: set[tuple[str, str]] = set()
     _load_local_dotenv(public_dir)
     daily_index = _load_json(public_dir / "reports" / "daily" / "index.json")
     if not daily_index:
@@ -8097,22 +8142,44 @@ def build_ai_daily_reports_multilingual(
         for language in languages
     }
     for date_iso in dates:
+        # Release boundary, not an analytic threshold. Never backfill v8 into an archive.
+        rollback = report_layout == "auto" and os.getenv("TOKYO_GRID_EMS_DISABLE_REPORT_V8") == "1"
+        v8 = report_layout == "v8" or (report_layout == "auto" and not rollback and date_iso >= V8_FIRST_NEW_TARGET)
+        preserve_archive = report_layout == "auto" and generated_at[:10] >= V8_FIRST_NEW_TARGET
+        if immutable and "ko" in languages and date_iso == latest_date and existing_report_root == public_dir / "reports/ai/daily":
+            try:
+                _restore_missing_korean_alias(existing_report_root, date_iso)
+            except OSError as exc:
+                print(f"[WARN] Korean report alias repair skipped: {type(exc).__name__}")
         date_reports: dict[str, dict] = {}
         missing_reports: dict[str, dict] = {}
 
         for language in languages:
             existing_report = None
             if skip_existing and existing_report_root is not None:
+                archived_path = existing_report_root / language / f"{date_iso}.json"
+                if (immutable and language=="ko" and not archived_path.exists()
+                    and (existing_report_root / f"{date_iso}.json").exists()):
+                    # Protect historical root-only archives from both existing writers.
+                    continue
+                if immutable and archived_path.exists():
+                    cached_paths.add((language,date_iso))
                 existing_report = _load_existing_report(
-                    existing_report_root / language / f"{date_iso}.json",
+                    archived_path,
                     language,
                 )
+                if immutable and (language,date_iso) in cached_paths and (
+                    not existing_report or existing_report.get("date") != date_iso
+                ):
+                    print(f"[WARN] Skipping inconsistent archived report: {language}/{date_iso}")
+                    continue
             if existing_report:
                 existing_provider = (
                     (existing_report.get("generator") or {}).get("provider")
                 )
                 should_retry_latest_fallback = (
-                    bool(api_key)
+                    not (v8 or preserve_archive or existing_report.get("operationsBrief"))
+                    and bool(api_key)
                     and bool(should_use_openai)
                     and date_iso == latest_date
                     and latest_only
@@ -8149,10 +8216,28 @@ def build_ai_daily_reports_multilingual(
             bool(api_key)
             and bool(should_use_openai)
             and bool(target_languages)
+            and not rollback
+            and not (preserve_archive and not v8)
             and budget.get("remaining", 0) > 0
             and (not latest_only or date_iso == latest_date)
         )
-        if should_attempt_openai:
+        if v8 and missing_reports:
+            # Do not mix formats on a date that was partially published by the old generator.
+            existing = [r for lang,r in date_reports.items() if lang not in missing_reports]
+            if not any(not r.get("operationsBrief") for r in existing):
+                try:
+                    from python.eval.luna_brief.dashboard import attach
+                    date_reports.update(attach(public_dir,missing_reports,
+                        api_key if should_attempt_openai and set(missing_reports)<=allowed_locales else None,
+                        budget,retained=existing))
+                except Exception as exc:
+                    # The base report and its verdict were already built. Quarantine a
+                    # partial inconsistent date, never discard unrelated archive indexes.
+                    print(f"[WARN] v8 report view unavailable for {date_iso}: {type(exc).__name__}")
+                    if existing:
+                        for lang in missing_reports:
+                            date_reports.pop(lang,None)
+        elif should_attempt_openai:
             try:
                 merged_reports = _run_openai_master_localization_chain(
                     public_dir,
@@ -8206,6 +8291,11 @@ def build_ai_daily_reports_multilingual(
         }
         for language, reports in reports_by_language.items()
     }
+    if immutable:
+        reports_by_language = {
+            lang:[r for r in values if (lang,r["date"]) not in cached_paths]
+            for lang,values in reports_by_language.items()
+        }
     return indexes, reports_by_language, budget
 
 

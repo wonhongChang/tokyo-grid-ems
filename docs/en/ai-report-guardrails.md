@@ -1,5 +1,7 @@
 # AI Ops Report Guardrails
 
+For newly generated v8 reports, [the Ops Report tab](ops-report-tab.md) describes the current evidence-selection path. The narrative and localization safeguards below apply to the legacy report format.
+
 This document explains how TokyoGridEMS keeps the daily AI Ops Report useful without letting the language model invent unsupported operational conclusions.
 
 The report generator is not designed as a free-form chatbot. It is an operational reporting pipeline where Python computes the facts, OpenAI writes the narrative, and a deterministic merge layer validates the final JSON before the dashboard displays it.

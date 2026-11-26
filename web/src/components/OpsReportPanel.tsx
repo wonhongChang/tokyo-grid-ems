@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useFetch } from '../hooks/useFetch'
+import { OperationsBrief, briefNodes } from './OperationsBrief'
 import { useT, type Locale } from '../i18n'
 import type {
   AIDailyReport,
@@ -676,7 +677,7 @@ export function OpsReportPanel({ baseUrl }: Props) {
   const { t, locale, fmtDate } = useT()
   const labels = COPY[locale]
   const reportBase = `${baseUrl}reports/ai/daily/${locale}/`
-  const index = useFetch<AIDailyReportIndex>(`${reportBase}index.json`)
+  const index = useFetch<AIDailyReportIndex>(`${reportBase}index.json`, 'no-cache')
   const reports = index.data?.reports ?? []
   const reportDatesKey = useMemo(
     () => reports.map(item => item.date).join('|'),
@@ -685,9 +686,10 @@ export function OpsReportPanel({ baseUrl }: Props) {
   const latestDate = index.data?.latest?.date ?? null
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const reportDate = selectedDate ?? latestDate
-  const report = useFetch<AIDailyReport>(reportDate ? `${reportBase}${reportDate}.json` : null)
+  const report = useFetch<AIDailyReport>(reportDate ? `${reportBase}${reportDate}.json` : null, 'no-cache')
   const loading = index.loading || report.loading
-  const selectedReport = report.data
+  const selectedReport = report.data?.date === reportDate && report.data?.language === locale ? report.data : null
+  const brief = useMemo(() => selectedReport ? briefNodes(selectedReport, reportDate, locale) : null, [selectedReport, reportDate, locale])
   const usesEnglishFallback = selectedReport?.contentLanguage === 'en' && selectedReport.language !== 'en'
   const visibleOperatorNotes = selectedReport?.operatorNotes.filter(note => (
     selectedReport.generator.provider !== 'openai' || !isFallbackNoteForOpenAI(note)
@@ -704,11 +706,11 @@ export function OpsReportPanel({ baseUrl }: Props) {
   }, [latestDate, selectedDate, reportDatesKey, reports])
 
   return (
-    <div className="tab-content">
-      <div className="date-header">
+    <div className={brief ? 'tab-content ops-v8-layout' : 'tab-content'}>
+      {!brief && <div className="date-header">
         <h2>{labels.title}</h2>
         <p>{labels.subtitle}</p>
-      </div>
+      </div>}
 
       {reports.length > 0 && (
         <div className="card ops-report-controls">
@@ -733,7 +735,8 @@ export function OpsReportPanel({ baseUrl }: Props) {
         <div className="card empty-msg">{labels.unavailable}</div>
       )}
 
-      {!loading && selectedReport && (
+      {!loading && brief && <OperationsBrief key={locale + reportDate} nodes={brief} locale={locale} />}
+      {!loading && selectedReport && !brief && (
         <>
           <div className="card ops-report-summary">
             <div className="ops-report-heading">
