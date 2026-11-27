@@ -1,33 +1,9 @@
 {
   "schemaVersion": "1.0.0",
   "timezone": "Asia/Tokyo",
-  "generatedAt": "2026-11-28T06:24:28+09:00",
+  "generatedAt": "2026-11-28T07:31:19+09:00",
   "targetDate": "2026-11-28",
   "snapshots": [
-    {
-      "targetDate": "2026-11-28",
-      "generatedAt": "2026-11-27T08:32:48+09:00",
-      "runType": "intraday",
-      "path": "forecast_snapshots/2026-11-28/2026-11-27T08-32-48-09-00.json",
-      "model": {
-        "name": "lgbm_quantile_q50",
-        "version": "mvp-1",
-        "nWeeks": 12,
-        "contract": "v14-r2-source-robust-day-ahead",
-        "artifactSha256": "c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3"
-      },
-      "peak": {
-        "forecastMw": 30826.2,
-        "at": "2026-11-28T09:00:00+09:00",
-        "interval": {
-          "p95Lower": 27406.1,
-          "p95Upper": 34246.3
-        }
-      },
-      "observedActualHoursAtGeneration": 0,
-      "fallbackActualHoursAtGeneration": 0,
-      "lastObservedActualHour": null
-    },
     {
       "targetDate": "2026-11-28",
       "generatedAt": "2026-11-27T09:32:01+09:00",
@@ -382,6 +358,30 @@
         "interval": {
           "p95Lower": 26554.2,
           "p95Upper": 32668.2
+        }
+      },
+      "observedActualHoursAtGeneration": 6,
+      "fallbackActualHoursAtGeneration": 0,
+      "lastObservedActualHour": 5
+    },
+    {
+      "targetDate": "2026-11-28",
+      "generatedAt": "2026-11-28T07:31:19+09:00",
+      "runType": "etl",
+      "path": "forecast_snapshots/2026-11-28/2026-11-28T07-31-19-09-00.json",
+      "model": {
+        "name": "lgbm_quantile_q50_intraday_residual",
+        "version": "mvp-1",
+        "nWeeks": 12,
+        "contract": "v14-r2-source-robust-day-ahead",
+        "artifactSha256": "c2914b699dc306c61c6eb8f777d99fdebf1f7336dbf83bd01d851156e8b0cdd3"
+      },
+      "peak": {
+        "forecastMw": 29876.9,
+        "at": "2026-11-28T09:00:00+09:00",
+        "interval": {
+          "p95Lower": 27022.7,
+          "p95Upper": 32731.1
         }
       },
       "observedActualHoursAtGeneration": 6,
