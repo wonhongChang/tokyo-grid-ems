@@ -1,0 +1,15 @@
+services:
+  etl:
+    environment:
+      TOKYO_GRID_EMS_D1_WRITER: windows-etl
+    volumes:
+      - type: bind
+        source: ${D1_RELEASE_ROOT:?missing release}/python/etl/run_batch.py
+        target: /app/python/etl/run_batch.py
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${D1_RELEASE_ROOT:?missing release}/python/forecast
+        target: /app/python/forecast
+        read_only: true
+        bind: {create_host_path: false}

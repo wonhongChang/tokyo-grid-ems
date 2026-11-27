@@ -509,6 +509,7 @@ def build_forecast_json(
     out_dir: Path | None = None,
     generated_at: str | None = None,
     preserve_observed_bands: bool = False,
+    d1_policy: dict | None = None,
 ) -> dict:
     if not fc_list:
         return {
@@ -552,10 +553,16 @@ def build_forecast_json(
         point.ts for point in fc_list
         if pd.Timestamp(point.ts).hour in observed_hours
     }
+    if d1_policy:
+        from python.forecast.d1_component import shift
+        differences = [p.forecast_mw - r for p, r in zip(fc_list, d1_policy["referenceMw"], strict=True)]
+        fc_list = [shift(p, -d) for p, d in zip(fc_list, differences)]
     fc_list = _normalize_forecast_bands(
         fc_list, config, interval_floor_profile=interval_floor_profile,
         preserved_timestamps=preserved,
     )
+    if d1_policy:
+        fc_list = [shift(p, d) for p, d in zip(fc_list, differences)]
     if interval_floor_profile is not None:
         interval_floor_profile["preservedObservedHours"] = sorted(observed_hours)
     model = {
@@ -579,6 +586,11 @@ def build_forecast_json(
     }
     if interval_floor_profile is not None:
         payload["intervalCalibration"] = interval_floor_profile
+    if d1_policy:
+        payload["servingPolicyFingerprint"] = d1_policy["fingerprint"]
+        payload["d1PointPolicy"] = {k: v for k, v in d1_policy.items() if k != "referenceMw"}
+        for row, reference in zip(payload["series"], d1_policy["referenceMw"], strict=True):
+            row["intervalReferenceForecastMw"] = reference
     return payload
 
 
@@ -2395,6 +2407,11 @@ def _build_forecast_pipeline(
     )
 
 
+def _select_tomorrow_point(build, config, out_dir, target, issued_at):
+    from python.forecast.d1_component import choose, with_trial
+    return choose(build, with_trial(config), target, issued_at, out_dir)
+
+
 def _build_forecast_with_fallback(
     forecaster,
     cache: pd.DataFrame,
@@ -2807,6 +2824,7 @@ def _write_forecast_snapshot(
         out_dir=out_dir,
         generated_at=generated_at,
         preserve_observed_bands=preserve_observed_forecast_hours,
+        d1_policy=(build_metadata or {}).get("d1PointPolicy"),
     )
     if forecast_json.get("availability") != "ok":
         return None
@@ -2867,6 +2885,8 @@ def _write_forecast_snapshot(
     }
     if forecast_json.get("intervalCalibration") is not None:
         snapshot["intervalCalibration"] = forecast_json["intervalCalibration"]
+    if forecast_json.get("d1PointPolicy") is not None:
+        snapshot["d1PointPolicy"] = forecast_json["d1PointPolicy"]
     if stage_forecasts:
         snapshot["forecastBuild"] = {
             "stageSummary": _forecast_stage_summary(stage_forecasts),
@@ -3938,9 +3958,9 @@ def _run_status_only(
         config, adjuster, guard, midday_guard, localized_shape_guard,
         same_regime_calibrator,
     )
-    tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
-
     snapshot_generated_at = ts_now()
+    tomorrow_build = _select_tomorrow_point(tomorrow_build, config, out_dir, tomorrow, snapshot_generated_at)
+    tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
     snapshot_run_type = (
         "intraday_refresh"
         if not preserve_observed_forecast_hours
@@ -3952,7 +3972,7 @@ def _run_status_only(
                                    preserve_observed_bands=preserve_observed_forecast_hours))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
                build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model, out_dir=out_dir,
-                                   generated_at=snapshot_generated_at))
+                                   generated_at=snapshot_generated_at, d1_policy=tomorrow_build.metadata.get("d1PointPolicy")))
     _write_forecast_snapshot(
         out_dir,
         today,
@@ -4240,16 +4260,16 @@ def main() -> None:
         config, adjuster, guard, midday_guard, localized_shape_guard,
         same_regime_calibrator,
     )
-    tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
-
     snapshot_generated_at = ts_now()
+    tomorrow_build = _select_tomorrow_point(tomorrow_build, config, out_dir, tomorrow, snapshot_generated_at)
+    tomorrow_fc, tomorrow_model = tomorrow_build.forecasts, tomorrow_build.model_name
     snapshot_run_type = "etl"
     write_json(out_dir / "forecast" / f"{today.isoformat()}.json",
                build_forecast_json(today, today_fc, config, today_model, out_dir=out_dir,
                                    generated_at=snapshot_generated_at, preserve_observed_bands=True))
     write_json(out_dir / "forecast" / f"{tomorrow.isoformat()}.json",
                build_forecast_json(tomorrow, tomorrow_fc, config, tomorrow_model, out_dir=out_dir,
-                                   generated_at=snapshot_generated_at))
+                                   generated_at=snapshot_generated_at, d1_policy=tomorrow_build.metadata.get("d1PointPolicy")))
     _write_forecast_snapshot(
         out_dir,
         today,

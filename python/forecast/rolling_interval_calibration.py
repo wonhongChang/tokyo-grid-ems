@@ -99,7 +99,11 @@ def build_lead_conformal_profile(
             if (snapshot.get("model") or {}).get("artifactSha256") != artifact_hash:
                 excluded["artifact"] += 1
                 continue
+            value_key = "forecastMw"
             if snapshot.get("servingPolicyFingerprint") != policy:
+                from python.forecast.d1_component import interval_role
+                value_key = interval_role(snapshot, policy)
+            if value_key is None:
                 excluded["policy"] += 1
                 continue
             captured = _aware_timestamp(snapshot.get("generatedAt"))
@@ -108,7 +112,7 @@ def build_lead_conformal_profile(
                 continue
             for row in snapshot["series"]:
                 ts = _aware_timestamp(row.get("ts"))
-                value = _finite_float(row.get("forecastMw"))
+                value = _finite_float(row.get(value_key))
                 if ts is None or ts.date() != day or value is None:
                     continue
                 lead = forecast_lead_band((ts - captured).total_seconds() / 3600)

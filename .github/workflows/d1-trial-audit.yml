@@ -1,0 +1,39 @@
+name: D-1 limited release audit
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Intraday Update]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  score:
+    # Independent of publishing. Dispatch manually for late actuals; no ETL rerun.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      (startsWith(github.event.workflow_run.run_started_at, '2026-12-01T1') ||
+       startsWith(github.event.workflow_run.run_started_at, '2026-12-04T1') ||
+       startsWith(github.event.workflow_run.run_started_at, '2026-12-06T1') ||
+       startsWith(github.event.workflow_run.run_started_at, '2026-12-07T1') ||
+       startsWith(github.event.workflow_run.run_started_at, '2026-12-08T1')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch public trial history (including the day before all issuances)
+        run: git fetch --no-tags --filter=blob:none --shallow-since=2026-11-26T00:00:00+09:00 origin refs/heads/data:refs/remotes/origin/data
+      - name: Score matched public snapshots only
+        run: |
+          python3 scripts/check_d1_trial.py --assessment --repository . --ref refs/remotes/origin/data 2026-11-30 2026-12-03 2026-12-05 > d1-scores.json
+          cat d1-scores.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: d1-trial-scores
+          path: d1-scores.json
+          retention-days: 90
+      - name: Flag observed risk without modifying any publisher
+        run: python3 -c "import json,sys; sys.exit(int(bool(json.load(open('d1-scores.json'))['assessment']['alerts'])))"

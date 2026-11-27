@@ -37,6 +37,9 @@ concurrency:
 jobs:
   update-today:
     runs-on: ubuntu-latest
+    env:
+      TOKYO_GRID_EMS_D1_TRIAL: ${{ vars.TOKYO_GRID_EMS_D1_TRIAL }}
+      TOKYO_GRID_EMS_D1_WRITER: github-intraday
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -66,6 +69,10 @@ jobs:
           else
             echo "[INFO] No data branch yet"
           fi
+
+      - name: Check prior D-1 publication for an opted-in target
+        run: |
+          python scripts/prepare_d1_receipt.py || echo "::warning::D-1 proof unavailable; forecast stays on incumbent without valid proof"
 
       - name: Update intraday actuals, forecasts, and status
         run: python python/etl/run_batch.py --status-only
