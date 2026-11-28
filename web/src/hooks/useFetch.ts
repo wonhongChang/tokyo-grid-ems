@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
+
+export const DataRevision = createContext<string | undefined>(undefined)
 
 interface FetchState<T> {
   data: T | null
@@ -7,6 +9,7 @@ interface FetchState<T> {
 }
 
 export function useFetch<T>(url: string | null, cache: RequestCache = 'no-cache', revision = 0): FetchState<T> {
+  const dataRevision = useContext(DataRevision)
   const [state, setState] = useState<FetchState<T> & { url: string | null }>({
     url,
     data: null,
@@ -36,7 +39,7 @@ export function useFetch<T>(url: string | null, cache: RequestCache = 'no-cache'
       })
 
     return () => controller.abort()
-  }, [url, cache, revision])
+  }, [url, cache, revision, dataRevision])
 
   return state.url === url ? state : { data: null, loading: !!url, error: null }
 }

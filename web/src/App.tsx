@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useFetch } from './hooks/useFetch'
+import { DataRevision, useFetch } from './hooks/useFetch'
 import { StatusBar } from './components/StatusBar'
 import { NextHour } from './components/NextHour'
 import { ForecastChart } from './components/ForecastChart'
@@ -420,6 +420,7 @@ export default function App({ locale, setLocale }: AppProps) {
             {(Object.keys(LOCALE_LABELS) as Locale[]).map(l => (
               <button
                 key={l}
+                aria-pressed={locale === l}
                 className={`lang-btn${locale === l ? ' active' : ''}`}
                 onClick={() => setLocale(l)}
               >
@@ -444,6 +445,7 @@ export default function App({ locale, setLocale }: AppProps) {
               return (['yesterday', 'today', 'tomorrow', 'validation', 'opsReport'] as TabId[]).map(tab => (
                 <button
                   key={tab}
+                  aria-current={activeTab === tab ? 'page' : undefined}
                   className={`tab-btn${activeTab === tab ? ' active' : ''}`}
                   onClick={() => { setActiveTab(tab); recheck() }}
                 >
@@ -469,7 +471,7 @@ export default function App({ locale, setLocale }: AppProps) {
             </div>
           </nav>
 
-          <main key={status.lastUpdatedAt}>
+          <DataRevision.Provider value={status.lastUpdatedAt}><main>
             {activeTab === 'yesterday' && yesterdayDate
               ? <><YesterdayTab date={yesterdayDate} latest={status.latest} /><NextHour data={status.hourlyNext} date={yesterdayDate} /></>
               : activeTab === 'yesterday'
@@ -489,7 +491,7 @@ export default function App({ locale, setLocale }: AppProps) {
             {activeTab === 'opsReport' && (
               <OpsReportPanel baseUrl={BASE} />
             )}
-          </main>
+          </main></DataRevision.Provider>
         </>
       )}
     </div>
