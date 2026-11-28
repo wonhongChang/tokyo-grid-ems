@@ -1,0 +1,50 @@
+name: Same-day gap preview
+on:
+  schedule:
+    # 02/04/14/16/18/20/22 :20 JST. Existing morning and Pages jobs are independent.
+    - cron: '20 5,7,9,11,13,17,19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: same-day-preview-only
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/main' && vars.TGEMS_EXTRA_MODE == 'preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - id: window
+        run: |
+          case "$(TZ=Asia/Tokyo date +%H)" in
+            02|04|14|16|18|20|22) echo 'open=true' >> "$GITHUB_OUTPUT";;
+            *) echo 'Delayed run outside a preview hour; no publication.';;
+          esac
+      - if: steps.window.outputs.open == 'true'
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - if: steps.window.outputs.open == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: data
+          path: data-wt
+          persist-credentials: false
+      - if: steps.window.outputs.open == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - if: steps.window.outputs.open == 'true'
+        run: pip install -r requirements.txt
+      - if: steps.window.outputs.open == 'true'
+        run: python scripts/hosted_preview.py --base data-wt --out "$RUNNER_TEMP/preview"
+      - if: steps.window.outputs.open == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-evidence-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/preview/evidence.json
+          if-no-files-found: error
+          retention-days: 90

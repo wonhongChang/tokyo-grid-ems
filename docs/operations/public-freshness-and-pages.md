@@ -1,0 +1,16 @@
+# Pages recovery and hosted same-day preview
+
+These are independently controlled. Neither trains a model. Preview has no publisher, Pages permission, data writer, or shared Pages concurrency group.
+
+| Repository variable | Enabled behavior | Rollback |
+| --- | --- | --- |
+| `TGEMS_PAGES_RECOVERY=1` | If upload/visibility/deployment fails after a checked Pages package, retry delivery once from the latest verified eligible data tip. | Unset; use Deploy Only manually. |
+| `TGEMS_EXTRA_MODE=preview` | Check inputs at 02/04/14/16/18/20/22 :20 JST. An unchanged input produces no prediction. Missing or stale inputs are not a successful no-change. | Unset. No forecast rollback is needed. |
+
+Variable changes may not recall an in-flight run. Cancel only the affected job if required. Do not rewind Git, rerun the ETL, or replace a historical issue to repair a static website.
+
+**Delivery.** Only descendants of the verified data anchor are eligible. Recovery checks target dates, point/interval populations, code/data tips, artifact security, exact artifact identity and visibility before deployment. A superseded or invalid tip fails closed; it does not fall back to an arbitrary older release. For an authorized manual reconciliation, run Deploy Only on main with the full verified data SHA in `data_anchor`. Leave it empty for normal Deploy Only. Authority to reconcile is not evidence of an earlier failure. The recovery caller shares the Pages lock; a successful retry does not erase the initial failed job. Confirm the deploy **step** succeeded, the live `ops/pages_release.json` contains the expected code/data pair, and the data commit status `tgems/pages-release` matches. A green environment job alone is not proof that a deploy step ran. OTel delivery success, actual publication and CDN visibility are separate observations.
+
+**Preview.** The runner pins the data input, reads the existing public hourly demand CSV and forecast weather, and runs the existing Champion only when the completed observations or effective input features change. It does not collect or use five-minute readings. Its only output is a run artifact, not a new forecast on the data branch or Pages. Requests delayed out of an eligible hour do not issue. Public writes are absent even after 2026-12-05: a separate review and release, including Windows and cloud writer fencing, would be necessary. Existing morning scheduling and D-1 policy are independent.
+
+The preview artifact requests 90-day retention, subject to repository limits; retain a separate verified local copy for research. For comparison, preserve the data SHA and the actual Pages forecast read either side of the preview issue. If the comparator was unavailable or changed, do not substitute the latest forecast. Only pair not-yet-started target hours with observed (never fallback) demand. Repeated issues are not independent days. A hosted preview is not a production publication; repository Actions-artifact access is not a confidentiality boundary for private inputs.
