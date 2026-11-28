@@ -56,6 +56,7 @@ interface Translations {
   noForecastData: string
   noHistoricalData: string
   failedLoad: string
+  refreshUnverified: string
   through: string
   tomorrowNotReady: string
 }
@@ -116,6 +117,7 @@ const KO: Translations = {
   noForecastData: '예측 데이터 없음',
   noHistoricalData: '아직 과거 데이터가 없습니다',
   failedLoad: '상태 로딩 실패',
+  refreshUnverified: '일부 자료를 갱신하지 못했습니다. 표시 중인 값이 최신인지 확인되지 않았습니다.',
   through: '~',
   tomorrowNotReady: '오늘 실적 데이터 확인 후 표시됩니다',
 }
@@ -176,6 +178,7 @@ const EN: Translations = {
   noForecastData: 'No forecast data',
   noHistoricalData: 'No historical data available yet',
   failedLoad: 'Failed to load status',
+  refreshUnverified: 'Some data could not be refreshed. Values shown may be from the previous update.',
   through: 'through',
   tomorrowNotReady: "Available after today's actuals are confirmed",
 }
@@ -236,6 +239,7 @@ const JA: Translations = {
   noForecastData: '予測データなし',
   noHistoricalData: 'まだ過去データがありません',
   failedLoad: 'ステータス取得失敗',
+  refreshUnverified: '一部の資料を更新できませんでした。表示値は前回の更新時点の可能性があります。',
   through: '〜',
   tomorrowNotReady: '本日の実績確認後に表示されます',
 }

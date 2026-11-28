@@ -283,6 +283,7 @@ function YesterdayTab({ date, latest }: { date: string; latest: LatestSummary | 
         <h2>{fmtDate(date)}</h2>
         <p>{t.latestDataSubtitle}</p>
       </div>
+      {(actual.error || forecast.error || alerts.error) && <p className="error-msg" role="status">{t.refreshUnverified}</p>}
 
       {loading && <div className="loading">{t.loading}</div>}
 
@@ -323,7 +324,7 @@ function ForecastTab({ date, summary, showBands = false }: { date: string | null
   const loading = forecast.loading || actual.loading || alerts.loading
 
   const hasTepco = actual.data?.series.some(p => p.tepcoForecastMw != null) ?? false
-  const hasActual = actual.data?.series.some(p => p.actualMw != null) ?? false
+  const hasActual = actual.data?.series.some(isObservedActual) ?? false
   const product = forecast.data
   const subtitle = hasActual ? t.sameDayObserved : product?.d1PointPolicy?.mode === 'raw' && product.d1PointPolicy.scope === 'updates'
     ? t.d1Raw : product?.model?.name?.startsWith('lgbm') ? t.championForecast : t.forecastSubtitle
@@ -333,8 +334,9 @@ function ForecastTab({ date, summary, showBands = false }: { date: string | null
       <div className="date-header">
         <h2>{fmtDate(date)}</h2>
         <p>{subtitle}</p>
-        {summary?.forecastBuiltAt && <p>{t.forecastBuilt}: {summary.forecastBuiltAt.slice(0,19).replace('T',' ')} JST · {t.publicationUnknown}</p>}
+        {!forecast.error && summary?.forecastBuiltAt && <p>{t.forecastBuilt}: {summary.forecastBuiltAt.slice(0,19).replace('T',' ')} JST · {t.publicationUnknown}</p>}
       </div>
+      {(actual.error || forecast.error || alerts.error) && <p className="error-msg" role="status">{t.refreshUnverified}</p>}
 
       {loading && <div className="loading">{t.loading}</div>}
 

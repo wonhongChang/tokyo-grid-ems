@@ -598,6 +598,7 @@ export function ValidationPanel({ baseUrl }: Props) {
 
   return (
     <div className="tab-content">
+      {(accuracy.error || backtest.error || dailyReport.error) && <p className="error-msg" role="status">{t.refreshUnverified}</p>}
       <div className="date-header">
         <h2>{labels.title}</h2>
         <p>{labels.subtitle}</p>

@@ -730,9 +730,10 @@ export function OpsReportPanel({ baseUrl }: Props) {
       )}
 
       {loading && <div className="loading">{t.loading}</div>}
+      {selectedReport && (report.error || index.error) && <p className="error-msg" role="status">{t.refreshUnverified}</p>}
 
       {!loading && !selectedReport && (
-        <div className="card empty-msg">{index.error || report.error ? t.failedLoad : labels.unavailable}</div>
+        <div className="card empty-msg">{index.error || report.error ? t.refreshUnverified : labels.unavailable}</div>
       )}
 
       {!loading && brief && selectedReport && <OperationsBrief key={locale + reportDate} nodes={brief} locale={locale} report={selectedReport} />}
