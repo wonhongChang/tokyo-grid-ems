@@ -6,6 +6,8 @@ Languages: [한국어](../ko/data-retention-strategy.md) · [日本語](../ja/da
 
 ---
 
+The public `data` branch holds latest serving files, append-only H1 issues/receipts, and a bounded research window. `reports/internal` is public, not a privacy boundary. Calibration inputs are also used to verify H1 publication. At most 16 forecast snapshots per target date remain in the current index (21-day lookback); absence from the index is not proof that no issue occurred. Obtain the original Git blob if available, never substitute a later calculation. The dashboard selectively fetches JSON; its transfer size is not the data tree size.
+
 ## Context
 
 TokyoGridEMS publishes static JSON files through GitHub Pages. This keeps the system simple: GitHub Actions collects TEPCO/JMA weather data, writes JSON/parquet/model outputs, and GitHub Pages serves them without a backend server.

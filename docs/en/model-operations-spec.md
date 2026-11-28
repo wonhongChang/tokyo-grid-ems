@@ -10,6 +10,9 @@ Architecture boundaries: [Production model design](lgbm-design.md) · [Read-only
 
 ## Limited next-hour forecast (SD-H1-P50)
 
+Only a regular writer defaults on: missing or empty `TGEMS_H1_ISSUE` enables issuance; `0` disables it, and an invalid value fails closed. Waiting, disabled, missed and verified issuance are separate from the health of Pages. With no current run receipt the state is unknown. A late record is not scored or backfilled.
+
+
 Only regular same-day runs can issue the next whole JST hour, before it starts and with the preceding completed hour observed. D-1, preview, Champion state and interval learning are unchanged. The stored Champion value belongs to the **same issue**. Operational MAE uses the last confirmed pre-start issue per target and the same observed actual; provisional values may revise. No matched actual means no score.
 
 For issue hour m = 01–22 JST, minute ≥ 10, target m+1 is eligible only if hour m−1 has an observed mean. A late or unproven issue stays out of the matched sample; it does not replace an earlier issue.

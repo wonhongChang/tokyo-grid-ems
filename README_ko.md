@@ -30,7 +30,7 @@ TEPCO 공개 전력 데이터를 활용한 **전력 수요 예측 / 이상 탐�
 | 대시보드 | React + Vite |
 | 배포 | GitHub Pages (정적 JSON) |
 | 자동 갱신 | 로컬 Windows/Docker ETL + GitHub Actions 예약 intraday 갱신 및 배포 |
-| 운영 리포트 | Python 규칙 기반 fallback + 선택적 OpenAI 해설/번역 |
+| 운영 리포트 | Python v8 본문과 선택적 Luna 근거 선택 |
 
 ---
 
@@ -58,7 +58,7 @@ TEPCO 공개 전력 데이터를 활용한 **전력 수요 예측 / 이상 탐�
 | 오늘 | 시간별 예측, 예측 구간, 실측, 피크 예상 |
 | 내일 | 다음날 시간별 예측, 예측 구간, 피크 예상 |
 | 검증 | 일일 지표, 모델·TEPCO 비교, LightGBM 백테스트 |
-| 운영 리포트 | 근거 기반 일일 해설. 선택적 OpenAI 영어 분석·한일 현지화 또는 규칙 기반 fallback |
+| 운영 리포트 | 일간 정확도, 주요 오차와 다음 확인 사항. 상세 근거와 조건부 연구 작업표는 펼쳐 보기 |
 
 ---
 
@@ -131,7 +131,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -AllowOffSchedule
 ```
 
-호스트는 게시된 데이터·모델 상태를 복원하고, 전날 실측이 미확정이면 Docker ETL을 실행한 뒤 산출물 검증·게시와 배포/intraday dispatch를 수행합니다. 전날 실측이 이미 확정되었다면 이력 ETL은 건너뛰고 누락/fallback AI 리포트만 별도 복구할 수 있습니다. `-AllowOffSchedule`은 오전 예약 시간 밖의 수동 실행을 허용합니다. 게시에는 컨테이너가 아닌 호스트의 Git 인증을 사용합니다.
+호스트는 게시된 데이터·모델 상태를 복원하고, 전날 실측이 미확정이면 Docker ETL을 실행한 뒤 산출물 검증·게시와 배포/intraday dispatch를 수행합니다. 전날 실측이 이미 확정되었다면 이력 ETL은 건너뛰고 누락된 v8 리포트만 기존 본문 재생성 없이 복구할 수 있습니다. `-AllowOffSchedule`은 오전 예약 시간 밖의 수동 실행을 허용합니다. 게시에는 컨테이너가 아닌 호스트의 Git 인증을 사용합니다.
 
 Python만으로 로컬 산출물을 다시 만들려면 `requirements.txt`를 설치한 뒤 `python python/etl/fetch_tepco.py`, `python python/etl/run_batch.py --input data/raw --out web/public`을 순서대로 실행합니다. 모델·상태 산출물을 복원하지 않은 새 환경에서는 배포된 Champion의 재현을 보장하지 않습니다.
 
@@ -154,7 +154,7 @@ Python만으로 로컬 산출물을 다시 만들려면 `requirements.txt`를 �
 | `metrics/forecast_accuracy.json` | TEPCO 최신 게시값 기준 운영 참고치. 공식 동일 vintage 비교에는 사용하지 않음 |
 | `metrics/forecast_vintage_accuracy.json` | 동일 capture·lead-time으로 맞춘 모델/TEPCO 평가 |
 | `reports/daily/*.json` | 검증 탭에 표시하는 전날 운영 리포트 |
-| `reports/ai/daily/{ko,en,ja}/*.json` | 운영 리포트 탭의 일일 해설. OpenAI 설정 시 AI 해설, 미설정 시 deterministic fallback 사용 |
+| `reports/ai/daily/{ko,en,ja}/*.json` | 날짜별 Python 본문과 선택적으로 검증된 근거 |
 | `forecast_snapshots/`, `reports/internal/` | 검토용 예측 vintage, 보정 단계와 진단 근거. UI에서는 직접 링크하지 않음 |
 
 백테스트·replay·승격 산출물은 [모델 운영 명세](docs/ko/model-operations-spec.md)에 정리되어 있습니다. 특히 `model_contract_comparison.json`은 명시적인 승격 도구가 작성하며 매 ETL에서 재생성하지 않습니다. `internal`이라는 이름은 접근 제어를 뜻하지 않으며 정적 배포에 포함될 수 있습니다.
@@ -163,10 +163,10 @@ Python만으로 로컬 산출물을 다시 만들려면 `requirements.txt`를 �
 
 ### AI 운영 리포트 동작
 
-- Intraday/status-only 실행은 AI 해설을 생성하지 않습니다. 일반 생성은 최신 확정 일일 리포트를 대상으로 하며, 기존의 성공한 OpenAI 리포트는 유지하고 누락/fallback 리포트는 별도 복구할 수 있습니다.
-- 분석과 현지화 모델은 모두 `gpt-4o-mini`가 기본입니다. 기본 실행 예산은 **논리 호출 2회**이며 HTTP 시도 횟수나 비용의 하드 상한선은 아닙니다. 전송 재시도는 별도입니다.
+- v8은 Python이 운영 판정과 세 언어의 필수 본문을 생성합니다. Intraday/status-only 실행은 리포트를 생성하지 않습니다.
+- GPT-6 Luna(none / 4000)는 대상일에 최대 한 번 근거를 선택하고 세 언어가 결과를 공유합니다. 선택이 없거나 호출에 실패해도 필수 본문은 유지됩니다.
 - ETL에서 사용하려면 실행 전에 `TOKYO_GRID_EMS_OPENAI_API_KEY`와 `OPENAI_DAILY_REPORT_AUTO_ENABLE=true`를 설정합니다. 전용 리포트 CLI는 대신 `--use-openai`를 받습니다. `.env`나 키는 커밋하지 않으며 프로젝트 리포트에 일반 런타임 변수 `OPENAI_API_KEY`를 사용하지 않습니다.
-- 분석을 생성할 수 없으면 규칙 기반 fallback을 사용하고, 현지화 실패 시 `localizationStatus: "fallback_en"`으로 영어 마스터를 유지합니다. AI 추천은 예측에 자동 적용되지 않습니다.
+- 기존 v5의 자유 서술·번역 방식은 현재 v8 생성 방식이 아닙니다. 어느 쪽도 예측을 변경하지 않습니다.
 
 활성화 예시, 재시도 예산, timeout과 리포트 전용 복구는 [운영 리포트 설정과 비용 제어](docs/ko/ops-report-tab.md)를 참고하세요.
 

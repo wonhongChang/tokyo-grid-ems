@@ -602,6 +602,10 @@ intraday実行ごとの運用補正状態を限定的に保存します。最新
 ```
 
 ## フィールド規則
+
+現行v8の本文と判定は決定論的。`operationsBrief.sampleHours` は比較時間数またはnull、`actualStatus` はfinalized/provisional/unknown。任意の `hourlyComparison` は別の標本数、開始前の発行ID、二つのMAE（MW）を持つ。`generator.provider=python` は本文、`generator.advisory` はLunaのみを表す。過去の記録は変更せず、これらの項目がない場合がある。
+
+### 従来の文章生成フィールド（v5。v8の生成方針ではない）
 - `performance` は deterministic な日次レポート指標をコピーします。AI生成器はこの値を再計算したり捏造したりしてはいけません。
 - `rootCauseHypotheses[].evidence[]` は必ず入力 source と metric を含めます。
 - `rootCauseHypotheses[].mechanism` は原因経路を説明し、`nextCheck` はコード変更前に確認するreplay、フィールド、診断資料を示します。

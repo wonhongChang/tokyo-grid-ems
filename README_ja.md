@@ -30,7 +30,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 | ダッシュボード | React + Vite |
 | 配布 | GitHub Pages (静的 JSON) |
 | 自動更新 | ローカルWindows/Docker ETL + GitHub Actionsによる定期intraday更新・配信 |
-| 運用レポート | Pythonルールベースfallback + 任意のOpenAI解説/翻訳 |
+| 運用レポート | Pythonによるv8本文と任意のLuna根拠選択 |
 
 ---
 
@@ -58,7 +58,7 @@ TEPCOの公開電力データを活用した**電力需要予測 / 異常検知 
 | 今日 | 時間別予測、予測区間、実測、ピーク予測 |
 | 明日 | 翌日の時間別予測、予測区間、ピーク予測 |
 | 検証 | 日次指標、モデル・TEPCO比較、LightGBMバックテスト |
-| 運用レポート | 根拠に基づく日次解説。任意のOpenAI英語分析・韓日ローカライズ、またはルールベースfallback |
+| 運用レポート | 日別精度、主な誤差と次の確認事項。詳細な根拠と条件付きの研究作業表は展開して表示 |
 
 ---
 
@@ -131,7 +131,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Build
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\local_etl.ps1 -Publish -AllowOffSchedule
 ```
 
-ホストは公開済みデータ・モデル状態を復元し、前日実測が未確定ならDocker ETLを実行した後、成果物の検証・公開と配信/intraday dispatchを行います。前日実測が既に確定していれば履歴ETLを省略し、欠落/fallbackのAIレポートを別途復旧できます。`-AllowOffSchedule`は朝の予約時間外の手動実行を許可します。公開にはコンテナではなくホストのGit認証を使います。
+ホストは公開済みデータ・モデル状態を復元し、前日実測が未確定ならDocker ETLを実行した後、成果物の検証・公開と配信/intraday dispatchを行います。前日実測が既に確定していれば履歴ETLを省略し、欠落したv8レポートを既存本文の再生成なしで復旧できます。`-AllowOffSchedule`は朝の予約時間外の手動実行を許可します。公開にはコンテナではなくホストのGit認証を使います。
 
 Pythonだけでローカル成果物を再生成する場合は、`requirements.txt`をインストールし、`python python/etl/fetch_tepco.py`、`python python/etl/run_batch.py --input data/raw --out web/public`を順に実行します。モデル・状態の成果物を復元していない新環境では、配備済みChampionの再現は保証されません。
 
@@ -154,7 +154,7 @@ Pythonだけでローカル成果物を再生成する場合は、`requirements.
 | `metrics/forecast_accuracy.json` | TEPCO最新公開値による運用参考値。正式な同一vintage比較には使用しない |
 | `metrics/forecast_vintage_accuracy.json` | 同一capture・lead-timeで揃えたモデル/TEPCO評価 |
 | `reports/daily/*.json` | 検証タブに表示する前日運用サマリー |
-| `reports/ai/daily/{ko,en,ja}/*.json` | 運用レポートタブの日次解説。OpenAI設定時はAI解説、未設定時はdeterministic fallbackを使用 |
+| `reports/ai/daily/{ko,en,ja}/*.json` | 日付別のPython本文と任意の検証済み根拠 |
 | `forecast_snapshots/`, `reports/internal/` | レビュー用の予測vintage、補正段階、診断根拠。UIからは直接リンクしない |
 
 バックテスト・replay・昇格の成果物は[モデル運用仕様](docs/ja/model-operations-spec.md)を参照してください。特に`model_contract_comparison.json`は明示的な昇格ツールが作成し、毎回のETLでは再生成しません。`internal`という名前はアクセス制御を意味せず、静的配信に含まれる場合があります。
@@ -163,10 +163,10 @@ Pythonだけでローカル成果物を再生成する場合は、`requirements.
 
 ### AI運用レポートの動作
 
-- Intraday/status-only実行はAI解説を生成しません。通常は最新の確定済み日次レポートが対象で、成功済みのOpenAIレポートを保持し、欠落/fallbackレポートは別途復旧できます。
-- 分析とローカライズはどちらも`gpt-4o-mini`が既定です。実行予算の既定は**論理呼び出し2回**であり、HTTP試行回数や費用のハード上限ではありません。通信再試行は別枠です。
+- v8ではPythonが判定と3言語の必須本文を作成します。Intraday/status-only実行はレポートを生成しません。
+- GPT-6 Luna（none / 4000）は対象日ごとに最大1回だけ根拠を選び、その結果を3言語で共有します。選択なし・呼出し失敗でも必須本文を表示します。
 - ETLで有効化する場合は、起動前に`TOKYO_GRID_EMS_OPENAI_API_KEY`と`OPENAI_DAILY_REPORT_AUTO_ENABLE=true`を設定します。専用レポートCLIでは代わりに`--use-openai`を指定します。`.env`やキーはコミットせず、プロジェクトのレポートに汎用の実行時変数`OPENAI_API_KEY`を使わないでください。
-- 分析が利用できない場合はルールベースfallback、ローカライズ失敗時は`localizationStatus: "fallback_en"`で英語マスターを維持します。AI提案は予測へ自動適用されません。
+- 旧v5の文章生成・翻訳経路は現在のv8生成方式ではありません。どちらも予測を変更しません。
 
 有効化例、再試行予算、timeout、レポート単独復旧は[運用レポート設定とコスト制御](docs/ja/ops-report-tab.md)を参照してください。
 

@@ -6,6 +6,9 @@
 
 ## SD-H1-P50
 
+Windows writer는 계산 전 실제 복원한 data 커밋을 고정하고, 그 커밋의 자식만 Git lease로 발행한다. 다른 writer가 먼저 발행하면 중단하고 다시 복원한 뒤 계산한다. 오래된 폴더를 새 tip에 밀어 넣지 않는다. 배포만 실패했으면 Deploy Only를 사용한다. [배포·복구 절차](../operations/public-freshness-and-pages.md) 참고.
+
+
 발행을 중단하려면 Actions 저장소 변수 `TGEMS_H1_ISSUE=0`을 설정하고 Windows 운영 체크아웃에 `data/raw/.hourly-next.disabled` 파일을 만든다. 둘 다 해제하면 재개한다. 기존 기록은 삭제하지 않는다. 로컬 실행기 자체를 복구할 때는 이전 작업의 실행 동작만 복원하고 예약 시각은 유지한다. 화면은 ETL 재실행 없이 Deploy Only로 배포한다.
 
 ## 1. 운영 원칙
@@ -15,7 +18,7 @@
 - TEPCO 예측은 비교 기준일 뿐, 모델 입력이나 보정 목표로 사용하지 않는다. 단, 아직 공개되지 않은 23시 실측의 임시 lag 입력에는 출처가 명시된 fallback을 사용할 수 있다.
 - 일시적인 하루 오차만으로 모델이나 가드 임계값을 바꾸지 않는다. 데이터 결함이 아니라면 동일 레짐의 여러 날과 운영 replay를 함께 본다.
 - 새 모델은 기존 Champion을 자동으로 덮어쓰지 않는다. 시간 순서 검증, 절대 품질 상한, 구간별 퇴행, 예측 drift 게이트를 모두 통과해야 한다.
-- OpenAI 운영 리포트 생성 실패가 확정 실측과 예측 JSON 게시를 막아서는 안 된다. fallback 리포트는 서비스 지속용 저하 상태이며, 별도로 재생성한다.
+- v8에서 Luna는 선택 사항이다. 추가 해석을 받지 못해도 ETL을 재실행하거나 완성된 언어별 리포트를 재생성하지 않는다.
 
 ## 2. 운영 흐름
 
@@ -78,7 +81,7 @@ GitHub 예약 실행은 지연되거나 누락될 수 있다. 한 번의 누락�
 | `status.json` | 공개 데이터 범위와 생성 상태 | `availability: ok`, 날짜 범위 최신 |
 | `actual/YYYY-MM-DD.json` | 전날 확정 실측 | 24시간, fallback 제외 |
 | `forecast/YYYY-MM-DD.json` | 오늘·내일 예측 | 각각 24시간 |
-| `reports/ai/daily/YYYY-MM-DD.json` | 전날 운영 해설 | `provider: openai` 권장, 실패 시 재생성 |
+| `reports/ai/daily/YYYY-MM-DD.json` | 전날 운영 해설 | 날짜·언어·입력 지문·필수 본문 확인. Luna 성공은 필수 아님 |
 | `ops/local_etl_status.json` | 로컬 배치 최종 상태 | publish, deploy, intraday 단계 확인 |
 | `metrics/model_promotion.json` | Champion/Challenger 결과 | 아래 상태표에 따라 판단 |
 | `metrics/model_shadow_evaluation.json` | 복구 후보 실운영 근거 | 승인 전에 `passed: true`, 72시간 이상, 확정 2일 이상 |

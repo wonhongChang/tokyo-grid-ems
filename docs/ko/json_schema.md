@@ -603,6 +603,10 @@ intraday 실행별 운영 보정 상태를 제한적으로 보관합니다. 최�
 ```
 
 ## 필드 규칙
+
+현재 v8의 본문과 판정은 결정론적이다. `operationsBrief.sampleHours`는 비교 시간 수 또는 null, `actualStatus`는 finalized/provisional/unknown이다. 선택적 `hourlyComparison`에는 별도 표본 수·사전 발행 ID·두 MAE(MW)가 기록된다. `generator.provider=python`은 본문, `generator.advisory`는 Luna만 의미한다. 과거 기록은 수정하지 않으며 해당 필드가 없을 수 있다.
+
+### 기존 서술형 필드(v5 기준, v8의 생성 정책 아님)
 - `performance`는 deterministic 일일 리포트 지표를 복사합니다. AI 생성기는 이 값을 새로 계산하거나 임의로 만들면 안 됩니다.
 - `rootCauseHypotheses[].evidence[]`는 반드시 입력 source와 metric을 포함합니다.
 - `rootCauseHypotheses[].mechanism`은 원인 경로를 설명하고, `nextCheck`는 코드 수정 전에 확인할 replay, 필드, 진단 자료를 명시합니다.

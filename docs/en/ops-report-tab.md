@@ -4,6 +4,8 @@ Newly generated reports for JST targets from 2026-11-26 use a short operational 
 
 The dated JSON keeps its legacy fields. A compatible `operationsBrief` selects the new view exclusively; older reports keep their original presentation. The date index and the selected report are revalidated on entry or selection, not continuously polled. Python supplies all required content. When enabled and eligible, one optional GPT-6 Luna selection (none / 4000) is shared across the report languages. An unavailable or empty selection does not suppress the report.
 
+The v8 body is Python even when Luna selects a reading suggestion. New records use `generator.provider=python`; `generator.advisory` and `operationsBrief.advisoryStatus` distinguish selection, abstention, no call and failure. Legacy v8 records may not distinguish failure from unavailable evidence. A normal deterministic report is not an AI fallback. Actual finality is recorded at generation, not inferred later from 24 rows. Daily MAE is retrospective, not issue- or lead-matched. A separate H1 result requires proof of pre-start publication and the same finalized actual and contemporary Champion; without a pair no score is shown.
+
 ## Reading older reports
 
 The sections below describe the archived narrative format.

@@ -6,6 +6,9 @@
 
 ## SD-H1-P50
 
+Windowsの発行処理は復元に使ったdataコミットを計算前に固定し、その子コミットのみをGit leaseで発行する。競合時は停止して最新の入力を復元し直す。古い生成物を新しいtipに重ねない。配信のみ失敗した場合はDeploy Onlyを使う。[配信・復旧手順](../operations/public-freshness-and-pages.md)を参照。
+
+
 新規発行を止めるには、Actions のリポジトリ変数を `TGEMS_H1_ISSUE=0` に設定し、Windows の運用チェックアウトに `data/raw/.hourly-next.disabled` を作成する。両方を解除すると再開する。既発行の記録は削除しない。ローカル実行環境の切り戻しは予約時刻を変えずに直前のタスク操作のみ復元する。画面は ETL を再実行せず Deploy Only で更新できる。
 
 ## 1. 運用原則
@@ -15,7 +18,7 @@
 - TEPCO予測は外部比較値であり、モデル入力や補正目標には使用しません。ただし23時実績が未公開の場合に限り、出所を明示したfallbackを一時的なlag入力として使用できます。
 - データやコードの欠陥が確定していない限り、1日の誤差だけでモデルやguardの閾値を変更しません。同じregimeの複数日とoperational replayを確認します。
 - ChallengerはChampionを無条件に上書きしません。時系列検証、絶対品質上限、segment退行、予測driftの全gateを通過する必要があります。
-- OpenAI運用レポートの失敗で、確定実績と予測JSONの公開を止めません。fallbackは継続提供のための劣化状態として扱い、レポートのみ再生成します。
+- v8ではLunaは任意です。追加解釈がなくてもETLを再実行したり、完成した言語別レポートを再生成したりしません。
 
 ## 2. 運用フロー
 
@@ -78,7 +81,7 @@ GitHubのscheduleは遅延・欠落する場合があります。1回の欠落�
 | `status.json` | 公開データ範囲と生成状態 | `availability: ok`、最新の日付範囲 |
 | `actual/YYYY-MM-DD.json` | 前日確定実績 | fallbackを除く24時間 |
 | `forecast/YYYY-MM-DD.json` | 今日・明日予測 | 各24時間 |
-| `reports/ai/daily/YYYY-MM-DD.json` | 前日運用解説 | `provider: openai`を推奨、失敗時は再生成 |
+| `reports/ai/daily/YYYY-MM-DD.json` | 前日運用解説 | 日付・言語・入力の指紋・必須本文を確認。Lunaの成功は必須ではない |
 | `ops/local_etl_status.json` | 最新local batch状態 | publish、deploy、intraday段階を確認 |
 | `metrics/model_promotion.json` | Champion/Challenger結果 | 下表のstatusで判断 |
 | `metrics/model_shadow_evaluation.json` | 復旧候補の実運用証拠 | 承認前に`passed: true`、72時間以上、確定2日以上 |

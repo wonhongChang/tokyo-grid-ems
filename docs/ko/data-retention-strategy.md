@@ -6,6 +6,8 @@
 
 ---
 
+공개 `data` 브랜치는 최신 서비스 파일, 추가 전용 H1 발행·확인 원장, 기간이 제한된 연구 근거를 담는다. `reports/internal`은 비공개 경계가 아니며 보정 근거는 H1 발행 검증에도 쓰인다. 현재 예측 스냅샷 인덱스는 21일 lookback, 대상일당 최대 16개다. 인덱스에 없다고 미발행을 뜻하지 않는다. 가능하면 원래 Git blob을 확인하며 이후 재계산으로 대체하지 않는다. 브라우저는 필요한 JSON만 요청하므로 data 트리 전체가 화면 전송량은 아니다.
+
 ## 배경
 
 TokyoGridEMS는 GitHub Pages를 통해 정적 JSON 파일을 공개합니다. GitHub Actions가 TEPCO/JMA 기상 데이터를 수집하고, JSON/parquet/model 산출물을 만든 뒤, GitHub Pages가 별도 백엔드 없이 이를 서빙합니다.

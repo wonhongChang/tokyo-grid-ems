@@ -602,6 +602,10 @@ Provides an **AI-generated daily operations analysis** for the Daily Report tab.
 ```
 
 ## Field Rules
+
+For current v8 records, the body and verdict are deterministic. `operationsBrief.sampleHours` is the paired hourly count or null; `actualStatus` is finalized/provisional/unknown. Optional `hourlyComparison` has its own sample size, pre-start issue IDs and two MAEs (MW). `generator.provider=python` denotes the body, and `generator.advisory` describes Luna only. Old records are not rewritten and may omit these fields.
+
+### Legacy narrative fields (v5, not the v8 generation policy)
 - `performance` must be copied from deterministic daily report metrics; the AI generator must not invent or recompute these values.
 - `rootCauseHypotheses[].evidence[]` must cite an input source and metric.
 - `rootCauseHypotheses[].mechanism` describes the causal path; `nextCheck` names the replay, field, or diagnostic to inspect before changing code.

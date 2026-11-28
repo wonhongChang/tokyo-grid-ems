@@ -6,6 +6,9 @@ This runbook defines the standard procedures for operating TokyoGridEMS and reco
 
 ## SD-H1-P50
 
+The Windows publisher pins the exact data commit before computing; it only pushes a child of that commit using a Git lease. On a concurrent update, stop and restore before recomputing; never push the stale directory over the new tip. Use Deploy Only for a delivery-only failure. See [delivery and recovery](../operations/public-freshness-and-pages.md).
+
+
 To stop new issues without stopping Champion, set the Actions repository variable `TGEMS_H1_ISSUE=0` and create `data/raw/.hourly-next.disabled` in the Windows operations checkout. Remove both overrides to resume. Preserve the immutable ledger. If the local release wrapper must be rolled back, restore the preceding task action, not an earlier task schedule. Deploy Only refreshes the dashboard without rerunning ETL.
 
 ## 1. Operating Principles
@@ -15,7 +18,7 @@ To stop new issues without stopping Champion, set the Actions repository variabl
 - The TEPCO forecast is an external reference, not a model input or calibration target. A source-labelled fallback may be used only as a temporary lag input when the 23:00 actual is not yet published.
 - Do not change model or guard thresholds from a single bad day unless the cause is a confirmed data or code defect. Compare multiple days in the same regime and the operational replay.
 - A challenger never overwrites the champion automatically. It must pass temporal validation, absolute quality limits, segment regression checks, and prediction-drift gates.
-- Failure of the OpenAI narrative must not block publication of finalized actual and forecast JSON. A fallback report is a degraded continuity state and should be regenerated separately.
+- Luna is optional in v8. Do not rerun ETL or regenerate a complete language archive for an unavailable advisory.
 
 ## 2. Operating Flow
 
@@ -78,7 +81,7 @@ GitHub scheduled runs can be delayed or skipped. Do not classify one missed run 
 | `status.json` | Public data coverage and generation state | `availability: ok`, current date range |
 | `actual/YYYY-MM-DD.json` | Finalized previous-day actuals | 24 non-fallback hours |
 | `forecast/YYYY-MM-DD.json` | Today and tomorrow forecasts | 24 hours each |
-| `reports/ai/daily/YYYY-MM-DD.json` | Previous-day narrative | `provider: openai` preferred; regenerate on failure |
+| `reports/ai/daily/YYYY-MM-DD.json` | Previous-day review | Match date, language, fingerprint and required content; advisory success is not required |
 | `ops/local_etl_status.json` | Latest local batch state | publish, deploy, and intraday stages recorded |
 | `metrics/model_promotion.json` | Champion/challenger outcome | Interpret using the status table below |
 | `metrics/model_shadow_evaluation.json` | Recovery-candidate live evidence | `passed: true`, at least 72 hours and two finalized days before approval |
