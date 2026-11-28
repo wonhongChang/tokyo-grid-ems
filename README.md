@@ -48,6 +48,8 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 
 ## Dashboard Layout
 
+On regular same-day runs, **Next hour** shows SD-H1-P50 beside the unchanged Champion curve. Each issue identifies its JST target and recording time. Open its history for a matched comparison with observed demand.
+
 The status bar shows update time and data availability.
 
 | Tab | Contents |

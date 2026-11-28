@@ -55,6 +55,8 @@ ETL/バッチパイプラインはこのスキーマに従い `web/public/` 以�
 
 # 1) status.json
 
+Pages 専用の任意項目 `hourlyNext` は status 基準の当日と前日を収録する。`issuedAt` は記録時刻、`confirmedAt` は既に公開された data SHA の確認時刻で、Pages の初回閲覧時刻ではない。確認できない発行は採点しない。原本と確認記録は `ops/hourly-next/` に保持する。
+
 ## 目的
 ダッシュボード上部に表示する**現在の状態（Last Updated / 結果サマリー）**および概要KPIを提供。
 

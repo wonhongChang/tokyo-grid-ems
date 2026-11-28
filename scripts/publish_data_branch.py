@@ -21,9 +21,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.public_artifact_security import check_tree, prepare
+from scripts.hourly_delivery import protect
 
-def _run(args: list[str], cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, text=True, check=True)
+def _run(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, cwd=cwd or REPO_ROOT, text=True, check=True)
 
 
 def _push_with_retry(cwd: Path, attempts: int = 3) -> None:
@@ -116,6 +117,7 @@ def publish(
             check_tree(worktree, worktree=True, scan_text=False)
             _clear_directory(worktree)
             _copy_public_to_worktree(worktree)
+            protect(worktree)
             prepare(worktree, worktree=True)
             _run(["git", "add", "-A"], cwd=worktree)
 
@@ -137,7 +139,9 @@ def publish(
 
 
 def main() -> None:
+    global REPO_ROOT, PUBLIC_DIR
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--operations-root", type=Path, help="Existing Git checkout containing the generated public tree")
     parser.add_argument("--message", help="Commit message for the data branch update")
     parser.add_argument(
         "--skip-validation",
@@ -151,6 +155,9 @@ def main() -> None:
         help="Required observed hours in yesterday's actual JSON before publish.",
     )
     args = parser.parse_args()
+    if args.operations_root is not None:
+        REPO_ROOT = args.operations_root.resolve(strict=True)
+        PUBLIC_DIR = REPO_ROOT / "web" / "public"
 
     try:
         publish(

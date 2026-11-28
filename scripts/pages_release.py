@@ -7,6 +7,7 @@ import math
 import os
 import re
 import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -66,7 +67,10 @@ def marker():
     url = f"https://{owner}.github.io/{repo}/ops/pages_release.json?attempt={os.environ['GITHUB_RUN_ID']}"
     try:
         with urllib.request.urlopen(url, timeout=15) as response:
-            return json.loads(response.read(2048))
+            raw = response.read(131073)
+            if len(raw) > 131072:
+                raise ValueError("oversize release marker")
+            return json.loads(raw)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return None  # bootstrap: caller already proved failure after valid push
@@ -176,16 +180,39 @@ def descendant(base, tip):
     )
 
 
+def marker_cache():
+    return Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())) / ("tgems-marker-" + os.environ["GITHUB_RUN_ID"] + "-" + os.environ.get("GITHUB_RUN_ATTEMPT","1") + ".json")
+
+
+def read_marker(cache=False):
+    path = marker_cache()
+    if cache and path.exists():
+        return json.loads(path.read_bytes())
+    live = marker()
+    path.write_text(json.dumps(live), encoding="utf8")
+    return live
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument(
         "action",
-        choices=("select", "stamp", "fence", "fence-release", "ack", "check-current"),
+        choices=("select", "stamp", "fence", "fence-release", "ack", "check-current", "remember-hourly"),
     )
     p.add_argument("sha")
     a = p.parse_args()
     sha = oid(a.sha)
-    if a.action in {"fence", "fence-release"}:
+    if a.action == "remember-hourly":
+        # Move the ordinary check-current marker read before the push. The Pages lock
+        # remains held and the subsequent equality check still requires the exact SHAs.
+        try:
+            from hourly_delivery import remember
+            live = read_marker()
+            remember(Path("web/public"), live)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            marker_cache().write_text("null", encoding="utf8")
+            print(f"::warning::Optional hourly receipts unavailable: {type(exc).__name__}")
+    elif a.action in {"fence", "fence-release"}:
         if remote_tip() != sha or (
             a.action == "fence-release"
             and remote_tip("main") != oid(os.environ["GITHUB_SHA"])
@@ -196,7 +223,7 @@ def main():
     elif a.action == "check-current":
         # Primary delivery is never blocked just because optional dedup telemetry is down.
         try:
-            live = marker()
+            live = read_marker(cache=True)
             known = bool(
                 live
                 and not eligible(sha, sha, True, live, os.environ["GITHUB_SHA"])
@@ -208,10 +235,18 @@ def main():
     elif a.action == "stamp":
         dest = Path("web/dist/ops/pages_release.json")
         dest.parent.mkdir(exist_ok=True)
+        mark = {"schema": 1, "data": sha, "code": oid(os.environ["GITHUB_SHA"])}
+        try:
+            from hourly_delivery import project
+            cache = marker_cache()
+            proofs = project(Path("web/dist"), sha, json.loads(cache.read_bytes()) if cache.exists() else None)
+            if proofs:
+                mark["hourlyProofs"] = proofs
+                print("H1 data publication receipts:", json.dumps(proofs, separators=(",", ":")))
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            print(f"::warning::Optional hourly display unavailable: {type(exc).__name__}")
         dest.write_text(
-            json.dumps(
-                {"schema": 1, "data": sha, "code": oid(os.environ["GITHUB_SHA"])}
-            ),
+            json.dumps(mark),
             encoding="utf-8",
         )
     else:
@@ -230,7 +265,7 @@ def main():
         )
         if remote_tip("main") != oid(os.environ["GITHUB_SHA"]):
             raise SystemExit("refuse recovery with superseded dashboard code")
-        live = marker()
+        live = read_marker()
         if (
             live
             and live.get("data") != tip

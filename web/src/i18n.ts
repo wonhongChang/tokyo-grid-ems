@@ -3,6 +3,8 @@ import { createContext, useContext } from 'react'
 export type Locale = 'ko' | 'en' | 'ja'
 
 interface Translations {
+  hourly: { title: string; empty: string; issued: string; confirmed: string; unverified: string; history: string;
+    actual: string; provisional: string; final: string; error: string; comparison: string; noActive: string }
   appSubtitle: string
   statusUpdated: string
   statusCoverage: string
@@ -57,6 +59,9 @@ interface Translations {
 }
 
 const KO: Translations = {
+  hourly: { title: '다음 한 시간 예측', empty: '이 날짜의 사전 발행 기록이 없습니다.', issued: '발행',
+    confirmed: '공개 데이터 확인', unverified: '시작 전 공개 미확인 · 채점 제외', history: '발행 이력', actual: '실측',
+    provisional: '잠정', final: '확정', error: '절대오차', comparison: '대상별 마지막 적격 발행 MAE', noActive: '현재 적용할 사전 예측이 없습니다.' },
   appSubtitle: 'TEPCO 전력망 모니터',
   statusUpdated: '업데이트',
   statusCoverage: '기간',
@@ -111,6 +116,9 @@ const KO: Translations = {
 }
 
 const EN: Translations = {
+  hourly: { title: 'Next-hour forecast', empty: 'No pre-start issues for this date.', issued: 'Issued',
+    confirmed: 'Public data confirmed', unverified: 'Pre-start publication unverified · not scored', history: 'Issue history', actual: 'Actual',
+    provisional: 'provisional', final: 'final', error: 'Absolute error', comparison: 'MAE at last eligible issue per target', noActive: 'No active pre-start estimate.' },
   appSubtitle: 'TEPCO Power Grid Monitor',
   statusUpdated: 'Updated',
   statusCoverage: 'Coverage',
@@ -165,6 +173,9 @@ const EN: Translations = {
 }
 
 const JA: Translations = {
+  hourly: { title: '次の1時間の需要予測', empty: 'この日の事前発行記録はありません。', issued: '発行',
+    confirmed: '公開データ確認', unverified: '開始前の公開未確認・集計対象外', history: '発行履歴', actual: '実績',
+    provisional: '速報', final: '確定', error: '絶対誤差', comparison: '対象時間ごとの最終有効予測のMAE', noActive: '現在有効な事前予測はありません。' },
   appSubtitle: 'TEPCO電力網モニター',
   statusUpdated: '更新',
   statusCoverage: 'カバレッジ',

@@ -55,6 +55,8 @@ The ETL/batch pipeline generates files under `web/public/` conforming to this sc
 
 # 1) status.json
 
+Optional Pages-only `hourlyNext` holds the current and preceding status dates. `issuedAt` is the writer timestamp; `confirmedAt` is when an already-public data SHA was observed, not the first Pages visit. Null confirmation is not eligible for scoring. Original records and publication receipts are retained under `ops/hourly-next/`.
+
 ## Purpose
 Provides the **current system state (Last Updated / result summaries)** and KPIs shown at the top of the dashboard.
 

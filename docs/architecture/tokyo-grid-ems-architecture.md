@@ -19,6 +19,8 @@ Tokyo Grid EMS는 TEPCO 수요 데이터와 기상 데이터를 정규화하고,
 
 ### Serving and Evidence
 
+정규 발행에는 Champion 출력과 같은 시점의 완료 실측만 읽는 SD-H1-P50 분기가 있다. 별도 발행 원장 → Pages 상태 → 다음 한 시간 카드로 연결되며, 원장에서 Champion 선·잔차·다음날 상태로 돌아가는 경로는 없다. D-1 및 추가 갱신 preview는 이 분기를 사용하지 않는다.
+
 하나의 산출물 카드 안에 두 역할을 나누었다.
 
 - **Serving / public artifacts:** forecast, actual, alerts, metrics, reports. 카드의 delivery 쪽에 배치하고 `GitHub Actions -> GitHub Pages -> React / Vite dashboard` 연결을 이 영역에서 시작한다.

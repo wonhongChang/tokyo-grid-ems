@@ -4,6 +4,10 @@
 
 이 문서는 TokyoGridEMS를 정상 운영하고 장애에서 복구하기 위한 표준 절차를 정의한다. 모델 구조와 피처 상세는 [모델 운영 명세](model-operations-spec.md)를 참고한다.
 
+## SD-H1-P50
+
+발행을 중단하려면 Actions 저장소 변수 `TGEMS_H1_ISSUE=0`을 설정하고 Windows 운영 체크아웃에 `data/raw/.hourly-next.disabled` 파일을 만든다. 둘 다 해제하면 재개한다. 기존 기록은 삭제하지 않는다. 로컬 실행기 자체를 복구할 때는 이전 작업의 실행 동작만 복원하고 예약 시각은 유지한다. 화면은 ETL 재실행 없이 Deploy Only로 배포한다.
+
 ## 1. 운영 원칙
 
 - 모든 날짜와 운영 판단은 JST(UTC+9)를 기준으로 한다.

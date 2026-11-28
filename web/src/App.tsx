@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useFetch } from './hooks/useFetch'
 import { StatusBar } from './components/StatusBar'
+import { NextHour } from './components/NextHour'
 import { ForecastChart } from './components/ForecastChart'
 import { AlertsList } from './components/AlertsList'
 import { ValidationPanel } from './components/ValidationPanel'
@@ -450,14 +451,15 @@ export default function App({ locale, setLocale }: AppProps) {
 
           <main>
             {activeTab === 'yesterday' && yesterdayDate
-              ? <YesterdayTab date={yesterdayDate} latest={status.latest} />
+              ? <><YesterdayTab date={yesterdayDate} latest={status.latest} /><NextHour data={status.hourlyNext} date={yesterdayDate} /></>
               : activeTab === 'yesterday'
                 ? <div className="tab-content empty-msg">{t.noHistoricalData}</div>
                 : null
             }
-            {activeTab === 'today' && (
+            {activeTab === 'today' && (<>
               <ForecastTab date={todayDate} summary={status.today} showBands={true} />
-            )}
+              {todayDate && <NextHour data={status.hourlyNext} date={todayDate} />}
+            </>)}
             {activeTab === 'tomorrow' && (
               <ForecastTab date={tomorrowDate} summary={status.tomorrow} showBands={true} />
             )}

@@ -7,11 +7,14 @@ param(
     [switch]$SkipValidation,
     [switch]$ForceHistoricalEtl,
     [switch]$AllowOffSchedule,
-    [string]$LogDir = "logs/local_etl"
+    [string]$LogDir = "logs/local_etl",
+    [string]$OperationsRoot
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$publisher = Join-Path $PSScriptRoot "publish_data_branch.py"
+if ($OperationsRoot) { $RepoRoot = Resolve-Path $OperationsRoot }
 $StartedAt = Get-Date
 $requested = if ([IO.Path]::IsPathRooted($LogDir)) { $LogDir } else { Join-Path $RepoRoot $LogDir }
 $LogRoot = [IO.Path]::GetFullPath($requested)
@@ -387,7 +390,7 @@ try {
 
                 Invoke-Native -FilePath "py" -Arguments @(
                     "-3.14",
-                    "scripts/publish_data_branch.py"
+                    $publisher, "--operations-root", $RepoRoot.Path
                 )
                 $published = $true
 
@@ -474,7 +477,7 @@ try {
         # succeeds, this snapshot is accurate; if it fails, catch{} overwrites the
         # local copy with the failure details and no data-branch commit is made.
         Write-LocalEtlStatus -Status "ok" -Stage "ready_to_publish" -Message "Generated artifacts validated; publishing this snapshot to origin/data" -Published $true
-        $publishArgs = @("-3.14", "scripts/publish_data_branch.py")
+        $publishArgs = @("-3.14", $publisher, "--operations-root", $RepoRoot.Path)
         if ($SkipValidation) {
             $publishArgs += "--skip-validation"
         }

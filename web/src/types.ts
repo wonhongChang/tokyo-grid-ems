@@ -19,6 +19,7 @@ export interface ForecastSummary {
 }
 
 export interface StatusJSON {
+  hourlyNext?: { model: 'SD-H1-P50'; rows: HourlyIssue[] }
   project: string
   schemaVersion: string
   timezone: string
@@ -31,6 +32,12 @@ export interface StatusJSON {
   yesterday: string | null
   today: ForecastSummary | null
   tomorrow: ForecastSummary | null
+}
+
+export interface HourlyIssue {
+  id: string; issuedAt: string; targetStart: string; targetEnd: string
+  confirmedAt: string | null; forecastMw: number; championMw: number
+  actualMw: number | null; finalized: boolean
 }
 
 export interface ForecastPoint {

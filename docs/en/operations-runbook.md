@@ -4,6 +4,10 @@
 
 This runbook defines the standard procedures for operating TokyoGridEMS and recovering from failures. See the [Model Operations Specification](model-operations-spec.md) for model internals and feature details.
 
+## SD-H1-P50
+
+To stop new issues without stopping Champion, set the Actions repository variable `TGEMS_H1_ISSUE=0` and create `data/raw/.hourly-next.disabled` in the Windows operations checkout. Remove both overrides to resume. Preserve the immutable ledger. If the local release wrapper must be rolled back, restore the preceding task action, not an earlier task schedule. Deploy Only refreshes the dashboard without rerunning ETL.
+
 ## 1. Operating Principles
 
 - All dates and operational decisions use JST (UTC+9).

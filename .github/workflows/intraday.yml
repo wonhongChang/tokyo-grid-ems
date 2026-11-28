@@ -44,6 +44,7 @@ jobs:
     env:
       TOKYO_GRID_EMS_D1_TRIAL: ${{ vars.TOKYO_GRID_EMS_D1_TRIAL }}
       TOKYO_GRID_EMS_D1_WRITER: github-intraday
+      TGEMS_H1_ISSUE: ${{ vars.TGEMS_H1_ISSUE == '0' && '0' || '1' }}
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -92,6 +93,10 @@ jobs:
           OPENAI_DAILY_REPORT_LATEST_ONLY: ${{ vars.OPENAI_DAILY_REPORT_LATEST_ONLY }}
 
       # ── Push web/public to data branch ────────────────────────────────────
+      - name: Preserve confirmed next-hour issue receipts
+        if: vars.TGEMS_PAGES_RECOVERY == '1'
+        run: python scripts/pages_release.py remember-hourly "$RESTORED_DATA_SHA"
+
       - name: Push web/public to data branch
         run: |
           git config user.name "github-actions[bot]"
@@ -104,6 +109,7 @@ jobs:
           fi
           python scripts/public_artifact_security.py data web/public
           rsync -a --delete --exclude='.git' web/public/ /tmp/data-wt/
+          python scripts/hourly_delivery.py /tmp/data-wt
           python scripts/public_artifact_security.py data /tmp/data-wt --worktree
           cd /tmp/data-wt
           git add -A

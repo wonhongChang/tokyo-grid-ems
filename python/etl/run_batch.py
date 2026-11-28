@@ -2917,6 +2917,12 @@ def _write_forecast_snapshot(
         suffix += 1
 
     write_json(snapshot_path, snapshot)
+    if target_date == current_date and os.environ.get("TGEMS_H1_ISSUE") == "1":
+        try:
+            from python.forecast.hourly_next import regular
+            regular(out_dir, forecast_json, snapshot)
+        except Exception as exc:
+            print(f"[WARN] Optional next-hour issue skipped: {type(exc).__name__}", file=sys.stderr)
     _prune_forecast_snapshots(
         out_dir,
         current_date,

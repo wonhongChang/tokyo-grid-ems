@@ -55,6 +55,8 @@ ETL/배치 파이프라인은 이 스키마에 맞춰 `web/public/` 아래 파�
 
 # 1) status.json
 
+Pages 전용 선택 항목 `hourlyNext`는 status 기준 당일·전일을 담는다. `issuedAt`은 실제 기록 시각, `confirmedAt`은 이미 공개된 data SHA를 확인한 시각으로 최초 Pages 접속 시각이 아니다. 확인이 없으면 채점하지 않는다. 원본과 발행 확인 기록은 `ops/hourly-next/`에 보존한다.
+
 ## 목적
 대시보드 상단에 표시할 **현재 상태(Last Updated / Coverage / 결측일)** 및 요약 KPI를 제공.
 

@@ -8,6 +8,12 @@ Operational reference: [Model operations specification](model-operations-spec.md
 
 ---
 
+## Limited next-hour forecast (SD-H1-P50)
+
+A frozen hourly LightGBM (Huber loss) predicts the change from the last completed hourly mean using two recent hourly changes, the calendar, Japanese holidays and the issue clock. Its direct forecast and the same run's Champion Post are averaged 50:50. Both models' training cutoffs exclude 2026-08-01 and later. No five-minute demand or new feed is used.
+
+Historical replay (2026-10-15 to 2026-11-27): 651 pre-start issues over 44 dates, MAE 594.7 → 445.6 MW; lower on 40/44 dates. These are development results, not live scores. Replacing one point worsened adjacent ramps, so the estimate is not joined to the daily curve. Archived interval widths are inherited, not independently calibrated.
+
 ## Role in the System
 
 The model forecasts hourly electricity demand for Tokyo Grid EMS. It is used to generate:
