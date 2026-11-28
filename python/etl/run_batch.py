@@ -2917,7 +2917,7 @@ def _write_forecast_snapshot(
         suffix += 1
 
     write_json(snapshot_path, snapshot)
-    if target_date == current_date and os.environ.get("TGEMS_H1_ISSUE") == "1":
+    if target_date == current_date and os.environ.get("TGEMS_H1_REGULAR") == "1":
         try:
             from python.forecast.hourly_next import regular
             regular(out_dir, forecast_json, snapshot)

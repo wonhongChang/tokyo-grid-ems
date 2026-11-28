@@ -137,6 +137,27 @@ def test_switch_and_locale_docs(tmp_path, monkeypatch):
     monkeypatch.setenv("TGEMS_H1_ISSUE","0")
     h.regular(tmp_path,n,s)
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("raw,expected", [('null',(True,'default_unset')),('""',(True,'default_empty')),
+    ('"0"',(False,'disabled')),('"1"',(True,'enabled')),('false',(False,'invalid')),('bad',(False,'invalid'))])
+def test_host_switch_without_expression_coercion(raw, expected):
+    assert h.switch(dict(TGEMS_H1_REGULAR="1",TGEMS_H1_SETTING_JSON=raw)) == expected
+    assert h.switch(dict(TGEMS_H1_SETTING_JSON=raw)) == (False, "outside_regular")
+
+
+def test_disabled_regular_records_status_not_issue(monkeypatch,tmp_path):
+    n,_,s,_=inputs()
+    monkeypatch.setenv("TGEMS_H1_REGULAR","1")
+    monkeypatch.setenv("TGEMS_H1_ISSUE","0")
+    monkeypatch.delenv("TGEMS_H1_SETTING_JSON",raising=False)
+    h.regular(tmp_path,n,s)
+    status=json.loads((tmp_path/"ops/hourly-next-status.json").read_bytes())
+    assert status["state"]=="disabled" and status["issueId"] is None
+    assert not (tmp_path/h.LEDGER).exists()
+
+
+def test_locale_docs():
     root=Path(__file__).resolve().parents[1]
     for locale in ("en","ja","ko"):
         doc=(root/"docs"/locale/"lgbm-design.md").read_text(encoding="utf8")

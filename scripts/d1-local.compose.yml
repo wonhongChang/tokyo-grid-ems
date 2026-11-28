@@ -2,7 +2,8 @@ services:
   etl:
     environment:
       TOKYO_GRID_EMS_D1_WRITER: windows-etl
-      TGEMS_H1_ISSUE: ${TGEMS_H1_ISSUE:-1}
+      TGEMS_H1_REGULAR: '1'
+      TGEMS_H1_ISSUE: ${TGEMS_H1_ISSUE-1}
     volumes:
       - type: bind
         source: ${D1_RELEASE_ROOT:?missing release}/python/etl/run_batch.py

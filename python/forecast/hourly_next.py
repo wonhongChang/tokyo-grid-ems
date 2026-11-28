@@ -121,13 +121,46 @@ def seal(out, native, actual, snapshot, calibration, *, clock=lambda: datetime.n
     return path
 
 
+def switch(env):
+    # Actions has loose cross-type equality. Preserve JSON null vs "" vs "0"
+    # until here; only an explicitly opted-in regular job gets a default-on.
+    if env.get("TGEMS_H1_REGULAR") != "1":
+        return False, "outside_regular"
+    raw = env.get("TGEMS_H1_ISSUE")
+    if "TGEMS_H1_SETTING_JSON" in env:
+        try:
+            raw = json.loads(env["TGEMS_H1_SETTING_JSON"])
+        except ValueError:
+            return False, "invalid"
+    if raw is None:
+        return True, "default_unset"
+    if raw == "":
+        return True, "default_empty"
+    return (True, "enabled") if raw == "1" else (False, "disabled" if raw == "0" else "invalid")
+
+
 def regular(out, native, snapshot):
-    if os.getenv("TGEMS_H1_ISSUE") != "1" or native["date"] != snapshot["generatedAt"][:10]:
+    enabled, source = switch(os.environ)
+    if source == "outside_regular" or native["date"] != snapshot["generatedAt"][:10]:
         return
-    day = native["date"]+".json"
-    native = json.loads((out/"forecast"/day).read_bytes())
-    actual = json.loads((out/"actual"/day).read_bytes())
-    cal = json.loads((out/"reports/internal/operational-calibration"/day).read_bytes())
-    path = seal(out, native, actual, snapshot, cal)
-    if path:
-        print(f"[H1] Sealed independent issue: {path.relative_to(out)}")
+    at = moment(snapshot["generatedAt"])
+    target = at.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    state = "disabled" if not enabled else "waiting"
+    issue = None
+    try:
+        if enabled and 1 <= at.hour <= 22 and at.minute >= 10 and snapshot["observationSummary"]["lastObservedActualHour"] == at.hour-1:
+            state = "missed"
+            day = native["date"]+".json"
+            native = json.loads((out/"forecast"/day).read_bytes())
+            actual = json.loads((out/"actual"/day).read_bytes())
+            cal = json.loads((out/"reports/internal/operational-calibration"/day).read_bytes())
+            path = seal(out, native, actual, snapshot, cal)
+            if path:
+                issue = json.loads(path.read_bytes())["sha256"]
+                state = "recorded"
+    finally:
+        path = out/"ops"/"hourly-next-status.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(dict(schema=1, identity=IDENTITY, runAt=at.isoformat(),
+            targetStart=target.isoformat(), switch=source, state=state, issueId=issue)), encoding="utf8")
+        print(f"[H1] switch={source} state={state} run={at.isoformat()} issue={issue or '-'}")

@@ -44,7 +44,8 @@ jobs:
     env:
       TOKYO_GRID_EMS_D1_TRIAL: ${{ vars.TOKYO_GRID_EMS_D1_TRIAL }}
       TOKYO_GRID_EMS_D1_WRITER: github-intraday
-      TGEMS_H1_ISSUE: ${{ vars.TGEMS_H1_ISSUE == '0' && '0' || '1' }}
+      TGEMS_H1_REGULAR: '1'
+      TGEMS_H1_SETTING_JSON: ${{ toJSON(vars.TGEMS_H1_ISSUE) }}
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}

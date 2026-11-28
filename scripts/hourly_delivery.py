@@ -101,7 +101,20 @@ def project(root, data, live=None, *, clock=lambda: datetime.now(JST)):
             rows.append(dict(id=key,issuedAt=r["issuedAt"],targetStart=r["targetStart"],targetEnd=r["targetEnd"],
                 confirmedAt=proof["dataSeenAt"] if confirmed else None,forecastMw=r["forecastMw"],championMw=r["championMw"],
                 actualMw=y,finalized=day in final))
-    status["hourlyNext"]=dict(model="SD-H1-P50",rows=rows)
+    health = None
+    marker = root/"ops/hourly-next-status.json"
+    index = root/"forecast_snapshots"/today/"index.json"
+    if marker.is_file() and index.is_file():
+        entry = json.loads(marker.read_bytes())
+        runs = json.loads(index.read_bytes()).get("snapshots", [])
+        latest = max((s["generatedAt"] for s in runs if s["generatedAt"][:10]==today), default=None)
+        if entry.get("identity")==ID and entry.get("runAt")==latest:
+            state = entry["state"]
+            if state == "recorded":
+                state = "issued" if any(r["id"]==entry["issueId"] and r["confirmedAt"] for r in rows) else "missed"
+            if state in {"waiting","disabled","missed","issued"}:
+                health = dict(state=state,runAt=latest,targetStart=entry["targetStart"],switch=entry["switch"])
+    status["hourlyNext"]=dict(model="SD-H1-P50",rows=rows,health=health)
     status_file.write_text(json.dumps(status,ensure_ascii=False,separators=(",",":")),encoding="utf8")
     return proofs
 
