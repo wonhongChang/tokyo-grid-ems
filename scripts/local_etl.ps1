@@ -310,7 +310,11 @@ function Invoke-IntradayDispatch {
 }
 
 Push-Location $RepoRoot
+$baseReceipt = Join-Path $LogRoot ("restore-" + [guid]::NewGuid().ToString("N") + ".sha")
+$writerLock = $null
 try {
+    if ($Publish -and $SkipRestore) { throw "Publication requires this run's restore; cannot publish with -SkipRestore." }
+    $writerLock = [IO.File]::Open((Join-Path $privateLogs "local-etl.lock"),'OpenOrCreate','ReadWrite','None')
     Start-Transcript -Path $LogPath -Append | Out-Null
     Write-LocalEtlStatus -Status "running" -Stage "starting" -Message "Local ETL started"
 
@@ -330,7 +334,9 @@ try {
 
     if (-not $SkipRestore) {
         Write-LocalEtlStatus -Status "running" -Stage "restore_data_branch" -Message "Restoring web/public from origin/data"
-        Invoke-Native -FilePath "py" -Arguments @("-3.14", "scripts/restore_public_from_data_branch.py")
+        $restoreArgs = @("-3.14", (Join-Path $PSScriptRoot "restore_public_from_data_branch.py"), "--operations-root", $RepoRoot.Path)
+        if ($Publish) { $restoreArgs += @("--receipt", $baseReceipt) }
+        Invoke-Native -FilePath "py" -Arguments $restoreArgs
     }
 
     $historicalCheck = Test-HistoricalEtlNeeded
@@ -390,7 +396,7 @@ try {
 
                 Invoke-Native -FilePath "py" -Arguments @(
                     "-3.14",
-                    $publisher, "--operations-root", $RepoRoot.Path
+                    $publisher, "--operations-root", $RepoRoot.Path, "--receipt", $baseReceipt
                 )
                 $published = $true
 
@@ -477,7 +483,7 @@ try {
         # succeeds, this snapshot is accurate; if it fails, catch{} overwrites the
         # local copy with the failure details and no data-branch commit is made.
         Write-LocalEtlStatus -Status "ok" -Stage "ready_to_publish" -Message "Generated artifacts validated; publishing this snapshot to origin/data" -Published $true
-        $publishArgs = @("-3.14", $publisher, "--operations-root", $RepoRoot.Path)
+        $publishArgs = @("-3.14", $publisher, "--operations-root", $RepoRoot.Path, "--receipt", $baseReceipt)
         if ($SkipValidation) {
             $publishArgs += "--skip-validation"
         }
@@ -499,10 +505,12 @@ try {
     Write-LocalEtlStatus -Status "ok" -Stage "completed" -Message "Local ETL completed" -Published $published -DeployTriggered $deployTriggered -IntradayTriggered $intradayTriggered
 }
 catch {
-    Write-LocalEtlStatus -Status "failed" -Stage "failed" -Message "Local ETL failed; check the private scheduler log."
+    if ($writerLock) { Write-LocalEtlStatus -Status "failed" -Stage "failed" -Message "Local ETL failed; check the private scheduler log." }
     throw
 }
 finally {
+    if ($writerLock) { $writerLock.Dispose() }
+    if (Test-Path -LiteralPath $baseReceipt) { Remove-Item -LiteralPath $baseReceipt }
     try {
         Stop-Transcript | Out-Null
     }

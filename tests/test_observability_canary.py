@@ -66,10 +66,12 @@ def test_publish_transport_not_dispatch(monkeypatch,tmp_path):
         calls.append(tuple(args))
     monkeypatch.setattr(publish,"_run",fake_run)
     # Exercise the actual retry boundary, never the real repository orchestrator.
-    monkeypatch.setattr(publish,"main",lambda:publish._push_with_retry(tmp_path))
+    base="a"*40
+    monkeypatch.setattr(publish.subprocess,"check_output",lambda args,**kw: base if args[-1]=="HEAD^" else "b"*40)
+    monkeypatch.setattr(publish,"main",lambda:publish._push_with_retry(tmp_path,base))
     runner.main(["publish"])
     spans={s.name:s for s in exporter.get_finished_spans()}
-    assert calls==[("git","push","origin","HEAD:data")]
+    assert calls==[("git","push",f"--force-with-lease=refs/heads/data:{base}","origin","HEAD:refs/heads/data")]
     assert set(spans)=={"publish.request","git.publish"}
     assert spans["git.publish"].parent.span_id==spans["publish.request"].context.span_id
 

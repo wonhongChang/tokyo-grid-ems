@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import argparse
 import subprocess
 import sys
 import tempfile
@@ -18,8 +19,8 @@ if str(REPO_ROOT) not in sys.path:
 from scripts.public_artifact_security import check_tree, prepare
 
 
-def _run(args: list[str], cwd: Path = REPO_ROOT) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, text=True, check=True)
+def _run(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, cwd=cwd or REPO_ROOT, text=True, check=True)
 
 
 def _has_remote_data_branch() -> bool:
@@ -47,14 +48,20 @@ def _clear_directory(path: Path) -> None:
             child.unlink()
 
 
-def restore() -> None:
-    subprocess.run(
+def restore(receipt=None) -> None:
+    if receipt and (receipt.exists() or receipt.resolve().is_relative_to(PUBLIC_DIR.resolve())):
+        raise ValueError("expected a new private receipt path")
+    fetch = subprocess.run(
         ["git", "fetch", "origin", DATA_BRANCH],
         cwd=REPO_ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    if receipt:
+        fetch.check_returncode()
     if not _has_remote_data_branch():
+        if receipt:
+            raise RuntimeError("cannot attest the data branch for publication")
         print("[DATA] No origin/data branch found; keeping current web/public")
         PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
         prepare(PUBLIC_DIR)
@@ -62,7 +69,8 @@ def restore() -> None:
 
     with tempfile.TemporaryDirectory(prefix="tokyo-grid-data-restore-") as tmp:
         worktree = Path(tmp) / "data-wt"
-        _run(["git", "worktree", "add", "--detach", str(worktree), f"origin/{DATA_BRANCH}"])
+        base = subprocess.check_output(["git","rev-parse","--verify",f"origin/{DATA_BRANCH}^{{commit}}"],cwd=REPO_ROOT,text=True).strip()
+        _run(["git", "worktree", "add", "--detach", str(worktree), base])
         try:
             check_tree(worktree, worktree=True)
             if PUBLIC_DIR.exists():
@@ -77,14 +85,25 @@ def restore() -> None:
                 else:
                     shutil.copy2(child, target, follow_symlinks=False)
             prepare(PUBLIC_DIR)
-            print("[DATA] Restored web/public from origin/data")
+            if receipt:
+                with receipt.open("x",encoding="ascii") as out:
+                    out.write(base)
+            print(f"[DATA] Restored web/public from origin/data: {base}")
         finally:
             _run(["git", "worktree", "remove", str(worktree), "--force"])
 
 
 def main() -> None:
+    global REPO_ROOT, PUBLIC_DIR
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--operations-root",type=Path)
+    parser.add_argument("--receipt",type=Path)
+    args=parser.parse_args()
+    if args.operations_root:
+        REPO_ROOT=args.operations_root.resolve(strict=True)
+        PUBLIC_DIR=REPO_ROOT/"web"/"public"
     try:
-        restore()
+        restore(args.receipt)
     except subprocess.CalledProcessError as exc:
         print(f"[ERROR] command failed: {' '.join(exc.cmd)}", file=sys.stderr)
         raise SystemExit(exc.returncode) from exc
