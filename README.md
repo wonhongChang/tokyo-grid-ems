@@ -30,7 +30,7 @@ An **automated static EMS (Energy Management System) prototype** built on time-s
 | Dashboard | React + Vite |
 | Hosting | GitHub Pages (static JSON) |
 | Automation | Local Windows/Docker ETL + scheduled GitHub Actions intraday updates and deployment |
-| Operations report | Python v8 report; optional, verified Luna evidence selection |
+| Operations report | Python v8 report; optional, verified GPT-6 Luna evidence selection |
 
 ---
 
@@ -58,7 +58,7 @@ The status bar shows update time and data availability.
 | Today | Hourly forecast, prediction intervals, actuals, and peak forecast |
 | Tomorrow | Next-day hourly forecast, prediction intervals, and peak forecast |
 | Validation | Daily metrics, model/TEPCO comparison, and LightGBM backtest |
-| Ops Report | Daily accuracy, largest miss and next check; expand evidence or a conditional research worksheet |
+| Ops Report | One day’s demand, signed hourly misses, matched MAEs and next checks; open the underlying evidence or research worksheet |
 
 ---
 
