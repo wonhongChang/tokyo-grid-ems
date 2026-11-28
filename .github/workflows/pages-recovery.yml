@@ -1,0 +1,91 @@
+name: Recover verified Pages release
+on:
+  workflow_call:
+    inputs:
+      failed_data_sha:
+        type: string
+        required: true
+      release_leg:
+        type: string
+        default: recovery
+
+# Caller still holds the shared Pages lock. No second queue entry or recursion.
+permissions:
+  actions: read
+  contents: read
+  statuses: write
+  pages: write
+  id-token: write
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          ref: data
+          path: data-wt
+          fetch-depth: 1
+          persist-credentials: false
+      - id: select
+        env:
+          FAILED_SHA: ${{ inputs.failed_data_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/pages_release.py select "$FAILED_SHA"
+      - if: steps.select.outputs.needed == 'true'
+        run: |
+          # Do not include Git administration or execute anything from the data branch.
+          rm -rf data-wt/.git
+          python scripts/public_artifact_security.py restore data-wt
+          rsync -a --delete data-wt/ web/public/
+          python scripts/public_artifact_security.py data web/public
+      - if: steps.select.outputs.needed == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - if: steps.select.outputs.needed == 'true'
+        working-directory: web
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: |
+          npm ci
+          npm run build
+      - if: steps.select.outputs.needed == 'true'
+        env:
+          DATA_SHA: ${{ steps.select.outputs.sha }}
+        run: |
+          python scripts/pages_release.py stamp "$DATA_SHA"
+          python scripts/public_artifact_security.py pages web/dist
+      - if: steps.select.outputs.needed == 'true'
+        uses: actions/upload-pages-artifact@v5
+        id: upload
+        with:
+          path: web/dist
+          name: pages-${{ inputs.release_leg }}-${{ github.run_attempt }}
+      - if: steps.select.outputs.needed == 'true'
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_ARTIFACT_ID: ${{ steps.upload.outputs.artifact_id }}
+          PAGES_ARTIFACT_NAME: pages-${{ inputs.release_leg }}-${{ github.run_attempt }}
+          DATA_SHA: ${{ steps.select.outputs.sha }}
+        run: |
+          python .github/scripts/wait_for_pages_artifact.py
+          python scripts/pages_release.py fence-release "$DATA_SHA"
+      - if: steps.select.outputs.needed == 'true'
+        uses: actions/deploy-pages@v5
+        id: deploy
+        with:
+          artifact_name: pages-${{ inputs.release_leg }}-${{ github.run_attempt }}
+      - if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        env:
+          DATA_SHA: ${{ steps.select.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/pages_release.py ack "$DATA_SHA"

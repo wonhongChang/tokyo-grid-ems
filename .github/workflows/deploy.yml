@@ -2,19 +2,34 @@ name: Deploy Only
 
 on:
   workflow_dispatch:
+    inputs:
+      data_anchor:
+        description: 'Optional verified full data SHA: reconcile the latest eligible Pages release without ETL'
+        type: string
+        required: false
 
 permissions:
   actions: read
   contents: read
   pages: write
+  statuses: write
   id-token: write
 
 concurrency:
   group: pages
+  queue: max
   cancel-in-progress: false
 
 jobs:
+  reconcile:
+    if: inputs.data_anchor != '' && vars.TGEMS_PAGES_RECOVERY == '1' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/pages-recovery.yml
+    with:
+      failed_data_sha: ${{ inputs.data_anchor }}
   deploy:
+    if: inputs.data_anchor == ''
+    outputs:
+      releasable: ${{ steps.release.outputs.sha }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -25,9 +40,10 @@ jobs:
 
       - name: Restore web/public from data branch
         run: |
-          git fetch origin data 2>/dev/null || true
+          git fetch --no-tags origin +refs/heads/data:refs/remotes/origin/data
+          echo "RESTORED_DATA_SHA=$(git rev-parse origin/data)" >> "$GITHUB_ENV"
           if git ls-remote --exit-code --heads origin data > /dev/null 2>&1; then
-            git worktree add --detach /tmp/data-wt origin/data
+            git worktree add --detach /tmp/data-wt "$(git rev-parse origin/data)"
             python scripts/public_artifact_security.py restore /tmp/data-wt --worktree
             mkdir -p web/public
             rsync -a --exclude='.git' /tmp/data-wt/ web/public/
@@ -38,17 +54,26 @@ jobs:
             exit 1
           fi
 
+      - name: Check exact successful Pages revision
+        id: identity
+        if: vars.TGEMS_PAGES_RECOVERY == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/pages_release.py check-current "$RESTORED_DATA_SHA"
       - uses: actions/setup-node@v6
+        if: steps.identity.outputs.skip != 'true'
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
       - name: Install Node dependencies
+        if: steps.identity.outputs.skip != 'true'
         run: npm ci
         working-directory: web
 
       - name: Build
+        if: steps.identity.outputs.skip != 'true'
         # Fail before Vite copies anything through a link in its public tree.
         run: |
           python ../scripts/public_artifact_security.py data public
@@ -58,23 +83,47 @@ jobs:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
 
       - name: Check Pages release and exclude ETL-only binary state
-        run: python scripts/public_artifact_security.py pages web/dist
+        if: steps.identity.outputs.skip != 'true'
+        id: release
+        run: |
+          python scripts/pages_release.py fence "$RESTORED_DATA_SHA"
+          python scripts/pages_release.py stamp "$RESTORED_DATA_SHA"
+          python scripts/public_artifact_security.py pages web/dist
+          echo "sha=$RESTORED_DATA_SHA" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-pages-artifact@v5
+        if: steps.identity.outputs.skip != 'true'
         id: pages-artifact
         with:
           path: web/dist
           name: github-pages-${{ github.run_attempt }}
 
       - name: Wait for Pages artifact visibility
+        if: steps.identity.outputs.skip != 'true'
         timeout-minutes: 2
         env:
           GH_TOKEN: ${{ github.token }}
           PAGES_ARTIFACT_ID: ${{ steps.pages-artifact.outputs.artifact_id }}
           PAGES_ARTIFACT_NAME: github-pages-${{ github.run_attempt }}
-        run: python3 .github/scripts/wait_for_pages_artifact.py
+        run: |
+          python3 .github/scripts/wait_for_pages_artifact.py
+          python scripts/pages_release.py fence-release "$RESTORED_DATA_SHA"
 
       - uses: actions/deploy-pages@v5
+        if: steps.identity.outputs.skip != 'true'
         id: deploy
         with:
           artifact_name: github-pages-${{ github.run_attempt }}
+      - name: Record successful data and code revision
+        if: steps.deploy.outcome == 'success' && vars.TGEMS_PAGES_RECOVERY == '1'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/pages_release.py ack "$RESTORED_DATA_SHA"
+
+  recover:
+    needs: deploy
+    if: failure() && needs.deploy.result == 'failure' && needs.deploy.outputs.releasable != '' && vars.TGEMS_PAGES_RECOVERY == '1' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/pages-recovery.yml
+    with:
+      failed_data_sha: ${{ needs.deploy.outputs.releasable }}

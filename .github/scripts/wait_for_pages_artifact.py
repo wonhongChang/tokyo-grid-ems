@@ -62,7 +62,7 @@ def main():
     name = os.environ["PAGES_ARTIFACT_NAME"]
     if (api != "https://api.github.com" or not re.fullmatch(r"[\w.-]+/[\w.-]+", repo, re.ASCII)
             or not all(re.fullmatch(r"[1-9][0-9]*", n) for n in (run, attempt, artifact_id))
-            or name != f"github-pages-{attempt}"):
+            or name not in {f"{base}-{attempt}" for base in ("github-pages","pages-recovery","pages-recovery-retry")}):
         raise GateError("Missing or unexpected GitHub Pages artifact identity")
     url = f"{api}/repos/{repo}/actions/runs/{run}/artifacts?" + urlencode({"name": name})
     request = Request(url, headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"],

@@ -61,6 +61,21 @@ def test_absent_or_unconfirmed_upload_blocks_deploy():
     with pytest.raises(gate.GateError, match="not confirmed"):
         run([response(size=0), response()], timeout=10)
 
+@pytest.mark.parametrize("name,valid",[("github-pages-3",True),("pages-recovery-3",True),
+    ("pages-recovery-retry-3",True),("pages-recovery-2",False),("unknown-3",False)])
+def test_cli_exact_artifact_names(monkeypatch,name,valid):
+    for k,v in dict(GITHUB_API_URL="https://api.github.com",GITHUB_REPOSITORY="fixture/repo",
+        GITHUB_RUN_ID="123",GITHUB_RUN_ATTEMPT="3",PAGES_ARTIFACT_ID="456",
+        PAGES_ARTIFACT_NAME=name,GH_TOKEN="not-a-token").items():
+        monkeypatch.setenv(k,v)
+    seen=[]
+    monkeypatch.setattr(gate,"wait_for_artifact",lambda lookup,ident,label:seen.append((ident,label)))
+    if not valid:
+        with pytest.raises(gate.GateError):gate.main()
+    else:
+        gate.main()
+        assert seen==[(456,name)]
+
 
 @pytest.mark.parametrize("workflow", ["intraday", "deploy", "etl"])
 def test_all_pages_paths_use_same_attempt_and_gate_before_deploy(workflow):
@@ -69,11 +84,15 @@ def test_all_pages_paths_use_same_attempt_and_gate_before_deploy(workflow):
     assert cfg["permissions"]["actions"] == "read"
     jobs = [job for job in cfg["jobs"].values() if job.get("environment", {}).get("name") == "github-pages"]
     (job,) = jobs
-    upload, wait, deploy = job["steps"][-3:]
+    upload, wait, deploy, ack = job["steps"][-4:]
     assert upload["uses"] == "actions/upload-pages-artifact@v5"
     assert upload["with"]["name"] == wait["env"]["PAGES_ARTIFACT_NAME"] == deploy["with"]["artifact_name"]
     assert "github.run_attempt" in upload["with"]["name"]
     assert wait["env"]["PAGES_ARTIFACT_ID"] == "${{ steps." + upload["id"] + ".outputs.artifact_id }}"
-    assert wait["run"] == "python3 .github/scripts/wait_for_pages_artifact.py"
-    assert "continue-on-error" not in wait and "if" not in deploy
+    checks = wait["run"].strip().splitlines()
+    assert checks[0] == "python3 .github/scripts/wait_for_pages_artifact.py"
+    assert checks[1].startswith("python scripts/pages_release.py fence-release ")
+    assert "continue-on-error" not in wait
+    assert upload["if"] == wait["if"] == deploy["if"] == "steps.identity.outputs.skip != 'true'"
+    assert "steps.deploy.outcome == 'success'" in ack["if"]
     assert deploy["uses"] == "actions/deploy-pages@v5"
