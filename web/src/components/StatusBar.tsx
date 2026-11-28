@@ -32,6 +32,10 @@ export function StatusBar({ status }: Props) {
           <span className="badge warning">{t.statusMissingDays(status.missingDays.length)}</span>
         </div>
       )}
+      {status.coverageTo && <div className="status-item">
+        <span className="status-label">{t.statusCoverage}</span>
+        <span className="status-value">{status.coverageTo}</span>
+      </div>}
       {status.failedDays.length > 0 && (
         <div className="status-item">
           <span className="badge critical">{t.statusFailedDays(status.failedDays.length)}</span>

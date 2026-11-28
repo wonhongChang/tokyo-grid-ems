@@ -6,7 +6,7 @@ interface FetchState<T> {
   error: string | null
 }
 
-export function useFetch<T>(url: string | null, cache?: RequestCache): FetchState<T> {
+export function useFetch<T>(url: string | null, cache: RequestCache = 'no-cache', revision = 0): FetchState<T> {
   const [state, setState] = useState<FetchState<T> & { url: string | null }>({
     url,
     data: null,
@@ -19,24 +19,24 @@ export function useFetch<T>(url: string | null, cache?: RequestCache): FetchStat
       setState({ url, data: null, loading: false, error: null })
       return
     }
-    let cancelled = false
-    setState({ url, data: null, loading: true, error: null })
+    const controller = new AbortController()
+    setState(prev => prev.url === url && prev.data ? prev : { url, data: null, loading: true, error: null })
 
-    fetch(url, cache ? { cache } : undefined)
+    fetch(url, { cache, signal: controller.signal })
       .then(res => {
         if (res.status === 404) return null
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json() as Promise<T>
       })
       .then(data => {
-        if (!cancelled) setState({ url, data, loading: false, error: null })
+        if (!controller.signal.aborted) setState({ url, data, loading: false, error: null })
       })
       .catch(err => {
-        if (!cancelled) setState({ url, data: null, loading: false, error: String(err.message) })
+        if (!controller.signal.aborted) setState(prev => ({ url, data: prev.url === url ? prev.data : null, loading: false, error: String(err.message) }))
       })
 
-    return () => { cancelled = true }
-  }, [url, cache])
+    return () => controller.abort()
+  }, [url, cache, revision])
 
   return state.url === url ? state : { data: null, loading: !!url, error: null }
 }

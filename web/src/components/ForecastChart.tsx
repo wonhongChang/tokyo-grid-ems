@@ -52,7 +52,7 @@ function buildChartData(forecast: ForecastPoint[], locale: Locale, actual?: Actu
     return {
       hour: `${h}:00`,
       forecast: powerDisplayValue(f.forecastMw, locale),
-      actual: act?.actualMw != null ? powerDisplayValue(act.actualMw, locale) : null,
+      actual: isObservedActual && act?.actualMw != null ? powerDisplayValue(act.actualMw, locale) : null,
       tepcoForecast: act?.tepcoForecastMw != null ? powerDisplayValue(act.tepcoForecastMw, locale) : null,
       supply: act?.supplyMw != null ? powerDisplayValue(act.supplyMw, locale) : null,
       usagePct,

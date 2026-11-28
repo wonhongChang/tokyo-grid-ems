@@ -115,6 +115,27 @@ def project(root, data, live=None, *, clock=lambda: datetime.now(JST)):
             if state in {"waiting","disabled","missed","issued"}:
                 health = dict(state=state,runAt=latest,targetStart=entry["targetStart"],switch=entry["switch"])
     status["hourlyNext"]=dict(model="SD-H1-P50",rows=rows,health=health)
+    for section in ("today", "tomorrow"):
+        summary = status.get(section)
+        if not summary:
+            continue
+        day = summary["date"]
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            continue
+        dates = root/"forecast_snapshots"/day
+        try:
+            last = max(json.loads((dates/"index.json").read_bytes())["snapshots"], key=lambda item:item["generatedAt"])
+            name = Path(last["path"]).name
+            if not re.fullmatch(r"[0-9T-]+\.json",name):
+                continue
+            snap = json.loads((dates/name).read_bytes())
+            native = json.loads((root/"forecast"/(day+".json")).read_bytes())
+            if (native.get("date")==snap.get("targetDate")==day and last["generatedAt"]==snap["generatedAt"]
+                    and all(snap.get(k)==native.get(k) for k in ("model","servingPolicyFingerprint","series"))
+                    and native.get("series")):
+                summary["forecastBuiltAt"]=snap["generatedAt"]
+        except (OSError,KeyError,ValueError,TypeError):
+            pass  # Unknown is preferable to using the status update as an issue time.
     status_file.write_text(json.dumps(status,ensure_ascii=False,separators=(",",":")),encoding="utf8")
     return proofs
 

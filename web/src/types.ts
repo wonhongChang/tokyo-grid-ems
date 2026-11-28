@@ -11,6 +11,7 @@ export interface LatestSummary {
 }
 
 export interface ForecastSummary {
+  forecastBuiltAt?: string
   date: string
   peakForecastMw: number | null
   peakForecastAt: string | null
@@ -19,7 +20,9 @@ export interface ForecastSummary {
 }
 
 export interface StatusJSON {
-  hourlyNext?: { model: 'SD-H1-P50'; rows: HourlyIssue[] }
+  hourlyNext?: { model: 'SD-H1-P50'; rows: HourlyIssue[]; health?: {
+    state: 'waiting' | 'disabled' | 'missed' | 'issued'; runAt: string; targetStart: string; switch: string
+  } | null }
   project: string
   schemaVersion: string
   timezone: string
@@ -54,6 +57,7 @@ export interface ForecastJSON {
   timezone: string
   availability: Availability
   model?: { name: string; version: string; nWeeks: number }
+  d1PointPolicy?: { mode?: string; scope?: string }
   peak?: {
     forecastMw: number
     at: string

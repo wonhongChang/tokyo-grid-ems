@@ -732,7 +732,7 @@ export function OpsReportPanel({ baseUrl }: Props) {
       {loading && <div className="loading">{t.loading}</div>}
 
       {!loading && !selectedReport && (
-        <div className="card empty-msg">{labels.unavailable}</div>
+        <div className="card empty-msg">{index.error || report.error ? t.failedLoad : labels.unavailable}</div>
       )}
 
       {!loading && brief && <OperationsBrief key={locale + reportDate} nodes={brief} locale={locale} />}

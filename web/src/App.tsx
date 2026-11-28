@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useFetch } from './hooks/useFetch'
 import { StatusBar } from './components/StatusBar'
 import { NextHour } from './components/NextHour'
@@ -324,13 +324,16 @@ function ForecastTab({ date, summary, showBands = false }: { date: string | null
 
   const hasTepco = actual.data?.series.some(p => p.tepcoForecastMw != null) ?? false
   const hasActual = actual.data?.series.some(p => p.actualMw != null) ?? false
-  const subtitle = hasActual ? t.latestDataSubtitle : t.forecastSubtitle
+  const product = forecast.data
+  const subtitle = hasActual ? t.sameDayObserved : product?.d1PointPolicy?.mode === 'raw' && product.d1PointPolicy.scope === 'updates'
+    ? t.d1Raw : product?.model?.name?.startsWith('lgbm') ? t.championForecast : t.forecastSubtitle
 
   return (
     <div className="tab-content">
       <div className="date-header">
         <h2>{fmtDate(date)}</h2>
         <p>{subtitle}</p>
+        {summary?.forecastBuiltAt && <p>{t.forecastBuilt}: {summary.forecastBuiltAt.slice(0,19).replace('T',' ')} JST · {t.publicationUnknown}</p>}
       </div>
 
       {loading && <div className="loading">{t.loading}</div>}
@@ -373,7 +376,24 @@ interface AppProps {
 }
 
 export default function App({ locale, setLocale }: AppProps) {
-  const { data: status, loading, error } = useFetch<StatusJSON>(`${BASE}status.json`)
+  const [revision, setRevision] = useState(0)
+  const lastCheck = useRef(Date.now())
+  const recheck = useCallback(() => {
+    if (document.visibilityState !== 'visible' || Date.now() - lastCheck.current < 15000) return
+    lastCheck.current = Date.now()
+    setRevision(r => r + 1)
+  }, [])
+  useEffect(() => {
+    document.addEventListener('visibilitychange', recheck)
+    window.addEventListener('focus', recheck)
+    window.addEventListener('pageshow', recheck)
+    return () => {
+      document.removeEventListener('visibilitychange', recheck)
+      window.removeEventListener('focus', recheck)
+      window.removeEventListener('pageshow', recheck)
+    }
+  }, [recheck])
+  const { data: status, loading, error } = useFetch<StatusJSON>(`${BASE}status.json`, 'no-cache', revision)
   const [activeTab, setActiveTab] = useState<TabId>('today')
   const { t } = useT()
 
@@ -425,7 +445,7 @@ export default function App({ locale, setLocale }: AppProps) {
                 <button
                   key={tab}
                   className={`tab-btn${activeTab === tab ? ' active' : ''}`}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => { setActiveTab(tab); recheck() }}
                 >
                   {tabLabels[tab]}
                   {tab === 'yesterday' && yesterdaySev && (
@@ -449,7 +469,7 @@ export default function App({ locale, setLocale }: AppProps) {
             </div>
           </nav>
 
-          <main>
+          <main key={status.lastUpdatedAt}>
             {activeTab === 'yesterday' && yesterdayDate
               ? <><YesterdayTab date={yesterdayDate} latest={status.latest} /><NextHour data={status.hourlyNext} date={yesterdayDate} /></>
               : activeTab === 'yesterday'
