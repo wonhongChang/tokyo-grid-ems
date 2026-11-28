@@ -1,9 +1,11 @@
 import { createElement, type MouseEvent, type ReactNode } from 'react'
 import type { AIDailyReport } from '../types'
 import type { Locale } from '../i18n'
+import { byId, chartSlots, children, isTag, verifiedAdvice, type BriefNode as Node, type Slot, type Tag } from '../briefEvidence'
+import { briefCopy } from '../briefCopy'
+import { BriefDayChart, fmt, hourText } from './BriefDayChart'
 import './operationsBrief.css'
 
-type Node = string | [string, Record<string, string>, ...Node[]]
 const tags = new Set('header small h1 h2 section p b details summary div table thead tbody tr th td a dl dt dd code'.split(' '))
 const prefix = 'ops-v8-'
 
@@ -56,59 +58,86 @@ function element(n: Node, key: number): ReactNode {
   return createElement(tag, props, ...children.map(element))
 }
 
-const WORDS = {
-  ko: {made:'리포트 작성', actual:'실측', finalized:'확정', provisional:'잠정', unknown:'확정 여부 미기록',
-    source:'본문: Python · Luna 근거 선택', selected:'선택됨', abstained:'채택된 근거 없음', not_requested:'호출 안 함',
-    no_eligible_evidence:'대상 근거 없음 · 미호출', failed:'호출 또는 응답 검증 실패', input_unavailable:'입력 준비 불가 · 미호출', unavailable:'기록 불충분',
-    mae:'MAE는 예측과 실측이 평균 몇 MW 어긋났는지 나타냅니다. Champion과 TEPCO의 최종 공개값을 같은 대상시간에서 비교하며, 발행 시각이나 남은 예측 시간이 같다는 뜻은 아닙니다.',
-    h1:'별도 비교: 시간 시작 전 확인된 마지막 발행과 당시 Champion, 동일 확정 실측 기준'},
-  en: {made:'Report created', actual:'Actuals', finalized:'finalized', provisional:'provisional', unknown:'finality not recorded',
-    source:'Body: Python · Luna evidence selection', selected:'selected', abstained:'no selection accepted', not_requested:'not called',
-    no_eligible_evidence:'no eligible evidence; not called', failed:'call or response validation failed', input_unavailable:'input unavailable; not called', unavailable:'not established',
-    mae:'MAE is the average distance in MW between forecast and actual demand. The final published Champion and TEPCO values cover the same target hours, not necessarily the same issue times or lead times.',
-    h1:'Separate comparison: last confirmed pre-start issue vs its contemporary Champion, on the same finalized actuals'},
-  ja: {made:'レポート作成', actual:'実績', finalized:'確定', provisional:'暫定', unknown:'確定状況の記録なし',
-    source:'本文：Python · Lunaによる根拠選択', selected:'選択あり', abstained:'採用された根拠なし', not_requested:'呼出しなし',
-    no_eligible_evidence:'対象の根拠なし・未呼出し', failed:'呼出しまたは応答検証に失敗', input_unavailable:'入力を準備できず未呼出し', unavailable:'記録不足',
-    mae:'MAEは予測と実績のずれの絶対値をMWで平均したものです。ChampionとTEPCOの最終公開値を同じ対象時刻で比較しており、発行時刻や予測リードが等しいとは限りません。',
-    h1:'別集計：対象開始前に確認した最後の発行と当時のChampionを、同一の確定実績で比較'},
+const groups = {
+  ko: ['시간대별 수요와 정확도','예측 수정과 보정 단계','구간·표본·진단 근거'],
+  en: ['Demand and accuracy by hour','Forecast revisions and calibration','Intervals, samples and diagnostics'],
+  ja: ['時間帯別の需要と予測精度','予測の更新と補正の内訳','予測区間・比較対象・診断結果'],
 }
+const groupIds = [
+  ['rank','peak','band','point','change','shape_daily','daily','repeat'],
+  ['vintage','stages','history','check','control'],
+]
 
 export function OperationsBrief({ nodes, locale, report }: { nodes: Node[]; locale: Locale; report: AIDailyReport }) {
-  const w = WORDS[locale], view = report.operationsBrief!
-  const allowed = ['selected','abstained','not_requested','no_eligible_evidence','failed','input_unavailable'] as const
-  const advisory = allowed.find(s => s === view.advisoryStatus) ?? 'unavailable'
-  const stamp = Date.parse(report.generatedAt)
-  const created = Number.isFinite(stamp) ? new Date(stamp).toLocaleString(locale,{timeZone:'Asia/Tokyo',hour12:false})+' JST' : '—'
-  const meta = w.made+': '+created+' · '+w.actual+': '+(w[view.actualStatus ?? 'unknown'] ?? w.unknown)
-  const source = w.source+': '+ w[advisory]
-  const score = view.hourlyComparison
-  function section(n: Node, i: number): ReactNode {
-    if (typeof n === 'string') return n
-    if (n[0] === 'header') return element([...n, ['small', {}, meta]] as Node,i)
-    if (n[1].id !== 'brief') return element(n,i)
-    const children: Node[] = []
-    for (const child of n.slice(2) as Node[]) {
-      children.push(child)
-      if (Array.isArray(child) && child[0] === 'p' && typeof child[2] === 'string' && /^(Daily MAE|일간 MAE|日別MAE)/.test(child[2]))
-        children.push(['p',{class:'note'},w.mae])
-    }
-    if (score && score.sampleTargets > 0 && score.issueIds?.length === score.sampleTargets &&
-        Number.isFinite(score.h1MaeMw) && Number.isFinite(score.championMaeMw))
-      children.push(['p',{},w.h1+' (n='+score.sampleTargets+'): MAE · SD-H1-P50 '+score.h1MaeMw+' MW / Champion '+score.championMaeMw+' MW'])
-    children.push(['small',{},source])
-    return element([n[0],n[1],...children],i)
-  }
+  const w=briefCopy[locale], v=report.operationsBrief!, g=report.generator
+  const section=byId(nodes,'brief')!, next=byId(nodes,'next')!, research=byId(nodes,'research')
+  const repeat=byId(nodes,'repeat'), advice=verifiedAdvice(nodes,report)
+  const slots=chartSlots(nodes,report), points=slots?.filter((s):s is Slot=>s!==null) ?? []
+  const full=points.length===24 && !!byId(nodes,'row-daily/day')
+  const ordered=[...points].sort((a,b)=>Math.abs(b.error)-Math.abs(a.error)||a.hour-b.hour)
+  const worst=ordered[0], best=[...points].sort((a,b)=>Math.abs(a.error)-Math.abs(b.error)||a.hour-b.hour)[0]
+  const peaks=points.filter(s=>byId(nodes,'row-peak/'+hourText(s.hour)))
+  const peak=peaks[0], times=peaks.map(r=>hourText(r.hour)).join(', ')
+  const direction=(s:Slot)=>s.error<0?w.under:s.error>0?w.over:w.exact
+  const summary=report.performance
+  const verdict=({model_better:w.publishedWins,tepco_better:w.utilityWins,close:w.close,mixed:w.mixed} as Record<string,string>)[summary.verdict??'']
+  const maeOK=full && summary.comparableHours===points.length && typeof summary.modelMaeMw==='number' &&
+    Number.isFinite(summary.modelMaeMw) && typeof summary.tepcoMaeMw==='number' && Number.isFinite(summary.tepcoMaeMw)
+  const textTime=Date.parse(report.generatedAt)
+  const created=Number.isFinite(textTime)?new Date(textTime).toLocaleString(locale,{timeZone:'Asia/Tokyo',hour12:false})+' JST':w.unknown
+  const meta=g.advisory
+  const states=['selected','abstained','not_requested','no_eligible_evidence','failed','input_unavailable'] as const
+  const status=states.find(s=>s===v.advisoryStatus)??'unavailable'
+  const attempted=meta ? meta.attempted : status==='unavailable'?null:['selected','abstained','failed'].includes(status)
+  const model=meta?.model ?? (g.provider==='openai'?g.model:null)
+  const score=v.hourlyComparison
+  const h1=score && score.sampleTargets>0 && score.issueIds?.length===score.sampleTargets && Number.isFinite(score.h1MaeMw) && Number.isFinite(score.championMaeMw)
+  const archived=nodes.filter(isTag).filter(n=>n[0]==='details'&&!['luna','research','provenance'].includes(n[1].id))
+  const buckets=[archived.filter(n=>groupIds[0].includes(n[1].id)),archived.filter(n=>groupIds[1].includes(n[1].id)),
+    archived.filter(n=>!groupIds.some(ids=>ids.includes(n[1].id)))]
+  const pattern=repeat && children(section).filter(isTag).find(n=>n[0]==='p'&&typeof n[2]==='string'&&/^\d{2}-\d{2}/.test(n[2]))
+  const original=children(section).filter(n=>!isTag(n)||n[1].id!=='next')
   function showEvidence(event: MouseEvent<HTMLElement>) {
-    const link = (event.target as Element).closest('a')
-    if (!link || !link.hash.startsWith('#' + prefix + 'row-')) return
-    const row = document.getElementById(decodeURIComponent(link.hash.slice(1)))
-    const details = row?.closest('details')
-    if (!row || !details || !event.currentTarget.contains(row)) return
+    const link=(event.target as Element).closest('a')
+    if (!link || !link.hash.startsWith('#'+prefix+'row-')) return
+    const row=document.getElementById(decodeURIComponent(link.hash.slice(1)))
+    if (!row || !event.currentTarget.contains(row)) return
     event.preventDefault()
-    details.open = true
-    row.focus({ preventScroll: true })
-    row.scrollIntoView({ block: 'center' })
+    for(let box=row.closest('details');box;box=box.parentElement?.closest('details')??null) box.open=true
+    row.focus({preventScroll:true});row.scrollIntoView({block:'center'})
   }
-  return <article lang={locale} className="ops-v8" data-report-layout="v8" onClick={showEvidence}>{nodes.map(section)}</article>
+  const tail=(node:Tag)=>children(node).filter(n=>!isTag(n)||n[0]!=='summary').map(element)
+  const check=children(next).filter(n=>!isTag(n)||n[0]!=='b').map(n=>typeof n==='string'?n.replace(/^\s*·\s*/,''):n)
+  return <article lang={locale} className="ops-v8" data-report-layout="v8" onClick={showEvidence}>
+    <header className="brief-heading"><div className="brief-dateline"><time dateTime={report.date}>{report.date}</time> · JST</div>
+      <h1>{w.title}</h1><div className="brief-byline">{w.created}: {created} · {w.observed}: {w[v.actualStatus??'unknown']}</div>
+    </header>
+    <section id="ops-v8-brief" aria-label={w.insights}>
+      {maeOK && <><dl className="brief-metrics">
+        {peak && <div><dt>{w.peak}</dt><dd>{fmt(peak.actual,locale)} <small>MW</small></dd><dd className="brief-metric-sub">{times} JST</dd></div>}
+        <div><dt>Champion · MAE</dt><dd>{fmt(summary.modelMaeMw!,locale)} <small>MW</small></dd><dd className="brief-metric-sub">{w.mae}</dd></div>
+        <div><dt>TEPCO · MAE</dt><dd>{fmt(summary.tepcoMaeMw!,locale)} <small>MW</small></dd><dd className="brief-metric-sub">{w.mae}</dd></div>
+        <div><dt>{w.largest}</dt><dd>{fmt(worst.error,locale,true)} <small>MW</small></dd><dd className="brief-metric-sub">{hourText(worst.hour)} · {direction(worst)}</dd></div>
+      </dl><p className="brief-method"><b>{w.fullScope} · {w.hours} {points.length}/24{verdict?' · '+verdict:''}</b><br/>{w.compare}</p></>}
+      {!maeOK && original.map(element)}
+      {pattern && maeOK && <div className="brief-finding"><strong>{w.repeat}</strong>{children(pattern).map(element)}</div>}
+      <div className="brief-next" id="ops-v8-next"><strong>{w.follow}</strong><span>{check.map(element)}</span></div>
+    </section>
+    {slots && <BriefDayChart slots={slots} worst={worst} best={best} locale={locale}/>}
+    {advice && <section className="brief-reading" id="ops-v8-luna"><h2>{w.reading}</h2>{tail(advice)}</section>}
+    {h1 && <section className="brief-reading"><h2>SD-H1-P50</h2><p>{w.h1} (n={score.sampleTargets}): MAE · SD-H1-P50 {fmt(score.h1MaeMw,locale)} MW / Champion {fmt(score.championMaeMw,locale)} MW</p></section>}
+    {research && <section className="brief-research"><h2>{w.research}</h2>{element(research,0)}</section>}
+    <section className="brief-support"><h2>{w.more}</h2>
+      {maeOK && <details><summary>{w.overview}</summary>{original.map(element)}</details>}
+      {buckets.map((items,i)=>items.length>0 && <details className="brief-group" key={i}><summary>{groups[locale][i]}</summary>{items.map(element)}</details>)}
+    </section>
+    <footer><details className="brief-generation"><summary>{w.source}</summary>
+      <dl>{[[w.body,'Python'],[w.created,created],[w.model,model??w.unknown],[w.attempt,attempted===true?w.yes:attempted===false?w.no:w.unavailable],
+        [w.selection,w[status]]].map(([k,val])=><div key={k}><dt>{k}</dt><dd>{val}</dd></div>)}</dl>
+      {byId(nodes,'provenance') && element(byId(nodes,'provenance')!,0)}
+      <code>{v.fingerprint}</code>
+      <p><a href={import.meta.env.BASE_URL+'reports/ai/daily/'+locale+'/'+report.date+'.json'}>JSON</a>
+        {' · '}<a href={'https://github.com/wonhongChang/tokyo-grid-ems/blob/main/docs/'+locale+'/review-bundle-cli.md'}>Review Bundle CLI</a></p>
+    </details>{advice && <small className="brief-credit">{w.credit}</small>}</footer>
+  </article>
 }

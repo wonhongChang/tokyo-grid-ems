@@ -1,10 +1,46 @@
-.ops-v8 { min-width: 0; max-width: 100%; background: var(--card); color: var(--text); padding: 18px 24px; line-height: 1.5; }
-.ops-v8 header { border-bottom: 3px solid #187261; }
-.ops-v8 h1 { font-size: 24px; margin: 2px 0 8px; }
+.ops-v8 { min-width:0; max-width:100%; background:var(--card); color:var(--text); padding:24px 30px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.brief-heading { padding-bottom:16px; border-bottom:2px solid #30786c; }
+.brief-dateline { color:#27675d; font-size:13px; font-weight:650; }
+.ops-v8 h1 { font-size:27px; line-height:1.25; margin:4px 0; }
+.brief-byline, .brief-method, .brief-metric-sub, .brief-legend, .brief-axis-title, .brief-error-head span, .brief-readout, .brief-inspect, .brief-credit { font-size:13px; color:#495d68; }
 .ops-v8 h2 { font-size: 19px; margin: 18px 0 8px; }
 .ops-v8 p, .ops-v8 dl { margin: 6px 0; }
 .ops-v8 small, .ops-v8 .note { color: #465a60; }
-.ops-v8 #ops-v8-next { border-left: 3px solid #147566; padding: 5px 10px; margin: 10px 0; }
+.ops-v8 .brief-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); padding:14px 0; border-bottom:1px solid var(--border); margin:0; }
+.brief-metrics > div { padding:0 14px; border-left:1px solid var(--border); }
+.brief-metrics > div:first-child { border-left:0; padding-left:0; }
+.ops-v8 .brief-metrics dt { color:#435961; font-size:13px; font-weight:600; }
+.ops-v8 .brief-metrics dd { margin:3px 0 0; line-height:1.25; font-size:23px; font-weight:650; }
+.ops-v8 .brief-metrics dd small { font-size:12px; font-weight:500; }
+.ops-v8 .brief-metrics dd.brief-metric-sub { font-size:12px; font-weight:400; }
+.ops-v8 .brief-method { margin:8px 0 11px; }
+.brief-finding, .brief-next { border-left:3px solid #38786e; padding:5px 11px; margin:6px 0; }
+.brief-next { border-color:#a7bbc0; }
+.brief-next strong, .brief-finding strong { margin-inline-end:9px; color:#225c54; }
+.brief-figure { border-block:1px solid var(--border); margin:18px 0; padding:15px 0; }
+.brief-figure-head, .brief-error-head, .brief-inspect, .brief-readout, .brief-legend { display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 16px; }
+.brief-figure-head { justify-content:space-between; }
+.ops-v8 .brief-figure-head h2, .ops-v8 .brief-reading h2 { margin:0; }
+.brief-legend span { display:inline-flex; align-items:center; gap:5px; }
+.brief-legend i { width:18px; border-top:2px solid; }
+.brief-axis-title { margin:6px 0 0; }
+.brief-curve { height:180px; min-width:0; }
+.brief-bars { height:108px; min-width:0; }
+.brief-error-head { margin-top:12px; }
+.brief-error-head h3 { font-size:15px; }
+.brief-inspect label { font-weight:600; }
+.brief-inspect select { border:1px solid #b7c7cb; padding:4px; border-radius:4px; background:#fff; color:var(--text); }
+.brief-inspect button { border:0; background:transparent; color:#125b53; text-decoration:underline; cursor:pointer; font:inherit; }
+.brief-readout { margin-top:5px; gap:2px 14px; }
+.brief-readout b { color:#1d3742; white-space:nowrap; }
+.brief-reading { margin:14px 0; }
+.ops-v8 .brief-group[open] > details { margin-inline-start:12px; }
+.brief-generation { margin-top:18px; }
+.brief-generation dl div { display:flex; flex-wrap:wrap; gap:5px 12px; }
+.brief-generation dt { min-width:110px; }
+.brief-generation code { font-size:12px; }
+.brief-credit { display:block; margin:9px 0 0; }
+.ops-v8-layout .ops-report-controls { justify-content:flex-start; background:transparent; border:0; box-shadow:none; padding:0 0 6px; }
 .ops-v8 details { border-bottom: 1px solid var(--border); padding: 6px 0; }
 .ops-v8 summary, .ops-v8 a { color: #125b53; }
 .ops-v8 summary { cursor: pointer; font-weight: 600; }
@@ -20,4 +56,11 @@
   .ops-v8-layout .ops-report-controls label { white-space: nowrap; }
   .ops-v8 { padding: 10px 12px; }
   .ops-v8 h1 { font-size: 21px; }
+  .ops-v8 .brief-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 0; padding:12px 0; }
+  .brief-metrics > div:nth-child(3) { padding-left:0; border-left:0; }
+  .ops-v8 .brief-metrics dd { font-size:20px; }
+  .brief-curve { height:154px; }
+  .brief-figure-head { align-items:flex-start; }
+  .brief-legend { gap:3px 12px; }
+  .brief-figure { margin:12px 0; }
 }

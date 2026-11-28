@@ -434,6 +434,7 @@ export interface AIDailyReport {
     language: string
     fingerprint: string
     advisoryStatus: string
+    selection?: { relation: string; claim: string }[]
     actualStatus?: 'finalized' | 'provisional' | 'unknown'
     sampleHours?: number | null
     hourlyComparison?: {sampleTargets: number; h1MaeMw: number; championMaeMw: number; issueIds: string[]}
@@ -449,6 +450,7 @@ export interface AIDailyReport {
   contentLanguage?: 'en' | 'ko' | 'ja'
   generator: {
     provider: 'python' | 'openai' | 'fallback'
+    advisory?: { provider: string; model: string; status: string; attempted: boolean | null }
     model: string | null
     localizationModel?: string | null
     localizationStatus?: 'ok' | 'fallback_en' | 'not_requested'
