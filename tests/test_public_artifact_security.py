@@ -101,8 +101,8 @@ def test_data_branch_keeps_state_but_pages_excludes_binary_and_redacts_legacy_st
 
 def test_workflows_check_restore_push_build_and_upload():
     workflows = Path(__file__).resolve().parents[1] / ".github/workflows"
-    for name in ("etl", "intraday", "deploy"):
-        job = next(iter(yaml.safe_load((workflows / f"{name}.yml").read_text(encoding="utf8"))["jobs"].values()))
+    for name, job_id in (("etl", "etl-and-deploy"), ("intraday", "update-today"), ("deploy", "deploy")):
+        job = yaml.safe_load((workflows / f"{name}.yml").read_text(encoding="utf8"))["jobs"][job_id]
         steps = job["steps"]
         restore = next(s["run"] for s in steps if "Restore web/public" in s.get("name", ""))
         assert restore.index("public_artifact_security.py restore") < restore.index("rsync")
@@ -114,6 +114,12 @@ def test_workflows_check_restore_push_build_and_upload():
             push = next(s["run"] for s in steps if "Push web/public" in s.get("name",""))
             assert push.index("public_artifact_security.py data web/public") < push.index("rsync")
             assert push.index("public_artifact_security.py data /tmp/data-wt") < push.index("git add")
+
+    recovery = yaml.safe_load((workflows / "pages-recovery.yml").read_text(encoding="utf8"))["jobs"]["recover"]["steps"]
+    restore = next(s["run"] for s in recovery if "public_artifact_security.py restore" in s.get("run",""))
+    assert restore.index("public_artifact_security.py restore") < restore.index("rsync")
+    upload = next(i for i,s in enumerate(recovery) if "upload-pages-artifact" in s.get("uses",""))
+    assert "public_artifact_security.py pages web/dist" in recovery[upload-1]["run"]
 
 
 def test_local_report_dotenv_only_fills_allowlisted_missing_values(tmp_path, monkeypatch):
