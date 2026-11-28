@@ -15,3 +15,13 @@ services:
         target: /app/python/forecast
         read_only: true
         bind: {create_host_path: false}
+      - type: bind
+        source: ${D1_RELEASE_ROOT:?missing release}/python/eval/luna_brief
+        target: /app/python/eval/luna_brief
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${D1_RELEASE_ROOT:?missing release}/scripts/hourly_delivery.py
+        target: /app/scripts/hourly_delivery.py
+        read_only: true
+        bind: {create_host_path: false}

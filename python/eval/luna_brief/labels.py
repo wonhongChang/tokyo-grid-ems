@@ -95,7 +95,7 @@ FIELDS = {
     "metrics":"Evaluation metrics|평가 지표|評価指標","protocol":"Test conditions|시험 조건|試験条件",
     "coolingDelta24hMean":"24h cooling change (°C)|24시간 냉방도 변화(°C)|24時間冷房度差（°C）",
     "modelBiasMw":"Published bias|공개 편향|公開バイアス","assessment":"Recorded assessment|기록된 판정|記録された判定",
-    "flags":"Recorded flags|기록된 플래그|記録されたフラグ","lag24OverheatMeanMw":"Mean lag excess|평균 시차 초과|平均ラグ超過",
+    "flags":"Recorded flags|기록된 플래그|記録されたフラグ","lag24OverheatMeanMw":"Mean positive excess of prior-day demand over comparable-day mean|같은 영업 유형 평균 대비 전날 수요의 초과분 평균|同じ営業日区分の平均に対する前日需要の超過分の平均",
     "tempDelta24hMeanC":"24h temperature change (°C)|24시간 기온 변화(°C)|24時間気温差（°C）",
     "flag":"Applied flag|적용 플래그|適用フラグ","measure":"Measurement|측정 항목|測定項目","value":"Value|값|値","unit":"Unit|단위|単位",
     "snapshotCount":"Retained runs|보존 횟수|保存回数","dominantAppliedRegimeReason":"Most frequent reason|최빈 사유|最多理由",

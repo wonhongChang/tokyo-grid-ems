@@ -42,6 +42,21 @@ def test_first_new_target_and_immutable_cached_fallback(tmp_path,monkeypatch):
     assert index2==idx and not any(again.values()) and budget["used"]==0
 
 
+@pytest.mark.parametrize("explicit_provisional", [True,False])
+def test_finality_requires_both_etl_and_valid_report_population(tmp_path,monkeypatch,explicit_provisional):
+    seed(tmp_path,monkeypatch)
+    live._write_json(tmp_path/".etl_state.json",{"okDates":[DAY]})
+    if explicit_provisional:
+        path=tmp_path/f"actual/{DAY}.json"
+        actual=json.loads(path.read_bytes())
+        actual["series"][0]["finalized"]=False
+        live._write_json(path,actual)
+    _,reports,_=live.build_ai_daily_reports_multilingual(tmp_path,STAMP,use_openai=False)
+    view=reports["en"][0]["operationsBrief"]
+    assert view["actualStatus"]==("unknown" if explicit_provisional else "finalized")
+    assert view["sampleHours"]==(None if explicit_provisional else 24)
+
+
 def test_do_not_mix_new_layout_into_existing_legacy_day(tmp_path,monkeypatch):
     cache=seed(tmp_path,monkeypatch)
     _,old,_=live.build_ai_daily_reports_multilingual(tmp_path,STAMP,report_layout="legacy",use_openai=False)
@@ -126,10 +141,13 @@ def test_transport_failure_consumes_one_call_and_preserves_every_node(tmp_path,m
     payload=json.loads(mock.call_args.args[0].data)
     assert (payload["model"],payload["reasoning"],payload["max_output_tokens"])==("gpt-6-luna",{"effort":"none"},4000)
     for lang,(r,) in failed.items():
-        assert r["operationsBrief"]["advisoryStatus"]=="unavailable"
+        assert r["operationsBrief"]["advisoryStatus"]=="failed"
         assert r["operationsBrief"]["nodes"]==ok[lang][0]["operationsBrief"]["nodes"]
         assert r["performance"]==ok[lang][0]["performance"]
-        assert r["generator"]["provider"]=="fallback"
+        assert r["generator"]["provider"]=="python"
+        assert r["generator"]["advisory"]["attempted"] is True
+        assert ok[lang][0]["generator"]["advisory"]["attempted"] is False
+        assert live.MESSAGES[lang]["fallback_note"] not in r["dataQuality"]["limitations"] + r["limitations"]
 
 
 @pytest.mark.parametrize("unsafe",['<img src="x">','<a href="https://example.org">link</a>','<p onclick="alert(0)">x</p>','<script>x</script>'])

@@ -42,6 +42,41 @@ def valid(proof, key, r):
         return False
 
 
+def finalized_comparison(root, day, actual):
+    """Separate report population: one last confirmed pre-start issue per observed target."""
+    state = root/".etl_state.json"
+    if not (root/DIR/day).is_dir() or not state.is_file():
+        return None
+    if (day not in json.loads(state.read_bytes())["okDates"] or actual.get("date") != day
+            or actual.get("availability") != "ok" or actual.get("provisional") is True
+            or actual.get("finalized") is False or actual.get("isFinal") is False):
+        return None
+    observed, seen = {}, set()
+    for r in actual["series"]:
+        t = _time(r["ts"])
+        if t in seen or str(t.date())!=day or (t.minute,t.second,t.microsecond)!=(0,0,0):
+            return None
+        seen.add(t)
+        if (r.get("actualSource") in ("observed", None, "observed_legacy") and r.get("provisional") is not True
+                and r.get("finalized") is not False and type(r.get("actualMw")) in (float,int) and r["actualMw"]>0):
+            observed[r["ts"]] = r["actualMw"]
+    matched = {}
+    for key, row in records(root, day):
+        target = row["targetStart"]
+        proof = root/DIR/day/("proof-"+key+".json")
+        if not proof.is_file() or not valid(json.loads(proof.read_bytes()), key, row):
+            continue
+        if target not in observed:
+            continue
+        if target not in matched or _time(row["issuedAt"]) > _time(matched[target][1]["issuedAt"]):
+            matched[target] = (key, row)
+    if not matched:
+        return None
+    return {"sampleTargets": len(matched), "issueIds": [matched[t][0] for t in sorted(matched)],
+            **{out: round(sum(abs(r[field]-observed[t]) for t, (_, r) in matched.items())/len(matched), 1)
+               for out, field in (("h1MaeMw","forecastMw"), ("championMaeMw","championMw"))}}
+
+
 def lookup(live):
     return {p["id"]:p for p in (live or {}).get("hourlyProofs", []) if isinstance(p, dict) and isinstance(p.get("id"), str)}
 

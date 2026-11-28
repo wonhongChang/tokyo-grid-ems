@@ -99,6 +99,14 @@ def test_local_and_hosted_compare_only_confirmed_pairs(tmp_path, model):
     write(tmp_path/"forecast"/(DAY+".json"),n)
     proofs,row=run(ISSUE+timedelta(minutes=1))
     assert len(proofs)==1 and row["actualMw"] is None
+    marker=tmp_path/"ops/hourly-next-status.json"
+    write(tmp_path/"forecast_snapshots"/DAY/"index.json",dict(snapshots=[dict(generatedAt=s["generatedAt"])]))
+    for raw, visible in (("waiting","waiting"),("disabled","disabled"),("missed","missed"),("recorded","issued")):
+        write(marker,dict(identity=h.IDENTITY,runAt=s["generatedAt"],state=raw,targetStart=row["targetStart"],issueId=row["id"],switch="enabled"))
+        run(ISSUE+timedelta(minutes=1))
+        assert json.loads((tmp_path/"status.json").read_bytes())["hourlyNext"]["health"]["state"]==visible
+    run(turn)
+    assert json.loads((tmp_path/"status.json").read_bytes())["hourlyNext"]["health"]["state"]=="missed"
     delivery.remember(tmp_path,dict(hourlyProofs=proofs))
     y=dict(ts=turn.isoformat(),actualSource="tepco_forecast_fallback",actualMw=30500)
     write(tmp_path/"actual"/(DAY+".json"),dict(a,series=[y]))
@@ -114,6 +122,10 @@ def test_local_and_hosted_compare_only_confirmed_pairs(tmp_path, model):
     _,final=run(ended)
     assert final["finalized"] and final["actualMw"]==30500 and final["championMw"]==n["series"][8]["forecastMw"]
     assert record.read_bytes()==record_bytes
+    assert delivery.finalized_comparison(tmp_path,DAY,dict(a,series=[dict(y,finalized=False)])) is None
+    assert delivery.finalized_comparison(tmp_path,DAY,dict(a,series=[y,y])) is None
+    result=delivery.finalized_comparison(tmp_path,DAY,dict(a,series=[y]))
+    assert result["sampleTargets"]==1 and result["championMaeMw"]==400 and len(result["issueIds"])==1
 
 
 def test_local_mirror_keeps_prior_issues(tmp_path):

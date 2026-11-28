@@ -97,10 +97,39 @@ def attach(public_dir, reports, key, budget, *, retained=()):
         if notes!=build(public_dir,anchor["date"],anchor,notes)["optional"]:
             raise ValueError("partial locale archive: selection cannot be verified")
     else:
+        before = budget.get("used", 0)
         try:
             notes,status = _select(public_dir,anchor,brief,key,budget)
         except (OSError, HTTPException, ValueError, KeyError, TypeError, RuntimeError, AttributeError, IndexError):
             notes,status = [],"unavailable"
+        if status == "unavailable":
+            status = "failed" if budget.get("used", 0) > before else "input_unavailable"
+    if retained:
+        # Repair only missing locales. Never attach today's ETL state to an old issue.
+        context = {k:view[k] for k in ("actualStatus","sampleHours","comparisonBasis","hourlyComparison") if k in view}
+    else:
+        day = brief["day"]
+        points = {rid[6:]:r["cells"]["actual"] for rid,r in brief["rows"].items() if rid.startswith("point/")}
+        try:
+            state = json.loads((public_dir/".etl_state.json").read_bytes())
+            ok = state["okDates"]
+            finality = ("finalized" if isinstance(ok,list) and day in ok and brief["state"]=="daily_report_full"
+                        and len(points)==24 and anchor["dataQuality"]["observedHours"] == 24
+                        else "provisional" if isinstance(ok,list) and day not in ok and points else "unknown")
+        except (OSError, ValueError, KeyError, TypeError):
+            finality = "unknown"
+        context = dict(actualStatus=finality, sampleHours=len(points) if brief["state"] in ("daily_report_full","partial") else None,
+                       comparisonBasis="retrospective_same_target")
+        if (public_dir/"ops/hourly-next"/day).is_dir():
+            try:
+                from scripts.hourly_delivery import finalized_comparison
+                actual = json.loads((public_dir/"actual"/(day+".json")).read_bytes())
+                comparison = (finalized_comparison(public_dir, day, actual)
+                              if relations.live._fingerprint_json_values(actual)==brief["sources"]["actual"].get("fingerprint") else None)
+                if comparison:
+                    context["hourlyComparison"] = comparison
+            except (ImportError, OSError, TypeError, ValueError, KeyError):
+                pass  # Never replace missing proof with the daily Champion score.
     brief["optional"] = notes
     outputs = {}
     for locale,report in reports.items():
@@ -110,8 +139,13 @@ def attach(public_dir, reports, key, budget, *, retained=()):
         if parser.main or not parser.nodes:raise ValueError("incomplete brief")
         outputs[locale]={**report,"operationsBrief":{"version":VERSION,"language":locale,"date":brief["day"],
             "fingerprint":report["inputSnapshot"]["fingerprint"],"basisDigest":digest,"selection":notes,
-            "advisoryStatus":status,"nodes":parser.nodes}}
-        if status in ("selected","abstained"):
-            outputs[locale]["generator"]={**report["generator"],"provider":"openai","model":MODEL,
-                                         "scope":"optionalEvidenceSelection","promptVersion":"v8-evidence-selection"}
+            "advisoryStatus":status,"nodes":parser.nodes,**context}}
+        result = outputs[locale]
+        result["generator"] = {**report["generator"], "provider":"python", "model":None,
+            "scope":"deterministicBrief", "promptVersion":"v8-evidence-selection",
+            "advisory":{"provider":"openai", "model":MODEL, "status":status,
+                        "attempted":None if status=="unavailable" else status in ("selected","abstained","failed")}}
+        obsolete = relations.live.MESSAGES[locale]["fallback_note"]
+        result["limitations"] = [s for s in report["limitations"] if s != obsolete]
+        result["dataQuality"] = {**report["dataQuality"], "limitations":[s for s in report["dataQuality"]["limitations"] if s != obsolete]}
     return outputs

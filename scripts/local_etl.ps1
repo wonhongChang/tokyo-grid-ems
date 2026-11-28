@@ -218,13 +218,29 @@ function Test-HistoricalEtlNeeded {
     }
 }
 
+function Test-CompleteBrief {
+    param([string]$DateIso)
+    foreach ($locale in @("ko","ja","en","")) {
+        $path = Join-Path $RepoRoot "web/public/reports/ai/daily/$locale/$DateIso.json"
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+        $report = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+        $lang = if ($locale) { $locale } else { "ko" }
+        $view = $report.operationsBrief
+        if ($report.date -ne $DateIso -or $view.date -ne $DateIso -or $view.version -ne 'tokyo-grid-ops/v8' -or
+            $report.language -ne $lang -or $view.language -ne $lang -or -not $view.fingerprint -or
+            $view.fingerprint -ne $report.inputSnapshot.fingerprint -or -not $view.nodes) { return $false }
+    }
+    return $true
+}
+
 function Test-AiReportRecoveryNeeded {
     param(
         [Parameter(Mandatory = $true)][string]$DateIso,
         [Parameter(Mandatory = $true)][string]$OpenAiKeySource
     )
 
-    if ($OpenAiKeySource -notin @("process_env", ".env")) {
+    $v8 = $DateIso -ge '2026-11-26' -and $env:TOKYO_GRID_EMS_DISABLE_REPORT_V8 -ne '1'
+    if (-not $v8 -and $OpenAiKeySource -notin @("process_env", ".env")) {
         return $false
     }
 
@@ -235,7 +251,8 @@ function Test-AiReportRecoveryNeeded {
 
     try {
         $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        return ([string]$report.generator.provider -ne "openai")
+        if ($report.operationsBrief) { return (-not (Test-CompleteBrief $DateIso)) }
+        return ($OpenAiKeySource -in @("process_env", ".env") -and [string]$report.generator.provider -ne "openai")
     }
     catch {
         return $true
@@ -247,13 +264,15 @@ function Invoke-AiReportRecovery {
         [Parameter(Mandatory = $true)][string]$DateIso
     )
 
-    Write-Host "[AI-REPORT] Retrying OpenAI report only for $DateIso"
+    Write-Host "[AI-REPORT] Checking missing report for $DateIso"
+    Push-Location (Resolve-Path (Join-Path $PSScriptRoot '..'))
+    try {
     Invoke-Native -FilePath "py" -Arguments @(
         "-3.14",
         "-m",
         "python.eval.ai_daily_report",
         "--public-dir",
-        "web/public",
+        (Join-Path $RepoRoot "web/public"),
         "--language",
         "ko",
         "--languages",
@@ -262,6 +281,7 @@ function Invoke-AiReportRecovery {
         "--openai-max-calls",
         "2"
     )
+    } finally { Pop-Location }
 
     $reportPath = Join-Path $RepoRoot "web/public/reports/ai/daily/$DateIso.json"
     if (-not (Test-Path -LiteralPath $reportPath)) {
@@ -271,11 +291,12 @@ function Invoke-AiReportRecovery {
     try {
         $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $provider = [string]$report.generator.provider
-        if ($provider -eq "openai") {
+        $complete = if ($report.operationsBrief) { Test-CompleteBrief $DateIso } else { $provider -eq "openai" }
+        if ($complete) {
             Write-Host "[AI-REPORT] Recovery succeeded for $DateIso"
             return $true
         }
-        Write-Warning "[AI-REPORT] Recovery did not produce an OpenAI report for $DateIso (provider=$provider)"
+        Write-Warning "[AI-REPORT] Recovery did not produce a complete report for $DateIso (provider=$provider)"
         return $false
     }
     catch {
@@ -361,7 +382,7 @@ try {
             Write-LocalEtlStatus `
                 -Status "running" `
                 -Stage "retry_ai_report" `
-                -Message "Yesterday is finalized, but its AI report is missing or fallback; retrying report only" `
+                -Message "Checking missing or incomplete report; no forecast recalculation" `
                 -HistoricalEtlSkipped $true `
                 -HistoricalEtlDate $historicalCheck.Yesterday `
                 -HistoricalEtlReason $historicalCheck.Reason `

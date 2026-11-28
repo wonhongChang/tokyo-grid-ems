@@ -735,7 +735,7 @@ export function OpsReportPanel({ baseUrl }: Props) {
         <div className="card empty-msg">{index.error || report.error ? t.failedLoad : labels.unavailable}</div>
       )}
 
-      {!loading && brief && <OperationsBrief key={locale + reportDate} nodes={brief} locale={locale} />}
+      {!loading && brief && selectedReport && <OperationsBrief key={locale + reportDate} nodes={brief} locale={locale} report={selectedReport} />}
       {!loading && selectedReport && !brief && (
         <>
           <div className="card ops-report-summary">
@@ -746,7 +746,7 @@ export function OpsReportPanel({ baseUrl }: Props) {
               </div>
               <div className="ops-report-badges">
                 <span className={`badge ops-provider-badge ${providerBadgeClass(selectedReport.generator.provider)}`}>
-                  {selectedReport.generator.provider === 'openai' ? openaiBadgeText(locale) : labels.fallbackBadge}
+                  {selectedReport.generator.provider === 'python' ? 'Python' : selectedReport.generator.provider === 'openai' ? openaiBadgeText(locale) : labels.fallbackBadge}
                 </span>
                 {usesEnglishFallback && (
                   <span className="badge info">{labels.englishFallbackBadge}</span>
@@ -766,7 +766,7 @@ export function OpsReportPanel({ baseUrl }: Props) {
             <div className="validation-stat-grid compact">
               <StatCard
                 label={labels.provider}
-                value={selectedReport.generator.provider === 'fallback' ? labels.fallback : labels.openai}
+                value={selectedReport.generator.provider === 'python' ? 'Python' : selectedReport.generator.provider === 'fallback' ? labels.fallback : labels.openai}
                 sub={selectedReport.generator.model ?? undefined}
               />
               <StatCard

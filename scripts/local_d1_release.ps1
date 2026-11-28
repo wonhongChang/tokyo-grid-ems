@@ -22,7 +22,7 @@ try {
     }
     if ($CheckOnly) {
         if (-not $env:D1_RELEASE_ROOT) { throw 'Release unavailable.' }
-        & docker compose run --rm --no-deps --no-TTY --entrypoint python etl -B -c "from datetime import date; import os,yaml,jpholiday; from python.forecast import d1_component as d, hourly_next as h; from python.etl import run_batch as b; c=d.with_trial(yaml.safe_load(open('config.yaml'))); print('ETL selector:',hasattr(b,'_select_tomorrow_point'),'Enabled targets:',[t for t in d.APPROVED_TARGETS if d.requested(c,date.fromisoformat(t))]); assert hasattr(b,'_select_tomorrow_point'); assert h.load_model().num_feature()==12; print('SD-H1-P50 verified:',h.IDENTITY,'switch:',os.getenv('TGEMS_H1_ISSUE'))"
+        & docker compose run --rm --no-deps --no-TTY --entrypoint python etl -B -c "from datetime import date; import os,yaml,jpholiday; from python.forecast import d1_component as d, hourly_next as h; from python.etl import run_batch as b; from python.eval.luna_brief import dashboard; from scripts.hourly_delivery import finalized_comparison; c=d.with_trial(yaml.safe_load(open('config.yaml'))); print('ETL selector:',hasattr(b,'_select_tomorrow_point'),'Enabled targets:',[t for t in d.APPROVED_TARGETS if d.requested(c,date.fromisoformat(t))]); assert hasattr(b,'_select_tomorrow_point'); assert h.load_model().num_feature()==12; print('SD-H1-P50 verified:',h.IDENTITY,'switch:',h.switch(os.environ),'report:',dashboard.VERSION)"
         exit $LASTEXITCODE
     }
     if ($env:D1_RELEASE_ROOT -and $env:COMPOSE_FILE -and (Test-Path 'data/raw/.d1-point/trial.json')) {

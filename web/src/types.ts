@@ -434,6 +434,9 @@ export interface AIDailyReport {
     language: string
     fingerprint: string
     advisoryStatus: string
+    actualStatus?: 'finalized' | 'provisional' | 'unknown'
+    sampleHours?: number | null
+    hourlyComparison?: {sampleTargets: number; h1MaeMw: number; championMaeMw: number; issueIds: string[]}
     nodes: unknown[]
   }
   schemaVersion: string
@@ -445,7 +448,7 @@ export interface AIDailyReport {
   language: 'en' | 'ko' | 'ja'
   contentLanguage?: 'en' | 'ko' | 'ja'
   generator: {
-    provider: 'openai' | 'fallback'
+    provider: 'python' | 'openai' | 'fallback'
     model: string | null
     localizationModel?: string | null
     localizationStatus?: 'ok' | 'fallback_en' | 'not_requested'
